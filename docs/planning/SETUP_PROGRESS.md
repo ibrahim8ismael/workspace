@@ -6,7 +6,7 @@ Scope authorized: create the agreed monorepo structure, install libraries, and p
 |---|---|---|
 | 1 | Track monorepo directories, Node/pnpm policy and environment template | Complete; pushed as b700d5b |
 | 2 | Install pinned libraries and add buildable web/API/worker/shared-package starters | Complete; pushed as c44077f |
-| 3 | Add source quality checks, CI and developer instructions; verify and push | Local verification complete; final push next |
+| 3 | Add source quality checks, CI and developer instructions; verify and push | Complete; pushed as 1575118; hosted CI passed |
 
 The workspace contains nine projects (root plus eight children). Exact manifests and `pnpm-lock.yaml` record dependencies; the initial installation added 389 packages. Offline frozen-lockfile verification succeeded. Initial build and lint passed on local Node 24.18.0/pnpm 10.33.0.
 
@@ -25,4 +25,4 @@ Executed on Node 24.18.0 / pnpm 10.33.0:
 - Temporary loopback API and Vite smoke check: liveness, entry HTML and proxied `/api/health/live` passed; both process groups were stopped.
 - No Docker command was executed. No MongoDB, Redis, LiveKit or mail service was started.
 
-GitHub Actions CI is configured for frozen install plus `pnpm check`; hosted execution status is tracked after the final push. No authentication, tenant-isolation or media acceptance result is implied by these setup checks.
+GitHub Actions completed frozen install plus `pnpm check` successfully on a clean Ubuntu runner for commit `1575118`. Evidence: [successful CI run](https://github.com/ibrahim8ismael/workspace/actions/runs/42079999382). No authentication, tenant-isolation or media acceptance result is implied by these setup checks.

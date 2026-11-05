@@ -2,7 +2,7 @@
 
 Status: initial planning baseline · Updated: 2026-11-05
 
-Gather Lite is a **B2B SaaS virtual office for companies and their teams**, delivered through a browser with React application controls, a Phaser world, NestJS APIs, Socket.IO authoritative office state, MongoDB/Mongoose durable data, Redis/BullMQ jobs, and self-hosted LiveKit media. This workspace currently contains documentation only. Every schema, route, task and acceptance check below is proposed or planned unless explicitly supported by later implementation evidence.
+Gather Lite is a **B2B SaaS virtual office for companies and their teams**, delivered through a browser with React application controls, a Phaser world, NestJS APIs, Socket.IO authoritative office state, MongoDB/Mongoose durable data, Redis/BullMQ jobs, and self-hosted LiveKit media. This workspace now has the monorepo directory scaffold; library installation and buildable starters are in progress. Every schema, route, task and acceptance check below is proposed or planned unless explicitly supported by later implementation evidence.
 
 ## Product direction
 
@@ -51,3 +51,5 @@ Payments, chat/DM history, calendar integration, recording, AI notes, custom map
 ## Maintaining these docs
 
 Use English for technical documentation, as specified in the source brief. Update the relevant entity, contracts, decision entry and acceptance criteria together when a decision changes. Keep recommended defaults labeled. Attach code and execution evidence before marking tasks verified. Do not treat an unchecked acceptance criterion as a passed control.
+
+Repository setup is tracked in [setup progress](planning/SETUP_PROGRESS.md).

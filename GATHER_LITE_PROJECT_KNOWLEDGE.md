@@ -2,7 +2,7 @@
 
 **Version:** 1.1  
 **Updated:** 2026-11-05  
-**Status:** Architecture and migration brief; application implementation has not started in this workspace.  
+**Status:** Architecture and migration brief; repository scaffolding has started, while product features remain unimplemented.  
 **Audience:** The project owner, developers, and Codex working in the implementation repository.
 
 ## 1. How Codex should use this document

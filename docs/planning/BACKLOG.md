@@ -1,13 +1,13 @@
 # Initial implementation backlog
 
-Status: all items unstarted · Updated: 2026-11-05
+Status: repository/library scaffolding complete; product milestones unstarted · Updated: 2026-11-05
 
 IDs are local planning references. No work has been assigned or scheduled outside these files.
 
 | ID | Target | Concrete task and reviewable output | Depends on |
 |---|---|---|---|
 | B001 | M0 | Pin actual upstream commit; write path/asset/license inventory and blocked reuse list | None |
-| B002 | M0 | Settle Vite planning default, package manager, supported browsers and maintained dependency/image pins | D01, source brief |
+| B002 | M0 | Partial: Vite/pnpm/Node/TypeScript and exact library pins selected with buildable scaffold; browser matrix and deployment image pins remain open | D01; see SETUP_PROGRESS.md |
 | B003 | M0 | Define runtime schemas, opaque IDs, errors, protocol/map version and event acknowledgement rules | B002 |
 | B004 | M0 | Freeze immutable geometry/seat/zone format; select one cleared avatar/object sample | B001, B003 |
 | B005 | M0 | Mount one Phaser scene in React and demonstrate pixel anchors/occlusion/cleanup | B004 |

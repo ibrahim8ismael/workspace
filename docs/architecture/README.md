@@ -54,16 +54,10 @@ Start with one modular NestJS process owning HTTP, Socket.IO and the office simu
 - Media privacy requires current authorized member sets and separate rooms/generations. Local mute/volume is not access control.
 - Docker-compatible independent media shutdown remains an M0 proof requirement. A guard or JWT lifetime alone does not establish bounded forwarding revocation.
 
-## Proposed code layout
+## Repository layout
 
-```text
-apps/web/             React + Phaser + Socket.IO/LiveKit adapters
-apps/api/             NestJS modules + authoritative office runtime
-apps/worker/          BullMQ processors + dispatcher
-packages/contracts/   Runtime schemas, DTOs, events and versions
-packages/world/       Pure geometry, movement, seat and zone rules
-packages/assets/      Approved files, manifests and provenance
-infra/                Docker, Caddy, Mongo, Redis, media/TURN supervision
-```
+The initial scaffold now uses feature-owned web folders and grouped API modules (identity, tenancy, office, conversations, media and audit). See [implemented repository layout](REPOSITORY.md) for actual paths and package ownership. The worker is separate, public contracts and world rules are shared, and delivery contracts are server-only. Media enforcement remains under `spikes/` pending proof.
 
-This is a future layout; no application directories or dependencies were initialized during the documentation work. See [decisions](../decisions/README.md), [data model](DATA_MODEL.md) and [migration](../migration/README.md).
+The earlier proposed separate Auth/Users/Workspaces/Memberships module names map into these grouped module boundaries; their entity responsibilities and tenant/security requirements still apply. No feature or infrastructure deployment is established by empty folders.
+
+See [decisions](../decisions/README.md), [data model](DATA_MODEL.md) and [migration](../migration/README.md).

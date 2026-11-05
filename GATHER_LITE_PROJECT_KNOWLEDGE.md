@@ -1,8 +1,8 @@
 # Gather Lite — Project Knowledge and Implementation Brief
 
-**Version:** 1.1  
+**Version:** 1.2
 **Updated:** 2026-11-05  
-**Status:** Architecture and migration brief; repository scaffolding has started, while product features remain unimplemented.  
+**Status:** Architecture and migration brief; monorepo scaffold and libraries installed, while product features remain unimplemented.
 **Audience:** The project owner, developers, and Codex working in the implementation repository.
 
 ## 1. How Codex should use this document
@@ -40,12 +40,14 @@ The owner selected this direction:
 
 This is a frontend reuse and backend migration project, with a renderer rewrite. It is more work than hosting an unmodified upstream fork, and it should proceed through small working slices.
 
+**Repository setup update (2026-11-05):** The owner authorized the refined monorepo structure, library installation and incremental GitHub pushes, with no Docker execution. React/Vite, pnpm workspaces, the NestJS API scaffold, a non-consuming worker scaffold and shared contracts/world/assets/delivery/tooling packages now exist. See [repository implementation layout](docs/architecture/REPOSITORY.md) and [setup evidence](docs/planning/SETUP_PROGRESS.md). The API liveness route is the only implemented endpoint. Product authorization and media-enforcement requirements remain unverified.
+
 ## 3. Current stack and superseded decisions
 
 | Layer | Current direction | Status and responsibility |
 |---|---|---|
 | Application UI | React + TypeScript, adapting upstream UI | Agreed: menus, onboarding, chat surfaces, meeting controls, settings |
-| Frontend tooling | Vite | Recommended default: preserve upstream build setup; Next.js is not required for the office client |
+| Frontend tooling | Vite | Selected and installed for the approved monorepo scaffold |
 | World renderer | Phaser | Agreed: world scene, camera, sprites, animation, input, interpolation, interactions |
 | HTTP backend | NestJS + TypeScript | Agreed: auth, workspaces, membership, persistence, invitations, media authorization |
 | Realtime | Socket.IO integrated with NestJS | Agreed; replaces Colyseus and upstream raw ws transport |
@@ -60,7 +62,7 @@ This is a frontend reuse and backend migration project, with a renderer rewrite.
 | Media revocation enforcement | Application authorization plus a proven signaling/control enforcement design | Retained security requirement; Docker-compatible mechanism needs an early proof of concept |
 | Billing/payments | Excluded from MVP | Agreed: no MVP provider, checkout, billing collections, subscriptions or payment gates; later commercial model remains open |
 
-The old Next.js/Colyseus architecture is superseded by the current React/Phaser/NestJS/Socket.IO direction. Vite is a planning default, not an independently confirmed new framework requirement. Do not add both Socket.IO and Colyseus for the same office state. Centrifugo is not needed in this plan.
+The old Next.js/Colyseus architecture is superseded by the current React/Phaser/NestJS/Socket.IO direction. Vite is selected for the approved scaffold; changing the frontend framework requires a separate justified decision. Do not add both Socket.IO and Colyseus for the same office state. Centrifugo is not needed in this plan.
 
 ## 4. Upstream project and evidence boundaries
 
@@ -441,7 +443,7 @@ These checks describe future work. No application/infrastructure acceptance resu
 |---|---|
 | B2B customer tenancy | Agreed B2B SaaS; recommend one company per workspace for MVP; resolve organization → multiple-workspace hierarchy before freezing schemas |
 | Proximity media topology | Recommend all-LiveKit; resolve before implementing media |
-| Frontend build system | Recommend preserving Vite; use Next.js only with an explicit requirement and owner decision |
+| Frontend build system | Vite selected for the scaffold; use Next.js only with an explicit requirement and owner decision |
 | Exact upstream import | Pin commit; inventory copied code/art and provenance before import |
 | LiveKit revocation enforcement under Docker | Retain security requirement; choose and prove independent supervision in Milestone 0 |
 | Map format and asset build | Adapt upstream metadata; optionally use Tiled and atlas tooling after proving compatibility |

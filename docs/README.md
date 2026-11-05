@@ -2,7 +2,7 @@
 
 Status: initial planning baseline · Updated: 2026-11-05
 
-Gather Lite is a **B2B SaaS virtual office for companies and their teams**, delivered through a browser with React application controls, a Phaser world, NestJS APIs, Socket.IO authoritative office state, MongoDB/Mongoose durable data, Redis/BullMQ jobs, and self-hosted LiveKit media. This workspace now has the monorepo directory scaffold; library installation and buildable starters are in progress. Every schema, route, task and acceptance check below is proposed or planned unless explicitly supported by later implementation evidence.
+Gather Lite is a **B2B SaaS virtual office for companies and their teams**, delivered through a browser with React application controls, a Phaser world, NestJS APIs, Socket.IO authoritative office state, MongoDB/Mongoose durable data, Redis/BullMQ jobs, and self-hosted LiveKit media. The initial monorepo scaffold and dependencies are installed; product features remain unimplemented. Product schemas, routes, tasks and acceptance checks below remain proposed or planned unless supported by implementation evidence. The scaffold liveness route and job-reference schema are recorded in the repository setup notes.
 
 ## Product direction
 
@@ -20,7 +20,7 @@ B2B SaaS is an agreed requirement. Read the [B2B SaaS product plan](product/B2B_
 
 ## Source precedence
 
-- [GATHER_LITE_PROJECT_KNOWLEDGE.md](../GATHER_LITE_PROJECT_KNOWLEDGE.md) v1.1 is the authoritative supplied architecture/migration brief. Its agreed, recommended and open statuses remain distinct.
+- [GATHER_LITE_PROJECT_KNOWLEDGE.md](../GATHER_LITE_PROJECT_KNOWLEDGE.md) v1.2 is the authoritative supplied architecture/migration brief. Its agreed, recommended and open statuses remain distinct.
 - [GATHER_LITE_TECH_STACK.md](../GATHER_LITE_TECH_STACK.md) is historical where it conflicts with that brief. In particular, Next.js, Colyseus and a systemd-only media deployment must not silently replace the current React/Phaser/NestJS/Socket.IO/Docker direction.
 - These docs decompose that brief into initial entity and delivery plans. New names, routes, field choices and task IDs are proposals; they do not establish owner approval or implemented behavior.
 - Source links are retained for traceability; this documentation task did not independently reverify upstream libraries, versions or capabilities.
@@ -53,3 +53,5 @@ Payments, chat/DM history, calendar integration, recording, AI notes, custom map
 Use English for technical documentation, as specified in the source brief. Update the relevant entity, contracts, decision entry and acceptance criteria together when a decision changes. Keep recommended defaults labeled. Attach code and execution evidence before marking tasks verified. Do not treat an unchecked acceptance criterion as a passed control.
 
 Repository setup is tracked in [setup progress](planning/SETUP_PROGRESS.md).
+
+The [implemented repository layout](architecture/REPOSITORY.md) records the refined module grouping and package ownership.

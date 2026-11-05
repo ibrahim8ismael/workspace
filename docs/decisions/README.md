@@ -14,7 +14,7 @@ React + TypeScript application UI; Phaser renderer rewrite; NestJS HTTP with Soc
 
 | ID | Question | Planning default / required evidence | Resolve by |
 |---|---|---|---|
-| D01 | Frontend toolchain | Preserve Vite unless a separately justified framework requirement changes it; select package manager and compatible maintained pins | M0 |
+| D01 | Frontend toolchain | Scaffold selects React/Vite, pnpm 10.33.0, Node 24.18+, TypeScript 6.0.3 and exact library pins; browser support matrix and deployment image pins remain open | Scaffold selected; remaining M0 choices open |
 | D02 | Proximity media topology | Recommend LiveKit for both proximity and groups; hybrid P2P adds signaling/lifecycle and revocation complexity | Before media spike / M0 |
 | D03 | Bounded media revocation under Docker | Choose and prove independent guard/SFU shutdown supervision; eight-second target is provisional and unmeasured; normal container restart policies are insufficient evidence | M0 gate |
 | D04 | Immutable map and asset pipeline | Adapt upstream metadata; choose units/versions/anchors; Tiled and atlases optional | M0 |

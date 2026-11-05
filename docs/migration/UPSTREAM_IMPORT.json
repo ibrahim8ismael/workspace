@@ -1,0 +1,1641 @@
+{
+  "repository": "https://github.com/VictorSandovalDev/OpenOfficeForAll",
+  "commit": "23d6b8999396f9e9d51291bf85bd7b72161f833f",
+  "license": "MIT; preserved in apps/web/LICENSE.upstream and apps/shared/LICENSE.upstream",
+  "verification": "All 64 user-supplied source files matched this commit before local integration changes; public files verified against its Git blob hashes.",
+  "changes": [
+    "Relocated shared helpers to apps/shared",
+    "Restored monorepo build configuration and current entrypoint",
+    "Removed unused code required by existing lint/typecheck policy",
+    "Formatting and documented migration compatibility settings"
+  ],
+  "sources": [
+    {
+      "path": "apps/web/workspaces.ts",
+      "upstreamPath": "src/workspaces.ts",
+      "upstreamBlobSha": "f93684f28459b0da109306e84f08d0d23d9d82d1"
+    },
+    {
+      "path": "apps/web/App.tsx",
+      "upstreamPath": "src/App.tsx",
+      "upstreamBlobSha": "ddcd891ea6f27a25cbbe0a76047f08ac769fd46a"
+    },
+    {
+      "path": "apps/web/MeetingView.tsx",
+      "upstreamPath": "src/MeetingView.tsx",
+      "upstreamBlobSha": "09aefc5ba1e669f7665e36ad503cb98033d54e22"
+    },
+    {
+      "path": "apps/web/main.tsx",
+      "upstreamPath": "src/main.tsx",
+      "upstreamBlobSha": "1e97de8d350e69696a106e6543101021257c4065"
+    },
+    {
+      "path": "apps/web/useOffice.ts",
+      "upstreamPath": "src/useOffice.ts",
+      "upstreamBlobSha": "86528465939a426e00cce0b883fffc70dcb2c92e"
+    },
+    {
+      "path": "apps/web/styles.css",
+      "upstreamPath": "src/styles.css",
+      "upstreamBlobSha": "1d15be747466604278b2031407f2af5a704c201c"
+    },
+    {
+      "path": "apps/web/navigation.ts",
+      "upstreamPath": "src/navigation.ts",
+      "upstreamBlobSha": "6f1b5fe3e7773bda7242dd774a2f6c079c2afd8b"
+    },
+    {
+      "path": "apps/web/useEditHistory.ts",
+      "upstreamPath": "src/useEditHistory.ts",
+      "upstreamBlobSha": "cb873f2208cd31d1eb2fb54742a49ae7b8a2d4cd"
+    },
+    {
+      "path": "apps/web/VivoScene.tsx",
+      "upstreamPath": "src/VivoScene.tsx",
+      "upstreamBlobSha": "b632c43436781f0bba5d88597061b4c9a98c3aff"
+    },
+    {
+      "path": "apps/web/traffic.ts",
+      "upstreamPath": "src/traffic.ts",
+      "upstreamBlobSha": "c1fd8d9ed76d9160c39e755a79158c82f328cd19"
+    },
+    {
+      "path": "apps/web/footsteps.ts",
+      "upstreamPath": "src/footsteps.ts",
+      "upstreamBlobSha": "1663bdbd513cb51b6b256c1b72e7be879744178f"
+    },
+    {
+      "path": "apps/web/WorkspaceHome.tsx",
+      "upstreamPath": "src/WorkspaceHome.tsx",
+      "upstreamBlobSha": "0eff5dd7fa699e6af2ca2fb3c7ac078a967e68a1"
+    },
+    {
+      "path": "apps/web/types.ts",
+      "upstreamPath": "src/types.ts",
+      "upstreamBlobSha": "f8366f9ade9b0a1b70111e1b269efc46c0456b43"
+    },
+    {
+      "path": "apps/web/catalogNames.ts",
+      "upstreamPath": "src/catalogNames.ts",
+      "upstreamBlobSha": "40b949d5fefb7c29c84def0cfdfca868cfe33072"
+    },
+    {
+      "path": "apps/web/PixelPond.tsx",
+      "upstreamPath": "src/PixelPond.tsx",
+      "upstreamBlobSha": "b29c2248ce138ffdb96b71560f40fde896cee0c4"
+    },
+    {
+      "path": "apps/web/activity.ts",
+      "upstreamPath": "src/activity.ts",
+      "upstreamBlobSha": "468b2c6ce93ba92a779bcbf310071bff4cbee4e2"
+    },
+    {
+      "path": "apps/web/vite-env.d.ts",
+      "upstreamPath": "src/vite-env.d.ts",
+      "upstreamBlobSha": "11f02fe2a0061d6e6e1f271b21da95423b448b32"
+    },
+    {
+      "path": "apps/web/avatarSprite.ts",
+      "upstreamPath": "src/avatarSprite.ts",
+      "upstreamBlobSha": "21e3e9aabaaa05c5e46f83c6591fb6f516e7a332"
+    },
+    {
+      "path": "apps/web/scene.css",
+      "upstreamPath": "src/scene.css",
+      "upstreamBlobSha": "70410d831b8324003705389ac04b0de24e7fdc62"
+    },
+    {
+      "path": "apps/web/PixelPlants.tsx",
+      "upstreamPath": "src/PixelPlants.tsx",
+      "upstreamBlobSha": "e1373d5beef6ce33d8969e4519994ab74570c41c"
+    },
+    {
+      "path": "apps/web/useMedia.ts",
+      "upstreamPath": "src/useMedia.ts",
+      "upstreamBlobSha": "d456b7025194fad04aeeda863b9da71ebb3cdcdd"
+    },
+    {
+      "path": "apps/web/avatarLook.ts",
+      "upstreamPath": "src/avatarLook.ts",
+      "upstreamBlobSha": "b3ba5dd40bcbb9169a16cf8c19a6b3f31e58867b"
+    },
+    {
+      "path": "apps/web/useSfu.ts",
+      "upstreamPath": "src/useSfu.ts",
+      "upstreamBlobSha": "41a45484efbe7ee04291632c4f5f70c6320bd21e"
+    },
+    {
+      "path": "apps/web/MiniOffice.tsx",
+      "upstreamPath": "src/MiniOffice.tsx",
+      "upstreamBlobSha": "3f33f4312ea49bc3e9f39f6d15f2b5b846f3c794"
+    },
+    {
+      "path": "apps/web/config.ts",
+      "upstreamPath": "src/config.ts",
+      "upstreamBlobSha": "d6eb46f2c0876eb2d0db3999ff472f428ed66f16"
+    },
+    {
+      "path": "apps/web/meetingRecorder.ts",
+      "upstreamPath": "src/meetingRecorder.ts",
+      "upstreamBlobSha": "f49b97c5c7a6a01044b67f0788a54182e3e7c9a3"
+    },
+    {
+      "path": "apps/web/meetingMusic.ts",
+      "upstreamPath": "src/meetingMusic.ts",
+      "upstreamBlobSha": "14a769c9df357dd642aca6f5b88024abfba02cc4"
+    },
+    {
+      "path": "apps/web/AvatarEditor.tsx",
+      "upstreamPath": "src/AvatarEditor.tsx",
+      "upstreamBlobSha": "6e3c5d978282eb2ced140c46a203df0f08e4e9b4"
+    },
+    {
+      "path": "apps/web/calendar/CalendarView.tsx",
+      "upstreamPath": "src/calendar/CalendarView.tsx",
+      "upstreamBlobSha": "2c793312364e00f3b7df74534eff4bd5b5663176"
+    },
+    {
+      "path": "apps/web/chat/markdown.tsx",
+      "upstreamPath": "src/chat/markdown.tsx",
+      "upstreamBlobSha": "93437738e17c1bd9c9d13a1a1f6051d78a7d39fa"
+    },
+    {
+      "path": "apps/web/chat/ChatView.tsx",
+      "upstreamPath": "src/chat/ChatView.tsx",
+      "upstreamBlobSha": "0a42b90c77f9e002080667adb06b79767a45e6fc"
+    },
+    {
+      "path": "apps/web/sprites/draw.ts",
+      "upstreamPath": "src/sprites/draw.ts",
+      "upstreamBlobSha": "36c8f16bcf2e72029b9b9c187e0006ebd844b528"
+    },
+    {
+      "path": "apps/web/sprites/pixel.ts",
+      "upstreamPath": "src/sprites/pixel.ts",
+      "upstreamBlobSha": "36382db2f516dca205c867c3e34d5906b98f62e8"
+    },
+    {
+      "path": "apps/web/sprites/floors.tsx",
+      "upstreamPath": "src/sprites/floors.tsx",
+      "upstreamBlobSha": "08b4de7d9f39ab2b5b6a23a3cc42c448ad4c873b"
+    },
+    {
+      "path": "apps/web/sprites/furniture.ts",
+      "upstreamPath": "src/sprites/furniture.ts",
+      "upstreamBlobSha": "dde23981566ae8383b51ecc6f038a4f9909606c0"
+    },
+    {
+      "path": "apps/web/sprites/assetSizes.ts",
+      "upstreamPath": "src/sprites/assetSizes.ts",
+      "upstreamBlobSha": "0a3e298c7bd679a169d70c4a0d33df446209a4cd"
+    },
+    {
+      "path": "apps/web/sprites/referenceArt.ts",
+      "upstreamPath": "src/sprites/referenceArt.ts",
+      "upstreamBlobSha": "3c1f9b98f1c96b0c496d08b8db579b926a11ebf1"
+    },
+    {
+      "path": "apps/web/sprites/assets.ts",
+      "upstreamPath": "src/sprites/assets.ts",
+      "upstreamBlobSha": "fe8b5c180b9d4d62c6ade494c5cae30f7e92f3d5"
+    },
+    {
+      "path": "apps/web/sprites/artPack.ts",
+      "upstreamPath": "src/sprites/artPack.ts",
+      "upstreamBlobSha": "6b918b96eb1e21decd58baa577e45764654c966c"
+    },
+    {
+      "path": "apps/web/sprites/walls.tsx",
+      "upstreamPath": "src/sprites/walls.tsx",
+      "upstreamBlobSha": "96ac8312c83492dec95155e3fee292395197c450"
+    },
+    {
+      "path": "apps/web/sprites/PixelSprite.tsx",
+      "upstreamPath": "src/sprites/PixelSprite.tsx",
+      "upstreamBlobSha": "8e88facb7552f540993bc0f72574761aa3bd98e6"
+    },
+    {
+      "path": "apps/web/sprites/rotatedAssets.ts",
+      "upstreamPath": "src/sprites/rotatedAssets.ts",
+      "upstreamBlobSha": "4a48b2c12218019e2dedaff7ffc90e4b8a3c13a7"
+    },
+    {
+      "path": "apps/web/sprites/objects.tsx",
+      "upstreamPath": "src/sprites/objects.tsx",
+      "upstreamBlobSha": "d0f85dfbb3dd792cc19aada07711ca0e19598135"
+    },
+    {
+      "path": "apps/web/sprites/furnitureAssets.ts",
+      "upstreamPath": "src/sprites/furnitureAssets.ts",
+      "upstreamBlobSha": "c7f61eec611afb19291fd6da5f6495f9809c8f11"
+    },
+    {
+      "path": "apps/web/i18n/en.ts",
+      "upstreamPath": "src/i18n/en.ts",
+      "upstreamBlobSha": "486444dfc02fbf11b5be66e6c8a46c85d7d730be"
+    },
+    {
+      "path": "apps/web/i18n/index.ts",
+      "upstreamPath": "src/i18n/index.ts",
+      "upstreamBlobSha": "6d02e651976669b6f35d1850f65591e5ef346743"
+    },
+    {
+      "path": "apps/shared/vivo-catalog.d.ts",
+      "upstreamPath": "shared/vivo-catalog.d.ts",
+      "upstreamBlobSha": "013410cd461488af74a7f2d0c18d3590d6154e16"
+    },
+    {
+      "path": "apps/shared/office-seats.d.ts",
+      "upstreamPath": "shared/office-seats.d.ts",
+      "upstreamBlobSha": "0aaca8e595637de0ac33e7235c4de96576b9db28"
+    },
+    {
+      "path": "apps/shared/office-meetings.js",
+      "upstreamPath": "shared/office-meetings.js",
+      "upstreamBlobSha": "e6e4bddda601149449dd9ecb9be8abda438f28c5"
+    },
+    {
+      "path": "apps/shared/vivo-map.js",
+      "upstreamPath": "shared/vivo-map.js",
+      "upstreamBlobSha": "93637d0840a67c64afb279d48327eab67873f622"
+    },
+    {
+      "path": "apps/shared/vivo-map.d.ts",
+      "upstreamPath": "shared/vivo-map.d.ts",
+      "upstreamBlobSha": "d583a2a3613dbbd1a809b6298505843ce94332a7"
+    },
+    {
+      "path": "apps/shared/office-world.js",
+      "upstreamPath": "shared/office-world.js",
+      "upstreamBlobSha": "cb79faf8415443d1230f1dd2329e5f7cd205f8b5"
+    },
+    {
+      "path": "apps/shared/office-world.d.ts",
+      "upstreamPath": "shared/office-world.d.ts",
+      "upstreamBlobSha": "2c10b81ccf01e3dbb966a665d5e24d079b6fb544"
+    },
+    {
+      "path": "apps/shared/office-objects.d.ts",
+      "upstreamPath": "shared/office-objects.d.ts",
+      "upstreamBlobSha": "c91d7dd53f73c98571b680292ef4b72cd1da871c"
+    },
+    {
+      "path": "apps/shared/office-meetings.d.ts",
+      "upstreamPath": "shared/office-meetings.d.ts",
+      "upstreamBlobSha": "62fdffa4e54336900f2a2bced43044fcfb796d27"
+    },
+    {
+      "path": "apps/shared/catalog-extra.js",
+      "upstreamPath": "shared/catalog-extra.js",
+      "upstreamBlobSha": "3d74a3383e22ffec46cda6a50b732a541f3a4ce5"
+    },
+    {
+      "path": "apps/shared/vivo-geometry.d.ts",
+      "upstreamPath": "shared/vivo-geometry.d.ts",
+      "upstreamBlobSha": "e423f275b77299e5a9d58fb5a5bb6b963d759993"
+    },
+    {
+      "path": "apps/shared/office-objects.js",
+      "upstreamPath": "shared/office-objects.js",
+      "upstreamBlobSha": "e7c73afb754aae672a04fce2afdddf8effe66937"
+    },
+    {
+      "path": "apps/shared/vivo-geometry.js",
+      "upstreamPath": "shared/vivo-geometry.js",
+      "upstreamBlobSha": "a7df4ec61e66dfcd5b984decfaf320725b17dbf7"
+    },
+    {
+      "path": "apps/shared/office-seats.js",
+      "upstreamPath": "shared/office-seats.js",
+      "upstreamBlobSha": "54626dd85ed4eff77873496ce3fb4911a1340ebd"
+    },
+    {
+      "path": "apps/shared/vivo-catalog.js",
+      "upstreamPath": "shared/vivo-catalog.js",
+      "upstreamBlobSha": "cc540377f5d91c088743147dfe494bfdfd058393"
+    },
+    {
+      "path": "apps/shared/maps/compose.js",
+      "upstreamPath": "shared/maps/compose.js",
+      "upstreamBlobSha": "248a28701418e6520d04c58c450bf6b8b3e1ef2f"
+    },
+    {
+      "path": "apps/shared/maps/index.js",
+      "upstreamPath": "shared/maps/index.js",
+      "upstreamBlobSha": "b4e0852ba285fcdcdcf83428b247b75c05cdc951"
+    },
+    {
+      "path": "apps/shared/maps/vivo.js",
+      "upstreamPath": "shared/maps/vivo.js",
+      "upstreamBlobSha": "80f4e2274039961349476b0f91587c26afe51fdb"
+    }
+  ],
+  "publicAssets": [
+    {
+      "path": "apps/web/public/assets/pixel/README.md",
+      "upstreamPath": "public/assets/pixel/README.md",
+      "upstreamBlobSha": "11bb98f0635bd4975bb69ef23574839060d2f900"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar-mujer/README.md",
+      "upstreamPath": "public/assets/pixel/cliente-avatar-mujer/README.md",
+      "upstreamBlobSha": "63e164a967093764d2dc67f283c6d173d5a25314"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar-mujer/east.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar-mujer/east.png",
+      "upstreamBlobSha": "f714bdb0bd52e4b65605d64b09e0da186b4ceeb3"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar-mujer/north.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar-mujer/north.png",
+      "upstreamBlobSha": "64931fbc762ab712da6763872cd0eaaa7a9f9f62"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar-mujer/sit-east.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar-mujer/sit-east.png",
+      "upstreamBlobSha": "5d309ec94a4c48e22c7b3a7cfa36bfb5f4a75d35"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar-mujer/sit-north.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar-mujer/sit-north.png",
+      "upstreamBlobSha": "16857a293d0e3dc971c3e81043a6c9890cb3f830"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar-mujer/sit-south.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar-mujer/sit-south.png",
+      "upstreamBlobSha": "c84c1bb1150f470d0818c5903d017cf4733f3aff"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar-mujer/sit-west.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar-mujer/sit-west.png",
+      "upstreamBlobSha": "20110f90e87d44e07b140a826ca6be57b9c0eed4"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar-mujer/south.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar-mujer/south.png",
+      "upstreamBlobSha": "c72084e3733b73500e5f0e9fcfe63d5f5c3631d4"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar-mujer/walk-east-0.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar-mujer/walk-east-0.png",
+      "upstreamBlobSha": "cb4a2e0a79d7303233ea4c56946923c481ea5ac0"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar-mujer/walk-east-1.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar-mujer/walk-east-1.png",
+      "upstreamBlobSha": "dac9620e3dd714d393f1d7b75a29867e04f5fd31"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar-mujer/walk-east-2.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar-mujer/walk-east-2.png",
+      "upstreamBlobSha": "a22a24c1b40cb72faad999af3d642265b234c629"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar-mujer/walk-east-3.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar-mujer/walk-east-3.png",
+      "upstreamBlobSha": "7acb0a87aa80cf81a6f6c5700835e132ea5b22a4"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar-mujer/walk-east-4.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar-mujer/walk-east-4.png",
+      "upstreamBlobSha": "0e69fabb9048924f7aa386123636abfc9cc0fe0e"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar-mujer/walk-east-5.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar-mujer/walk-east-5.png",
+      "upstreamBlobSha": "a2f092c1bbfcea4f5f1bd611ff57049b57d99d67"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar-mujer/walk-north-0.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar-mujer/walk-north-0.png",
+      "upstreamBlobSha": "ccdc1ace8a8e4a3ab573daf4d9f8684640f727b7"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar-mujer/walk-north-1.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar-mujer/walk-north-1.png",
+      "upstreamBlobSha": "d0819a5b375405045573d3bbde11570594394f8a"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar-mujer/walk-north-2.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar-mujer/walk-north-2.png",
+      "upstreamBlobSha": "8eaa7a33f0214fc292cc7ed624c4adc07f4a2901"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar-mujer/walk-north-3.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar-mujer/walk-north-3.png",
+      "upstreamBlobSha": "91550a600b2ca93cdf06ce989b849e0edb3a7192"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar-mujer/walk-north-4.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar-mujer/walk-north-4.png",
+      "upstreamBlobSha": "c4070555462c27f6beb3293d67ce23c87e857a3e"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar-mujer/walk-north-5.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar-mujer/walk-north-5.png",
+      "upstreamBlobSha": "4bf46433472cd7b4bd44566ddb7ebdbbd467faa5"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar-mujer/walk-south-0.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar-mujer/walk-south-0.png",
+      "upstreamBlobSha": "eca191a69bf560ae4704244fb5cc403904b44e71"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar-mujer/walk-south-1.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar-mujer/walk-south-1.png",
+      "upstreamBlobSha": "690e9d6068f191e12322c045eb52df78d163e1eb"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar-mujer/walk-south-2.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar-mujer/walk-south-2.png",
+      "upstreamBlobSha": "4fe362d540e739e204adda8922f78ddabcbb3224"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar-mujer/walk-south-3.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar-mujer/walk-south-3.png",
+      "upstreamBlobSha": "608e241d90a67e0ba4887d16c7c861e66e21238f"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar-mujer/walk-south-4.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar-mujer/walk-south-4.png",
+      "upstreamBlobSha": "dc20c8589b8c6cfafb992a16b6ee1d4545bd41f8"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar-mujer/walk-south-5.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar-mujer/walk-south-5.png",
+      "upstreamBlobSha": "98deb2944df1ab25df7bb2dac8074f44da9d62b0"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar-mujer/walk-west-0.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar-mujer/walk-west-0.png",
+      "upstreamBlobSha": "82c43c299fbcb75d47703de97f8144378e9fc2f7"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar-mujer/walk-west-1.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar-mujer/walk-west-1.png",
+      "upstreamBlobSha": "9cc19742ca6919f9a6bab8dadd5659e126b65d15"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar-mujer/walk-west-2.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar-mujer/walk-west-2.png",
+      "upstreamBlobSha": "9df1645e75b2a4e03d2a81cc8eabdcc81c1b0b48"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar-mujer/walk-west-3.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar-mujer/walk-west-3.png",
+      "upstreamBlobSha": "535961d6eefeefaa659ccc9448f0babccc016f82"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar-mujer/walk-west-4.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar-mujer/walk-west-4.png",
+      "upstreamBlobSha": "a2660e0b369e39c4719a0567c501c7aaa8a90afb"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar-mujer/walk-west-5.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar-mujer/walk-west-5.png",
+      "upstreamBlobSha": "755b3bb0f1b621daf23bb4beebb05f3fa038008c"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar-mujer/west.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar-mujer/west.png",
+      "upstreamBlobSha": "88cb96ef457cff2065c0807e5fa3c41028c45d81"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar/README.md",
+      "upstreamPath": "public/assets/pixel/cliente-avatar/README.md",
+      "upstreamBlobSha": "ac94cba6ad7ce9bdebc864b9ee729d99ee19a77b"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar/east.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar/east.png",
+      "upstreamBlobSha": "ad3985c9ce7f39c3705e5f42c08447eea8b82cab"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar/north.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar/north.png",
+      "upstreamBlobSha": "fc27b204c046de16a0523c42a27a88d85c0d26d9"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar/sit-east.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar/sit-east.png",
+      "upstreamBlobSha": "400b37b989e47d9bf30d892429578dc04552f46b"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar/sit-north.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar/sit-north.png",
+      "upstreamBlobSha": "d6f9e991934cbe79637468929f8b3ea057e0451e"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar/sit-south.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar/sit-south.png",
+      "upstreamBlobSha": "450e79d6486b6063bf6dfc82b2c96ea501cd9178"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar/sit-west.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar/sit-west.png",
+      "upstreamBlobSha": "9443f5c8d86472be12189982d581ae8b9a3eb2c2"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar/south.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar/south.png",
+      "upstreamBlobSha": "7ef9138a42c07d2feac66997199a3ab1e56cf2e2"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar/walk-east-0.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar/walk-east-0.png",
+      "upstreamBlobSha": "0192aa447f7d158c06cb243c15316fce56c0c389"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar/walk-east-1.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar/walk-east-1.png",
+      "upstreamBlobSha": "14e6ad281350b916a21358cd86dab6c3f10ac483"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar/walk-east-2.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar/walk-east-2.png",
+      "upstreamBlobSha": "6276781cebb09e8acda774674701524fb945e310"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar/walk-east-3.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar/walk-east-3.png",
+      "upstreamBlobSha": "b20835ac99a6a241b8e065666a2504a8e5a3c175"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar/walk-east-4.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar/walk-east-4.png",
+      "upstreamBlobSha": "42b57ae5dff7976849719603d3aa21a72e0ac097"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar/walk-east-5.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar/walk-east-5.png",
+      "upstreamBlobSha": "4ce4ccc1d018d4fb839cfd14a998733b59736710"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar/walk-north-0.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar/walk-north-0.png",
+      "upstreamBlobSha": "e3ddcc0fcb46551388ed66ad71c82c3782b2b561"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar/walk-north-1.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar/walk-north-1.png",
+      "upstreamBlobSha": "09bb2804f0d7c73eb7ffbc90ab1b0486d0e9e8ae"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar/walk-north-2.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar/walk-north-2.png",
+      "upstreamBlobSha": "3a2813b48c63d933174629a4e292a7ed0e30d809"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar/walk-north-3.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar/walk-north-3.png",
+      "upstreamBlobSha": "a44c98ac31049c036539e13d4456f1763089af6e"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar/walk-north-4.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar/walk-north-4.png",
+      "upstreamBlobSha": "17f5b88f24bf8727559ff1d7d5ddee4a388c6802"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar/walk-north-5.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar/walk-north-5.png",
+      "upstreamBlobSha": "7ccf4035a76b4427c30290459b53f4e37ad1f4a1"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar/walk-south-0.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar/walk-south-0.png",
+      "upstreamBlobSha": "8f29f5b27692dc398d2389a91801cbe369f27880"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar/walk-south-1.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar/walk-south-1.png",
+      "upstreamBlobSha": "a9f5b32196e090e3126ed1c90c857da754c16066"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar/walk-south-2.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar/walk-south-2.png",
+      "upstreamBlobSha": "77dd6b487bb4e1c0c9aa54be34b1a240f15df12f"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar/walk-south-3.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar/walk-south-3.png",
+      "upstreamBlobSha": "5580d07fa112f0bf9621b0621e056ef4a19ff087"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar/walk-south-4.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar/walk-south-4.png",
+      "upstreamBlobSha": "59a50e93790f54227fbe394e5d4160636e16e8c1"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar/walk-south-5.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar/walk-south-5.png",
+      "upstreamBlobSha": "4d84f2d6cadffc132ef99ec12338c9cb86d01886"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar/walk-west-0.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar/walk-west-0.png",
+      "upstreamBlobSha": "2453e6e65c0034951770b22ab5c75da30acd22ee"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar/walk-west-1.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar/walk-west-1.png",
+      "upstreamBlobSha": "a36e314ea916d6bb3e1ed6fb72138fd77c42826c"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar/walk-west-2.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar/walk-west-2.png",
+      "upstreamBlobSha": "9aab9b6c252b1d50d553eb636d0eba836e973fce"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar/walk-west-3.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar/walk-west-3.png",
+      "upstreamBlobSha": "211dff73a042849f995b47b39b916113c5da7f1e"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar/walk-west-4.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar/walk-west-4.png",
+      "upstreamBlobSha": "d874757bb5b35eac548e96d5fb0a0486a88467a2"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar/walk-west-5.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar/walk-west-5.png",
+      "upstreamBlobSha": "1df37db432b4f9d1cb2da9f9001fab5fe59fea93"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/cliente-avatar/west.png",
+      "upstreamPath": "public/assets/pixel/cliente-avatar/west.png",
+      "upstreamBlobSha": "1e646a96659ce5c13b9668eb027a48c6f67e2fd5"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/coworker-east.png",
+      "upstreamPath": "public/assets/pixel/coworker-east.png",
+      "upstreamBlobSha": "9e501ed1fa718e437b84db801f652321ad6b7755"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/coworker-north.png",
+      "upstreamPath": "public/assets/pixel/coworker-north.png",
+      "upstreamBlobSha": "73538f78fa857bbd40f1e72ead747454cac0a8d8"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/coworker-south.png",
+      "upstreamPath": "public/assets/pixel/coworker-south.png",
+      "upstreamBlobSha": "bfb25da7634f5cb3e57c6e3bd37049be78a49ebb"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/coworker-walk-east-frame_000.png",
+      "upstreamPath": "public/assets/pixel/coworker-walk-east-frame_000.png",
+      "upstreamBlobSha": "cb4c7acc5eb9ac330c8cf0961f78a6b36ced021b"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/coworker-walk-east-frame_001.png",
+      "upstreamPath": "public/assets/pixel/coworker-walk-east-frame_001.png",
+      "upstreamBlobSha": "85c3648f34e5ed15943b71a3317eec3ed0a65de6"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/coworker-walk-east-frame_002.png",
+      "upstreamPath": "public/assets/pixel/coworker-walk-east-frame_002.png",
+      "upstreamBlobSha": "5456c78208ec59998e65f12be222829a9a19a89b"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/coworker-walk-east-frame_003.png",
+      "upstreamPath": "public/assets/pixel/coworker-walk-east-frame_003.png",
+      "upstreamBlobSha": "14ca99f6d52e9660f704cc218cb88c3ea94d47e8"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/coworker-walk-north-frame_000.png",
+      "upstreamPath": "public/assets/pixel/coworker-walk-north-frame_000.png",
+      "upstreamBlobSha": "8cb8b15224029d69dc475ccf45727ea1fa2400d0"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/coworker-walk-north-frame_001.png",
+      "upstreamPath": "public/assets/pixel/coworker-walk-north-frame_001.png",
+      "upstreamBlobSha": "e4987c0685c026098fbcd663ab81766165879b1d"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/coworker-walk-north-frame_002.png",
+      "upstreamPath": "public/assets/pixel/coworker-walk-north-frame_002.png",
+      "upstreamBlobSha": "511e61c35408a5c6d2fac335b20f07cedaeca8d5"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/coworker-walk-north-frame_003.png",
+      "upstreamPath": "public/assets/pixel/coworker-walk-north-frame_003.png",
+      "upstreamBlobSha": "6c74939c5c1a816795abddb1457d21aa58d91380"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/coworker-walk-south-frame_000.png",
+      "upstreamPath": "public/assets/pixel/coworker-walk-south-frame_000.png",
+      "upstreamBlobSha": "70d13e7e3438520133ea89d746d9bdef9080d766"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/coworker-walk-south-frame_001.png",
+      "upstreamPath": "public/assets/pixel/coworker-walk-south-frame_001.png",
+      "upstreamBlobSha": "93b1e501f14a18fee83d0696188bdce42efa3c90"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/coworker-walk-south-frame_002.png",
+      "upstreamPath": "public/assets/pixel/coworker-walk-south-frame_002.png",
+      "upstreamBlobSha": "2a9010aa1aacf4eb2f3ba6eb688c91caefee352e"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/coworker-walk-south-frame_003.png",
+      "upstreamPath": "public/assets/pixel/coworker-walk-south-frame_003.png",
+      "upstreamBlobSha": "0d3ff3e881b3f9bc2da65526cb59c08d674cf10b"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/coworker-walk-west-frame_000.png",
+      "upstreamPath": "public/assets/pixel/coworker-walk-west-frame_000.png",
+      "upstreamBlobSha": "bc8dc537301b7ccf4a25ee14ab123e67ae6d78dc"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/coworker-walk-west-frame_001.png",
+      "upstreamPath": "public/assets/pixel/coworker-walk-west-frame_001.png",
+      "upstreamBlobSha": "3b2b114ae2c8d42973f493f1edc2e2d41da6808c"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/coworker-walk-west-frame_002.png",
+      "upstreamPath": "public/assets/pixel/coworker-walk-west-frame_002.png",
+      "upstreamBlobSha": "bf5ea86a6f9cd14b23ef0f7340a06f0ca69bb235"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/coworker-walk-west-frame_003.png",
+      "upstreamPath": "public/assets/pixel/coworker-walk-west-frame_003.png",
+      "upstreamBlobSha": "14d2e412f1eb5d898f3338014182b06fbb6a3d34"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/coworker-west.png",
+      "upstreamPath": "public/assets/pixel/coworker-west.png",
+      "upstreamBlobSha": "01ace45d635c068c3f9afc77bce9d7f94df3a946"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/dracaena.png",
+      "upstreamPath": "public/assets/pixel/dracaena.png",
+      "upstreamBlobSha": "2f1589382fdb4c76581458289aa9f5b4f955098f"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/README.md",
+      "upstreamPath": "public/assets/pixel/objects/README.md",
+      "upstreamBlobSha": "1458ddf8920cbd209ef54906466bf99d36648859"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/abstract-painting.png",
+      "upstreamPath": "public/assets/pixel/objects/abstract-painting.png",
+      "upstreamBlobSha": "ff1a439552ed25becd82b7d403f7d4ce225f2e88"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/aeron-chair-black-up.png",
+      "upstreamPath": "public/assets/pixel/objects/aeron-chair-black-up.png",
+      "upstreamBlobSha": "4408c39b8c23320d9ac0bb16ba4782d967efbaf6"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/aloe-vera.png",
+      "upstreamPath": "public/assets/pixel/objects/aloe-vera.png",
+      "upstreamBlobSha": "f9d9904913ef51a6032dec44c9376a75bf37a90f"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/arcade-machine-white-up.png",
+      "upstreamPath": "public/assets/pixel/objects/arcade-machine-white-up.png",
+      "upstreamBlobSha": "a0628f23ea1225145ea66fbc3c10629ed82c1a16"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/arcade-machine.png",
+      "upstreamPath": "public/assets/pixel/objects/arcade-machine.png",
+      "upstreamBlobSha": "a30b437faf432d6cf24b7dfeb0184d5bf5aa97ca"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/bamboo-planter.png",
+      "upstreamPath": "public/assets/pixel/objects/bamboo-planter.png",
+      "upstreamBlobSha": "1fd5d1dbba1c2191b9de6d85ce70125a9763d68f"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/barcelona-chair-teal-down.png",
+      "upstreamPath": "public/assets/pixel/objects/barcelona-chair-teal-down.png",
+      "upstreamBlobSha": "e240b1c424b5204d27fb54c716fcd7518b321f06"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/barcelona-chair-teal-left.png",
+      "upstreamPath": "public/assets/pixel/objects/barcelona-chair-teal-left.png",
+      "upstreamBlobSha": "1be24f209dd87fad1caa40ba8317084927454e7c"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/barcelona-chair-teal-right.png",
+      "upstreamPath": "public/assets/pixel/objects/barcelona-chair-teal-right.png",
+      "upstreamBlobSha": "b749c218066a656962533502125412df857cc48f"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/barcelona-chair-teal-up.png",
+      "upstreamPath": "public/assets/pixel/objects/barcelona-chair-teal-up.png",
+      "upstreamBlobSha": "5670d7e7b64704ef2ffbf762dcd960bee27d5e31"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/beach-ball-red.png",
+      "upstreamPath": "public/assets/pixel/objects/beach-ball-red.png",
+      "upstreamBlobSha": "510842ae030bc7da4827a346b55911453ca14353"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/beach-rocks-grey.png",
+      "upstreamPath": "public/assets/pixel/objects/beach-rocks-grey.png",
+      "upstreamBlobSha": "5bd80ec988494025007a7fe00e39b6a071ad9179"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/beach-towel-yellow.png",
+      "upstreamPath": "public/assets/pixel/objects/beach-towel-yellow.png",
+      "upstreamBlobSha": "8d238a1df0a444fe85b944645dc2176d4cb7296a"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/beach-umbrella-blue.png",
+      "upstreamPath": "public/assets/pixel/objects/beach-umbrella-blue.png",
+      "upstreamBlobSha": "d5420d4a7074dfd86f026facbbaa55ff6e93bf4f"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/beach-umbrella-red.png",
+      "upstreamPath": "public/assets/pixel/objects/beach-umbrella-red.png",
+      "upstreamBlobSha": "2eb6782cb07c4e85a2e268752cba95f2cc3a9faf"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/beanbag-chair-blue-left.png",
+      "upstreamPath": "public/assets/pixel/objects/beanbag-chair-blue-left.png",
+      "upstreamBlobSha": "25dde61b876a04a7a5c2514e9e0fc898f5811ada"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/beanbag-chair-blue-right.png",
+      "upstreamPath": "public/assets/pixel/objects/beanbag-chair-blue-right.png",
+      "upstreamBlobSha": "b7d9fae86eda9ff82553cc97e0bffb3efe25b2be"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/beanbag-chair-blue-up.png",
+      "upstreamPath": "public/assets/pixel/objects/beanbag-chair-blue-up.png",
+      "upstreamBlobSha": "77a94178837642688ab5276b778fb701f4556373"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/beanbag-chair-pink-right.png",
+      "upstreamPath": "public/assets/pixel/objects/beanbag-chair-pink-right.png",
+      "upstreamBlobSha": "e748aeac5fa425a92e1c3d9fc370edacda2b68dc"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/beanbag-chair-purple-left.png",
+      "upstreamPath": "public/assets/pixel/objects/beanbag-chair-purple-left.png",
+      "upstreamBlobSha": "7a8c72be6645b12edd281efbf5630d29d2021d90"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/bike-rack-grey.png",
+      "upstreamPath": "public/assets/pixel/objects/bike-rack-grey.png",
+      "upstreamBlobSha": "8c31057e2290242c4ea4c76287a5855b45989fb9"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/birch-tree.png",
+      "upstreamPath": "public/assets/pixel/objects/birch-tree.png",
+      "upstreamBlobSha": "b7fdbfaa7a9244477ab3c929f3a1bb6e0bece71f"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/bird-of-paradise-green.png",
+      "upstreamPath": "public/assets/pixel/objects/bird-of-paradise-green.png",
+      "upstreamBlobSha": "364658547873e2f18c8c90c3b5a59aae74c408da"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/book-closed-green-down.png",
+      "upstreamPath": "public/assets/pixel/objects/book-closed-green-down.png",
+      "upstreamBlobSha": "7d64296974a8cf3803e80d83800dda2559049b41"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/book-closed-green-up.png",
+      "upstreamPath": "public/assets/pixel/objects/book-closed-green-up.png",
+      "upstreamBlobSha": "8f010c89fb706cc1326b6cb90c0fd74a01f4eac3"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/book-closed-grey-down.png",
+      "upstreamPath": "public/assets/pixel/objects/book-closed-grey-down.png",
+      "upstreamBlobSha": "087b0b38e52524820b6a1a916518e1ebf7d53f91"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/book-closed-grey-up.png",
+      "upstreamPath": "public/assets/pixel/objects/book-closed-grey-up.png",
+      "upstreamBlobSha": "8478f54e3141b6e557444b4e89c526fc5844c831"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/book-open-blue-down.png",
+      "upstreamPath": "public/assets/pixel/objects/book-open-blue-down.png",
+      "upstreamBlobSha": "dbf395cca634f4877985db9252dc294398601157"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/book-open-blue-up.png",
+      "upstreamPath": "public/assets/pixel/objects/book-open-blue-up.png",
+      "upstreamBlobSha": "c859df5633934a4eebf4f0469f136f5a10eb232d"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/bookcase-tall-black-down.png",
+      "upstreamPath": "public/assets/pixel/objects/bookcase-tall-black-down.png",
+      "upstreamBlobSha": "2f08249602ca2bf8fe12e2d5cad267decc267c8c"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/bookcase-tall-black-up.png",
+      "upstreamPath": "public/assets/pixel/objects/bookcase-tall-black-up.png",
+      "upstreamBlobSha": "f4f519ece402e529ac22b3dcac6acdaffc42a486"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/bookcase-tall-white-down.png",
+      "upstreamPath": "public/assets/pixel/objects/bookcase-tall-white-down.png",
+      "upstreamBlobSha": "b45f104441227906e705777e5e31c26e9388a301"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/bookcase-tall-white-up.png",
+      "upstreamPath": "public/assets/pixel/objects/bookcase-tall-white-up.png",
+      "upstreamBlobSha": "174e21031e10097d30077a10b0159b1262afa0ac"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/bus-stop-glass.png",
+      "upstreamPath": "public/assets/pixel/objects/bus-stop-glass.png",
+      "upstreamBlobSha": "b221d22a6390c01a5cde98e2b44bd67a86e47c48"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/ceramic-planter-brown.png",
+      "upstreamPath": "public/assets/pixel/objects/ceramic-planter-brown.png",
+      "upstreamBlobSha": "cf0daa6e338e5d530f095df02ec4a2aff3954896"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/ceramic-planter-white.png",
+      "upstreamPath": "public/assets/pixel/objects/ceramic-planter-white.png",
+      "upstreamBlobSha": "67b383fa4ef3d21608a796cb9c296927bece0049"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/cubicle-shelves-black-up.png",
+      "upstreamPath": "public/assets/pixel/objects/cubicle-shelves-black-up.png",
+      "upstreamBlobSha": "dd17b9e616db6ee0bf57d6adccf51f4144bd20a1"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/cubicle-shelves-black.png",
+      "upstreamPath": "public/assets/pixel/objects/cubicle-shelves-black.png",
+      "upstreamBlobSha": "4ac33ea0872d57406d01e45287e5e8dd611beb7a"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/cubicle-shelves-white-up.png",
+      "upstreamPath": "public/assets/pixel/objects/cubicle-shelves-white-up.png",
+      "upstreamBlobSha": "7f51214581aece568b211920c3a5011d88de579e"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/cubicle-shelves-white.png",
+      "upstreamPath": "public/assets/pixel/objects/cubicle-shelves-white.png",
+      "upstreamBlobSha": "77b1478bf039acaf49d376ece7dd4c07f9eaab07"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/digital-artist-computer-grey-up.png",
+      "upstreamPath": "public/assets/pixel/objects/digital-artist-computer-grey-up.png",
+      "upstreamBlobSha": "66e60d35481223b9baa498f7e74d2d6b4273eea3"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/digital-artist-computer.png",
+      "upstreamPath": "public/assets/pixel/objects/digital-artist-computer.png",
+      "upstreamBlobSha": "78c4ac33d34925ce67939595b8d34f92b96d98b3"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/document-single-white-down.png",
+      "upstreamPath": "public/assets/pixel/objects/document-single-white-down.png",
+      "upstreamBlobSha": "4bb1f8d179c1d0bd9d91248fe9514db1f7d78e2b"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/document-single-white-up.png",
+      "upstreamPath": "public/assets/pixel/objects/document-single-white-up.png",
+      "upstreamBlobSha": "e2ad8821199004069521810788049a7fb6b6f787"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/espresso-machine.png",
+      "upstreamPath": "public/assets/pixel/objects/espresso-machine.png",
+      "upstreamBlobSha": "f694ca0be8f21547466d34e95028642ef89a7d4f"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/fern.png",
+      "upstreamPath": "public/assets/pixel/objects/fern.png",
+      "upstreamBlobSha": "74e3e4433d5df318e36dcae4e80393eeba79b611"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/ficus-black-down.png",
+      "upstreamPath": "public/assets/pixel/objects/ficus-black-down.png",
+      "upstreamBlobSha": "6a4f2537d5652cda008be7fcaad29452b81f5245"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/ficus.png",
+      "upstreamPath": "public/assets/pixel/objects/ficus.png",
+      "upstreamBlobSha": "a16f2dc7ccc9befe6b8be1ebab972fe977fb7ba7"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/fiddle-leaf-fig.png",
+      "upstreamPath": "public/assets/pixel/objects/fiddle-leaf-fig.png",
+      "upstreamBlobSha": "1ca95996edb4e88a934bf41cbf5f6784a8618c27"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/filing-cabinet-black-down.png",
+      "upstreamPath": "public/assets/pixel/objects/filing-cabinet-black-down.png",
+      "upstreamBlobSha": "7e0d0cb0e4c2d64d1cd594bc18d3f916868f84b6"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/filing-cabinet-black-up.png",
+      "upstreamPath": "public/assets/pixel/objects/filing-cabinet-black-up.png",
+      "upstreamBlobSha": "86457cca35dae2dd9ad0dfb2b8a171488b7f8d90"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/filing-cabinet-grey-down.png",
+      "upstreamPath": "public/assets/pixel/objects/filing-cabinet-grey-down.png",
+      "upstreamBlobSha": "7f58143b768f09bd6eb3d7788e9d522586a665d0"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/fire-hydrant-red.png",
+      "upstreamPath": "public/assets/pixel/objects/fire-hydrant-red.png",
+      "upstreamBlobSha": "5241a59015aef90a979e05ae94a9249f734e4409"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/floating-bookshelf-black-up.png",
+      "upstreamPath": "public/assets/pixel/objects/floating-bookshelf-black-up.png",
+      "upstreamBlobSha": "21bb38de943bfd4a3520c0e2212a79d43067ab01"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/floating-bookshelf.png",
+      "upstreamPath": "public/assets/pixel/objects/floating-bookshelf.png",
+      "upstreamBlobSha": "a1205aa911a903a585469eb63db7aaa894461089"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/flower-bed-pink.png",
+      "upstreamPath": "public/assets/pixel/objects/flower-bed-pink.png",
+      "upstreamBlobSha": "70039105e2fd4673ae868f4bfc78684f60b5d2dd"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/food-cart-red.png",
+      "upstreamPath": "public/assets/pixel/objects/food-cart-red.png",
+      "upstreamBlobSha": "eab5118c661cb83133cd6fd63fcf73ba7004ce72"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/fountain-stone.png",
+      "upstreamPath": "public/assets/pixel/objects/fountain-stone.png",
+      "upstreamBlobSha": "03041674fb5aadf2fe299095f8978b52270df4ff"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/gamer-chair-blue-up.png",
+      "upstreamPath": "public/assets/pixel/objects/gamer-chair-blue-up.png",
+      "upstreamBlobSha": "c50bbc7d2903322b9cd1942db6115121da2302b8"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/gamer-chair.png",
+      "upstreamPath": "public/assets/pixel/objects/gamer-chair.png",
+      "upstreamBlobSha": "962270d8c1e4467cbb98ddd0d9ad0c36cfe1833c"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/globe.png",
+      "upstreamPath": "public/assets/pixel/objects/globe.png",
+      "upstreamBlobSha": "b749d646a95646234a38ed7a383bd01da48223c5"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/hardware-dev-computer-blue-up.png",
+      "upstreamPath": "public/assets/pixel/objects/hardware-dev-computer-blue-up.png",
+      "upstreamBlobSha": "d967be432d4ae633c9c8fe08e05092629b83d6d0"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/hardware-dev-computer-blue.png",
+      "upstreamPath": "public/assets/pixel/objects/hardware-dev-computer-blue.png",
+      "upstreamBlobSha": "e8953d51d80b67d9db318549ce67e4e8994709b8"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/hardware-dev-computer-grey-up.png",
+      "upstreamPath": "public/assets/pixel/objects/hardware-dev-computer-grey-up.png",
+      "upstreamBlobSha": "142ceb15ff229bff738834f27d605fa40b9dd9b8"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/hardware-dev-computer-grey.png",
+      "upstreamPath": "public/assets/pixel/objects/hardware-dev-computer-grey.png",
+      "upstreamBlobSha": "289e0c4f59f1372598f4ac3baf951bd35eeb6676"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/hedge-green.png",
+      "upstreamPath": "public/assets/pixel/objects/hedge-green.png",
+      "upstreamBlobSha": "cd170ba0bca62e8ace357f6143c31ae14fb57244"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/hip-wall-art-lightblue-down.png",
+      "upstreamPath": "public/assets/pixel/objects/hip-wall-art-lightblue-down.png",
+      "upstreamBlobSha": "8c91e4f53b07cc9c856e84401e71e59cc210c235"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/hip-wall-art.png",
+      "upstreamPath": "public/assets/pixel/objects/hip-wall-art.png",
+      "upstreamBlobSha": "a06097e55ca38880bb3158852e4066a41f558314"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/inkpen-notes-blue-down.png",
+      "upstreamPath": "public/assets/pixel/objects/inkpen-notes-blue-down.png",
+      "upstreamBlobSha": "4017282263cc4d12e733a725a578ff0dc10896d7"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/inkpen-notes-blue-up.png",
+      "upstreamPath": "public/assets/pixel/objects/inkpen-notes-blue-up.png",
+      "upstreamBlobSha": "d3d263c1bbccf81cc12b478772fb941812e5451c"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/kitchen-cabinet-large-black-down.png",
+      "upstreamPath": "public/assets/pixel/objects/kitchen-cabinet-large-black-down.png",
+      "upstreamBlobSha": "b2f78e7c007f27ba5d914f946d160ce5e7820c20"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/kitchen-cabinet-large-grey-down.png",
+      "upstreamPath": "public/assets/pixel/objects/kitchen-cabinet-large-grey-down.png",
+      "upstreamBlobSha": "e9048e921735c34664edc8052f46c84c7bfde51c"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/koi-pond.png",
+      "upstreamPath": "public/assets/pixel/objects/koi-pond.png",
+      "upstreamBlobSha": "ad9d03e1741d98c4430aeb191c372a070599319c"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/laptop-computer-white-down.png",
+      "upstreamPath": "public/assets/pixel/objects/laptop-computer-white-down.png",
+      "upstreamBlobSha": "43f4da186e4bf31d2ae143a98add24dd0896a635"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/laptop-computer-white-up.png",
+      "upstreamPath": "public/assets/pixel/objects/laptop-computer-white-up.png",
+      "upstreamBlobSha": "1c07cd70970f0abc7483c533847069baf0569d1f"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/lawn-chair-blue-down.png",
+      "upstreamPath": "public/assets/pixel/objects/lawn-chair-blue-down.png",
+      "upstreamBlobSha": "b2b80d66e85456b639a8e50e4332615ed38c9f5e"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/lawn-chair-blue-up.png",
+      "upstreamPath": "public/assets/pixel/objects/lawn-chair-blue-up.png",
+      "upstreamBlobSha": "5293fb3c09510c69a1be02e98b50b968d7830b03"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/lifeguard-tower-white.png",
+      "upstreamPath": "public/assets/pixel/objects/lifeguard-tower-white.png",
+      "upstreamBlobSha": "d9d4e1477bc0b113d0e89f1e752768c6248aa744"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/maple-tree-green.png",
+      "upstreamPath": "public/assets/pixel/objects/maple-tree-green.png",
+      "upstreamBlobSha": "88f614ce45abe22e4ab20a46668b4b09f189b538"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/maple-tree-lightgreen.png",
+      "upstreamPath": "public/assets/pixel/objects/maple-tree-lightgreen.png",
+      "upstreamBlobSha": "99db82641ae6a49f9ff3db94a297642c726d6ecf"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/mid-century-leather-couch-brown-down.png",
+      "upstreamPath": "public/assets/pixel/objects/mid-century-leather-couch-brown-down.png",
+      "upstreamBlobSha": "f7b9517f81bf66e90fee85427605b17918f12958"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/mid-century-leather-couch-brown-up.png",
+      "upstreamPath": "public/assets/pixel/objects/mid-century-leather-couch-brown-up.png",
+      "upstreamBlobSha": "7d257e65ed1ab741a66bfa701b623a849c23afa9"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/mid-century-side-table-lightcoffee-down.png",
+      "upstreamPath": "public/assets/pixel/objects/mid-century-side-table-lightcoffee-down.png",
+      "upstreamBlobSha": "859b6273172d79d4c7baddd6ec6c46fc9cbab01a"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/mid-century-side-table-lightcoffee-up.png",
+      "upstreamPath": "public/assets/pixel/objects/mid-century-side-table-lightcoffee-up.png",
+      "upstreamBlobSha": "2e47f2ddb99bafa0e0977899abe4ec974b1c3453"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/mini-fridge-white-down.png",
+      "upstreamPath": "public/assets/pixel/objects/mini-fridge-white-down.png",
+      "upstreamBlobSha": "ffbef32dbdb2db825a860b79e7665a3431047844"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/mini-fridge-white-up.png",
+      "upstreamPath": "public/assets/pixel/objects/mini-fridge-white-up.png",
+      "upstreamBlobSha": "9f72e6295f10797226ffd0268026c4e86877a82b"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/mini-fridge.png",
+      "upstreamPath": "public/assets/pixel/objects/mini-fridge.png",
+      "upstreamBlobSha": "808b52008616c1cccf9cbb8ce2d527272960f47e"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/modular-couch-corner-blue-down.png",
+      "upstreamPath": "public/assets/pixel/objects/modular-couch-corner-blue-down.png",
+      "upstreamBlobSha": "70fcd8bdc7227891f86ec9e38953edf8642e7e3c"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/modular-couch-segment-blue-down.png",
+      "upstreamPath": "public/assets/pixel/objects/modular-couch-segment-blue-down.png",
+      "upstreamBlobSha": "646414bd85407c04befeab713b982afdb796b03a"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/modular-couch-segment-blue-right.png",
+      "upstreamPath": "public/assets/pixel/objects/modular-couch-segment-blue-right.png",
+      "upstreamBlobSha": "bffd115de08e43f97e7323f4b5e1beecf043b4d5"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/modular-couch-segment-blue-up.png",
+      "upstreamPath": "public/assets/pixel/objects/modular-couch-segment-blue-up.png",
+      "upstreamBlobSha": "e49dc3e704c323650d981d665b6ec50d8e46443a"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/molecular-lamp-black.png",
+      "upstreamPath": "public/assets/pixel/objects/molecular-lamp-black.png",
+      "upstreamBlobSha": "0c87e43351a6f63db8b1dabdd3ff2568fade6889"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/molecular-lamp-grey.png",
+      "upstreamPath": "public/assets/pixel/objects/molecular-lamp-grey.png",
+      "upstreamBlobSha": "31de5d3781bdb6697dfa037f958f5e9eac9c60ee"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/mondrian-painting-black-up.png",
+      "upstreamPath": "public/assets/pixel/objects/mondrian-painting-black-up.png",
+      "upstreamBlobSha": "81ef574fdb76e1634e2c2d00b5b392a899d22f21"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/mondrian-painting.png",
+      "upstreamPath": "public/assets/pixel/objects/mondrian-painting.png",
+      "upstreamBlobSha": "49792473c7fa98d83c12930ec96b17ecf3f8bc54"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/mug-regular-black-down.png",
+      "upstreamPath": "public/assets/pixel/objects/mug-regular-black-down.png",
+      "upstreamBlobSha": "34c37ce4eb406a85e5a30503e0957eb45fc446e7"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/mug-regular-blue-left.png",
+      "upstreamPath": "public/assets/pixel/objects/mug-regular-blue-left.png",
+      "upstreamBlobSha": "fae7f96d5156bbcfc15e2a61047d446907ddad85"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/mug-wide-coffee-down.png",
+      "upstreamPath": "public/assets/pixel/objects/mug-wide-coffee-down.png",
+      "upstreamBlobSha": "f5df1f28ac0479d571b645b871b5325b2ea15df8"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/mug-wide-purple-right.png",
+      "upstreamPath": "public/assets/pixel/objects/mug-wide-purple-right.png",
+      "upstreamBlobSha": "69068ff36930937f34e100a038ede170571786f6"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/office-cabinet-black-down.png",
+      "upstreamPath": "public/assets/pixel/objects/office-cabinet-black-down.png",
+      "upstreamBlobSha": "aec073b54c7209acf8622a13c218ee676f402efa"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/office-desk-white-down.png",
+      "upstreamPath": "public/assets/pixel/objects/office-desk-white-down.png",
+      "upstreamBlobSha": "9af88646a765b125fc4d48b5a0e048bd83782ab4"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/office-desk-white-up.png",
+      "upstreamPath": "public/assets/pixel/objects/office-desk-white-up.png",
+      "upstreamBlobSha": "64687c28bb900ccf35650e006e20ce84f67e76ea"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/oval-desk-white-down.png",
+      "upstreamPath": "public/assets/pixel/objects/oval-desk-white-down.png",
+      "upstreamBlobSha": "fdcc29e8fb9ae3611dcc59a2e29f0b3e4a093e29"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/palm-tree-green.png",
+      "upstreamPath": "public/assets/pixel/objects/palm-tree-green.png",
+      "upstreamBlobSha": "148e470d0f9ea58d41b8e111c7e35bf37fc08d55"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/palm-tree-short-green.png",
+      "upstreamPath": "public/assets/pixel/objects/palm-tree-short-green.png",
+      "upstreamBlobSha": "04541ca0c4fa00f121549810d8bb3d8b6a64af61"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/park-bench-wood.png",
+      "upstreamPath": "public/assets/pixel/objects/park-bench-wood.png",
+      "upstreamBlobSha": "ec412a787b176ff8c73fbd601c019ea9accc0b5c"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/philodendron.png",
+      "upstreamPath": "public/assets/pixel/objects/philodendron.png",
+      "upstreamBlobSha": "e22d28705309fcefd3eea86865f74ded3066647c"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/pine-tree-large.png",
+      "upstreamPath": "public/assets/pixel/objects/pine-tree-large.png",
+      "upstreamBlobSha": "e9c365ee03c717a752c819f26c588120ad351be7"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/pine-tree-small.png",
+      "upstreamPath": "public/assets/pixel/objects/pine-tree-small.png",
+      "upstreamBlobSha": "9cd7e73e516b865626716fa2a1ec652c1dc066e5"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/portfolio-drawers-purple-up.png",
+      "upstreamPath": "public/assets/pixel/objects/portfolio-drawers-purple-up.png",
+      "upstreamBlobSha": "06d73eae4c08e6848ece95b8edbfcc90096fb68b"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/portfolio-drawers.png",
+      "upstreamPath": "public/assets/pixel/objects/portfolio-drawers.png",
+      "upstreamBlobSha": "71a6677f9fbb76259f4ff0eabd5efc05c6d32ebe"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/poster-easel-black-up.png",
+      "upstreamPath": "public/assets/pixel/objects/poster-easel-black-up.png",
+      "upstreamBlobSha": "d637d49c191f09a547b6bfa7e83ea03fcb78a934"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/poster-easel-down.png",
+      "upstreamPath": "public/assets/pixel/objects/poster-easel-down.png",
+      "upstreamBlobSha": "3902f67a77e3d3f155d22461a72b06ef5a727415"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/poster-easel-left.png",
+      "upstreamPath": "public/assets/pixel/objects/poster-easel-left.png",
+      "upstreamBlobSha": "7964918b8042ce7c740587d4f92dff1e24010cfd"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/pp501-chair-blue-down.png",
+      "upstreamPath": "public/assets/pixel/objects/pp501-chair-blue-down.png",
+      "upstreamBlobSha": "fcd064c5866fb86c4f69801930064e5938b27d5f"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/pp501-chair-blue-left.png",
+      "upstreamPath": "public/assets/pixel/objects/pp501-chair-blue-left.png",
+      "upstreamBlobSha": "29bb4535a00beda66182c4137154a149fb15ad5d"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/pp501-chair-blue-right.png",
+      "upstreamPath": "public/assets/pixel/objects/pp501-chair-blue-right.png",
+      "upstreamBlobSha": "066a23d3a52e0f6de747cffdc86a16b39d991e0e"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/pp501-chair-blue-up.png",
+      "upstreamPath": "public/assets/pixel/objects/pp501-chair-blue-up.png",
+      "upstreamBlobSha": "ad90794a85db1624fa7ff90074e1345ef31069ac"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/round-coffee-table-coffee-down.png",
+      "upstreamPath": "public/assets/pixel/objects/round-coffee-table-coffee-down.png",
+      "upstreamBlobSha": "6c775e9e972835b28225f4bfcd51a2c384736dab"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/round-table-grey-down.png",
+      "upstreamPath": "public/assets/pixel/objects/round-table-grey-down.png",
+      "upstreamBlobSha": "dd29e594aba0b93bdbe00ba70e8115ce02801659"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/rowboat-wood.png",
+      "upstreamPath": "public/assets/pixel/objects/rowboat-wood.png",
+      "upstreamBlobSha": "39144516b331a6359ec4d935bdf067952d12622c"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/rubber-ducky-yellow-left.png",
+      "upstreamPath": "public/assets/pixel/objects/rubber-ducky-yellow-left.png",
+      "upstreamBlobSha": "9d926e9ad6c00c743f1027ef55d908a1dc68a172"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/sandcastle-sand.png",
+      "upstreamPath": "public/assets/pixel/objects/sandcastle-sand.png",
+      "upstreamBlobSha": "1787ccbc1657654c4552e00d60e03f812d1405cc"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/simple-chair-coffee-down.png",
+      "upstreamPath": "public/assets/pixel/objects/simple-chair-coffee-down.png",
+      "upstreamBlobSha": "fc8a9e76ef9239826684dbd349707fb3e2d045de"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/simple-chair-coffee-left.png",
+      "upstreamPath": "public/assets/pixel/objects/simple-chair-coffee-left.png",
+      "upstreamBlobSha": "535fdb08ca2bbdbb694f311067e2a379521c57cc"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/simple-chair-coffee-right.png",
+      "upstreamPath": "public/assets/pixel/objects/simple-chair-coffee-right.png",
+      "upstreamBlobSha": "4d4188bc8239165c025919f9e88662c2a72eb611"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/simple-chair-coffee-up.png",
+      "upstreamPath": "public/assets/pixel/objects/simple-chair-coffee-up.png",
+      "upstreamBlobSha": "c5268c36e374318ed425cb34ea3cb7a4498ce932"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/simple-coffee-table-black-down.png",
+      "upstreamPath": "public/assets/pixel/objects/simple-coffee-table-black-down.png",
+      "upstreamBlobSha": "3b67f0caaa6bb52355a6e8d5b4b938223d1374fc"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/simple-table-2x3-white-down.png",
+      "upstreamPath": "public/assets/pixel/objects/simple-table-2x3-white-down.png",
+      "upstreamBlobSha": "1e5e2f5e64e9c8a58a8867a89eba2aed451ac29a"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/single-coffee-machine-purple-down.png",
+      "upstreamPath": "public/assets/pixel/objects/single-coffee-machine-purple-down.png",
+      "upstreamBlobSha": "aca1fbded145d281dec693eaa9163d8355981a39"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/single-coffee-machine.png",
+      "upstreamPath": "public/assets/pixel/objects/single-coffee-machine.png",
+      "upstreamBlobSha": "b10907fb96e37022fc45bdfbb3da80e8c3793951"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/small-fishtank-lightteal-down.png",
+      "upstreamPath": "public/assets/pixel/objects/small-fishtank-lightteal-down.png",
+      "upstreamBlobSha": "e6e377d778541e0daaf3f1bcaa94c13afb7638b7"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/small-fishtank.png",
+      "upstreamPath": "public/assets/pixel/objects/small-fishtank.png",
+      "upstreamBlobSha": "5cc41798c20effdc80b9603eb5a51a2f491cddc0"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/small-potted-hosta-orange.png",
+      "upstreamPath": "public/assets/pixel/objects/small-potted-hosta-orange.png",
+      "upstreamBlobSha": "b80df68e14100f720ff93aeda1ae0fc7cf49395c"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/small-potted-hosta-white.png",
+      "upstreamPath": "public/assets/pixel/objects/small-potted-hosta-white.png",
+      "upstreamBlobSha": "44daaac3bc80d3622faba7f02893eaa1dc63152e"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/space-chair-red-down.png",
+      "upstreamPath": "public/assets/pixel/objects/space-chair-red-down.png",
+      "upstreamBlobSha": "671cb87ea12143f509b4df03891af782ea251785"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/space-chair-red-left.png",
+      "upstreamPath": "public/assets/pixel/objects/space-chair-red-left.png",
+      "upstreamBlobSha": "9f7e8a36ab069163a1eb153231ec3d0c78356263"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/space-chair-red-right.png",
+      "upstreamPath": "public/assets/pixel/objects/space-chair-red-right.png",
+      "upstreamBlobSha": "b86231a741871bf3cfb51ab05eec2d61fb56b42b"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/space-chair-red-up.png",
+      "upstreamPath": "public/assets/pixel/objects/space-chair-red-up.png",
+      "upstreamBlobSha": "0d3c94a62aee7a099315e640e6e3a33685ab8b09"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/sprout.png",
+      "upstreamPath": "public/assets/pixel/objects/sprout.png",
+      "upstreamBlobSha": "4d5f78492e2e00f07cda36930e74657a813d75eb"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/street-lamp-black.png",
+      "upstreamPath": "public/assets/pixel/objects/street-lamp-black.png",
+      "upstreamBlobSha": "0b5d57169ac185fc29eeda9f0e6f5f36d6e15956"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/street-tree-green.png",
+      "upstreamPath": "public/assets/pixel/objects/street-tree-green.png",
+      "upstreamBlobSha": "f36feaaeb103da15ff3c6888a8b8865f828f4fd1"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/sun-lounger-white.png",
+      "upstreamPath": "public/assets/pixel/objects/sun-lounger-white.png",
+      "upstreamBlobSha": "004a9820986bf297f7115849146a2a07cc594874"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/surfboard-white.png",
+      "upstreamPath": "public/assets/pixel/objects/surfboard-white.png",
+      "upstreamBlobSha": "72963cb2266c93d924f8618dd82fef847f26f1ea"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/tablet-and-phone-grey-down.png",
+      "upstreamPath": "public/assets/pixel/objects/tablet-and-phone-grey-down.png",
+      "upstreamBlobSha": "c24b74b26a69ba2765672cddc7b7a948ee09bc70"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/tablet-and-phone-white-down.png",
+      "upstreamPath": "public/assets/pixel/objects/tablet-and-phone-white-down.png",
+      "upstreamBlobSha": "9ca3c0a6a479272f3c8a18620bfd3f6c570c6163"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/television-screen-wall-grey-down.png",
+      "upstreamPath": "public/assets/pixel/objects/television-screen-wall-grey-down.png",
+      "upstreamBlobSha": "27d717d6726713fd5c09d36951353678fd7d10d5"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/traffic-light-black.png",
+      "upstreamPath": "public/assets/pixel/objects/traffic-light-black.png",
+      "upstreamBlobSha": "ee5ec4ef6e1a89a506d7f2300115fd5f0a7966fb"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/trash-bin-green.png",
+      "upstreamPath": "public/assets/pixel/objects/trash-bin-green.png",
+      "upstreamBlobSha": "48708b6dcd90d7fc07111d072e40120fcd37fd6f"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/u-shaped-armchair-black-left.png",
+      "upstreamPath": "public/assets/pixel/objects/u-shaped-armchair-black-left.png",
+      "upstreamBlobSha": "1e362d890c8c782a899ef942c52aa818b814d4b5"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/u-shaped-armchair-black-up.png",
+      "upstreamPath": "public/assets/pixel/objects/u-shaped-armchair-black-up.png",
+      "upstreamBlobSha": "faba5725e69df3b0c24fd60a119fd0e23cbf5f8c"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/wall-cabinet-black-down.png",
+      "upstreamPath": "public/assets/pixel/objects/wall-cabinet-black-down.png",
+      "upstreamBlobSha": "7b0c1016b981a5fb3881e4de05cac9cbff6d81b8"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/wall-clock-minimal-face-black-down.png",
+      "upstreamPath": "public/assets/pixel/objects/wall-clock-minimal-face-black-down.png",
+      "upstreamBlobSha": "20aa883e838bfa71271055ef877cfca148431fc4"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/wall-clock-minimal-face-black-up.png",
+      "upstreamPath": "public/assets/pixel/objects/wall-clock-minimal-face-black-up.png",
+      "upstreamBlobSha": "419b0c54ecf06a718808550796883a460d9a1f2b"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/water-cooler.png",
+      "upstreamPath": "public/assets/pixel/objects/water-cooler.png",
+      "upstreamBlobSha": "95146fbcdb920f01dbc6f2344ef0e46ff511d134"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/whiteboard.png",
+      "upstreamPath": "public/assets/pixel/objects/whiteboard.png",
+      "upstreamBlobSha": "ed7e35f123b73c1e1b325df01d9be58ca7d92872"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/z-chair-blue-down.png",
+      "upstreamPath": "public/assets/pixel/objects/z-chair-blue-down.png",
+      "upstreamBlobSha": "afa34875974a801eb6b5594f1124748c78373b00"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/z-chair-blue-left.png",
+      "upstreamPath": "public/assets/pixel/objects/z-chair-blue-left.png",
+      "upstreamBlobSha": "7d929d3b556189c162b1662be748c2af1b68a464"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/z-chair-blue-right.png",
+      "upstreamPath": "public/assets/pixel/objects/z-chair-blue-right.png",
+      "upstreamBlobSha": "f7114864dcbe0422eb64a0582edd8d3e23f7e831"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/objects/z-chair-blue-up.png",
+      "upstreamPath": "public/assets/pixel/objects/z-chair-blue-up.png",
+      "upstreamBlobSha": "c4bf4d705727715931542eb261178e6e4f019b14"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/vehicles/car-blue.png",
+      "upstreamPath": "public/assets/pixel/vehicles/car-blue.png",
+      "upstreamBlobSha": "3e5af4277d8605dfc6696d943ce902baf1aa6f5a"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/vehicles/car-green.png",
+      "upstreamPath": "public/assets/pixel/vehicles/car-green.png",
+      "upstreamBlobSha": "6e9f1ad84050545a044dc0ce0a0ed426c7545022"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/vehicles/car-red.png",
+      "upstreamPath": "public/assets/pixel/vehicles/car-red.png",
+      "upstreamBlobSha": "c0f232bc28706c8ab49f8e36986dbb9ed9d61b1a"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/vehicles/car-taxi.png",
+      "upstreamPath": "public/assets/pixel/vehicles/car-taxi.png",
+      "upstreamBlobSha": "aa7c599ab8c321f4c3373c3681e3971c33b638ae"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/vehicles/city-bus.png",
+      "upstreamPath": "public/assets/pixel/vehicles/city-bus.png",
+      "upstreamBlobSha": "6c57f0bd27080a62e2f95f1e49028924352d6d39"
+    },
+    {
+      "path": "apps/web/public/assets/pixel/vehicles/van-white.png",
+      "upstreamPath": "public/assets/pixel/vehicles/van-white.png",
+      "upstreamBlobSha": "fe0af42e9d4ef3963e808e0a14f8c1157568e1ea"
+    },
+    {
+      "path": "apps/web/public/favicon.svg",
+      "upstreamPath": "public/favicon.svg",
+      "upstreamBlobSha": "da0d04e3c93fc48634152d40a1c4400eb3a6a47e"
+    },
+    {
+      "path": "apps/web/public/thumbnails/campus.jpg",
+      "upstreamPath": "public/thumbnails/campus.jpg",
+      "upstreamBlobSha": "700f09c777fa4668945b541f9f76907fa5280603"
+    },
+    {
+      "path": "apps/web/public/thumbnails/empty.jpg",
+      "upstreamPath": "public/thumbnails/empty.jpg",
+      "upstreamBlobSha": "95f2ab17c00c97c19565dfd2db59a58ac52f2fc3"
+    },
+    {
+      "path": "apps/web/public/thumbnails/office.jpg",
+      "upstreamPath": "public/thumbnails/office.jpg",
+      "upstreamBlobSha": "f58a7730d19214ff154a5aa8cab181c19a0c3d8f"
+    },
+    {
+      "path": "apps/web/public/thumbnails/studio.jpg",
+      "upstreamPath": "public/thumbnails/studio.jpg",
+      "upstreamBlobSha": "802a4c14ddd3746672b5573ef6b63ebc1487b0f3"
+    },
+    {
+      "path": "apps/web/public/thumbnails/vivo.jpg",
+      "upstreamPath": "public/thumbnails/vivo.jpg",
+      "upstreamBlobSha": "f58a7730d19214ff154a5aa8cab181c19a0c3d8f"
+    }
+  ]
+}

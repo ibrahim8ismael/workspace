@@ -1,4 +1,10 @@
 {
   "extends": "@gather/tooling/typescript/react.json",
-  "include": ["src"]
+  "include": ["**/*.ts", "**/*.tsx"],
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "noUncheckedIndexedAccess": false,
+    "exactOptionalPropertyTypes": false
+  },
+  "exclude": ["node_modules", "dist", "vite.config.ts"]
 }

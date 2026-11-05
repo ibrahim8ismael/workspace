@@ -1,0 +1,24 @@
+import type { Seat } from './vivo-geometry';
+export type MeetingArea = {
+  id: string;
+  name: string;
+  type: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  capacity?: number;
+  parent?: string | null;
+};
+export const MEETING_ROOMS: MeetingArea[];
+export function meetingRoom(areaId: string): MeetingArea | null;
+export function meetingRoomOf(point: { x: number; y: number }): MeetingArea | null;
+export function meetingRoomAt(tx: number, ty: number): MeetingArea | null;
+export function inMeetingRoom(point: { x: number; y: number }, area: MeetingArea): boolean;
+export function roomSeats(area: MeetingArea, seats: Seat[]): Seat[];
+export const DEFAULT_MEETING: { locked: boolean };
+export const DESK_AREAS: MeetingArea[];
+export function deskAt(tx: number, ty: number): MeetingArea | null;
+export function deskSeats(area: MeetingArea, seats: Seat[]): Seat[];
+export const FOCUS_ROOMS: MeetingArea[];
+export function focusRoomOf(point: { x: number; y: number }): MeetingArea | null;

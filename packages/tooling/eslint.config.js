@@ -35,6 +35,15 @@ export default tseslint.config(
     },
   },
   {
+    files: ['apps/web/**/*.{ts,tsx}'],
+    ignores: ['apps/web/src/**', 'apps/web/vite.config.ts'],
+    plugins: { 'react-hooks': hooks },
+    rules: {
+      'react-hooks/rules-of-hooks': 'error',
+      'no-restricted-imports': ['error', { patterns: serverOnly }],
+    },
+  },
+  {
     files: ['packages/contracts/src/**/*.ts', 'packages/world/src/**/*.ts'],
     rules: {
       'no-restricted-imports': [

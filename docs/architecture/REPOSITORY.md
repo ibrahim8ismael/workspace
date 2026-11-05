@@ -1,13 +1,14 @@
 # Repository implementation layout
 
-Status: scaffold implemented; product domains pending · Updated: 2026-11-05
+Status: scaffold plus imported web/shared client; product integration pending · Updated: 2026-11-05
 
 The owner approved the refined structure and requested library installation with incremental pushes and no Docker execution. This page supersedes the earlier suggested folder decomposition; architecture/security requirements in the source brief still apply.
 
 | Path | Responsibility | Current implementation |
 |---|---|---|
-| apps/web | React/Vite shell; identity/company/team/office/conversation/media feature boundaries | Minimal shell, query/router providers; no account or office functionality |
-| apps/web/src/features/office | React controls, Phaser, typed bridge, realtime adapter and state | Tracked folders only; no upstream art or scene yet |
+| apps/web | Imported React/Vite client, temporarily in upstream root-level layout | Dashboard and React/SVG office entry view; legacy backend integration pending |
+| apps/shared | Imported JavaScript office/map helpers and adjacent declarations | Private pnpm workspace with import/map regression tests |
+| Future apps/web/src/features/office | Planned React controls, Phaser, typed bridge, realtime adapter and state | Original empty scaffold replaced by owner import; feature restructuring pending |
 | apps/api | NestJS modular HTTP and future Socket.IO/runtime host | Config validation, security headers and process liveness endpoint |
 | apps/api/src/modules/identity | Accounts, credentials and sessions | Empty module and tracked feature folders |
 | apps/api/src/modules/tenancy | Workspace company boundary, memberships, invitations and policies | Empty module and tracked feature folders |
@@ -16,7 +17,7 @@ The owner approved the refined structure and requested library installation with
 | apps/worker | Outbox dispatch and delivery processors/providers | Entrypoint validates shared imports, prints scaffold status and exits |
 | packages/contracts | Public runtime schemas and DTOs | Liveness response schema only |
 | packages/world | Pure engine-independent rules | Point type only; coordinate units and map format open |
-| packages/assets | Cleared static art and manifests | Empty provenance inventory; no imported upstream material |
+| packages/assets | Asset provenance inventory | Records pinned public assets currently under apps/web/public; private reference art excluded |
 | packages/delivery | Server-only outbox/job contracts shared with worker | Strict outbox-ID job-reference schema; no persistence/processor |
 | packages/tooling | Strict TS Node/React configurations and ESLint composition | Configured and used by workspace checks |
 | spikes/media-enforcement | M0 custom guard/supervision proof outside production apps | Planning README only |
@@ -40,3 +41,5 @@ Key installed libraries: React 19.3.1, Vite 8.3.6, Phaser 4.2.1, NestJS 12.3.3, 
 Native Argon2 install succeeded. The optional MessagePack accelerator install script is skipped; MessagePack uses its JavaScript fallback. Installation starts no application, database, queue or Docker service.
 
 Version/compatibility references consulted: [Vite prerequisites](https://vite.dev/guide/), [NestJS setup](https://docs.nestjs.com/first-steps), and package metadata from the npm registry. The manifests use versions checked against their actual peer requirements rather than historical snapshot versions.
+
+The [web import notes](../migration/WEB_IMPORT.md) supersede the original empty-web setup status and explain source provenance, compatibility settings and backend limitations.

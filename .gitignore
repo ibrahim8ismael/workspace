@@ -13,3 +13,6 @@ coverage/
 !.env.*.example
 playwright-report/
 test-results/
+
+# Upstream local-only reference artwork is not distributable source material.
+apps/web/sprites/reference/

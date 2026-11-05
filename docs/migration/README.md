@@ -1,8 +1,10 @@
 # Upstream reuse and migration plan
 
-Status: no upstream code/assets imported · Updated: 2026-11-05
+Status: user-supplied web/shared code integrated with pnpm; product migration pending · Updated: 2026-11-05
 
 Source brief: [upstream inventory and limitations](../../GATHER_LITE_PROJECT_KNOWLEDGE.md). Its observed tree SHA `23d6b8999396f9e9d51291bf85bd7b72161f833f` is not a commit pin. Pin an actual commit before reuse; the supplied snapshot is not proof of current upstream behavior or cleared asset rights.
+
+See [web/shared integration](WEB_IMPORT.md) and [pinned source manifest](UPSTREAM_IMPORT.json) for the current import and verification limits.
 
 ## Import sequence
 

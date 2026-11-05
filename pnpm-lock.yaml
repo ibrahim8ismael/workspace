@@ -127,6 +127,8 @@ importers:
         specifier: 6.0.3
         version: 6.0.3
 
+  apps/shared: {}
+
   apps/web:
     dependencies:
       '@gather/assets':
@@ -135,6 +137,9 @@ importers:
       '@gather/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@gather/legacy-shared':
+        specifier: workspace:*
+        version: link:../shared
       '@gather/world':
         specifier: workspace:*
         version: link:../../packages/world

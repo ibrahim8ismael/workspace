@@ -2,7 +2,7 @@
 
 Status: initial planning baseline · Updated: 2026-11-05
 
-Gather Lite is a **B2B SaaS virtual office for companies and their teams**, delivered through a browser with React application controls, a Phaser world, NestJS APIs, Socket.IO authoritative office state, MongoDB/Mongoose durable data, Redis/BullMQ jobs, and self-hosted LiveKit media. The initial monorepo scaffold and dependencies are installed; product features remain unimplemented. Product schemas, routes, tasks and acceptance checks below remain proposed or planned unless supported by implementation evidence. The scaffold liveness route and job-reference schema are recorded in the repository setup notes.
+Gather Lite is a **B2B SaaS virtual office for companies and their teams**, delivered through a browser with React application controls, a Phaser world, NestJS APIs, Socket.IO authoritative office state, MongoDB/Mongoose durable data, Redis/BullMQ jobs, and self-hosted LiveKit media. The monorepo scaffold and dependencies are installed, and the imported web/shared client renders locally; integration with the new backend and product authorization remain unimplemented. Product schemas, routes, tasks and acceptance checks below remain proposed or planned unless supported by implementation evidence. The scaffold liveness route and job-reference schema are recorded in the repository setup notes.
 
 ## Product direction
 
@@ -55,3 +55,5 @@ Use English for technical documentation, as specified in the source brief. Updat
 Repository setup is tracked in [setup progress](planning/SETUP_PROGRESS.md).
 
 The [implemented repository layout](architecture/REPOSITORY.md) records the refined module grouping and package ownership.
+
+The latest [web/shared import](migration/WEB_IMPORT.md) records the actual frontend source layout and its current limitations.

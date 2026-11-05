@@ -57,3 +57,5 @@ Repository setup is tracked in [setup progress](planning/SETUP_PROGRESS.md).
 The [implemented repository layout](architecture/REPOSITORY.md) records the refined module grouping and package ownership.
 
 The latest [web/shared import](migration/WEB_IMPORT.md) records the actual frontend source layout and its current limitations.
+
+Backend work starts from the [authentication and company roles implementation plan](planning/AUTH_AND_ROLES_IMPLEMENTATION.md), written before source implementation.

@@ -1,0 +1,45 @@
+{
+  "name": "@gather/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node --env-file-if-exists=../../.env dist/main.js",
+    "dev": "pnpm build && concurrently --kill-others \"tsc -p tsconfig.json --watch --preserveWatchOutput\" \"node --watch --env-file-if-exists=../../.env dist/main.js\""
+  },
+  "dependencies": {
+    "@gather/contracts": "workspace:*",
+    "@gather/world": "workspace:*",
+    "@gather/delivery": "workspace:*",
+    "@nestjs/common": "12.3.3",
+    "@nestjs/core": "12.3.3",
+    "@nestjs/config": "12.1.0",
+    "@nestjs/platform-express": "12.3.3",
+    "@nestjs/websockets": "12.3.3",
+    "@nestjs/platform-socket.io": "12.3.3",
+    "@nestjs/mongoose": "12.0.0",
+    "@nestjs/bullmq": "12.0.0",
+    "@nestjs/throttler": "6.7.1",
+    "mongoose": "9.12.0",
+    "socket.io": "4.8.4",
+    "bullmq": "6.7.0",
+    "ioredis": "6.0.0",
+    "livekit-server-sdk": "2.19.2",
+    "argon2": "0.45.2",
+    "cookie-parser": "1.4.7",
+    "helmet": "8.3.0",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@gather/tooling": "workspace:*",
+    "typescript": "6.0.3",
+    "@types/node": "24.19.2",
+    "@types/cookie-parser": "1.4.10",
+    "@types/express": "5.0.6",
+    "concurrently": "10.0.6"
+  }
+}

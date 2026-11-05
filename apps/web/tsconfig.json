@@ -1,0 +1,4 @@
+{
+  "extends": "@gather/tooling/typescript/react.json",
+  "include": ["src"]
+}

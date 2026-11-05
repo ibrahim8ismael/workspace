@@ -5,4 +5,7 @@ packages:
 onlyBuiltDependencies:
   - argon2
   - esbuild
-  - '@swc/core'
+
+# Optional MessagePack native accelerator; the library has a JavaScript fallback.
+ignoredBuiltDependencies:
+  - msgpackr-extract

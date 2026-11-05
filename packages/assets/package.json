@@ -1,0 +1,11 @@
+{
+  "name": "@gather/assets",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./manifests/*": "./manifests/*",
+    "./maps/*": "./maps/*",
+    "./sprites/*": "./sprites/*"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "@gather/world",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "devDependencies": {
+    "@gather/tooling": "workspace:*",
+    "typescript": "6.0.3",
+    "@types/node": "24.19.2"
+  }
+}

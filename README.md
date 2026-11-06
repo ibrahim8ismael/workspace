@@ -21,7 +21,7 @@ B2B SaaS virtual offices for companies and their teams.
 
 Use Node 24.18+ on the 24.x line and pnpm 10.33.x. Exact direct dependency versions and the lockfile are committed. The initial application/tooling scaffold is installed; see [setup progress](docs/planning/SETUP_PROGRESS.md) and [repository ownership](docs/architecture/REPOSITORY.md).
 
-Docker and infrastructure services are not started by repository setup or dependency installation. The imported web client is now present; the NestJS starter still does not implement authentication, customer policy, office admission, queues or media enforcement. Never expose an unauthenticated world or debug media issuer as a shortcut.
+Docker and infrastructure services are not started by repository setup or dependency installation. The imported web client is now present; the backend now implements authentication and company owner/member policy, with configured mail outbox processing. Office admission and media enforcement remain pending. Never expose an unauthenticated world or debug media issuer as a shortcut.
 
 ## Documentation
 
@@ -31,26 +31,28 @@ Start with [project documentation](docs/README.md), the [authoritative brief](GA
 
 ```sh
 pnpm install --frozen-lockfile
-# Optional: defaults work without a local .env.
+# Configure MongoDB and the outbox key before starting the backend.
 cp .env.example .env
+# Set MONGODB_URI and OUTBOX_ENCRYPTION_KEY in .env.
+pnpm db:indexes
 pnpm dev
 ```
 
-`pnpm dev` builds shared packages once, then starts Vite and the loopback API. Open http://localhost:5173. The imported dashboard and office entry view render locally. Its workspace/account APIs and legacy `/ws` protocol are not yet connected to NestJS; see [web integration boundaries](apps/web/README.md). The API exposes only `GET /api/health/live` on port 3000. It does not connect to MongoDB, Redis or LiveKit. This endpoint is liveness, not production readiness.
+`pnpm dev` builds shared packages once, then starts Vite and the loopback API. Open http://localhost:5173. The imported dashboard and office entry view render locally. Its workspace/account APIs and legacy `/ws` protocol are not yet connected to NestJS; see [web integration boundaries](apps/web/README.md). The API now requires a reachable transaction-capable MongoDB replica set, an outbox encryption key, and provisioned indexes. See the [backend setup guide](apps/api/README.md) and [API contract](docs/contracts/AUTH_AND_ROLES_API.md). `/api/health/live` remains liveness only. No LiveKit service is connected.
 
-| Command               | Purpose                                                             |
-| --------------------- | ------------------------------------------------------------------- |
-| `pnpm dev:web`        | Web development server only                                         |
-| `pnpm dev:api`        | API compiler watch plus Node restart with decorator metadata        |
-| `pnpm dev:worker`     | Worker scaffold; exits until processors are implemented             |
-| `pnpm build:packages` | Rebuild shared packages after changing their source                 |
-| `pnpm build`          | Build shared packages, API, worker and production web assets        |
-| `pnpm typecheck`      | Check TypeScript across all source packages                         |
-| `pnpm lint`           | ESLint and browser/server import boundaries                         |
-| `pnpm format`         | Format source/configuration; existing project briefs/docs preserved |
-| `pnpm check`          | Formatting, lint, typecheck, shared regressions and full build      |
-| `pnpm clean`          | Remove generated workspace build outputs                            |
+| Command               | Purpose                                                                |
+| --------------------- | ---------------------------------------------------------------------- |
+| `pnpm dev:web`        | Web development server only                                            |
+| `pnpm dev:api`        | API compiler watch plus Node restart with decorator metadata           |
+| `pnpm dev:worker`     | Worker scaffold; exits until processors are implemented                |
+| `pnpm build:packages` | Rebuild shared packages after changing their source                    |
+| `pnpm build`          | Build shared packages, API, worker and production web assets           |
+| `pnpm typecheck`      | Check TypeScript across all source packages                            |
+| `pnpm lint`           | ESLint and browser/server import boundaries                            |
+| `pnpm format`         | Format source/configuration; existing project briefs/docs preserved    |
+| `pnpm check`          | Formatting, lint, typecheck, backend/shared regressions and full build |
+| `pnpm clean`          | Remove generated workspace build outputs                               |
 
-Shared packages expose compiled ESM and declarations. Re-run `pnpm build:packages` and restart the app when editing shared code during development. The API and web watch their own sources. No install/build/dev command starts Docker. Vitest is available for future focused tests; five shared import/map/asset regression checks exist; full product tests remain future work.
+Shared packages expose compiled ESM and declarations. Re-run `pnpm build:packages` and restart the app when editing shared code during development. The API and web watch their own sources. No install/build/dev command starts Docker. Vitest is available for future focused tests; shared import/map/asset and backend auth/role regression checks are included; broader product/media tests remain future work.
 
-CI performs a frozen install and `pnpm check` without Docker or external service credentials. Private `.env` files, `node_modules`, build outputs and coverage are ignored by Git.
+CI performs a frozen install and `pnpm check` without Docker or external service credentials. Backend tests download/run a temporary MongoDB binary in an ignored cache and stop it afterward; they do not send real email. Private `.env` files, `node_modules`, build outputs and coverage are ignored by Git.

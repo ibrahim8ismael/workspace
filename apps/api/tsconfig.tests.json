@@ -1,0 +1,5 @@
+{
+  "extends": "@gather/tooling/typescript/node.json",
+  "compilerOptions": { "rootDir": ".", "noEmit": true },
+  "include": ["test/**/*.ts", "vitest.config.ts"]
+}

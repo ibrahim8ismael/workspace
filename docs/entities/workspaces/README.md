@@ -2,6 +2,9 @@
 
 Status: draft plan · Updated: 2026-11-05 · Target: M1
 
+
+Initial backend scope is now described by the [implemented auth/company API guide](../../contracts/AUTH_AND_ROLES_API.md). Existing plan fields below retain their draft status where not covered by that implementation; production/provider/recovery acceptance remains separate.
+
 ## Responsibility
 
 Define the customer-company tenant boundary for office configuration and collaboration. The recommended MVP mapping is one company per workspace, with one office. A parent organization owning multiple workspaces remains an open M0 decision; see the [B2B SaaS plan](../../product/B2B_SAAS.md).

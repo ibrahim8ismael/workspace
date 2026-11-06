@@ -1,6 +1,6 @@
 # Backend authentication and roles implementation plan
 
-Status: planning completed before source implementation; all implementation gates pending.
+Status: initial backend slice implemented and locally verified; plan was committed first as a2858c8.
 
 ## Authorized scope
 
@@ -97,3 +97,13 @@ All routes are under `/api`. Public authentication mutations still require valid
 ## Remaining deployment/product decisions
 
 SMTP provider/domain, production Mongo/Redis endpoints, secret key storage, independent recovery audit mirror, hashing/load measurements, deployment HTTPS ingress and the organization hierarchy remain explicit follow-up choices. The existing media-revocation/supervision proof is still an independent release gate; backend auth work cannot mark it passed. No service-level guarantee or production readiness is established by this initial slice.
+
+## Progress evidence
+
+- Planning checkpoint: `a2858c8`, committed and pushed before backend source edits.
+- Final real HTTP/Mongo and primitive suite: 31 backend tests passed locally, plus five shared checks.
+- Suspension/session/body-limit scenarios and pnpm/CI integration are included. Full `pnpm check` passed.
+- Frontend code and connections remain unchanged. No Docker or real mail delivery was run.
+- See [implemented API contract](../contracts/AUTH_AND_ROLES_API.md) for current behavior and remaining release gates.
+
+Detailed local results and remaining release gates: [implementation evidence](AUTH_IMPLEMENTATION_EVIDENCE.md). Hosted commit status is available in GitHub Actions.

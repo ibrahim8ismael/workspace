@@ -2,6 +2,9 @@
 
 Status: draft plan · Updated: 2026-11-05 · Target: M1–M5
 
+
+Initial backend scope is now described by the [implemented auth/company API guide](../../contracts/AUTH_AND_ROLES_API.md). Existing plan fields below retain their draft status where not covered by that implementation; production/provider/recovery acceptance remains separate.
+
 ## Responsibility
 
 Record minimal security mutations and support safe restore reconciliation.

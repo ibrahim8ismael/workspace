@@ -19,9 +19,11 @@
     "lint": "eslint . --max-warnings 0",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test:shared && pnpm build",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test:shared && pnpm test:api && pnpm build",
     "clean": "node scripts/clean.mjs",
-    "test:shared": "pnpm --filter @gather/legacy-shared test"
+    "test:shared": "pnpm --filter @gather/legacy-shared test",
+    "test:api": "pnpm build:packages && pnpm --filter @gather/worker build && pnpm --filter @gather/api test",
+    "db:indexes": "pnpm build:packages && pnpm --filter @gather/api db:indexes"
   },
   "devDependencies": {
     "typescript": "6.0.3",

@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-
-/** Module boundary only; feature implementation is pending. */
-@Module({})
+import { AuditService } from './audit.service.js';
+@Module({ providers: [AuditService], exports: [AuditService] })
 export class AuditModule {}

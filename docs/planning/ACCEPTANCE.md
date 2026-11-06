@@ -1,6 +1,6 @@
 # Acceptance and evidence register
 
-Status: no application checks executed; all entries pending · Updated: 2026-11-05
+Status: initial backend subset locally verified; deployment/media/pilot gates remain pending · Updated: 2026-11-05
 
 Documentation review is not implementation verification. Add an evidence record with environment/build, exact scenario, observed result, measurements, date, responsible person and artifact/code link. A failed gate remains open until corrected and rerun.
 
@@ -33,3 +33,5 @@ Pass/fail and remaining limitations:
 ```
 
 All P1 security controls inherited from the source brief must have evidence before pilot signoff. Assign deployment, recovery and patching owners. No capacity, recovery or revocation guarantee is verified by this register's existence.
+
+Initial backend evidence is recorded in [AUTH_IMPLEMENTATION_EVIDENCE.md](AUTH_IMPLEMENTATION_EVIDENCE.md). It covers local portions of A01–A03 and A09; actual email/provider/deployed-origin/queue/recovery requirements remain pending, so the full release gates above are not marked passed.

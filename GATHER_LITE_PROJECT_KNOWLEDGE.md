@@ -1,8 +1,8 @@
 # Gather Lite — Project Knowledge and Implementation Brief
 
-**Version:** 1.2
-**Updated:** 2026-11-05  
-**Status:** Architecture and migration brief; monorepo scaffold and libraries installed, while product features remain unimplemented.
+**Version:** 1.3
+**Updated:** 2026-11-06
+**Status:** Architecture and migration brief; initial backend auth/company APIs implemented; frontend, office/media integration and production gates remain pending.
 **Audience:** The project owner, developers, and Codex working in the implementation repository.
 
 ## 1. How Codex should use this document
@@ -41,6 +41,8 @@ The owner selected this direction:
 This is a frontend reuse and backend migration project, with a renderer rewrite. It is more work than hosting an unmodified upstream fork, and it should proceed through small working slices.
 
 **Repository setup update (2026-11-05):** The owner authorized the refined monorepo structure, library installation and incremental GitHub pushes, with no Docker execution. React/Vite, pnpm workspaces, the NestJS API scaffold, a non-consuming worker scaffold and shared contracts/world/assets/delivery/tooling packages now exist. See [repository implementation layout](docs/architecture/REPOSITORY.md) and [setup evidence](docs/planning/SETUP_PROGRESS.md). The API liveness route is the only implemented endpoint. Product authorization and media-enforcement requirements remain unverified.
+
+**Backend update (2026-11-06):** The owner requested backend-only authentication and company roles, with no frontend connection. The plan was committed before implementation. The initial implementation covers account/session/password flows, company owner/member policy, invitation/ownership transactions, audit records and encrypted mail outbox/worker plumbing. See [API contract and limitations](docs/contracts/AUTH_AND_ROLES_API.md). Real SMTP deliverability, production infrastructure, independent audit recovery evidence and office/media authorization remain separate gates. No Docker was run.
 
 ## 3. Current stack and superseded decisions
 

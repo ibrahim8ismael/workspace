@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { DatabaseModule } from './platform/database/database.module.js';
+import { IndexesService } from './platform/database/indexes.service.js';
 import { ConfigModule } from '@nestjs/config';
 import { IdentityModule } from './modules/identity/identity.module.js';
 import { TenancyModule } from './modules/tenancy/tenancy.module.js';
@@ -16,6 +18,7 @@ import { environmentSchema } from './platform/config/environment.js';
       ignoreEnvFile: true,
       validate: (config: Record<string, unknown>) => environmentSchema.parse(config),
     }),
+    DatabaseModule,
     IdentityModule,
     TenancyModule,
     OfficeModule,
@@ -24,5 +27,6 @@ import { environmentSchema } from './platform/config/environment.js';
     AuditModule,
   ],
   controllers: [HealthController],
+  providers: [IndexesService],
 })
 export class AppModule {}

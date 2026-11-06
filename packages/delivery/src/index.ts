@@ -8,3 +8,5 @@ export const deliveryJobReferenceSchema = z
   .strict();
 
 export type DeliveryJobReference = z.infer<typeof deliveryJobReferenceSchema>;
+
+export * from './outbox.js';

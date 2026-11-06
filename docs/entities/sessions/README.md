@@ -2,6 +2,9 @@
 
 Status: draft plan · Updated: 2026-11-05 · Target: M1
 
+
+Initial backend scope is now described by the [implemented auth/company API guide](../../contracts/AUTH_AND_ROLES_API.md). Existing plan fields below retain their draft status where not covered by that implementation; production/provider/recovery acceptance remains separate.
+
 ## Responsibility
 
 Authenticate browser requests using an opaque cookie and authoritative server state.

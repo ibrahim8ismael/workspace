@@ -2,6 +2,9 @@
 
 Status: draft plan · Updated: 2026-11-05 · Target: M1
 
+
+Initial backend scope is now described by the [implemented auth/company API guide](../../contracts/AUTH_AND_ROLES_API.md). Existing plan fields below retain their draft status where not covered by that implementation; production/provider/recovery acceptance remains separate.
+
 ## Responsibility
 
 Authorize a user inside one customer-company workspace with an owner or member role. The same global user may hold independent memberships in different companies; roles and access never carry between them.

@@ -1,6 +1,8 @@
 # HTTP contract outline
 
-Status: proposed route naming and behavior; not an implemented API · Updated: 2026-11-05
+Status: auth/company routes implemented; office/media routes remain proposed · Updated: 2026-11-05
+
+The [implemented authentication and company roles guide](AUTH_AND_ROLES_API.md) is authoritative for the current backend route shapes, headers, validation and verification limits. The outline below retains future office/media work.
 
 ## Common behavior
 

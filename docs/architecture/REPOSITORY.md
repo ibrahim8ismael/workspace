@@ -9,16 +9,16 @@ The owner approved the refined structure and requested library installation with
 | apps/web | Imported React/Vite client, temporarily in upstream root-level layout | Dashboard and React/SVG office entry view; legacy backend integration pending |
 | apps/shared | Imported JavaScript office/map helpers and adjacent declarations | Private pnpm workspace with import/map regression tests |
 | Future apps/web/src/features/office | Planned React controls, Phaser, typed bridge, realtime adapter and state | Original empty scaffold replaced by owner import; feature restructuring pending |
-| apps/api | NestJS modular HTTP and future Socket.IO/runtime host | Config validation, security headers and process liveness endpoint |
-| apps/api/src/modules/identity | Accounts, credentials and sessions | Empty module and tracked feature folders |
-| apps/api/src/modules/tenancy | Workspace company boundary, memberships, invitations and policies | Empty module and tracked feature folders |
+| apps/api | NestJS modular HTTP and future Socket.IO/runtime host | Backend authentication, company roles, validation, cookies/CSRF, Mongo transactions and liveness |
+| apps/api/src/modules/identity | Accounts, credentials, sessions, tokens and auth delivery | Implemented backend account lifecycle and session/CSRF guards |
+| apps/api/src/modules/tenancy | Workspace company boundary, memberships, invitations and policies | Implemented scoped owner/member APIs, invitations and owner/capacity transactions |
 | apps/api/src/modules/office | Maps, admission, authoritative movement, seats and gateway adapters | Empty module and tracked feature folders; no open socket gateway |
 | apps/api/src/modules/conversations, media, audit | Policy-owned conversation, media and audit work | Empty module boundaries |
-| apps/worker | Outbox dispatch and delivery processors/providers | Entrypoint validates shared imports, prints scaffold status and exits |
-| packages/contracts | Public runtime schemas and DTOs | Liveness response schema only |
+| apps/worker | Outbox dispatch and delivery processors/providers | Explicitly configured BullMQ/SMTP worker; no real mail sent in tests |
+| packages/contracts | Public runtime schemas and DTOs | Liveness plus auth/company request schemas and safe account/workspace DTOs |
 | packages/world | Pure engine-independent rules | Point type only; coordinate units and map format open |
 | packages/assets | Asset provenance inventory | Records pinned public assets currently under apps/web/public; private reference art excluded |
-| packages/delivery | Server-only outbox/job contracts shared with worker | Strict outbox-ID job-reference schema; no persistence/processor |
+| packages/delivery | Server-only outbox/job contracts shared with worker | Strict ID job schema, Mongo outbox schema and authenticated encryption helpers |
 | packages/tooling | Strict TS Node/React configurations and ESLint composition | Configured and used by workspace checks |
 | spikes/media-enforcement | M0 custom guard/supervision proof outside production apps | Planning README only |
 | infra | Future Compose/Caddy/Mongo/Redis/media settings | Empty tracked directories; no containers run |
@@ -43,3 +43,5 @@ Native Argon2 install succeeded. The optional MessagePack accelerator install sc
 Version/compatibility references consulted: [Vite prerequisites](https://vite.dev/guide/), [NestJS setup](https://docs.nestjs.com/first-steps), and package metadata from the npm registry. The manifests use versions checked against their actual peer requirements rather than historical snapshot versions.
 
 The [web import notes](../migration/WEB_IMPORT.md) supersede the original empty-web setup status and explain source provenance, compatibility settings and backend limitations.
+
+The [backend-only auth/company API guide](../contracts/AUTH_AND_ROLES_API.md) supersedes the original empty identity/tenancy/worker status. Office/media runtime, frontend integration and production release evidence remain pending.

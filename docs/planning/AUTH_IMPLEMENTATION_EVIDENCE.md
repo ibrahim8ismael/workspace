@@ -10,8 +10,9 @@ The implementation plan was committed and pushed first as `a2858c8`: [plan](AUTH
 
 Executed with Node 24.18.0 / pnpm 10.33.0 and the pinned workspace lockfile:
 
-- `pnpm check`: passed (formatting, lint, all TypeScript checks, shared tests, backend tests and workspace builds).
-- Backend: 31 passing tests across two files; the integration suite uses real NestJS HTTP and MongoDB 8.2.6 in a temporary single-node replica set.
+- `pnpm check`: passed locally and in hosted CI for the initial 31-test implementation (formatting, lint, all TypeScript checks, shared tests, backend tests and workspace builds).
+- After startup-index hardening, the targeted backend suite/build/typecheck passed with 32 tests; CI runs the complete check for that commit.
+- Backend: 32 passing tests across two files; the integration suite uses real NestJS HTTP and MongoDB 8.2.6 in a temporary single-node replica set.
 - Shared: five passing import/map/asset tests. The frontend was built as part of the existing repository check but no frontend source was edited or connected to the new API.
 - `git diff --check`: clean after preserving original brief formatting appropriately.
 - Documentation file links resolve.
@@ -19,6 +20,7 @@ Executed with Node 24.18.0 / pnpm 10.33.0 and the pinned workspace lockfile:
 ## Behaviors exercised
 
 - Strict DTOs, email canonicalization, unknown-field/role/operator rejection and bounded JSON bodies.
+- Startup rejects a compound index that includes email but does not enforce email uniqueness; required indexes must have the exact unfiltered/non-sparse unique key shape.
 - Argon2id verification, wrong/unknown password handling and initial weak-password policy.
 - Authenticated encryption integrity and outbox-identity binding; no token plaintext in API responses or ID-only jobs.
 - Safe CSRF bootstrap, origin rejection, preservation of valid existing cookies, session/CSRF rotation and cookie flags.

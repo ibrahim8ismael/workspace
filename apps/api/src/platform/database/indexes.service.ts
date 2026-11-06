@@ -37,10 +37,20 @@ export class IndexesService implements OnApplicationBootstrap {
       { model: this.identity.tokens, key: 'tokenDigest' },
       { model: this.tenancy.workspaces, key: 'slug' },
       { model: this.tenancy.invitations, key: 'tokenDigest' },
+      { model: this.tenancy.offices, key: 'workspaceId' },
     ];
     for (const { model, key } of required) {
       const indexes = await model.collection.indexes();
-      if (!indexes.some((index) => index.unique && key in index.key))
+      if (
+        !indexes.some(
+          (index) =>
+            index.unique &&
+            !index.sparse &&
+            !index.partialFilterExpression &&
+            Object.keys(index.key).length === 1 &&
+            index.key[key] === 1,
+        )
+      )
         throw new Error(
           `Missing required unique index: ${model.collection.name}/${key}. Run db:indexes.`,
         );
@@ -48,7 +58,13 @@ export class IndexesService implements OnApplicationBootstrap {
     const memberships = await this.tenancy.memberships.collection.indexes();
     if (
       !memberships.some(
-        (index) => index.unique && 'workspaceId' in index.key && 'userId' in index.key,
+        (index) =>
+          index.unique &&
+          !index.sparse &&
+          !index.partialFilterExpression &&
+          Object.keys(index.key).length === 2 &&
+          index.key['workspaceId'] === 1 &&
+          index.key['userId'] === 1,
       )
     )
       throw new Error('Missing unique membership index. Run db:indexes.');

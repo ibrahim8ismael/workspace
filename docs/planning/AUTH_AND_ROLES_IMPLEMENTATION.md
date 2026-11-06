@@ -101,7 +101,7 @@ SMTP provider/domain, production Mongo/Redis endpoints, secret key storage, inde
 ## Progress evidence
 
 - Planning checkpoint: `a2858c8`, committed and pushed before backend source edits.
-- Final real HTTP/Mongo and primitive suite: 31 backend tests passed locally, plus five shared checks.
+- Final real HTTP/Mongo and primitive suite: 32 backend tests passed locally, plus five shared checks.
 - Suspension/session/body-limit scenarios and pnpm/CI integration are included. Full `pnpm check` passed.
 - Frontend code and connections remain unchanged. No Docker or real mail delivery was run.
 - See [implemented API contract](../contracts/AUTH_AND_ROLES_API.md) for current behavior and remaining release gates.

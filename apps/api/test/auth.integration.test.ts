@@ -1,6 +1,8 @@
 import 'reflect-metadata';
 import { beforeAll, afterAll, beforeEach, describe, it, expect, vi } from 'vitest';
 import { Test } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
+import { IndexesService } from '../dist/platform/database/indexes.service.js';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { MongoMemoryReplSet } from 'mongodb-memory-server-core';
 import request from 'supertest';
@@ -791,5 +793,27 @@ describe('additional session isolation', () => {
       413,
     );
     expect(await identities.users.countDocuments({ normalizedEmail: 'large@example.com' })).toBe(0);
+  });
+});
+
+describe('database authorization constraints', () => {
+  it('rejects a compound unique email index that does not enforce unique account email', async () => {
+    const config = app.get(ConfigService);
+    const previous = config.get('DB_AUTO_INDEX');
+    config.set('DB_AUTO_INDEX', 'false');
+    try {
+      await identities.users.collection.dropIndex('normalizedEmail_1');
+      await identities.users.collection.createIndex(
+        { normalizedEmail: 1, status: 1 },
+        { unique: true, name: 'incorrect_email_constraint' },
+      );
+      await expect(app.get(IndexesService).onApplicationBootstrap()).rejects.toThrow(
+        'Missing required unique index',
+      );
+    } finally {
+      await identities.users.collection.dropIndex('incorrect_email_constraint');
+      await identities.users.createIndexes();
+      config.set('DB_AUTO_INDEX', previous);
+    }
   });
 });

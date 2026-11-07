@@ -13,9 +13,9 @@ B2B SaaS is an agreed requirement. Read the [B2B SaaS product plan](product/B2B_
 1. Read the [source project brief](../GATHER_LITE_PROJECT_KNOWLEDGE.md).
 2. Review [architecture and shared invariants](architecture/README.md).
 3. Find a domain in the [26-entity catalog](entities/README.md); each folder has a specification and implementation plan.
-4. Follow the [milestone roadmap](planning/ROADMAP.md) and [initial backlog](planning/BACKLOG.md).
+4. Follow the [system backend implementation plan](planning/BACKEND_SYSTEM_IMPLEMENTATION.md), [milestone roadmap](planning/ROADMAP.md) and [initial backlog](planning/BACKLOG.md).
 5. Resolve [open decisions](decisions/README.md) before the affected milestone.
-6. Specify [HTTP](contracts/HTTP.md), [realtime](contracts/REALTIME.md) and [data](architecture/DATA_MODEL.md) contracts before implementation.
+6. Review the [HTTP](contracts/HTTP.md), [Socket.IO](contracts/REALTIME.md), [WebRTC/LiveKit](contracts/MEDIA.md) and [data](architecture/DATA_MODEL.md) contracts before implementation.
 7. Record actual results in the [acceptance register](planning/ACCEPTANCE.md).
 
 ## Source precedence
@@ -35,7 +35,7 @@ docs/
   architecture/       runtime boundaries and data model
   entities/           26 entity folders, each README.md + PLAN.md
   planning/           roadmap, backlog and evidence register
-  contracts/          proposed HTTP and Socket.IO contracts
+  contracts/          HTTP, Socket.IO and LiveKit interface plans
   decisions/          agreed direction and unresolved choices
   security/           permissions and authorization lifecycle
   operations/         deployment, observability and recovery plan

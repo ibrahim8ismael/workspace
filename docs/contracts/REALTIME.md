@@ -1,48 +1,49 @@
-# Socket.IO contract outline
+# Socket.IO application protocol plan
 
-Status: proposed event families and envelope; not an implemented protocol · Updated: 2026-11-05
+These are proposed contracts for the [system backend plan](../planning/BACKEND_SYSTEM_IMPLEMENTATION.md). The office module is a scaffold. The gateway will carry application state for the office and conversations. LiveKit owns its own signaling and WebRTC transport.
 
-## Admission and envelopes
+## Transport and admission
 
-Use Socket.IO auth payload for the memory-only ticket and protocol version. Namespace middleware rejects invalid admission and wrong Origin before any world subscription. An `office:ready` result follows policy recheck, single-use consume and serialized runtime reservation. It includes participation ID, office epoch, map/protocol version and initial safe snapshot. An optional `office:join` request must never bypass that gate; settle whether it is needed before coding.
+1. Use the pinned NestJS Socket.IO adapter and Socket.IO 4.x. Proposed first transport is WebSocket-only on the same-origin Engine.IO path `/socket.io` with a single application namespace `/office`. Verify connection success through the target browsers and corporate networks. If polling is later needed, define and test its Origin and routing behavior before enabling it.
+2. Enforce exact `APP_ORIGIN` at the Engine.IO admission/upgrade boundary. Reject missing, null and foreign Origin under the proposed WebSocket-only browser contract. Apply handshake size, rate and timeout limits. Configure namespace middleware to accept only strict `{ ticket, protocolVersion }` in Socket.IO auth.
+3. Atomically consume the unexpired ticket and recheck current session/account/workspace/membership, map and epoch as defined by [office admission](../planning/OFFICE_ADMISSION_IMPLEMENTATION.md). Derive participation identity and room scope from server records. The ticket's authorization covers its bound office only.
+4. Reserve capacity through the single authoritative office runtime. Permit at most one active participation per user/workspace. A normal conflicting join returns `participation_conflict`. An explicit authorized takeover uses the follow-on HTTP ticket mode and exact target reference, tears down old seats/conversations/leases and makes the old socket ineligible before the new participation becomes ready.
+5. Subscribe the socket to its server-derived room and send `office:ready` with the participant ID, office epoch, map/protocol versions and a full safe snapshot. Serialize snapshot capture and activation so subsequent deltas have a known base. Clean up provisional reservations on connect failure or disconnect, including when a ticket has already been spent. Use the handshake as the only join path.
+6. Keep Socket.IO connection-state recovery disabled for this namespace's deployment. On disconnect or restart, obtain a fresh HTTP ticket and a fresh snapshot. Drop obsolete offline inputs. On a company switch, tear down the client's old office/media bindings before subscribing to the selected office.
 
-Proposed client command envelope: `{ eventId, officeEpoch, sequence?, expectedVersion?, payload }`.
-Proposed authoritative world envelope: `{ officeEpoch, stateVersion, serverTime, payload }`.
-Proposed acknowledgement: `{ eventId, ok, result? }` or `{ eventId, ok: false, error: { code, retryAfterMs? } }`.
+Use Engine.IO admission and namespace policy together. Socket.IO documentation explains the [server admission hook](https://socket.io/docs/v4/server-options/#allowrequest), [connection-state recovery](https://socket.io/docs/v4/connection-state-recovery/) and [message delivery behavior](https://socket.io/docs/v4/delivery-guarantees/).
 
-Exact schemas, time encoding, ack timeouts and state-gap base version are M0 contract work. Keep server monotonic deadlines internal; browser timestamps are not authorization evidence. Runtime schemas are mandatory; shared types alone are insufficient.
+## Versioning, acknowledgement and recovery
 
-## Event families
+- Client commands use a strict `{ eventId, officeEpoch, payload }` envelope. Add a monotonic per-participation `sequence` to movement. Add `expectedVersion` where a command targets a mutable conversation or meeting state. Resolve the actor from the socket binding.
+- Acknowledged commands return `{ eventId, ok: true, result? }` or `{ eventId, ok: false, error: { code, retryAfterMs? } }`. Use a bounded per-participation replay cache keyed by event ID and request fingerprint for commands that can be retried while connected. A different command with a reused ID fails. On unknown outcome or reconnect, fetch current state before retrying. Durable writes remain on idempotent HTTP paths.
+- `world:snapshot` includes `officeEpoch`, `stateVersion`, `serverTime` and a safe participant/seat projection. `world:delta` includes `baseVersion` and `stateVersion`. Accept only deltas for the current epoch with a matching base. On a gap request resync and replace local state from a snapshot. An incompatible map or protocol requires bootstrap again. Private conversation updates have their own version/generation and do not advance the public world stream.
+- Use bounded integer sequences and versions. Send UTC timestamps as epoch milliseconds for the realtime stream and keep monotonic authorization deadlines server-side. Snapshot projections exclude credentials, email, internal policy and private call membership.
+- Freeze the error allowlist in `packages/contracts`. Draft codes include `validation_failed`, `unauthorized`, `membership_required`, `protocol_mismatch`, `map_version_mismatch`, `stale_epoch`, `stale_version`, `room_full`, `participation_conflict`, `seat_unavailable`, `zone_unavailable`, `rate_limited` and `media_unavailable`. Pre-admission errors use the connect error channel with safe codes. Socket acks and logs exclude exceptions and secrets.
 
-| Event | Direction | Proposed payload / behavior |
-|---|---|---|
-| `office:ready` | server → client | Fresh authorized identity, map/protocol version, epoch and snapshot; no credentials/email |
-| `world:input` | client → server | Direction/intent and ordered input sequence; client coordinates never set authoritative position |
-| `world:snapshot` | server → client | Full current safe state at declared version; replaces stale local state |
-| `world:delta` | server → client | Ordered changes with explicit base/current versions; detect gaps |
-| `world:resync` | client → server | Request current snapshot after version gap; does not reauthorize stale session |
-| `presence:update` | client request / server authoritative update | Allowlisted availability request; server resolves actor and broadcasts safe state |
-| `seat:sit`, `seat:stand` | client request | Seat ID within active map; serialized range/occupancy/exit checks |
-| `conversation:update` | server → client | Authorized member set, kind, state, version/generation and safe connection status |
-| `conversation:leave` | client request | Current conversation/version; reconcile participant and media generation |
-| `meeting:join`, `meeting:leave` | client request | Fixed zone ID; current tenant/policy/capacity check |
-| `reaction:send` | client request / safe server broadcast | Optional MVP polish; bounded allowlist/rate/TTL, never persistent chat |
-| structured error/ack | both via defined protocol | Typed failures tied to event/request ID; no raw exceptions |
+## Event inventory
 
-Under the recommended all-LiveKit topology there is no Socket.IO SDP/ICE relay event. Media control signals are application state; LiveKit client handles its own signaling.
+| Milestone | Event | Direction | Draft contract |
+| --- | --- | --- | --- |
+| M2 | `office:ready` | Server → admitted client | Participation ID, office epoch, map/protocol versions and full initial snapshot |
+| M2 | `world:input` | Client → server | Bounded directional intent and input sequence. Coalesce superseded input. Reconcile using the last applied sequence in the actor's update |
+| M2 | `world:snapshot` | Server → client | Full safe versioned projection, sent after resync |
+| M2 | `world:delta` | Server → scoped office | Versioned changes to positions, availability and seat occupancy |
+| M2 | `world:resync` | Client → server | Bounded snapshot request using the known version. Requires a current lease |
+| M2 | `presence:update` | Client → server | Own availability enum, initially available/busy/away. Return an ack and publish accepted changes through world state |
+| M2 | `seat:sit`, `seat:stand` | Client → server | Sit targets a map seat ID. Stand resolves the actor's seat and valid exit. Serialize competing transitions and acknowledge the result |
+| M2 | `office:access-ended` | Server → affected client when transport permits | Safe reason before teardown and disconnect. Server cleanup proceeds independently of delivery |
+| M3 | `proximity:set-opt-in` | Client → server | Explicit boolean for own live participation. Proposed event name |
+| M3 | `conversation:update` | Server → authorized participants | Own conversation ID, kind, allowed participant projection, state, version, generation and media readiness. JWTs are returned over protected HTTP |
+| M3 | `conversation:leave` | Client → server | Target current conversation ID/version. Leave and reconcile its generation, suppress immediate automatic rematching until eligibility resets |
+| M4 | `meeting:join`, `meeting:leave` | Client → server | Fixed zone ID and current version where applicable. Enforce physical/access/capacity policy. Membership and media readiness arrive via `conversation:update` |
 
-## Company isolation
+Optional bounded reactions require a separate scope decision. Persistent chat and SDP/ICE relay are outside the selected application event inventory.
 
-Every office subscription and safe snapshot belongs to the authorized customer tenant. A user in multiple companies cannot reuse a ticket, role, conversation or media grant across them. Include tenant scope in resource admission and service budgets; never join a Socket.IO room solely from a client-supplied company ID.
+## Runtime and continuing authority
 
-## Ordering, recovery and limits
-
-- Movement coalesces obsolete input and uses per-participant sequences. Do not buffer offline movement for replay.
-- Conflicting seats, capacity and conversation transitions serialize in one canonical office owner, including across asynchronous service work.
-- New process means new epoch. Reconnect/takeover uses fresh HTTP ticket and a full snapshot; automatic Socket.IO recovery cannot restore old permissions.
-- Periodic authorization is independent of traffic; delayed/out-of-order checks cannot renew expired leases.
-- Provisional caps: 30 movement inputs/sec, bounded burst, 4 KiB maximum application-event payload and smaller per-event limits.
-- Client optimistic actions reconcile from acknowledgement/current state. Critical durable writes require DB-confirmed results and idempotency; Socket.IO delivery alone does not provide exactly-once semantics.
-- Proposed error codes: `unauthorized`, `membership_required`, `room_full`, `protocol_mismatch`, `stale_epoch`, `rate_limited`, `media_unavailable`; add explicit validation/version errors when freezing schemas.
-
-Acceptance cases are in [A04–A05](../planning/ACCEPTANCE.md) and the [participant](../entities/participants/PLAN.md) / [ticket](../entities/join-tickets/PLAN.md) plans.
+- One in-memory authority per office owns the simulation, active participation, seat occupancy and conversation transitions. Serialize capacity/seat/zone/version changes across async work. Persist durable commands through their owning service. Scaling requires explicit office routing, ownership and fencing before adding API processes for the same offices.
+- Use shared pure map rules for spawn, world bounds, collision and seat exits. Server time determines speed. Start with provisional 20 Hz simulation, up to 10 Hz state broadcast, 30 movement inputs/sec and 4 KiB per inbound application event. Set transport limits, tighter event limits and separate bounded outbound snapshot limits. Measure queue depth, tick delay and noisy-neighbor behavior.
+- Independently recheck session/account/workspace/membership on the proposed one-second cadence with at most a five-second lease, bounded by actual session expiry. Use monotonic request-start deadlines and ordered replies. A late result cannot revive expired participation. Immediate revocation signals accelerate cleanup, and expiry handles missed signals and authority loss.
+- On disconnect, revoke, takeover, drain or lease expiry, release the participation and seat, retire affected conversation permissions and unsubscribe. Exclude ended participation from all later broadcasts and grants. MongoDB loss denies new admission and existing leases expire within their bounded policy.
+- Verify exact-Origin upgrades, ticket replay/expiry, last-slot admission, duplicate commands, unauthorized event spoofing, seat conflicts, stale leases, reconnect/version gaps and two-company isolation with real Socket.IO clients. Track A04/A05/A11 in the [acceptance register](../planning/ACCEPTANCE.md).

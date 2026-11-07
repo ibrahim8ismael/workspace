@@ -34,6 +34,6 @@ IDs are local planning references. No work has been assigned or scheduled outsid
 
 Start B022 alongside B001–B004 and the B006 contract definition; resolve tenancy before freezing tenant contracts. Do not expand media features until B008–B010 resolve and prove the enforcement design. Do not import all upstream UI before mapping its feature scope and removing legacy secret/backend assumptions.
 
-The [office bootstrap and join-ticket implementation plan](OFFICE_ADMISSION_IMPLEMENTATION.md) breaks the first M2 backend slice into contracts, map readiness, ticket policy and verification. It covers the HTTP and ticket foundation for B015 and records the remaining Socket.IO admission work.
+The [system backend implementation plan](BACKEND_SYSTEM_IMPLEMENTATION.md) maps these items to HTTP, Socket.IO, LiveKit and private service interfaces. Its first M2 checkpoint uses the [office bootstrap and join-ticket plan](OFFICE_ADMISSION_IMPLEMENTATION.md) for the HTTP and ticket foundation of B015.
 
 Every work item must name its implementer when started and link code/output and relevant acceptance evidence when completed. Entity plans contain the detailed tasks; use these IDs to connect delivery order without duplicating task status across separate trackers.

@@ -1,10 +1,10 @@
 # CP02 — pure world rules and immutable map
 
-Started: 2026-11-08. Parent: [completion plan](PROJECT_COMPLETION_PLAN.md#cp02--establish-one-immutable-map-and-asset-catalog). Wire boundary: [office v1](../contracts/OFFICE_V1.md). CP02 remains in progress.
+Started: 2026-11-08. Parent: [completion plan](PROJECT_COMPLETION_PLAN.md#cp02--establish-one-immutable-map-and-asset-catalog). Wire boundary: [office v1](../contracts/OFFICE_V1.md). CP02 is complete.
 
 ## Working arrangement
 
-The owner requested OpenCode delegation: Codex plans, reviews the actual diff, independently runs verification, maintains documentation and commits/pushes completed batches. OpenCode writes the implementation. The selected catalog entry is `opencode/deepseek-v4.1-flash-free#max`, verified against the installed OpenCode v2.2.5 catalog: active, zero input/output/cache prices and an advertised `max` reasoning variant. No paid or alternative model is authorized by this choice.
+The owner requested OpenCode delegation: Codex plans, reviews the actual diff, independently runs verification, maintains documentation and commits/pushes completed batches. OpenCode wrote the delegated batches through CP02.4. The owner authorized Codex to implement CP02.5 after the free model reached its usage limit. The selected catalog entry is `opencode/deepseek-v4.1-flash-free#max`, verified against the installed OpenCode v2.2.5 catalog: active, zero input/output/cache prices and an advertised `max` reasoning variant. No paid or alternative model is authorized by this choice.
 
 The external `opencode-delegate` skill supplies the brief/review workflow. Its relay uses an older CLI variant flag; a temporary copy adapts that flag to v2.2.5's documented `provider/model#variant` syntax. The original skill and project tooling are unchanged. Temporary briefs, event streams and results are execution artifacts, not product dependencies. Delegated work is not accepted solely on the implementer's report.
 
@@ -15,7 +15,7 @@ The external `opencode-delegate` skill supplies the brief/review workflow. Its r
 3. **CP02.3 — original geometry, seats and zones:** the owner accepted an original replacement after the source review; see the [CP02 decision](../decisions/2026-11-08_CP02.md). Design `commons` independently, without copying Vivo's layout. Inventory spawn, walls, object/seat IDs, exits and zones. Record source notices separately for code, geometry and artwork.
    Validate immutable definitions, unique IDs, bounds, reachability from spawn and deterministic valid exits with shared tests. Preserve the seat ID and pixel conventions.
 4. **CP02.4 — immutable export and catalog:** deterministic UTF-8 geometry, catalog and sprite digests, one trusted manifest and read-only drift checks.
-5. **Phaser sample:** one reviewed avatar/object, foot origins, nearest-neighbor sampling, sitting/standing occlusion and React lifecycle evidence. This is partial renderer evidence; full office integration remains CP06.
+5. **CP02.5 — Phaser sample:** one reviewed avatar/object, foot origins, nearest-neighbor sampling, sitting/standing occlusion and React lifecycle evidence. This is partial renderer evidence; full office integration remains CP06.
 
 Each completed batch updates [implementation progress](IMPLEMENTATION_PROGRESS.md), is independently checked, then committed and pushed. CP03 waits for an approved CP02 map/catalog; the collision foundation alone does not satisfy that dependency.
 
@@ -49,10 +49,12 @@ The catalog hashes the exact sprite bytes and refers to each sprite by its diges
 
 The first version is `commons-v1-d980be0345e864c38446a3f4effeaf12534e4ae68c10926e3c190d69c1958364` and binds catalog `commons-art-v1-c8b015529d31999841c00e9b5962f226f694467b811540d5eb9c01740951770f`. Both identifiers contain the full SHA-256 of their files. `pnpm check:commons` recomputes and compares all current output bytes. See the [geometry](../../packages/assets/maps/commons-v1-d980be0345e864c38446a3f4effeaf12534e4ae68c10926e3c190d69c1958364.json) and [catalog](../../packages/assets/manifests/commons-art-v1-c8b015529d31999841c00e9b5962f226f694467b811540d5eb9c01740951770f.json).
 
-CP03 reads the trusted manifest and matches it against the stored office version before admission. A map upgrade creates a new version and keeps the previous immutable files. At runtime, drain the office, retire its epoch, switch the configured map version, and require fresh bootstrap and admission. The browser sample comes next. See the [Commons manifest](../../packages/assets/manifests/commons-map.json).
+CP03 reads the trusted manifest and matches it against the stored office version before admission. A map upgrade creates a new version and keeps the previous immutable files. At runtime, drain the office, retire its epoch, switch the configured map version, and require fresh bootstrap and admission. The browser sample uses this version. See the [Commons manifest](../../packages/assets/manifests/commons-map.json).
 
-## CP02.5 renderer sample plan
+## CP02.5 renderer sample
 
-Use `/?commons-preview=1` as a development-only entry point. Load the reviewed geometry, catalog and sprite URLs through Vite. Show the first chair and table in the northwest meeting room. Anchor the standing and sitting poses at the same tile center, use nearest-neighbor sampling, and draw the chair foreground over the seated avatar. React buttons expose Sit, Stand, Close preview and Open preview to keyboard users.
+Run `pnpm dev:web` and open `http://127.0.0.1:5173/?commons-preview=1` (or use the port Vite reports). The development entry loads the checked-in geometry, catalog and sprite URLs selected by the trusted manifest. The scene shows the first chair and table in a 320 × 224 pixel view of the northwest meeting room. React controls expose Sit, Stand, Close preview and Open preview. See the [sample source](../../apps/web/commons-preview/CommonsPreview.tsx).
 
-Verify the rendered pixels and pose anchor in a local browser. Close and reopen the scene to check that each open scene owns one canvas and that closing it releases the Phaser game. Check the production build for the absence of the sample and Phaser bundle. Record the observed browser and test results under A06. Full office rendering, runtime inputs and pilot browser coverage follow later.
+On 2026-11-08, Codex tested Phaser 4.2.1 in Headless Chrome 152.0.7977.42 on macOS 26.6.1 arm64. The rendered avatar kept its `(80,80)` world anchor through keyboard Sit and Stand actions. Pixel comparison matched the pose sprites and 94 overlapping pixels drawn by the chair foreground. Sprite draw calls used nearest-neighbor sampling. Three keyboard close/reopen cycles removed each canvas, stopped drawing on it and created a single fresh canvas in standing pose. Blocking the standing SVG displayed an error and disabled Sit. Restoring the SVG and reopening recovered the scene. The normal sample run made no API or socket calls.
+
+The full local `pnpm check` passed 92 tests. The production build contains neither the preview assets nor Phaser. The [acceptance register](ACCEPTANCE.md#a06-cp025-local-renderer-sample) records partial A06 evidence. CP03 can start office discovery and admission against this map version. Full office rendering and pilot browser coverage follow in CP06.

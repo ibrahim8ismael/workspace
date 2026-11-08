@@ -6,7 +6,11 @@ import './styles.css';
 const params = new URLSearchParams(location.search);
 const root = createRoot(document.getElementById('root')!);
 const slug = params.get('room');
-if (!slug || params.has('new')) root.render(<WorkspaceHome />);
+if (import.meta.env.DEV && params.get('commons-preview') === '1') {
+  void import('./commons-preview/CommonsPreview')
+    .then(({ CommonsPreview }) => root.render(<CommonsPreview />))
+    .catch(() => root.render(<p role="alert">Could not load the Commons preview.</p>));
+} else if (!slug || params.has('new')) root.render(<WorkspaceHome />);
 else
   void (async () => {
     try {

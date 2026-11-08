@@ -1,0 +1,33 @@
+.commons-preview {
+  min-height: 100dvh;
+  padding: 2rem clamp(1rem, 5vw, 3rem);
+  background: #f4f3ec;
+  color: #203832;
+}
+
+.commons-preview canvas {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  image-rendering: pixelated;
+}
+
+.commons-preview-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.commons-preview button {
+  padding: 0.5rem 0.8rem;
+  border: 1px solid #36584b;
+  border-radius: 0.25rem;
+  background: white;
+  color: inherit;
+}
+
+.commons-preview button:focus-visible {
+  outline: 2px solid #36584b;
+  outline-offset: 2px;
+}

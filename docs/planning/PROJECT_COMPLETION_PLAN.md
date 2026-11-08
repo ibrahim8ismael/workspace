@@ -38,7 +38,7 @@ Close each decision before its dependent packet freezes a contract. Record the c
 | --- | --- | --- |
 | D12: tenant hierarchy | Accepted 2026-11-08: one company = workspace = office. Parent organizations/multiple workspaces are outside MVP; a later change needs separate scope and migration | CP02/CP03 tenant-facing freeze |
 | D13: onboarding/lifecycle | Accepted: active verified users create companies themselves. Full suspension/resumption/closure authority, retention/export remain open; no owner gains platform privileges | CP04 onboarding and CP09 lifecycle |
-| D04: map/catalog | The owner accepted an original multi-room `commons` replacement after CP02 source review; [decision](../decisions/2026-11-08_CP02.md). The shared contract uses `commons`. Original layout, seating and zones implemented. Catalog and immutable export validated in CP02.4. The Phaser sample remains pending | CP02 and CP06 |
+| D04: map/catalog | The owner accepted an original multi-room `commons` replacement after CP02 source review; [decision](../decisions/2026-11-08_CP02.md). The shared contract uses `commons`. Original layout, seating and zones implemented. Catalog and immutable export validated in CP02.4. Development Phaser sample verified in CP02.5 | CP02 and CP06 |
 | D02: proximity topology | Accepted: all-LiveKit for proximity and groups. No new production P2P path; D03/CP07 enforcement proof still gates product media | CP07 media proof |
 | D03: media shutdown | Choose a container-aware independent supervisor with narrowly bounded authority. Prove failure behavior; ordinary restart policies do not establish it | CP07 and any product media |
 | D05: hosting/network | Choose region/host, app and media endpoints, public IP/UDP, TURN/TLS arrangement and private network layout. Shared logical tenancy is the existing default | CP04 environment and CP07 fixture |
@@ -73,7 +73,7 @@ flowchart TD
   C10 --> C11[CP11: measured pilot and handover]
 ```
 
-CP04 infrastructure/delivery and CP07 risk proof can progress independently of office implementation after their decisions are recorded. A minimal Phaser rendering sample can start after CP02; full browser multiplayer waits for CP05. These are dependency options for team scheduling, not a claim that parallel work or reviewers have been run.
+CP04 infrastructure/delivery and CP07 risk proof can progress independently of office implementation after their decisions are recorded. CP02 includes the verified Phaser sample. Full browser multiplayer waits for CP05. These are dependency options for team scheduling, not a claim that parallel work or reviewers have been run.
 
 | Checkpoint | Demonstrable result | Existing work references |
 | --- | --- | --- |
@@ -123,6 +123,8 @@ Proposed additions: `packages/contracts/src/{versions,errors,limits}.ts`, `packa
 Exit: owner decisions and safe request/response/error/version rules are recorded. Schema tests reject extra fields, injected identities/roles, invalid versions and oversized/range-invalid commands. Future unresolved decisions stay visibly gated.
 
 ### CP02 — Establish one immutable map and asset catalog
+
+Status: complete. See [Commons map and renderer evidence](CP02_WORLD_AND_MAP.md#cp025-renderer-sample).
 
 Depends on: D04 and CP01's version/geometry contract. Deliverable: the same trusted map rules for API and Phaser.
 
@@ -318,7 +320,7 @@ No Docker execution, infrastructure provisioning, real email, publishing or sour
 
 ## 8. Next implementation handoff
 
-CP00 documentation reconciliation and CP01 first contracts/owner choices are complete. CP02 has started under the [delegated work scope](CP02_WORLD_AND_MAP.md); the owner replaced the Vivo candidate with an original map. Next is CP02 → CP03: verify the Phaser sample with the versioned Commons catalog, then add office discovery, bootstrap and atomic one-use ticket issuance and consumption with local tests. Carry CP01 decisions/contracts forward; do not repeat or reopen accepted choices without a specific change. Account UI/provider setup and the isolated media proof are the next independent work streams when their decisions/access are ready.
+CP00 documentation reconciliation, CP01 shared contracts and CP02 original Commons map and renderer sample are complete. Next is CP03. Add office discovery, bootstrap and atomic one-use ticket issuance and consumption with local tests. Carry CP01 decisions/contracts forward; do not repeat or reopen accepted choices without a specific change. Account UI/provider setup and the isolated media proof are the next independent work streams when their decisions/access are ready.
 
 Before CP03 starts, its implementer reads the project brief, drift report, existing auth API/evidence, accepted CP01 decisions/office-v1 contract and approved CP02 map/catalog evidence. Name the implementer, preserve the recorded issuance budgets, then commit a concrete implementation scope. Do not start movement, media grants or broad frontend rewrites inside the ticket checkpoint.
 

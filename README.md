@@ -25,7 +25,7 @@ Docker and infrastructure services are not started by repository setup or depend
 
 ## Documentation
 
-Start with [project documentation](docs/README.md), the [authoritative brief](GATHER_LITE_PROJECT_KNOWLEDGE.md) and [B2B SaaS requirements](docs/product/B2B_SAAS.md). One company per workspace is the planning default; organization hierarchy and commercial billing remain separate decisions.
+Start with [project documentation](docs/README.md), the [authoritative brief](GATHER_LITE_PROJECT_KNOWLEDGE.md) and [B2B SaaS requirements](docs/product/B2B_SAAS.md). The owner accepted one company/workspace/office, verified-user self-service creation and all-LiveKit media on 2026-11-08. Full company lifecycle and commercial billing remain separate decisions.
 
 ## Local development
 
@@ -40,18 +40,19 @@ pnpm dev
 
 `pnpm dev` builds shared packages once, then starts Vite and the loopback API. Open http://localhost:5173. The imported dashboard and office entry view render locally. Its workspace/account APIs and legacy `/ws` protocol are not yet connected to NestJS; see [web integration boundaries](apps/web/README.md). The API now requires a reachable transaction-capable MongoDB replica set, an outbox encryption key, and provisioned indexes. See the [backend setup guide](apps/api/README.md) and [API contract](docs/contracts/AUTH_AND_ROLES_API.md). `/api/health/live` remains liveness only. No LiveKit service is connected.
 
-| Command               | Purpose                                                                |
-| --------------------- | ---------------------------------------------------------------------- |
-| `pnpm dev:web`        | Web development server only                                            |
-| `pnpm dev:api`        | API compiler watch plus Node restart with decorator metadata           |
-| `pnpm dev:worker`     | Configured Mongo outbox/BullMQ/SMTP worker; starts separately          |
-| `pnpm build:packages` | Rebuild shared packages after changing their source                    |
-| `pnpm build`          | Build shared packages, API, worker and production web assets           |
-| `pnpm typecheck`      | Check TypeScript across all source packages                            |
-| `pnpm lint`           | ESLint and browser/server import boundaries                            |
-| `pnpm format`         | Format source/configuration; existing project briefs/docs preserved    |
-| `pnpm check`          | Formatting, lint, typecheck, backend/shared regressions and full build |
-| `pnpm clean`          | Remove generated workspace build outputs                               |
+| Command               | Purpose                                                                      |
+| --------------------- | ---------------------------------------------------------------------------- |
+| `pnpm dev:web`        | Web development server only                                                  |
+| `pnpm dev:api`        | API compiler watch plus Node restart with decorator metadata                 |
+| `pnpm dev:worker`     | Configured Mongo outbox/BullMQ/SMTP worker; starts separately                |
+| `pnpm build:packages` | Rebuild shared packages after changing their source                          |
+| `pnpm build`          | Build shared packages, API, worker and production web assets                 |
+| `pnpm typecheck`      | Check TypeScript across all source packages                                  |
+| `pnpm lint`           | ESLint and browser/server import boundaries                                  |
+| `pnpm format`         | Format source/configuration; existing project briefs/docs preserved          |
+| `pnpm check`          | Formatting, lint, typecheck, backend/shared regressions and full build       |
+| `pnpm test:contracts` | Validate shared HTTP/office/event projections and hostile payload boundaries |
+| `pnpm clean`          | Remove generated workspace build outputs                                     |
 
 Shared packages expose compiled ESM and declarations. Re-run `pnpm build:packages` and restart the app when editing shared code during development. The API and web watch their own sources. No install/build/dev command starts Docker. Vitest is available for future focused tests; shared import/map/asset and backend auth/role regression checks are included; broader product/media tests remain future work.
 

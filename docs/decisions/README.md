@@ -12,15 +12,15 @@ React + TypeScript application UI; Phaser renderer rewrite; NestJS HTTP with Soc
 
 ## CP01 accepted decisions (2026-11-08)
 
-The owner explicitly chose **one company = one workspace = one office (D12)**, **verified-user self-service company creation (D13 onboarding)**, and **LiveKit for proximity and meetings (D02)**. See the [decision record](2026-11-08_CP01.md) for scope, consequences and remaining questions. D13 lifecycle and D03 enforcement are not closed by these choices.
+The owner explicitly chose **one company = one workspace = one office (D12)**, **verified-user self-service company creation (D13 onboarding)**, and **LiveKit for proximity and meetings (D02)**. See the [decision record](2026-11-08_CP01.md) for scope, consequences and remaining questions. The owner also selected **Vivo as the initial map candidate**, **English-first pilot UI**, and **desktop Chrome/Edge validation**. D13 lifecycle, D03 enforcement, actual map approval and browser test evidence are not closed by these choices.
 
 ## Decisions to resolve
 
 | ID | Question | Planning default / required evidence | Resolve by |
 |---|---|---|---|
-| D01 | Frontend toolchain | Scaffold selects React/Vite, pnpm 10.33.0, Node 24.18+, TypeScript 6.0.3 and exact library pins; browser support matrix and deployment image pins remain open | Scaffold selected; remaining M0 choices open |
+| D01 | Frontend toolchain | Scaffold selects React/Vite, pnpm 10.33.0, Node 24.18+, TypeScript 6.0.3 and exact library pins; desktop Chrome/Edge and English-first scope accepted; actual browser/OS version evidence and deployment image pins remain open | Scaffold selected; remaining M0 choices open |
 | D03 | Bounded media revocation under Docker | Choose and prove independent guard/SFU shutdown supervision; eight-second target is provisional and unmeasured; normal container restart policies are insufficient evidence | M0 gate |
-| D04 | Immutable map and asset pipeline | Adapt upstream metadata; choose units/versions/anchors; Tiled and atlases optional | M0 |
+| D04 | Immutable map and asset pipeline | Vivo candidate accepted. CP01 defines pixel/32-pixel tiles and manifest/hash/version references; CP02 must validate/export actual geometry, asset subset and anchors; Tiled/atlases remain optional | M0 |
 | D05 | Hosting and region | Validate same-origin ingress, private services, WebRTC UDP/public IP, TURN/TLS routing and recovery capability | M0 skeleton; finalize before pilot |
 | D06 | Email and encryption secrets | API/worker inject a validated 32-byte base64 outbox key; encryption/expiry/retries exist. Provider/domain, restricted key store, rotation and actual delivery/fault evidence remain open | M0/M1 |
 | D07 | Authentication and lease budgets | Current HTTP slice: Argon2id 19 MiB/two iterations/one lane, bounded concurrency, 12h absolute/60m idle sessions and 10m recent proof; Mongo budgets. Host benchmarks, deployed proxy/idle UX and live lease budgets remain open | Contracts in M0; tune before pilot |
@@ -32,7 +32,7 @@ The owner explicitly chose **one company = one workspace = one office (D12)**, *
 
 ## Implemented defaults versus owner decisions
 
-CP00 documented existing defaults; CP01 now records explicit approval of D12, D02 and D13 onboarding. [AUTH_AND_ROLES_API.md](../contracts/AUTH_AND_ROLES_API.md) still owns exact implemented auth/quota behavior. Initial map/language/browser choices are pending; D03/D05/D06/D07/D09/D11 require their stated design, access and measurement evidence.
+CP00 documented existing defaults; CP01 now records explicit approval of D12, D02 and D13 onboarding. [AUTH_AND_ROLES_API.md](../contracts/AUTH_AND_ROLES_API.md) still owns exact implemented auth/quota behavior. Initial map/language/browser choices are recorded; actual approval/compatibility evidence remains pending, and D03/D05/D06/D07/D09/D11 require their stated design, access and measurement evidence.
 See [completion plan](../planning/PROJECT_COMPLETION_PLAN.md) for decision dependencies and [progress](../planning/IMPLEMENTATION_PROGRESS.md) for completed documentation work.
 
 ## Boundaries for future changes

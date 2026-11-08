@@ -33,6 +33,8 @@ Describe basic avatar appearance independently of live position and account secr
 - Phaser owns animation; React owns accessible selection controls.
 - Safe public appearance DTO excludes user email and credentials.
 
+CP01 exports compact bodyId/paletteId shape validation and strict nonempty profile input. Approved IDs/catalog, persistence, endpoint and rendering remain CP02/CP06 work.
+
 ## Interface outline
 
 - Proposed allowlisted profile appearance update.

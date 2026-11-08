@@ -44,7 +44,7 @@ Authorize a currently eligible participation to join a server-selected LiveKit g
 
 ## Planning question
 
-Resolve all-LiveKit versus P2P and pin SDK/server compatibility before production media work.
+All-LiveKit is accepted (2026-11-08). Pin SDK/server compatibility and prove D03 enforcement before freezing production grants/permits under CP07/CP08.
 
 ## Next work
 

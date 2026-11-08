@@ -41,6 +41,8 @@ Provide the same immutable geometry and identifiers to Phaser and server simulat
 - Static JSON is allowed; no general map editor/upload in MVP.
 - Validate stable IDs and compatible map/protocol versions before admission.
 
+CP01 freezes the public manifest reference/hash/version/pixel conventions in [OFFICE_V1.md](../../contracts/OFFICE_V1.md). The actual immutable geometry payload/export/schema, selected assets and collision/spawn checks remain CP02 work; fixture hashes are not approved versions.
+
 ## Interface outline
 
 - Authorized map manifest bootstrap plus versioned static geometry assets.

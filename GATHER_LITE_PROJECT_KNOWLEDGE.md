@@ -360,7 +360,7 @@ HTTP APIs include:
 - Offices: map manifest, snapshot bootstrap and POST join-ticket.
 - Conversations: POST media-token with server-resolved current generation; clients cannot mint arbitrary room identities.
 
-Suggested Socket.IO events include office:join/ready, world:input/snapshot/delta/resync, presence:update, seat:sit/stand, conversation:update/leave, meeting:join/leave, reaction:send and structured errors/acknowledgements. Names are proposed contracts, not existing code. No custom WebRTC signal event is needed if the recommended all-LiveKit topology is selected.
+Suggested Socket.IO events include office:join/ready, world:input/snapshot/delta/resync, presence:update, seat:sit/stand, conversation:update/leave, meeting:join/leave, reaction:send and structured errors/acknowledgements. Names are proposed contracts, not existing code. D02 is accepted all-LiveKit; no new custom P2P WebRTC signal event is part of the MVP.
 
 Use idempotency keys for durable commands, request/event IDs for diagnostics and typed error codes such as unauthorized, membership_required, room_full, protocol_mismatch, stale_epoch, rate_limited and media_unavailable. Server code revalidates every workspace/zone/target scope.
 

@@ -18,7 +18,9 @@ Bridge authenticated HTTP policy into one fresh Socket.IO admission.
 - `sessionId`
 - `workspaceId`
 - `officeId`
+- `membershipGrantId`
 - `officeEpoch`
+- `mapVersion`
 - `protocolVersion`
 - `expiresAt`
 - `consumedAt`
@@ -38,6 +40,8 @@ Bridge authenticated HTTP policy into one fresh Socket.IO admission.
 - Exact Origin allowlist protects transport; CORS alone is insufficient.
 - Reconnect cannot skip admission via Socket.IO connection-state recovery.
 
+CP01 exports strict public issue/response/handshake shapes in `packages/contracts/src/http/office.ts`; the digest record and runtime are still CP03/CP05 work. [Office v1](../../contracts/OFFICE_V1.md) defines lifetime/budgets, spent-ticket retry and same-session takeover boundaries.
+
 ## Interface outline
 
 - POST /api/workspaces/:workspaceId/offices/:officeId/join-ticket.
@@ -45,7 +49,7 @@ Bridge authenticated HTTP policy into one fresh Socket.IO admission.
 
 ## Planning question
 
-Freeze admission acknowledgement ordering and ticket-consumed-but-runtime-denied recovery behavior.
+CP01 office v1 defines ordering and fresh-ticket retry after consumption/runtime failure. Actual admission/reservation still needs CP03/CP05 implementation and evidence.
 
 ## Next work
 

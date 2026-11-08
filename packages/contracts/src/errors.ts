@@ -39,10 +39,28 @@ export const httpErrorCodeSchema = z.enum([
   'workspace_unavailable',
 ]);
 
+export const officeErrorCodeSchema = z.enum([
+  'office_not_ready',
+  'map_version_mismatch',
+  'protocol_mismatch',
+  'stale_epoch',
+  'stale_version',
+  'room_full',
+  'participation_conflict',
+  'seat_unavailable',
+  'seat_exit_blocked',
+  'zone_unavailable',
+  'media_unavailable',
+]);
+export const apiErrorCodeSchema = z.enum([
+  ...httpErrorCodeSchema.options,
+  ...officeErrorCodeSchema.options,
+]);
+
 export const apiErrorResponseSchema = z
   .object({
     error: z
-      .object({ code: httpErrorCodeSchema, message: httpErrorCodeSchema, requestId: idSchema })
+      .object({ code: apiErrorCodeSchema, message: apiErrorCodeSchema, requestId: idSchema })
       .strict()
       .refine((value) => value.code === value.message, 'Public messages must match safe codes'),
   })

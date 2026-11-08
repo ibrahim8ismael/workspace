@@ -45,7 +45,7 @@ Sessions start at 12 hours absolute/60 minutes idle. Passive heartbeat does not 
 
 ## Company routes and permissions
 
-A workspace is the current MVP company boundary. An explicit organization hierarchy remains open. Each membership has `owner` or `member` and independent active/revoked status. A customer owner has no platform operations privileges.
+A workspace is the current MVP company boundary. The owner accepted one company/workspace/office for MVP on 2026-11-08 (D12); a future organization hierarchy requires a separate scope/migration decision. Each membership has `owner` or `member` and independent active/revoked status. A customer owner has no platform operations privileges.
 
 | Method/path | Input | Permission / success |
 |---|---|---|

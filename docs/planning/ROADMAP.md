@@ -28,7 +28,7 @@ CP00 is documentation reconciliation only; its completion does not close A01–A
 
 ## B2B SaaS scope gate
 
-Resolve D12 (one company per workspace versus organization hierarchy) and D13 (company onboarding/lifecycle) before tenant schemas and onboarding freeze. Company isolation, independent memberships and clear company context are MVP requirements. Company quotas and shared-service/noisy-neighbor behavior need M5 evidence. Payments and enterprise identity features remain deferred. See [B2B product plan](../product/B2B_SAAS.md).
+D12 one company/workspace/office and D13 verified-user self-service onboarding are accepted (2026-11-08). D13 lifecycle/retention/export remains open before those controls. [CP01 contracts](../contracts/OFFICE_V1.md) cover the first wire boundary; CP02/CP03 still need actual map data and backend admission. Company isolation, independent memberships and clear company context are MVP requirements. Company quotas and shared-service/noisy-neighbor behavior need M5 evidence. Payments and enterprise identity features remain deferred. See [B2B product plan](../product/B2B_SAAS.md).
 
 ## Suggested working slices
 

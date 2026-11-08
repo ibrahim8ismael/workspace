@@ -6,7 +6,7 @@ Implementation boundary: [current API and limitations](../../contracts/AUTH_AND_
 
 ## Implementation tasks
 
-- [ ] Resolve company-to-workspace cardinality (D12) and onboarding mode (D13) before freezing tenant schemas.
+- [x] Record owner acceptance (2026-11-08): one company/workspace/office and verified-user self-service creation. D13 lifecycle remains separate.
 - [ ] Specify company suspension/offboarding and current-company navigation; keep platform privileges separate from customer roles.
 
 - [x] Implement create/list/detail DTOs and slug validation/uniqueness.

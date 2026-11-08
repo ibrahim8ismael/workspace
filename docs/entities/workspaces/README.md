@@ -7,7 +7,7 @@ Initial backend scope is now described by the [implemented auth/company API guid
 
 ## Responsibility
 
-Define the customer-company tenant boundary for office configuration and collaboration. The recommended MVP mapping is one company per workspace, with one office. A parent organization owning multiple workspaces remains an open M0 decision; see the [B2B SaaS plan](../../product/B2B_SAAS.md).
+Define the customer-company tenant boundary for office configuration and collaboration. The owner accepted one company/workspace/office for MVP on 2026-11-08. A future parent organization/multiple-workspace hierarchy requires a separate decision; see the [B2B SaaS plan](../../product/B2B_SAAS.md).
 
 - Owning module: Workspaces.
 - State location: MongoDB: workspaces.
@@ -26,7 +26,7 @@ Source: [owning model](../../../apps/api/src/modules/tenancy/tenancy.models.ts).
 - `memberCount`
 - `createdAt`
 
-No updatedAt/closed/archive field or lifecycle endpoint exists. Three owned workspaces/user and thirty members/workspace are implemented starting quotas, not measured capacity or commercial entitlements. D12/D13 remain open; company UI/settings/lifecycle are CP04/CP09 work.
+No updatedAt/closed/archive field or lifecycle endpoint exists. Three owned workspaces/user and thirty members/workspace are implemented starting quotas, not measured capacity or commercial entitlements. D12 and D13 self-service onboarding are accepted; company UI/settings and remaining D13 lifecycle are CP04/CP09 work.
 
 ## Relationships
 

@@ -20,6 +20,6 @@ The following are future checks, not passing results.
 ## Dependencies and completion
 
 - Follow the relationships and invariants in the [entity specification](README.md).
-- Resolve: Resolve all-LiveKit versus P2P and pin SDK/server compatibility before production media work.
+- Resolve: All-LiveKit is accepted. Pin SDK/server and prove guard/supervision behavior in CP07 before production grant implementation.
 - Before starting, freeze relevant runtime DTOs and error behavior in [HTTP](../../contracts/HTTP.md) / [realtime](../../contracts/REALTIME.md) contracts.
 - Completion requires code references, relevant check results and unresolved limitations in the [acceptance register](../../planning/ACCEPTANCE.md). No milestone is complete from documentation alone.

@@ -12,7 +12,7 @@ Started: 2026-11-08. Implementer: Codex. Status: in progress. Parent: [completio
 | --- | --- | --- |
 | CP01.0 | Record explicit owner choices and open follow-ups across current docs | Six owner choices received; technical validation/operational decisions remain scoped separately |
 | CP01.1 | Strict runtime response/error contracts for the existing auth/company API with leak/compatibility tests | Independent of map geometry and new runtime decisions; preserve current endpoints and response shapes |
-| CP01.2 | First office/event/version contracts, declared budgets and ownership/retry matrix | Wait for relevant choices; map-specific geometry/catalog freeze belongs to CP02. No gateway/ticket endpoint is implemented in CP01 |
+| CP01.2 | First office/event/version contracts, declared budgets and ownership/retry matrix | Implemented and documented in OFFICE_V1.md; map-specific geometry/catalog approval remains CP02. No gateway/ticket endpoint is implemented in CP01 |
 | CP01.3 | Reconcile contracts/docs, run checks and record remaining prerequisites | Do not mark the entire packet complete while an affected contract still requires an unrecorded decision |
 
 ## Current boundary that can be implemented now
@@ -36,3 +36,15 @@ Contract tests must reject overposting, invalid IDs/timestamps/versions/ranges, 
 ## CP01.1 evidence
 
 On 2026-11-08, full `pnpm check` passed with five contracts tests, five shared tests and 33 backend tests, plus formatting, lint, typechecking and builds. A real HTTP/Mongo projection scenario covers account/company/invitation/session responses; existing error/auth helper checks now parse their strict envelopes. The SMTP/queue boundaries remain faked. No business endpoint, production response interceptor, office or media runtime was added. The lazy LiveKit bundle warning remains.
+
+## CP01.2 interface checkpoint
+
+[OFFICE_V1.md](../contracts/OFFICE_V1.md) is the concrete technical contract checkpoint. Public manifest/bootstrap/ticket/handshake, strict command and event-name allowlists, world snapshots/deltas/ready/acks, locally bound delta validation, profile input and private conversation shapes are exported. Ownership, retries, takeover-reference extension, deterministic blocked-seat exits and provisional budgets are explicit. Unknown actual maps/catalog IDs must still fail server registry checks when CP03/CP06 are implemented.
+
+No owner scope answer needed for these first interfaces remains pending. Future lifecycle/operational decisions stay at their owning gates; a pinned media grant/permit/webhook protocol is deliberately deferred until the CP07 experiment rather than invented without a tested server. CP02 geometry/export/catalog and CP03 persistence/authorization/expiry remain the next implementation prerequisites.
+
+## CP01.2 validation baseline
+
+The final contract suite contains 18 tests across HTTP, office and conversation files. It covers the imported object:index seat identity format in addition to protocol/leak/state/size cases. Full `pnpm check` passed on 2026-11-08 with 18 contracts, 33 backend and five shared tests, plus formatting, lint, typechecks and all builds. The known lazy LiveKit chunk warning remains; no Docker/real mail/media/browser deployment check was run.
+
+The map header/provenance review is an explicit CP02 prerequisite. No test fixture content hash or body/palette ID is registered as approved map/catalog data by this work.

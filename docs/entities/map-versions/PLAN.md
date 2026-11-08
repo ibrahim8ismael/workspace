@@ -5,7 +5,8 @@ Status: planned; no implementation or verification evidence · Target: M0–M2
 ## Implementation tasks
 
 - [ ] Inventory upstream geometry and coordinate conventions.
-- [ ] Define runtime schema, version and content-hash rules.
+- [x] Define the CP01 public manifest/hash/version/pixel reference contract.
+- [ ] Implement/validate actual immutable geometry export/schema and deterministic hash generation under CP02.
 - [ ] Import one fixed map and compare server/client movement rules.
 - [ ] Specify incompatible-version and office-drain upgrade behavior.
 

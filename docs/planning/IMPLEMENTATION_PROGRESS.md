@@ -41,8 +41,8 @@ Implementer: Codex. Scope and freeze gates: [CP01_CONTRACTS_AND_DECISIONS.md](CP
 | Batch | Scope | Status | Evidence / limits |
 | --- | --- | --- | --- |
 | CP01.0 | Record owner choices and affected documentation | Committed/pushed as `1dc5f62` | First three owner choices recorded; later Vivo/English/Chrome-Edge answers are recorded with CP01.1 |
-| CP01.1 | Existing API runtime response/error contracts and compatibility/leak checks | Validated; prepared for commit/push | Full pnpm check passed: five contracts tests, five shared tests and 33 backend tests; real HTTP safe projections/error/auth envelopes checked; all builds passed |
-| CP01.2 | Office/event/version contracts, budgets, retries and ownership matrix | Pending relevant choices | No office gateway/ticket endpoint is implemented by contract schemas |
+| CP01.1 | Existing API runtime response/error contracts and compatibility/leak checks | Committed/pushed as `deff2e0` | Full pnpm check passed: five contracts tests, five shared tests and 33 backend tests; real HTTP safe projections/error/auth envelopes checked; all builds passed |
+| CP01.2 | Office/event/version contracts, budgets, retries and ownership matrix | Validated; prepared for commit/push | Full pnpm check passed: 18 contracts + 33 backend + five shared tests, formatting/lint/typechecks/builds. Scoped schemas, seat-ID compatibility and protocol rules documented; no office/media runtime |
 | CP01.3 | Final checks, documentation and packet status | Pending | Do not close unrecorded decisions or claim product/runtime acceptance |
 
 CP00 closing commit `d5c14fd` was pushed and [hosted CI passed](https://github.com/ibrahim8ismael/workspace/actions/runs/42476452849).

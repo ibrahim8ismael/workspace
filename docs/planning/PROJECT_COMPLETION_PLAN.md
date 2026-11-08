@@ -36,10 +36,10 @@ Close each decision before its dependent packet freezes a contract. Record the c
 
 | Decision | Proposed working direction and alternatives | Needed before |
 | --- | --- | --- |
-| D12: tenant hierarchy | Retain current one company = workspace = office. If an organization must own multiple workspaces at MVP, redesign tenant relationships and revise this plan's estimates before proceeding | CP02/CP03 tenant-facing freeze |
-| D13: onboarding/lifecycle | Current APIs permit self-service creation. Choose self-service, operator-assisted pilot or a combination; define who may suspend/resume/close a company and how retention/export works. No owner gains platform privileges | CP04 onboarding and CP09 lifecycle |
-| D04: map/catalog | Reuse one imported map; Vivo is a candidate, not selected. Compare spawn, collisions, asset provenance and seat/zone needs. Direct metadata adaptation is sufficient unless an authoring need justifies Tiled | CP02 and CP06 |
-| D02: proximity topology | Existing recommendation is all-LiveKit. Retaining P2P proximity adds a second lifecycle and requires a separate credible termination design; choosing it reopens CP07/CP08 | CP07 media proof |
+| D12: tenant hierarchy | Accepted 2026-11-08: one company = workspace = office. Parent organizations/multiple workspaces are outside MVP; a later change needs separate scope and migration | CP02/CP03 tenant-facing freeze |
+| D13: onboarding/lifecycle | Accepted: active verified users create companies themselves. Full suspension/resumption/closure authority, retention/export remain open; no owner gains platform privileges | CP04 onboarding and CP09 lifecycle |
+| D04: map/catalog | Vivo is the selected candidate. CP01 defines its public hash/version/pixel convention; CP02 still must approve actual spawn/collisions/assets/seats/zones and immutable export | CP02 and CP06 |
+| D02: proximity topology | Accepted: all-LiveKit for proximity and groups. No new production P2P path; D03/CP07 enforcement proof still gates product media | CP07 media proof |
 | D03: media shutdown | Choose a container-aware independent supervisor with narrowly bounded authority. Prove failure behavior; ordinary restart policies do not establish it | CP07 and any product media |
 | D05: hosting/network | Choose region/host, app and media endpoints, public IP/UDP, TURN/TLS arrangement and private network layout. Shared logical tenancy is the existing default | CP04 environment and CP07 fixture |
 | D06: mail/keys | Supply sending domain/provider, test inboxes, DNS setup and protected API/worker key storage; define rotation and lost-key behavior | Real CP04 delivery |
@@ -47,7 +47,7 @@ Close each decision before its dependent packet freezes a contract. Record the c
 | D08: decoration | Keep fixed geometry and hide editor controls. Enabling overrides requires a separate revision/conflict/collision plan | CP06 |
 | D10: business data | Determine whether real upstream company/account data exists. If none, clean verified onboarding; if present, use a separately rehearsed offline importer | CP10 migration |
 | D11: recovery evidence | Select storage outside app backups, allowed mutation/acknowledgement failure behavior, retention and reconciliation ownership | CP04 design; before pilot |
-| Browser/UX policy | Record supported desktop browsers, chosen pilot language(s), accessibility essentials and token entry UX. Code-entry forms preserve current mail; links require a separate safe route/history policy | CP04/CP06/CP08 |
+| Browser/UX policy | Accepted: English-first UI, desktop Chrome/Edge. Record actual OS/browser versions in tests. Accessibility essentials and token entry UX follow CP04; code forms preserve current mail, while links require a safe route/history policy | CP04/CP06/CP08 |
 
 External inputs still needed at their gates: provider credentials and domain control, host/region access, TLS/DNS, protected secret/audit stores, authorized real-delivery recipients, and people/devices/networks for pilot measurements. Work on local contracts, pure rules, backend tests and UI adapters can proceed without inventing those credentials.
 
@@ -107,7 +107,7 @@ Exit: all identified status/model discrepancies have either a correction or a li
 
 ### CP01 — Close boundary decisions and freeze the first interfaces
 
-Status: in progress (2026-11-08, Codex). [Owner choices](../decisions/2026-11-08_CP01.md) accept D12, D13 onboarding and D02; see the [scoped contract work](CP01_CONTRACTS_AND_DECISIONS.md) and [progress](IMPLEMENTATION_PROGRESS.md). Other questions retain their recorded gates.
+Status: contracts implemented; final verification/closure in progress (2026-11-08, Codex). [Owner choices](../decisions/2026-11-08_CP01.md) accept D12, D13 onboarding, D02, Vivo candidate, English-first and desktop Chrome/Edge; see the [scoped contract work](CP01_CONTRACTS_AND_DECISIONS.md) and [progress](IMPLEMENTATION_PROGRESS.md). Other questions retain their recorded gates.
 
 Deliverable: decision records and strict shared contracts for the next working slice.
 
@@ -307,7 +307,7 @@ No Docker execution, infrastructure provisioning, real email, publishing or sour
 | Risk | Consequence | Mitigation and decision boundary |
 | --- | --- | --- |
 | Unproven independent SFU shutdown | Media cannot meet retained revocation requirement | CP07 early proof; stop product media if it fails, then obtain an explicit architecture/requirement decision |
-| Organization requirement changes | Tenant schema/routes and all scopes change | Resolve D12 before extending admission/onboarding contracts; replan rather than patching only UI |
+| Organization requirement changes | Tenant schema/routes and all scopes change | D12 is accepted for MVP; a later organization expansion requires a new scope/migration plan |
 | Imported UI exceeds MVP | Unsupported controls imply features/security the backend lacks | CP06 route/bundle cleanup and browser checks; no hidden legacy backend |
 | Map/asset migration effort is larger than expected | Phaser integration delays | Prove one avatar/object and one map first; preserve notices; block unresolved artwork |
 | Live authorization renewal load | Database contention/tick delay under active users | Measure real read/write budgets separately from simulation; bounded leases fail closed and never wait on queue |

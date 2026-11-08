@@ -46,7 +46,7 @@ Own the current authorized set for proximity pairs and fixed-zone group calls.
 
 ## Planning question
 
-Finalize proximity topology choice before implementation; exact thresholds remain provisional.
+D02 is accepted all-LiveKit. CP01 defines private event/member/end-notice shapes; actual deterministic matching, generation transitions and measured thresholds remain CP08/CP09 work.
 
 ## Next work
 

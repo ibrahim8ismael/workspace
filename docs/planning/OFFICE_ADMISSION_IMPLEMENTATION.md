@@ -4,11 +4,13 @@ This proposal covers the first backend slice of M2, including B003 and B004 prer
 
 ## Scope and prerequisites
 
-- Use the current model of one company workspace with one office. Resolve D12 before freezing the tenant-facing contract. D13 still gates customer onboarding and offboarding flows. The office slice uses the existing workspace status policy.
+- Use the current model of one company workspace with one office. The owner accepted D12 one company/workspace/office and D13 self-service verified-user creation on 2026-11-08. D13 lifecycle/offboarding remains open. The office slice uses the existing workspace status policy.
 - Before enabling ticket issuance, validate one fixed map from the cleared asset inventory. Agree on its immutable version, spawn and coordinate convention under D04/B004. A test fixture can unblock contract and policy work while the map is being selected.
 - Implement the HTTP bootstrap, ticket issuance and an internal atomic consume operation in `apps/api`. Cover both `owner` and `member`. Keep the first checkpoint backend-only. Schedule the Socket.IO consumer, React/Phaser integration, movement, seats and media as separate work. Use the existing non-Docker test setup.
 
-## Stage 1 — Freeze the HTTP contract
+CP01 supplies [first office schemas and technical semantics](../contracts/OFFICE_V1.md). CP02 still must generate/approve actual Vivo map data and catalog; CP03 still must implement the routes/model/indexes/consume logic below. Schema fixtures are not approved maps or admission evidence.
+
+## Stage 1 — Implement the frozen first HTTP contract
 
 Define strict schemas in `packages/contracts/src/http/office.ts`, reusing the existing UUID, opaque secret and validation conventions. Keep the HTTP exception envelope and `Cache-Control: no-store` behavior.
 

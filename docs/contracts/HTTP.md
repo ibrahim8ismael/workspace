@@ -2,6 +2,8 @@
 
 Auth and company APIs are implemented in the initial backend. The [auth and roles reference](AUTH_AND_ROLES_API.md) defines their exact existing behavior. Proposed additions below belong to the [system backend implementation plan](../planning/BACKEND_SYSTEM_IMPLEMENTATION.md). Office events and media control have separate [Socket.IO](REALTIME.md) and [LiveKit](MEDIA.md) contracts.
 
+CP01 freezes the first shared office v1 schemas and technical interface semantics in [OFFICE_V1.md](OFFICE_V1.md). Existing auth/company routes remain implemented; proposed office/profile routes below do not become implemented because their schemas now exist.
+
 ## Shared contract
 
 - Browser routes below have the `/api` prefix. Use same-origin HTTPS, the existing opaque host-only session cookie, private `no-store` responses, and session-bound CSRF, exact `APP_ORIGIN` and JSON for mutations. Anonymous auth bootstrap uses its existing bounded binding and required headers.

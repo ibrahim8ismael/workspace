@@ -41,7 +41,7 @@ Define sit/stand anchors and mutually exclusive live occupancy.
 
 ## Planning question
 
-Define blocked-exit behavior and whether a seat affects proximity eligibility.
+CP01 office v1 selects the first valid exit in manifest order; blocked exits keep the participant seated with seat_exit_blocked. Availability/opt-in still govern proximity. CP02 validates geometry; CP05 implements behavior.
 
 ## Next work
 

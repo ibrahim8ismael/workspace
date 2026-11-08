@@ -2,6 +2,8 @@
 
 The owner-accepted D02 topology (2026-11-08) uses self-hosted LiveKit for opt-in proximity audio and fixed private meetings. The browser uses native WebRTC through the LiveKit client SDK. The production media path depends on the D03 enforcement spike. See the [decision register](../decisions/README.md) and [implementation sequence](../planning/BACKEND_SYSTEM_IMPLEMENTATION.md).
 
+CP01 public opt-in/conversation/meeting shapes are defined in [OFFICE_V1.md](OFFICE_V1.md). Their strict validation does not authorize recipients or install media permits. Pin-dependent grant/permit/webhook/supervision contracts still require the D03/CP07 proof before production media.
+
 ## Libraries and network boundaries
 
 | Component | Responsibility |

@@ -1,6 +1,6 @@
 # Socket.IO application protocol plan
 
-These are proposed contracts for the [system backend plan](../planning/BACKEND_SYSTEM_IMPLEMENTATION.md). The office module is a scaffold. The gateway will carry application state for the office and conversations. LiveKit owns its own signaling and WebRTC transport.
+The first wire schemas and exact version/budget/retry/projection semantics are now defined in [OFFICE_V1.md](OFFICE_V1.md) and exported from `packages/contracts`. Runtime behavior below remains planned under the [system backend plan](../planning/BACKEND_SYSTEM_IMPLEMENTATION.md). The office module is a scaffold. The gateway will carry application state for the office and conversations. LiveKit owns its own signaling and WebRTC transport.
 
 ## Transport and admission
 
@@ -19,7 +19,7 @@ Use Engine.IO admission and namespace policy together. Socket.IO documentation e
 - Acknowledged commands return `{ eventId, ok: true, result? }` or `{ eventId, ok: false, error: { code, retryAfterMs? } }`. Use a bounded per-participation replay cache keyed by event ID and request fingerprint for commands that can be retried while connected. A different command with a reused ID fails. On unknown outcome or reconnect, fetch current state before retrying. Durable writes remain on idempotent HTTP paths.
 - `world:snapshot` includes `officeEpoch`, `stateVersion`, `serverTime` and a safe participant/seat projection. `world:delta` includes `baseVersion` and `stateVersion`. Accept only deltas for the current epoch with a matching base. On a gap request resync and replace local state from a snapshot. An incompatible map or protocol requires bootstrap again. Private conversation updates have their own version/generation and do not advance the public world stream.
 - Use bounded integer sequences and versions. Send UTC timestamps as epoch milliseconds for the realtime stream and keep monotonic authorization deadlines server-side. Snapshot projections exclude credentials, email, internal policy and private call membership.
-- Freeze the error allowlist in `packages/contracts`. Draft codes include `validation_failed`, `unauthorized`, `membership_required`, `protocol_mismatch`, `map_version_mismatch`, `stale_epoch`, `stale_version`, `room_full`, `participation_conflict`, `seat_unavailable`, `zone_unavailable`, `rate_limited` and `media_unavailable`. Pre-admission errors use the connect error channel with safe codes. Socket acks and logs exclude exceptions and secrets.
+- Freeze the error allowlist in `packages/contracts`. Draft codes include `validation_failed`, `unauthorized`, `membership_required`, `protocol_mismatch`, `map_version_mismatch`, `stale_epoch`, `stale_version`, `room_full`, `participation_conflict`, `seat_unavailable`, `seat_exit_blocked`, `zone_unavailable`, `rate_limited` and `media_unavailable`. Pre-admission errors use the connect error channel with safe codes. Socket acks and logs exclude exceptions and secrets.
 
 ## Event inventory
 

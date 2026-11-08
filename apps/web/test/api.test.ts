@@ -22,6 +22,13 @@ const company = {
     memberCount: 1,
   },
 };
+const session = {
+  id: 'df92b3ad-d3e9-430d-82f5-6e91cbe9dfe2',
+  current: true,
+  createdAt: '2026-11-09T00:00:00.000Z',
+  absoluteExpiresAt: '2026-11-09T12:00:00.000Z',
+  idleExpiresAt: '2026-11-09T01:00:00.000Z',
+};
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 const csrf = () => json({ csrfToken: csrfA });
@@ -247,6 +254,243 @@ describe('same-origin API client', () => {
     await client.register(input);
     expect(csrfCalls).toBe(2);
     expect(postCalls).toBe(2);
+  });
+
+  it('reads only strict session metadata and sends a signal-aware JSON DELETE for a session', async () => {
+    const calls: { input: RequestInfo | URL; init?: RequestInit }[] = [];
+    const fetcher: typeof fetch = async (input, init) => {
+      calls.push({ input, init });
+      if (input === '/api/auth/csrf') return csrf();
+      if (input === '/api/auth/sessions') return json({ sessions: [session] });
+      return message();
+    };
+    const client = new ApiClient(fetcher);
+    expect(await client.sessions()).toEqual([session]);
+    const controller = new AbortController();
+    await client.revokeSession(session, controller.signal);
+
+    expect(calls[2]?.input).toBe(`/api/auth/sessions/${session.id}`);
+    expect(calls[2]?.init).toMatchObject({
+      method: 'DELETE',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      body: '{}',
+      signal: controller.signal,
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfA },
+    });
+  });
+
+  it('rejects unsafe session metadata and workspace IDs before sending requests', async () => {
+    let requests = 0;
+    const client = new ApiClient(async () => {
+      requests += 1;
+      return json({ sessions: [{ ...session, tokenDigest: 'secret' }] });
+    });
+    await expect(client.sessions()).rejects.toMatchObject({ code: 'invalid_response' });
+    await expect(client.workspaceDetail('not-a-uuid')).rejects.toMatchObject({
+      code: 'validation_failed',
+    });
+    await expect(client.revokeSession({ ...session, id: 'not-a-uuid' })).rejects.toMatchObject({
+      code: 'validation_failed',
+    });
+    expect(requests).toBe(1);
+
+    const validClient = new ApiClient(async () =>
+      json({ workspace: { ...company.workspace, officeId: session.id } }),
+    );
+    await expect(validClient.workspaceDetail(company.workspace.id)).resolves.toMatchObject({
+      ...company.workspace,
+      officeId: session.id,
+    });
+
+    const invalidWorkspaceClient = new ApiClient(async () =>
+      json({ workspace: { ...company.workspace, officeId: session.id, internalPolicy: 'secret' } }),
+    );
+    await expect(
+      invalidWorkspaceClient.workspaceDetail(company.workspace.id),
+    ).rejects.toMatchObject({
+      code: 'invalid_response',
+    });
+  });
+
+  it('clears CSRF after current-session revocation, but keeps it after another session is revoked', async () => {
+    for (const current of [true, false]) {
+      let csrfCalls = 0;
+      const calls: RequestInfo[] = [];
+      const fetcher: typeof fetch = async (input) => {
+        calls.push(input as RequestInfo);
+        if (input === '/api/auth/csrf') {
+          csrfCalls += 1;
+          return csrf();
+        }
+        if (input === '/api/auth/sessions') return json({ sessions: [{ ...session, current }] });
+        return message();
+      };
+      const client = new ApiClient(fetcher);
+      const [listed] = await client.sessions();
+      await client.revokeSession(listed!);
+      await client.register({
+        email: account.email,
+        displayName: account.displayName,
+        password: 'a sufficiently long password',
+      });
+      expect(csrfCalls).toBe(current ? 2 : 1);
+    }
+  });
+
+  it('does not automatically retry a failed session revocation', async () => {
+    let deleteCalls = 0;
+    const client = new ApiClient(async (input) => {
+      if (input === '/api/auth/csrf') return csrf();
+      deleteCalls += 1;
+      return json(
+        { error: { code: 'unavailable', message: 'unavailable', requestId: account.id } },
+        503,
+      );
+    });
+    await expect(client.revokeSession({ ...session, current: false })).rejects.toMatchObject({
+      status: 503,
+      outcomeUnknown: true,
+    });
+    expect(deleteCalls).toBe(1);
+  });
+
+  it('clears local session state only after validated logout-all and password-change success', async () => {
+    for (const action of ['logout-all', 'change-password'] as const) {
+      let csrfCalls = 0;
+      const calls: { input: RequestInfo | URL; init?: RequestInit }[] = [];
+      const fetcher: typeof fetch = async (input, init) => {
+        calls.push({ input, init });
+        if (input === '/api/auth/csrf') {
+          csrfCalls += 1;
+          return csrf();
+        }
+        return message();
+      };
+      const client = new ApiClient(fetcher);
+      if (action === 'logout-all') await client.logoutAll();
+      else
+        await client.changePassword({
+          currentPassword: 'a sufficiently long current password',
+          newPassword: 'a sufficiently long replacement password',
+        });
+      await client.register({
+        email: account.email,
+        displayName: account.displayName,
+        password: 'a sufficiently long password',
+      });
+      expect(csrfCalls).toBe(2);
+      const expectedPath =
+        action === 'logout-all' ? '/api/auth/logout-all' : '/api/auth/change-password';
+      expect(calls.find(({ input }) => input === expectedPath)?.init).toMatchObject({
+        method: 'POST',
+        body:
+          action === 'logout-all'
+            ? '{}'
+            : JSON.stringify({
+                currentPassword: 'a sufficiently long current password',
+                newPassword: 'a sufficiently long replacement password',
+              }),
+      });
+    }
+  });
+
+  it('rotates CSRF after reauthentication and fences delayed old responses', async () => {
+    const calls: { input: RequestInfo | URL; init?: RequestInit }[] = [];
+    let finishReauth!: (response: Response) => void;
+    let reauthStarted!: () => void;
+    const reauthStart = new Promise<void>((resolve) => {
+      reauthStarted = resolve;
+    });
+    const fetcher: typeof fetch = async (input, init) => {
+      calls.push({ input, init });
+      if (input === '/api/auth/csrf') return csrf();
+      if (input === '/api/auth/reauthenticate') {
+        reauthStarted();
+        return new Promise<Response>((resolve) => {
+          finishReauth = resolve;
+        });
+      }
+      return message();
+    };
+    const client = new ApiClient(fetcher);
+    const pendingReauth = client.reauthenticate({ password: 'a sufficiently long password' });
+    await reauthStart;
+    client.clearSessionMemory();
+    finishReauth(json(signedIn));
+    await expect(pendingReauth).rejects.toMatchObject({ code: 'stale_response' });
+    await client.register({
+      email: account.email,
+      displayName: account.displayName,
+      password: 'a sufficiently long password',
+    });
+    expect(calls.filter(({ input }) => input === '/api/auth/csrf')).toHaveLength(2);
+    expect(calls.find(({ input }) => input === '/api/auth/reauthenticate')?.init).toMatchObject({
+      method: 'POST',
+      body: JSON.stringify({ password: 'a sufficiently long password' }),
+    });
+  });
+
+  it('uses the rotated reauthentication token and validates explicit session extension', async () => {
+    const calls: { input: RequestInfo | URL; init?: RequestInit }[] = [];
+    const fetcher: typeof fetch = async (input, init) => {
+      calls.push({ input, init });
+      if (input === '/api/auth/csrf') return csrf();
+      if (input === '/api/auth/reauthenticate') return json(signedIn);
+      if (input === '/api/auth/session/extend')
+        return json({ idleExpiresAt: '2026-11-09T02:00:00.000Z' });
+      return message();
+    };
+    const client = new ApiClient(fetcher);
+    await client.reauthenticate({ password: 'a sufficiently long password' });
+    expect(await client.extendSession()).toBe('2026-11-09T02:00:00.000Z');
+    expect(calls.at(-1)?.init).toMatchObject({
+      method: 'POST',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      body: '{}',
+      headers: { 'X-CSRF-Token': csrfB },
+    });
+
+    const invalid = new ApiClient(async (input) =>
+      input === '/api/auth/csrf' ? csrf() : json({ idleExpiresAt: 'not-a-date', extra: true }),
+    );
+    await expect(invalid.extendSession()).rejects.toMatchObject({
+      code: 'invalid_response',
+      outcomeUnknown: true,
+    });
+  });
+
+  it('does not let a delayed old logout clear a newer login CSRF binding', async () => {
+    let finishLogout!: (value: unknown) => void;
+    let logoutStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      logoutStarted = resolve;
+    });
+    const fetcher: typeof fetch = async (input) => {
+      if (input === '/api/auth/csrf') return csrf();
+      if (input === '/api/auth/logout-all') {
+        logoutStarted();
+        return {
+          ok: true,
+          status: 200,
+          json: () => new Promise((resolve) => (finishLogout = resolve)),
+        } as Response;
+      }
+      if (input === '/api/auth/login') return json(signedIn);
+      return message();
+    };
+    const client = new ApiClient(fetcher);
+    const oldLogout = client.logoutAll();
+    await started;
+    await client.login({ email: account.email, password: 'a sufficiently long password' });
+    finishLogout({ message: 'Signed out.' });
+    await expect(oldLogout).rejects.toMatchObject({ code: 'stale_response' });
+    await client.register({
+      email: account.email,
+      displayName: account.displayName,
+      password: 'a sufficiently long password',
+    });
   });
 });
 

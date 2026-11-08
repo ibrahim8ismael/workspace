@@ -42,3 +42,25 @@ Implemented on 2026-11-09 by GPT-6 Luna; reviewed and independently verified by 
 - Additional browser checks passed for recovery from an initial `/me` 503, legacy-secret cleanup while retaining a theme preference, password input clearing across views, blocked localStorage and a 390 px layout without horizontal overflow. Secure/HttpOnly/host-only session-cookie attributes, empty auth storage and zero runtime exceptions were checked in the main flow. The narrow viewport is a layout smoke check, not mobile-browser acceptance.
 
 Verification used private fixture reads, not actual email delivery. Edge, public TLS/ingress/proxy behavior, persistent Redis, worker/SMTP faults, session settings and integrated office/media remain unverified here. CP04 is still in progress; CP04.2 is next. No Docker or external mail service was run. Hosted CI is recorded on the closing commit's GitHub Actions run after push.
+
+## CP04.2 execution plan
+
+Started on 2026-11-09 with the same owner-approved division: GPT-6 Luna implements; Codex scopes, reviews, verifies, documents and pushes each completed batch.
+
+| Batch | Scope | Completion evidence |
+| --- | --- | --- |
+| CP04.2a | Typed browser adapters for sessions/revocation, logout-all, reauthentication, password change, explicit extension and company detail | Strict response/ID validation; DELETE JSON/CSRF behavior; rotation, memory clearing, stale-response and no-retry tests; repository checks |
+| CP04.2b | Account security screen and session lifetime controls | Real HTTPS browser session list, other/current-session revocation, logout-all, reauthentication/CSRF rotation, password change and explicit extension; idle warning/expiry; response teardown |
+| CP04.2c | Explicit current-company selection and isolated company context | Server-authorized detail before selection, owner/member display, switch/leave-view cleanup, rejected membership/access, stale response and account teardown tests |
+
+The company selection is a context screen for the existing company API. It does not enter a realtime office, request a join ticket or start media. Selected state stays in memory and is cleared on signout, account changes or lost access. Office/world/media lifecycle hooks belong to the later integrated office packets.
+
+Session timers are a browser UX estimate from server-issued expiry metadata; protected requests still enforce the actual session on the API. Passive reads, focus events and countdowns must never extend access. The user must explicitly request an extension, which remains bounded by absolute expiry. Reauthentication replaces the session/cookie and CSRF binding; browser state must discard responses tied to the old binding. Password change, current-session revocation and logout-all return to signin.
+
+No external delivery or infrastructure deployment is included in these batches. Keep the CP04.1 code-entry and private test-fixture boundaries. Run full checks before each batch commit/push and inspect its hosted CI result; record exact evidence without accepting the remaining CP04 environment/provider gates.
+
+### CP04.2a — session adapter evidence
+
+Completed in the CP04.2a commit. Luna implemented `sessions`, validated company detail, JSON `DELETE` revocation, logout-all, password change, reauthentication and explicit extension in the browser adapter. Session/current designation comes from a strictly validated public session DTO; only a current-session revocation clears client session memory. Destructive success handlers and rotation both recheck their originating generation before changing memory.
+
+Codex reviewed headers/ID interpolation, schema rejection, awaited-body races and clearing behavior. Full local `pnpm check` passed **118 tests** (16 browser tests plus the existing 102 non-browser tests), formatting, lint, all workspace typechecks and builds. This batch adds transport adapters; session/security controls and current-company UI are still CP04.2b/CP04.2c. No backend, schema, dependency or mail/infrastructure change was needed.

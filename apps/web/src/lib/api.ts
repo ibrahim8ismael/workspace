@@ -3,20 +3,32 @@ import {
   accountResponseSchema,
   apiErrorResponseSchema,
   authenticatedResponseSchema,
+  changePasswordSchema,
   createWorkspaceSchema,
   csrfResponseSchema,
-  emailRequestSchema,
   emptyBodySchema,
+  emailRequestSchema,
+  extendSessionResponseSchema,
+  idSchema,
   loginSchema,
   messageResponseSchema,
   registerSchema,
+  reauthenticateSchema,
   resetPasswordSchema,
+  sessionDtoSchema,
+  sessionsResponseSchema,
   verifyEmailSchema,
+  officeWorkspaceDetailResponseSchema,
   workspaceResponseSchema,
   workspacesResponseSchema,
 } from '@gather/contracts';
 import type { AccountDto, WorkspaceDto } from '@gather/contracts';
 import { z } from 'zod';
+
+export type SessionDto = z.infer<typeof sessionDtoSchema>;
+export type OfficeWorkspaceDetail = z.infer<
+  typeof officeWorkspaceDetailResponseSchema
+>['workspace'];
 
 export class ApiError extends Error {
   constructor(
@@ -49,6 +61,19 @@ export class ApiClient {
     this.csrfToken = null;
     this.generation += 1;
     this.csrfFlight = null;
+  }
+
+  /** Apply login/reauthentication tokens only while their originating session generation is current. */
+  private rotateSession(response: { csrfToken: string }, expectedGeneration: number) {
+    if (expectedGeneration !== this.generation) throw new ApiError('stale_response', null, true);
+    this.generation += 1;
+    this.csrfFlight = null;
+    this.csrfToken = response.csrfToken;
+  }
+
+  private clearSessionMemoryFor(expectedGeneration: number) {
+    if (expectedGeneration !== this.generation) throw new ApiError('stale_response', null, true);
+    this.clearSessionMemory();
   }
 
   private async body<T>(
@@ -128,6 +153,7 @@ export class ApiClient {
     responseSchema: z.ZodType<T>,
     idempotencyKey?: string,
     signal?: AbortSignal,
+    method: 'POST' | 'DELETE' = 'POST',
   ): Promise<T> {
     const parsedInput = requestSchema.safeParse(input);
     if (!parsedInput.success) throw new ApiError('validation_failed', 400);
@@ -143,7 +169,7 @@ export class ApiClient {
     let response: Response;
     try {
       response = await this.fetcher(`/api${path}`, {
-        method: 'POST',
+        method,
         credentials: 'same-origin',
         cache: 'no-store',
         headers,
@@ -166,6 +192,22 @@ export class ApiClient {
     return (await this.get('/workspaces', workspacesResponseSchema, signal)).workspaces;
   }
 
+  async workspaceDetail(id: string, signal?: AbortSignal): Promise<OfficeWorkspaceDetail> {
+    const parsedId = idSchema.safeParse(id);
+    if (!parsedId.success) throw new ApiError('validation_failed', 400);
+    return (
+      await this.get(
+        `/workspaces/${encodeURIComponent(parsedId.data)}`,
+        officeWorkspaceDetailResponseSchema,
+        signal,
+      )
+    ).workspace;
+  }
+
+  async sessions(signal?: AbortSignal): Promise<SessionDto[]> {
+    return (await this.get('/auth/sessions', sessionsResponseSchema, signal)).sessions;
+  }
+
   async login(input: unknown, signal?: AbortSignal): Promise<AccountDto> {
     const generation = this.generation;
     const response = await this.mutate(
@@ -177,9 +219,21 @@ export class ApiClient {
       signal,
     );
     if (generation !== this.generation) throw new ApiError('stale_response', null, true);
-    this.generation += 1;
-    this.csrfFlight = null;
-    this.csrfToken = response.csrfToken;
+    this.rotateSession(response, generation);
+    return response.account;
+  }
+
+  async reauthenticate(input: unknown, signal?: AbortSignal): Promise<AccountDto> {
+    const generation = this.generation;
+    const response = await this.mutate(
+      '/auth/reauthenticate',
+      input,
+      reauthenticateSchema,
+      authenticatedResponseSchema,
+      undefined,
+      signal,
+    );
+    this.rotateSession(response, generation);
     return response.account;
   }
 
@@ -261,6 +315,7 @@ export class ApiClient {
   }
 
   async logout(signal?: AbortSignal) {
+    const generation = this.generation;
     await this.mutate(
       '/auth/logout',
       {},
@@ -269,6 +324,63 @@ export class ApiClient {
       undefined,
       signal,
     );
-    this.clearSessionMemory();
+    this.clearSessionMemoryFor(generation);
+  }
+
+  /** Pass a SessionDto returned by sessions(); its `current` flag controls local cookie-bound state cleanup. */
+  async revokeSession(session: SessionDto, signal?: AbortSignal): Promise<void> {
+    const parsedSession = sessionDtoSchema.safeParse(session);
+    if (!parsedSession.success) throw new ApiError('validation_failed', 400);
+    const generation = this.generation;
+    await this.mutate(
+      `/auth/sessions/${encodeURIComponent(parsedSession.data.id)}`,
+      {},
+      emptyBodySchema,
+      messageResponseSchema,
+      undefined,
+      signal,
+      'DELETE',
+    );
+    if (generation !== this.generation) throw new ApiError('stale_response', null, true);
+    if (parsedSession.data.current) this.clearSessionMemoryFor(generation);
+  }
+
+  async logoutAll(signal?: AbortSignal): Promise<void> {
+    const generation = this.generation;
+    await this.mutate(
+      '/auth/logout-all',
+      {},
+      emptyBodySchema,
+      messageResponseSchema,
+      undefined,
+      signal,
+    );
+    this.clearSessionMemoryFor(generation);
+  }
+
+  async changePassword(input: unknown, signal?: AbortSignal): Promise<void> {
+    const generation = this.generation;
+    await this.mutate(
+      '/auth/change-password',
+      input,
+      changePasswordSchema,
+      messageResponseSchema,
+      undefined,
+      signal,
+    );
+    this.clearSessionMemoryFor(generation);
+  }
+
+  async extendSession(signal?: AbortSignal): Promise<string> {
+    return (
+      await this.mutate(
+        '/auth/session/extend',
+        {},
+        emptyBodySchema,
+        extendSessionResponseSchema,
+        undefined,
+        signal,
+      )
+    ).idleExpiresAt;
   }
 }

@@ -1,6 +1,6 @@
 # Repository implementation layout
 
-Status: imported client and backend identity/tenancy/delivery/audit implemented; office/media integration pending · Updated: 2026-11-08
+Status: imported client and backend identity/tenancy/delivery/audit implemented; CP03 office admission implemented; realtime/media integration pending · Updated: 2026-11-09
 
 The owner approved the refined structure and requested library installation with incremental pushes and no Docker execution. This page supersedes the earlier suggested folder decomposition; architecture/security requirements in the source brief still apply.
 
@@ -12,7 +12,7 @@ The owner approved the refined structure and requested library installation with
 | apps/api | NestJS modular HTTP and future Socket.IO/runtime host | Backend authentication, company roles, validation, cookies/CSRF, Mongo transactions and liveness |
 | apps/api/src/modules/identity | Accounts, credentials, sessions, tokens and auth delivery | Implemented backend account lifecycle and session/CSRF guards |
 | apps/api/src/modules/tenancy | Workspace company boundary, memberships, invitations and policies | Implemented scoped owner/member APIs, invitations and owner/capacity transactions |
-| apps/api/src/modules/office | Maps, admission, authoritative movement, seats and gateway adapters | Empty module and tracked feature folders; no open socket gateway |
+| apps/api/src/modules/office | Maps, admission, authoritative movement, seats and gateway adapters | Trusted map registry, workspace-scoped bootstrap, map backfill, ticket issuance and atomic consume implemented. Socket gateway/runtime remains CP05 |
 | apps/api/src/modules/conversations, media | Policy-owned conversation and media work | Empty module boundaries |
 | apps/api/src/modules/audit | Transactional security event recording | Implemented safe audit records and 30-day TTL; independent recovery mirror pending |
 | apps/worker | Outbox dispatch and delivery processors/providers | Explicitly configured BullMQ/SMTP worker; no real mail sent in tests |

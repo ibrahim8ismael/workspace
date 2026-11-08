@@ -9,7 +9,8 @@ Implementation boundary: [current API and limitations](../../contracts/AUTH_AND_
 - [x] Implement independent company owner/member policy.
 - [x] Create unique workspace/user index and shared membership/owner policy checks.
 - [x] Implement transactional removal/leave/transfer and exact counters.
-- [ ] Add rotating activation-grant identity under CP03 and live revocation hints/bounded leases under CP05.
+- [x] Add rotating activation-grant identity under CP03.
+- [ ] Add live revocation hints and bounded leases under CP05.
 
 ## Acceptance criteria
 

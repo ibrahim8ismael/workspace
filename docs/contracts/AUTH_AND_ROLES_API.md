@@ -1,6 +1,6 @@
 # Authentication and company role APIs
 
-Status: initial backend implementation · Updated: 2026-11-06. Frontend integration is outside this change. Local/hosted verification results are recorded separately; this document is not production signoff.
+Status: backend auth/company API with CP03 office admission · Updated: 2026-11-09. Frontend integration is outside this change. Local/hosted verification results are recorded separately; this document is not production signoff.
 
 ## Runtime contract coverage (CP01, 2026-11-08)
 
@@ -61,13 +61,13 @@ A workspace is the current MVP company boundary. The owner accepted one company/
 | POST `/workspaces/:workspaceId/leave` | `{}` | Current member; owner transfers first |
 | POST `/workspaces/:workspaceId/transfer-ownership` | `userId` | Current owner, recent password proof, existing active verified member target |
 
-Workspace DTO: `{ id, name, slug, role, memberCount }`. Member projection excludes email/credentials. Unknown fields—including role/status/ownerId overrides—are rejected. UUID path substitution does not bypass tenant policy.
+Workspace create/list DTO: `{ id, name, slug, role, memberCount }`. CP03 adds `officeId` to the workspace detail response. Member projection excludes email/credentials. Unknown fields—including role/status/ownerId overrides—are rejected. UUID path substitution does not bypass tenant policy.
 
-Selected initial quotas: three owned companies per user, 30 members per company, 50 pending invites per company, seven-day invite expiry. Invitations do not reserve member slots. Counters and membership/owner changes share a transaction; retries do not increment twice. Ownership changes serialize on workspace policy and atomically change both membership roles and ownership counters. The created office is a reference with `pending-m0` map version; no office/runtime/media API is implemented by this slice.
+Selected initial quotas: three owned companies per user, 30 members per company, 50 pending invites per company, seven-day invite expiry. Invitations do not reserve member slots. Counters and membership/owner changes share a transaction; retries do not increment twice. Ownership changes serialize on workspace policy and atomically change both membership roles and ownership counters. New offices store the trusted Commons map version. The explicit pending-map backfill, authorized bootstrap and one-use join-ticket API are implemented in [CP03](../planning/OFFICE_ADMISSION_IMPLEMENTATION.md#cp03-implementation-evidence). Socket admission and media integration follow in CP05 and later packets.
 
 ## Persistence, indexes and delivery
 
-Collections: `users`, `credentials`, `sessions`, `auth_tokens`, `rate_limits`, `workspaces`, `memberships`, `invitations`, `offices`, `operations`, `audit_events`, `outbox`. Durable identities use opaque UUIDs. Unique indexes enforce email, credentials/user, session/token/invite digests, workspace slug, workspace/user membership and one office reference per workspace. Startup validates the exact unique key shapes and rejects sparse/partial or compound substitutes. Owner uniqueness is maintained by serialized transactional policy writes and verified after transfer; it is not a uniqueness-index swap between role records.
+Collections: `users`, `credentials`, `sessions`, `auth_tokens`, `rate_limits`, `workspaces`, `memberships`, `invitations`, `offices`, `operations`, `audit_events`, `outbox`, `office_join_tickets`. Durable identities use opaque UUIDs. Unique indexes enforce email, credentials/user, session/token/invite digests, workspace slug, workspace/user membership and one office reference per workspace. Startup validates the exact unique key shapes and rejects sparse/partial or compound substitutes. Owner uniqueness is maintained by serialized transactional policy writes and verified after transfer; it is not a uniqueness-index swap between role records.
 
 Sensitive mutations revalidate and make real conditional writes to current session/user/membership/workspace records inside snapshot transactions with majority writes. Concurrent reset/removal/transfer conflicts with the same records, so an earlier allow decision is insufficient. TTL is cleanup only. Admission/session reads use bounded primary linearizable checks where required. Driver transaction handling retries conflicts and reconciles commit outcomes; scoped operation records make durable command retry outcomes stable.
 

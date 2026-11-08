@@ -100,4 +100,6 @@ The final local evidence and remaining boundary are recorded in the [CP03 plan](
 | --- | --- | --- | --- |
 | CP03.3/CP03.4 | One-use ticket issuance and atomic consumption | Complete in the closing CP03 commit | Final local `pnpm check` passed 102 tests, including 43 backend tests. Password reset, fresh epoch provider, legacy grant fallback, delayed expiry, concurrent consume/revoke and exact startup indexes were exercised |
 
+CP03.3/CP03.4 was pushed as `b352177` and [hosted CI passed](https://github.com/ibrahim8ismael/workspace/actions/runs/42528012842).
+
 CP03 closed on 2026-11-09. CP04 browser/company integration and CP05 authoritative office runtime are the next implementation packets.

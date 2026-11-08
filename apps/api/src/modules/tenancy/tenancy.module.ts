@@ -13,6 +13,6 @@ import {
   imports: [IdentityModule, AuditModule],
   providers: [TenancyModels, TenancyService, WorkspaceGuard],
   controllers: [WorkspacesController, WorkspaceController, InvitationAcceptanceController],
-  exports: [TenancyModels],
+  exports: [TenancyModels, TenancyService],
 })
 export class TenancyModule {}

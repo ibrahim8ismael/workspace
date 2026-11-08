@@ -2,6 +2,7 @@ import { Injectable, Inject } from '@nestjs/common';
 import type { ClientSession } from 'mongoose';
 import { randomUUID } from 'node:crypto';
 import type { WorkspaceDto } from '@gather/contracts';
+import { officeWorkspaceDetailResponseSchema } from '@gather/contracts';
 import { TenancyModels } from './tenancy.models.js';
 import type { WorkspaceRecord, MembershipRecord } from './tenancy.models.js';
 import { IdentityModels } from '../identity/identity.models.js';
@@ -179,7 +180,22 @@ export class TenancyService {
   async get(context: ActorContext, id: string) {
     return this.db.transaction(async (tx) => {
       const { workspace, member } = await this.lockAccess(context, id, tx);
-      return { workspace: dto(workspace, member.role) };
+      const office = await this.models.offices.findOne({ workspaceId: id }).session(tx).lean();
+      invariant(office, 404, 'not_found');
+      return officeWorkspaceDetailResponseSchema.parse({
+        workspace: { ...dto(workspace, member.role), officeId: office._id },
+      });
+    });
+  }
+  async getOffice(context: ActorContext, workspaceId: string, officeId: string) {
+    return this.db.transaction(async (tx) => {
+      await this.lockAccess(context, workspaceId, tx);
+      const office = await this.models.offices
+        .findOne({ _id: officeId, workspaceId })
+        .session(tx)
+        .lean();
+      invariant(office, 404, 'not_found');
+      return office;
     });
   }
   async members(context: ActorContext, id: string) {

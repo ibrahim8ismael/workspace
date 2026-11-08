@@ -13,7 +13,7 @@ CP01 freezes the first shared office v1 schemas and technical interface semantic
 
 ## Existing response contracts
 
-CP01 adds strict runtime schemas for the current auth/company projections in `packages/contracts/src/http/responses.ts` and safe current HTTP errors in `packages/contracts/src/errors.ts`. These are exported validation contracts exercised against real HTTP responses; the API has not gained an automatic response interceptor. Office routes/events below remain separate pending runtime work.
+CP01 adds strict runtime schemas for the current auth/company projections in `packages/contracts/src/http/responses.ts` and safe current HTTP errors in `packages/contracts/src/errors.ts`. These are exported validation contracts exercised against real HTTP responses; the API has not gained an automatic response interceptor. CP03.1 implements office discovery and bootstrap against the trusted Commons manifest. Ticket and realtime work follow in later batches.
 
 ## Implemented routes
 

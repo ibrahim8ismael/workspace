@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
+import { TenancyModule } from '../tenancy/tenancy.module.js';
+import { OfficeController } from './office.controller.js';
 
-/** Module boundary only; feature implementation is pending. */
-@Module({})
+@Module({ imports: [TenancyModule], controllers: [OfficeController] })
 export class OfficeModule {}

@@ -20,7 +20,7 @@ IDs remain stable planning references. The [completion plan](PROJECT_COMPLETION_
 | B012 | M1 | Implement verification/login/logout/recovery/reauth, session rotation and race protections | B006, B011 | Backend lifecycle implemented/local tests; browser and production gates pending (CP04) |
 | B013 | M1 | Select mail/key storage; implement encrypted outbox, dispatcher and ID-only jobs; demonstrate actual delivery | B011, D06 | Encryption/dispatcher/ID jobs/SMTP adapter implemented; provider, keys and real queue fault evidence pending (CP04/CP10) |
 | B014 | M1 | Implement tenant creation, matching-recipient invitation and owner/member concurrency rules | B011, B012, B013 | Backend tenant/invite/owner/member transactions implemented/local tests; browser/lifecycle/live integration pending |
-| B015 | M2 | Implement ticket consume → runtime reservation → ready/snapshot lifecycle | B003, B014 | CP01 issue/bootstrap/handshake shapes and ordering/budgets defined; backend consume/runtime admission pending CP03/CP05 |
+| B015 | M2 | Implement ticket consume → runtime reservation → ready/snapshot lifecycle | B003, B014 | CP03.1 office discovery/bootstrap implemented and locally verified. Map assignment, tickets and runtime admission follow in CP03.2–CP03.4/CP05 |
 | B016 | M2 | Implement intent-driven movement, collision, seat serialization and snapshot gap repair | B004, B005, B015 | Pure discrete collision foundation locally verified (CP02.1); authoritative runtime movement/seats/gap repair and client remain pending CP05/CP06 |
 | B017 | M2 | Implement continuing authorization, monotonic deadlines, fresh epochs and explicit takeover | B012, B015 | CP01 epoch/version/lease/retry/takeover boundary documented; live enforcement pending CP05 |
 | B018 | M3 | Implement proximity state machine and guarded current-generation voice grants | B010, B016, B017 | Pending conversations/guarded voice (CP07/CP08) |
@@ -32,7 +32,7 @@ IDs remain stable planning references. The [completion plan](PROJECT_COMPLETION_
 
 ## First implementation entry point
 
-CP00 and CP01 are complete. Continue [CP02](CP02_WORLD_AND_MAP.md) with the original `commons` map and its contract/catalog/export, then CP03 against the existing backend. Preserve B012/B014 behavior rather than implementing it again. Connect minimal company/auth UI and real delivery under CP04; the imported UI remains migration material until legacy secret/transport assumptions are removed. Do not expand product media before B008–B010 produce evidence.
+CP00–CP02 are complete. Continue [CP03](OFFICE_ADMISSION_IMPLEMENTATION.md#delivery-batches) against the existing backend. CP03.1 implements office discovery/bootstrap; map assignment and one-use tickets follow. Preserve B012/B014 behavior rather than implementing it again. Connect minimal company/auth UI and real delivery under CP04; the imported UI remains migration material until legacy secret/transport assumptions are removed. Do not expand product media before B008–B010 produce evidence.
 
 The [system backend implementation plan](BACKEND_SYSTEM_IMPLEMENTATION.md) maps these items to HTTP, Socket.IO, LiveKit and private service interfaces. Its first M2 checkpoint uses the [office bootstrap and join-ticket plan](OFFICE_ADMISSION_IMPLEMENTATION.md) for the HTTP and ticket foundation of B015.
 

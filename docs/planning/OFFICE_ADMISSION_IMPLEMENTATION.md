@@ -10,6 +10,17 @@ This proposal covers the first backend slice of M2, including B003 and B004 prer
 
 CP01 supplies the first office schemas and technical semantics. CP02 supplies the original Commons geometry and catalog. CP03 implements the routes, indexes and consume logic below. See [office v1](../contracts/OFFICE_V1.md) and the [Commons implementation plan](CP02_WORLD_AND_MAP.md).
 
+## Delivery batches
+
+| Batch | Deliverable | Verification |
+| --- | --- | --- |
+| CP03.1 | Trusted Commons registry, workspace detail with `officeId`, and office bootstrap scoped to the workspace and office IDs | Active owner and member receive the strict DTOs. Verify unauthenticated, cross-company, suspended, missing, mismatched and unready responses. Workspace create and list retain their current DTOs |
+| CP03.2 | Set the Commons version when creating an office and provide an explicit backfill for `pending-m0` records | Dry-run and apply on test data. Verify repeated runs and preservation of existing IDs and configured versions |
+| CP03.3 | Membership activation identity, exact ticket indexes, office epochs and bounded ticket issuance | Verify digest-only persistence, grant rotation after reinvitation, expiry, rate limits and request rejection in real HTTP/Mongo tests |
+| CP03.4 | Atomic ticket consumption and current-policy recheck | Verify one winner under concurrency, plus replay, expiry, stale epoch and policy revocation. Record admission evidence and hand off to CP05 |
+
+CP03.1 reuses the existing transactional session, membership and workspace checks for reads that disclose office state. It starts with the reviewed Commons manifest and verifies its immutable geometry against the source used by the shared collision rules. Pending offices remain discoverable to active members and return `office_not_ready` on bootstrap. Positive bootstrap tests use a configured office fixture until CP03.2 assigns the version.
+
 ## Stage 1 — Implement the frozen first HTTP contract
 
 Define strict schemas in `packages/contracts/src/http/office.ts`, reusing the existing UUID, opaque secret and validation conventions. Keep the HTTP exception envelope and `Cache-Control: no-store` behavior.

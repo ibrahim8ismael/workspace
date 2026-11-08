@@ -10,6 +10,7 @@ import type { Response as HttpResponse } from 'supertest';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { decryptMail } from '@gather/delivery';
+import commonsManifest from '@gather/assets/manifests/commons-map.json' with { type: 'json' };
 import {
   accountResponseSchema,
   authenticatedResponseSchema,
@@ -23,6 +24,8 @@ import {
   invitationsResponseSchema,
   sessionsResponseSchema,
   extendSessionResponseSchema,
+  officeWorkspaceDetailResponseSchema,
+  officeBootstrapResponseSchema,
 } from '@gather/contracts';
 import { IdentityModels } from '../dist/modules/identity/identity.models.js';
 import { TenancyModels } from '../dist/modules/tenancy/tenancy.models.js';
@@ -430,7 +433,8 @@ describe('company roles and isolation', () => {
     workspacesResponseSchema.parse(list.body);
     const detail = await owner.client.get(`/api/workspaces/${id}`);
     status(detail, 200);
-    workspaceResponseSchema.parse(detail.body);
+    officeWorkspaceDetailResponseSchema.parse(detail.body);
+    expect(detail.body.workspace.officeId).toEqual(expect.any(String));
     const members = await owner.client.get(`/api/workspaces/${id}/members`);
     status(members, 200);
     membersResponseSchema.parse(members.body);
@@ -448,6 +452,72 @@ describe('company roles and isolation', () => {
     const extended = await owner.client.send('post', '/api/auth/session/extend');
     status(extended, 200);
     extendSessionResponseSchema.parse(extended.body);
+  });
+
+  it('scopes office bootstrap to an active workspace member and an approved configured map', async () => {
+    const owner = await account();
+    const member = await account();
+    const stranger = await account();
+    const workspaceId = await workspace(owner);
+    const otherWorkspaceId = await workspace(owner);
+    await join(owner, workspaceId, member);
+    const office = await tenancy.offices.findOne({ workspaceId }).lean();
+    expect(office).toBeTruthy();
+    const officeId = office!._id;
+    const otherOffice = await tenancy.offices.findOne({ workspaceId: otherWorkspaceId }).lean();
+    const route = `/api/workspaces/${workspaceId}/offices/${officeId}`;
+    const approved = commonsManifest.mapVersion;
+
+    const detail = await owner.client.get(`/api/workspaces/${workspaceId}`);
+    status(detail, 200);
+    expect(officeWorkspaceDetailResponseSchema.parse(detail.body).workspace.officeId).toBe(
+      officeId,
+    );
+    const list = await owner.client.get('/api/workspaces');
+    status(list, 200);
+    workspacesResponseSchema.parse(list.body);
+    const unauthenticated = await request(app.getHttpServer()).get(route);
+    status(unauthenticated, 401);
+    status(await stranger.client.get(route), 403);
+    status(await owner.client.get(`/api/workspaces/${randomUUID()}/offices/${officeId}`), 403);
+    status(await owner.client.get(`/api/workspaces/${workspaceId}/offices/${randomUUID()}`), 404);
+    status(
+      await owner.client.get(`/api/workspaces/${workspaceId}/offices/${otherOffice!._id}`),
+      404,
+    );
+    status(await owner.client.get(`/api/workspaces/not-a-uuid/offices/${officeId}`), 400);
+    status(await owner.client.get(`/api/workspaces/${workspaceId}/offices/not-a-uuid`), 400);
+
+    await tenancy.offices.updateOne({ _id: officeId }, { $set: { mapVersion: approved } });
+    for (const client of [owner.client, member.client]) {
+      const response = await client.get(route);
+      status(response, 200);
+      expect(response.headers['cache-control']).toContain('no-store');
+      expect(officeBootstrapResponseSchema.parse(response.body)).toMatchObject({
+        officeId,
+        workspaceId,
+        mapVersion: approved,
+        protocolVersion: 1,
+        manifest: commonsManifest,
+      });
+    }
+
+    await tenancy.offices.updateOne({ _id: officeId }, { $set: { mapVersion: 'pending-m0' } });
+    const pending = await owner.client.get(route);
+    status(pending, 409);
+    expect(pending.body.error.code).toBe('office_not_ready');
+    await tenancy.offices.updateOne(
+      { _id: officeId },
+      { $set: { mapVersion: `commons-v1-${'0'.repeat(64)}` } },
+    );
+    const unknown = await owner.client.get(route);
+    status(unknown, 409);
+    expect(unknown.body.error.code).toBe('office_not_ready');
+
+    await tenancy.offices.updateOne({ _id: officeId }, { $set: { mapVersion: approved } });
+    await tenancy.workspaces.updateOne({ _id: workspaceId }, { $set: { status: 'suspended' } });
+    status(await owner.client.get(route), 403);
+    await tenancy.workspaces.updateOne({ _id: workspaceId }, { $set: { status: 'active' } });
   });
 
   it('creates one owner and an office record atomically and reconciles idempotent retries', async () => {

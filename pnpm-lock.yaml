@@ -38,6 +38,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@gather/assets':
+        specifier: workspace:*
+        version: link:../../packages/assets
       '@gather/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts

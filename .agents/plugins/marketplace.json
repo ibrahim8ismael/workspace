@@ -1,0 +1,20 @@
+{
+  "name": "gather-space",
+  "interface": {
+    "displayName": "Gather Space project plugins"
+  },
+  "plugins": [
+    {
+      "name": "egm",
+      "source": {
+        "source": "local",
+        "path": "./plugins/egm"
+      },
+      "policy": {
+        "installation": "INSTALLED_BY_DEFAULT",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

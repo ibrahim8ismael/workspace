@@ -7,3 +7,6 @@ docs/
 
 # Preserve imported static asset notices and metadata verbatim.
 apps/web/public/
+
+# Preserve the vendored EGM runtime exactly as distributed upstream.
+plugins/egm/

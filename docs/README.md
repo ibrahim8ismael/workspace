@@ -1,5 +1,7 @@
 # Gather Lite project documentation
 
+Current review (2026-11-08): read the [documentation/code drift report](planning/2026-11-08_DRIFT_REPORT.md) and [full MVP completion plan](planning/PROJECT_COMPLETION_PLAN.md) for the current baseline, remaining work, dependencies and evidence gates. Older status statements below and in linked plans retain their original dates; discrepancies are identified in the report. The completion plan is proposed delivery work, not approval of open decisions or release signoff.
+
 Status: initial planning baseline · Updated: 2026-11-05
 
 Gather Lite is a **B2B SaaS virtual office for companies and their teams**, delivered through a browser with React application controls, a Phaser world, NestJS APIs, Socket.IO authoritative office state, MongoDB/Mongoose durable data, Redis/BullMQ jobs, and self-hosted LiveKit media. The monorepo scaffold and dependencies are installed, and the imported web/shared client renders locally; integration with the new backend and product authorization remain unimplemented. Product schemas, routes, tasks and acceptance checks below remain proposed or planned unless supported by implementation evidence. The scaffold liveness route and job-reference schema are recorded in the repository setup notes.

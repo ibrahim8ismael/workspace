@@ -1,0 +1,321 @@
+# Gather Lite project completion plan
+
+Date: 2026-11-08 (Africa/Cairo). Status: proposed delivery plan, not implementation or release approval. Baseline: `5040ca83dc3a3ffdbab48711e9e7b7161cce1329`, plus the project-local EGM installation. Prepared after the [EGM drift report](2026-11-08_DRIFT_REPORT.md).
+
+This plan completes the currently agreed B2B virtual-office MVP through a measured pilot. It adds a cross-stack delivery sequence to the [backend system plan](BACKEND_SYSTEM_IMPLEMENTATION.md); it does not replace the [project brief](../../GATHER_LITE_PROJECT_KNOWLEDGE.md), invent approval for open decisions, or expand deferred scope. Technical documents remain in English; owner discussions can be in Arabic.
+
+The drift comparison followed `egm-drift-report`. This delivery plan is not a section-approved `egm-draft` feature specification and has not received an independent `egm-review`. Each implementation packet must freeze its affected contracts before code changes. Architecture choices below remain explicitly proposed until the owner records a decision.
+
+## 1. Completion means a working company journey
+
+A new user can register, receive verification mail, verify and sign in, create or join their company, and enter that company's fixed office. Two authorized users can see each other, move without passing through walls, sit and stand, and reconnect safely. Available users can opt into one-to-one proximity audio. Authorized users can explicitly join fixed meetings, enable camera and share a screen. Owners can manage membership and transfer ownership. Revoked access ends at HTTP, office and media boundaries within measured budgets.
+
+The same product must handle a second company without exposing the first company's people, policy or calls. Deployment, delivery, failures, backups and restores must be demonstrated before pilot signoff.
+
+Out of this completion scope: billing/payments/subscriptions, persistent chat/DMs/channels, calendars, recorder/AI notes/egress, desk ownership, map editor/uploads, dynamic group clustering, mobile apps, SSO/SCIM/social login/email changes, E2EE, multi-region and horizontal office ownership. Arabic conversation does not imply a new Arabic/RTL product requirement: the imported UI currently supports English/Spanish; choose the pilot language/browser matrix in CP01. Any expansion gets its own decision and estimate.
+
+## 2. Starting point and evidence
+
+| Area | Preserve and extend | Remaining work |
+| --- | --- | --- |
+| Tooling | Pinned Node/pnpm monorepo, CI, strict package/API TypeScript and build checks | Browser/service test suites and environment-specific delivery |
+| Identity | Account/password/token/session lifecycle, cookie/CSRF/Origin guards, budgets | Frontend forms/session UX, wider password screening, deployed-origin and real mail checks |
+| Tenancy | Transactional company/owner creation, memberships/invitations, transfer/removal, exact quotas and idempotency | UI, activation-grant identity, settings and agreed company lifecycle/live revocation |
+| Delivery | Encrypted Mongo outbox, stable-ID BullMQ jobs, SMTP provider adapter | Real queue/provider fault tests, key management, alerts and recovery |
+| Audit | Transactional safe records with 30-day TTL | Independently protected recovery evidence, acknowledgement policy and restore reconciliation |
+| Frontend/assets | Imported controls, three legacy maps and provenance for 261 public files | Cookie/UUID adapters, unsupported-feature removal, one approved fixed map and Phaser |
+| World/realtime | Installed libraries and module boundaries | Map contract, tickets, runtime, leases, movement, seats, snapshots, takeover and client integration |
+| Media | Imported browser code and SDK dependencies | Proven enforcement mechanism, conversations/generations, scoped grants, browser adaptation and source policy |
+| Infrastructure | Reserved directories and operations requirements | Compose/Caddy, private services, SFU/TURN/guard, secrets, deployment, monitoring and restore |
+
+Fresh baseline on 2026-11-08: `pnpm check` passed, including formatting, lint, typechecking, five shared tests, 32 backend tests and all builds. Tests used temporary real MongoDB/HTTP processes; SMTP and queue boundaries in backend tests were faked. The lazy LiveKit browser chunk still produces a size warning around 532 kB minified. No Docker, real mail, deployed browser, media or pilot test was run in this planning task. A passing baseline does not close A01–A11.
+
+## 3. Decisions and external inputs
+
+Close each decision before its dependent packet freezes a contract. Record the choice, owner, date and affected documents in [decisions](../decisions/README.md). Recommendations here preserve existing planning defaults; they are not newly approved architecture.
+
+| Decision | Proposed working direction and alternatives | Needed before |
+| --- | --- | --- |
+| D12: tenant hierarchy | Retain current one company = workspace = office. If an organization must own multiple workspaces at MVP, redesign tenant relationships and revise this plan's estimates before proceeding | CP02/CP03 tenant-facing freeze |
+| D13: onboarding/lifecycle | Current APIs permit self-service creation. Choose self-service, operator-assisted pilot or a combination; define who may suspend/resume/close a company and how retention/export works. No owner gains platform privileges | CP04 onboarding and CP09 lifecycle |
+| D04: map/catalog | Reuse one imported map; Vivo is a candidate, not selected. Compare spawn, collisions, asset provenance and seat/zone needs. Direct metadata adaptation is sufficient unless an authoring need justifies Tiled | CP02 and CP06 |
+| D02: proximity topology | Existing recommendation is all-LiveKit. Retaining P2P proximity adds a second lifecycle and requires a separate credible termination design; choosing it reopens CP07/CP08 | CP07 media proof |
+| D03: media shutdown | Choose a container-aware independent supervisor with narrowly bounded authority. Prove failure behavior; ordinary restart policies do not establish it | CP07 and any product media |
+| D05: hosting/network | Choose region/host, app and media endpoints, public IP/UDP, TURN/TLS arrangement and private network layout. Shared logical tenancy is the existing default | CP04 environment and CP07 fixture |
+| D06: mail/keys | Supply sending domain/provider, test inboxes, DNS setup and protected API/worker key storage; define rotation and lost-key behavior | Real CP04 delivery |
+| D07/D09: budgets | Preserve current auth behavior initially; freeze provisional live/camera/source limits and measurement profiles. Tune from evidence | CP03/CP05/CP07 and CP11 |
+| D08: decoration | Keep fixed geometry and hide editor controls. Enabling overrides requires a separate revision/conflict/collision plan | CP06 |
+| D10: business data | Determine whether real upstream company/account data exists. If none, clean verified onboarding; if present, use a separately rehearsed offline importer | CP10 migration |
+| D11: recovery evidence | Select storage outside app backups, allowed mutation/acknowledgement failure behavior, retention and reconciliation ownership | CP04 design; before pilot |
+| Browser/UX policy | Record supported desktop browsers, chosen pilot language(s), accessibility essentials and token entry UX. Code-entry forms preserve current mail; links require a separate safe route/history policy | CP04/CP06/CP08 |
+
+External inputs still needed at their gates: provider credentials and domain control, host/region access, TLS/DNS, protected secret/audit stores, authorized real-delivery recipients, and people/devices/networks for pilot measurements. Work on local contracts, pure rules, backend tests and UI adapters can proceed without inventing those credentials.
+
+## 4. Dependency sequence and reviewable checkpoints
+
+```mermaid
+flowchart TD
+  C0[CP00: reconcile documentation] --> C1[CP01: decisions and contracts]
+  C1 --> C2[CP02: one immutable map]
+  C2 --> C3[CP03: office bootstrap and tickets]
+  C1 --> C4[CP04: delivery, HTTPS and account UI]
+  C3 --> C5[CP05: authoritative socket office]
+  C2 --> C6[CP06: Phaser and office client]
+  C5 --> C6
+  C4 --> C6
+  C1 --> C7[CP07: isolated media proof]
+  C7 --> C8[CP08: proximity audio]
+  C6 --> C8
+  C8 --> C9[CP09: meetings and company administration]
+  C4 --> C10[CP10: staging and safe recovery]
+  C7 --> C10
+  C9 --> C10
+  C10 --> C11[CP11: measured pilot and handover]
+```
+
+CP04 infrastructure/delivery and CP07 risk proof can progress independently of office implementation after their decisions are recorded. A minimal Phaser rendering sample can start after CP02; full browser multiplayer waits for CP05. These are dependency options for team scheduling, not a claim that parallel work or reviewers have been run.
+
+| Checkpoint | Demonstrable result | Existing work references |
+| --- | --- | --- |
+| Foundation | One approved map, current docs, frozen admission contracts | M0; B001–B006/B022 |
+| Backend office | Owner/member bootstrap and one-use ticket consumption | M2 first slice; B015 |
+| Connected company | Real account and invitation journey on same-origin HTTPS | M1; B007/B011–B014/B021/B023 |
+| Two-user office | Server-owned movement/seats, leases, fresh reconnect, Phaser client | M2; B004/B005/B015–B017 |
+| Proven media | Fault-tested guarded SFU and measured removal | M0 proof; B008–B010 |
+| Voice | Explicit proximity pairing and permitted audio | M3; B018 |
+| Pilot features | Fixed meetings, explicit video/share and company controls | M4; B019/B023 |
+| Operational pilot | Workload, outages, recovery, documented owners and signoff | M5; B020/B021/B023 |
+
+Each packet records a named implementer/reviewer at kickoff, its chosen decisions, commit/build, scenario evidence and remaining limitations. Implementers and calendar dates are currently unassigned. Do not present duration or completion percentages without a staffed estimate; reforecast after the map and media proofs, which carry the largest uncertainty.
+
+## 5. Ordered work packets
+
+### CP00 — Reconcile documentation and keep one status source
+
+Deliverable: current-status notes with links to code/evidence; historical setup/import records remain dated.
+
+1. Correct stale liveness-only, worker-scaffold, no-import and audit-empty statements identified in the drift report. Reconcile credential/session/invitation/outbox/audit field names to actual types. Explain equivalent representations instead of adding unnecessary fields.
+2. Document internal `operations` and `rate_limits`; record Mongo-backed request budgeting as current behavior. Separate code complete, locally tested, environment verified and release accepted.
+3. Update B001–B014 item status by subtask without marking M0/M1 accepted wholesale. Keep A01–A11 as the release register and use evidence links for partial results.
+4. Cross-link this delivery plan from the docs entrypoint and older roadmap/system plan. Future status changes update the owning entity, contract and acceptance record together.
+
+Paths: `README.md`, `GATHER_LITE_PROJECT_KNOWLEDGE.md`, `docs/README.md`, `docs/architecture/{README,REPOSITORY,DATA_MODEL}.md`, `docs/migration/{README,WEB_IMPORT}.md`, `docs/planning/{SETUP_PROGRESS,BACKLOG,ROADMAP}.md`, `docs/security/README.md`, affected entity READMEs/PLANs and `packages/{assets,contracts,delivery,tooling}/README.md`. Preserve historical `GATHER_LITE_TECH_STACK.md` with a clear supersession reference.
+
+Exit: all identified status/model discrepancies have either a correction or a linked, intentionally open issue. No historical test result is rewritten as current production evidence.
+
+### CP01 — Close boundary decisions and freeze the first interfaces
+
+Deliverable: decision records and strict shared contracts for the next working slice.
+
+1. Resolve D12 and the required D13 onboarding subset; preserve current owner/member semantics and independent company roles. Record map/browser choice and D02/D03 experiment scope.
+2. Establish map/protocol constants, safe errors, runtime request/response schemas and bounded event envelopes. Preserve existing auth contracts; add new DTOs without silently changing create/list results.
+3. Define ownership of HTTP policy, office runtime commands, private conversation state and media control. One NestJS process remains the office authority. Do not add horizontal replicas for the same offices without fencing/routing work.
+4. Specify proposed live budgets, retry semantics, participant takeover reference, availability values and blocked-seat exits before the affected implementation packet.
+
+Existing paths: `docs/decisions/README.md`, `docs/product/B2B_SAAS.md`, `docs/contracts/{HTTP,REALTIME,MEDIA,AUTH_AND_ROLES_API}.md`, `packages/contracts/src/index.ts`, `packages/contracts/src/http/auth.ts`.
+
+Proposed additions: `packages/contracts/src/{versions,errors,limits}.ts`, `packages/contracts/src/http/{office,profile}.ts`, `packages/contracts/src/realtime/{office,world,conversations}.ts`. Add focused schema tests under `packages/contracts/test/` and test scripts when these contracts land. Proposed filenames are implementation targets, not files that already exist.
+
+Exit: owner decisions and safe request/response/error/version rules are recorded. Schema tests reject extra fields, injected identities/roles, invalid versions and oversized/range-invalid commands. Future unresolved decisions stay visibly gated.
+
+### CP02 — Establish one immutable map and asset catalog
+
+Depends on: D04 and CP01's version/geometry contract. Deliverable: the same trusted map rules for API and Phaser.
+
+1. Inspect the selected imported map and relevant source notices. Inventory coordinate units, tile size, bounds, spawn, collision shapes/blocked edges, object IDs, seats/exits and fixed meeting zones.
+2. Extract reviewed pure TypeScript geometry/collision/seat/zone functions into `packages/world`. Do not bind the new API to browser globals or the three-map legacy import switch.
+3. Store an immutable manifest with content hash and asset-manifest version. Validate unique IDs, walkable/reachable spawn and exits, bounds and matching client/server collision results.
+4. Create the smallest approved appearance/texture catalog with dimensions, foot origins, direction/frame order and draw layers. Keep all license notices and provenance when producing derived textures. Export procedural SVG art or redraw it only as needed for the selected map.
+5. Define upgrade behavior: changed map content means a new version, drained old runtime and fresh bootstrap/admission. No mutable editor in this packet.
+
+Existing inputs: `apps/shared/{vivo-map,vivo-geometry,office-world,office-seats,office-meetings,office-objects}.js`, `apps/shared/maps/`, `apps/web/{avatarLook,avatarSprite,navigation}.ts`, `apps/web/sprites/`, `apps/web/public/`, `packages/assets/manifests/provenance.json`, `docs/migration/UPSTREAM_IMPORT.json`.
+
+Proposed additions: `packages/world/src/{map,collision,seats,zones}.ts`, `packages/world/src/maps/<approved-map>.ts`, world unit/fixture tests, and approved map/texture manifests under `packages/assets/manifests/`. Update package exports and tests so API and client consume the same version.
+
+Exit: pure-rule tests cover walls/edges, object collision, spawn, duplicate IDs and seat exits. A small React-mounted Phaser sample demonstrates one real avatar/object, nearest-neighbor sampling, sitting/standing origin and occlusion. Full map/client integration continues in CP06. Record the partial A06 evidence.
+
+### CP03 — Implement office bootstrap and one-use admission tickets
+
+Depends on: CP01, CP02; local backend tests require no Docker. Deliverable: the exact first backend slice in [OFFICE_ADMISSION_IMPLEMENTATION.md](OFFICE_ADMISSION_IMPLEMENTATION.md).
+
+1. Add authorized office discovery to workspace detail, scoped office bootstrap and POST join-ticket. Validate `(workspaceId, officeId)` together; deny `pending-m0`, unknown maps and incompatible versions.
+2. Assign an approved map version to new offices and provide a repeatable backfill for existing `pending-m0` rows. Preserve IDs and previously configured versions; support dry-run/counts and avoid mass updates to arbitrary map values.
+3. Add membership activation-grant identity. Ordinary policy writes retain it; removal/reactivation changes it. Existing rows can initially use their membership ID, as the detailed admission plan specifies.
+4. Persist only a ticket digest and its user/session/tenant/office/activation-grant/epoch/map/protocol/expiry bindings. Enforce a maximum thirty-second lifetime bounded by session validity and dedicated actor/company/global issuance budgets.
+5. Consume once inside a transaction with fresh conditional policy writes. Recheck current epoch before later runtime reservation. A spent ticket stays spent after capacity failure; retry needs a new ticket.
+6. Validate exact unique/TTL indexes at startup. Keep ticket secrets out of logs, URLs, operation-result stores and persistent browser storage.
+
+Modify: `apps/api/src/modules/office/office.module.ts`, `apps/api/src/modules/tenancy/{tenancy.models,tenancy.service,tenancy.module}.ts`, `apps/api/src/platform/database/{indexes.service,create-indexes}.ts`, `packages/contracts/src/index.ts` and auth/tenancy tests as needed.
+
+Proposed additions: `apps/api/src/modules/office/{office.controller,office.service}.ts`, `admission/{join-ticket.models,join-ticket.service,epoch-registry}.ts`, `maps/map-registry.ts`, explicit backfill script and `apps/api/test/office-admission.integration.test.ts`; export CP01 office schemas.
+
+Exit: real HTTP/Mongo tests for owner/member/two-company access, ID substitution, explicit expiry, one concurrent consume winner, replay, old epoch/map/protocol, logout/reset/suspension/removal and removal-plus-reinvitation. Verify idempotent backfill and bad-index startup. Record partial A03/A04/A11; this is not yet a live office.
+
+### CP04 — Finish delivery, same-origin browser auth and company onboarding
+
+Depends on: onboarding/provider/hosting decisions, existing backend APIs. Can progress alongside CP02/CP03.
+
+1. Build a private reproducible non-media environment: Caddy TLS, web/API, transaction-capable Mongo, persistent queue Redis, worker and a local mail sink. Use explicit start commands and separate disposable cache configuration. API container binding must be private-network reachable; the current loopback default cannot be copied unchanged into a separate container.
+2. Configure SMTP/domain and protected outbox-key storage for a controlled staging test. Verify real verification, recovery and invitation delivery with authorized test recipients. Choose code-entry UX or a separately reviewed no-referrer/history-safe link flow; current emails provide backend code instructions.
+3. Test API commit before enqueue, dispatcher restart, duplicate processing, ambiguous SMTP acknowledgement, expired/superseded messages, queue outage/restart and noeviction enforcement. Preserve at-least-once email semantics; single-use redemption stays transactional.
+4. Add the common browser API adapter: same-origin cookies, in-memory CSRF, JSON mutations, structured error handling and stable idempotency keys for durable retries. Refresh CSRF after login/reauth; do not blindly retry commands whose outcome is unknown.
+5. Implement registration/verification/resend/login/forgot/reset/change-password, reauth, session list/revoke/logout-all and explicit idle-extension warning. Never restore a legacy localStorage session or browser-generated identity as authenticated state.
+6. Connect company list/create/invitation acceptance and owner/member views to UUID DTOs. Clear tenant caches and tear down old world/media state on company switch. Remove obsolete credential/admin/invite storage keys while preserving non-sensitive user preferences.
+7. Specify broader compromised-password screening and benchmark Argon2/concurrency on the target host; preserve existing reset/verification protections. Define audit mirror schema/failure policy early enough to capture security mutations before a pilot backup is relied upon.
+
+Existing paths: `apps/web/{main.tsx,WorkspaceHome.tsx,config.ts,workspaces.ts}`, `apps/worker/src/{main.ts,outbox/dispatcher.ts,processors/delivery.ts,providers/mail.ts}`, `apps/api/src/platform/{http/configure.ts,config/environment.ts}`, identity/tenancy services, `.env.example`.
+
+Proposed additions: `apps/web/src/lib/api.ts`, `apps/web/src/features/{auth,workspaces}/` with adapters/forms/session state, private `infra/{compose,caddy,mongodb,redis}/` configuration, `tests/integration/delivery/`, `tests/e2e/auth-company.spec.ts` and corresponding package scripts/CI jobs. Browser tests use a private mail sink, never a public debug-token endpoint.
+
+Exit: a real browser completes registration → mail → verification → login → company creation/invitation → session revocation. Confirm Secure/HttpOnly/host-only cookies and correct Origin behind ingress, wrong Origin/CSRF denial, reload recovery and cross-company cache isolation. Validate sanitized proxy headers before enabling proxy trust. Record A01–A03/A09/A11 portions and the remaining real-provider limits.
+
+### CP05 — Build the authoritative Socket.IO office
+
+Depends on: CP03 and CP02. Deliverable: two real socket clients with server-owned state, initially independent of the renderer.
+
+1. Add exact-Origin checks at Engine.IO upgrade admission and strict namespace middleware at `/office`. Consume ticket, reserve capacity, capture snapshot and activate participation in that order. Clean abandoned reservations and keep connection-state recovery disabled.
+2. Implement a single serialized office command owner, safe participants and state versions. One active participation per user/workspace; an ordinary second tab gets a conflict. Explicit takeover targets only the same user's current server-issued participation reference.
+3. Independently recheck session/account/company/membership on the chosen cadence. Use bounded primary policy reads, monotonic request-start deadlines, response sequencing and fresh epochs. Late replies cannot revive ended access. Immediate hints accelerate removal; lease expiry remains the backstop.
+4. Route logout/reset/session rotation, account/company suspension and membership changes into runtime revocation after committed policy changes. Do not hold a database transaction open while awaiting an in-memory command; deny new activity when authority is uncertain.
+5. Advance movement intent from server time, with bounded inputs and sequence rejection/coalescing. Apply shared map collision and speed rules. Implement serialized sit/stand/release and availability.
+6. Publish safe versioned snapshots/deltas and gap resync. Bound event sizes/rates and resync budgets separately from outbound snapshots. Never broadcast session IDs, emails, policy records or private call membership.
+
+Proposed API paths: `office/realtime/{office.gateway,office.adapter,event-validation}.ts`, `office/runtime/{office-runtime,office-registry,participant,command-queue,authorization-lease,revocation}.ts`, `office/seats/seat.service.ts`, plus shared realtime contracts and `apps/api/test/{office-realtime,office-lease,office-movement}.test.ts`. Update owning modules and app startup/shutdown.
+
+Exit: two real Socket.IO test clients move/collide/sit; final seat/capacity races have one winner; fake roles/identity, direct join, wrong Origin, replay, old sequence/epoch and oversized/flooded events fail. Test gaps/reconnect, explicit takeover, policy removal while idle, Mongo loss, expired sessions, delayed lease replies and restart. Record A04/A05/A11.
+
+### CP06 — Replace the legacy office path with Phaser and typed client adapters
+
+Depends on: CP02 sample, CP04 account/company path and CP05 protocol. Deliverable: the browser-based two-user office.
+
+1. Mount one Phaser instance with a typed React bridge. Phaser owns drawing, input, camera, animations, local prediction/reconciliation and remote interpolation; React owns forms, panels and essential accessible controls.
+2. Load the approved manifest/assets and render the fixed map, walls/furniture, labels, approved avatars and seat animations with consistent origins/depth. Client geometry improves feel but never grants authority.
+3. Replace raw `/ws` with a Socket.IO client that obtains memory-only tickets, waits for `office:ready`, applies only matching-version/epoch deltas and requests a full snapshot after gaps. Drop offline inputs; rejoin from fresh bootstrap on relevant conflicts.
+4. Add visible connecting/offline/full/access-ended/takeover/version-mismatch/session-expiry states. Clear participants and private state on leave, tenant switch, logout and teardown.
+5. Add allowlisted display-name/appearance persistence through the proposed profile API and publish safe changes to authorized office state. Reject arbitrary texture URLs and unsupported catalog IDs.
+6. Remove or hide unsupported chat/calendar/recording/editor/desk-ownership/reactive legacy focus controls from the MVP routes and bundles where practical. Keep useful artwork and licensed helpers; delete obsolete transport/auth adapters after callers move.
+7. Verify keyboard/focus/dialog behavior, zoom/essential controls, resize and reduced-motion behavior where applicable. Product language/RTL expansion follows CP01's explicit scope, not chat language.
+
+Existing paths to migrate: `apps/web/{App.tsx,VivoScene.tsx,MiniOffice.tsx,useOffice.ts,AvatarEditor.tsx,avatarLook.ts,avatarSprite.ts,navigation.ts,types.ts,styles.css,scene.css,main.tsx,vite.config.ts}`; reused sprite/public files retain notices. Update imported shared tests deliberately when import ownership changes.
+
+Proposed additions: `apps/web/src/features/office/{OfficePage,PhaserWorld}.tsx`, `world/{OfficeScene,bridge,assets}.ts`, `realtime/{client,state,reconcile}.ts`, profile adapter/components, API profile schemas/service/controller, `tests/e2e/office.spec.ts` and visual/render fixtures. Retire `config.ts` legacy auth, raw `useOffice.ts` and old renderer callers only once replacement routes pass.
+
+Exit: two separate browser contexts sign in, enter the same office, move/collide/sit, switch availability and reconnect. A second company stays isolated. UI rerenders do not recreate Phaser; repeated route/tenant switches leave no extra games, listeners or timers. Screenshots establish anchors/occlusion/pixel quality; browser tests cover keyboard controls and access loss. Record A04–A06/A11.
+
+### CP07 — Prove bounded media enforcement before product integration
+
+Depends on: D02/D03/D05 and approved private fixture environment. Start early after CP01 because failure can change media feasibility.
+
+1. Pin compatible LiveKit server/SDK and container image digests for the experiment. Inventory every join/reconnect/refreshed-token path and required media/TURN listener.
+2. Build the proposed guard: machine-auth scoped pulls with nonce/sequence/epochs, request-start deadlines, exact permit-version installation acknowledgements and irreversible generation retirement. Begin default-deny.
+3. Build an independent container-aware supervisor able to stop SFU forwarding if guard progress stalls or retirement/deletion cannot be trusted. Keep authority narrowly scoped; expose no unrestricted Docker/control interface to the app/browser.
+4. Route all public signaling through the guard; isolate underlying signaling/admin/webhook endpoints and test alternate ingress/TURN routes for bypass. A disconnected UI or successful DeleteRoom response is not forwarding evidence.
+5. Use private two-/three-user fixtures to test wrong identity/room/source, original/refreshed replay, expiry, delayed policy replies, controller loss, guard freeze, failed/uncertain deletion and cold restart. Capture last protected forwarding evidence and call interruption.
+6. Measure the provisional eight-second cutoff, including the five-second authorization and three-second enforcement budget. Measure shared-node company impact. Document if the mechanism cannot meet the requirement and stop product media until the owner resolves the architecture/guarantee trade-off.
+
+Paths: implement inside `spikes/media-enforcement/` first, plus private `infra/media/` experiment configuration and `docs/planning/MEDIA_ENFORCEMENT_EVIDENCE.md`. Proposed spike sources cover guard/policy client, supervisor, fixtures and fault scenarios; exact production process/package boundary is decided from the proof, not invented as another empty app now.
+
+Exit: reproducible pinned-stack evidence for A07 with observed cutoffs and failure limits. Retain explicit failures. Only a passing proven design is promoted to production media services.
+
+### CP08 — Implement opt-in proximity conversations and voice
+
+Depends on: CP05/CP06 and passing CP07. Deliverable: authorized one-to-one proximity audio in the real office.
+
+1. Implement deterministic pairing, one active conversation per participation, explicit opt-in and availability gates. Freeze ties, suppression after explicit leave and distance/debounce semantics; never debounce security revocation.
+2. Track conversation state/version/member set/generation in office-owner memory. Create isolated rooms per generation; retire the old generation before granting a replacement. Handle boundary churn with bounded recovery budgets.
+3. Add protected HTTP media-token issuance bound to the same session's live participation and current conversation. Resolve identity/room/sources on the server; install the exact permit, recheck policy, then issue a short-lived grant.
+4. Add signed raw-body webhook verification, deduplication and late-event reconciliation. Webhooks observe media state, not authorize callers.
+5. Replace legacy browser P2P/token logic with the selected verified media adapter. Devices begin off; permission denial leaves the office usable. Stop tracks and room bindings on leave, logout, revocation, tenant switch, generation change and component teardown.
+6. Separate network disconnected, permission denied, media unavailable and authorized migration states. Keep grants memory-only/no-store, redact SDK token parameters and never silently fall back to unguarded calls.
+
+Existing migration inputs: `apps/web/{useMedia.ts,useSfu.ts,MeetingView.tsx}`. Proposed API files under `conversations/{conversation.service,pairing,state-machine}.ts` and `media/{media.controller,media.service,livekit-adapter,permit-client,webhook.controller}.ts`; add browser `src/features/media/` and shared HTTP/conversation schemas. Promote CP07's proven guard/supervision implementation with its tests and deployment requirements.
+
+Exit: real two-browser audio, denied capture, opt-out/away/leave, boundary churn, logout/reset/removal during calls, expired leases, reconnect, stale original/refreshed grants and isolated companies. Re-run forwarding measurements on the integrated path. TURN-only and weak-network scenarios have recorded outcomes. Record A07/A08/A11.
+
+### CP09 — Complete fixed meetings and company administration
+
+Depends on: CP08, approved D13 lifecycle and settings scope. Deliverable: the remaining agreed pilot functions.
+
+1. Add explicit fixed-zone meeting join/leave with physical/access checks and serialized capacity. Proximity and meeting participation are mutually exclusive. Leaving the zone or losing access retires the applicable generation.
+2. Enforce the provisional six-person zone cap and source-specific microphone/camera/screen grants. Screen audio remains disabled in the first slice per current media plan. Test whether the pinned SFU actually enforces required track/source caps; a client-side limit is insufficient.
+3. Implement camera/screen consent and device selection/ended-track behavior, meeting tiles and clear join/retry/migration states. No recorder, bots or egress capability.
+4. Finish owner member/invitation administration and reauthenticated ownership transfer UI. Add only approved workspace settings, initially proposed name/revision/idempotency handling.
+5. Implement the agreed lifecycle through an explicitly authorized operational boundary: suspend/resume/close/export/retention according to D13. Verify old grants/leases never revive on resumption. If self-service deletion is not approved, provide the chosen operator procedure rather than an invented owner DELETE endpoint.
+6. Apply tenant-specific runtime/media/delivery budgets, audit actions and safe errors; do not derive commercial entitlements from engineering caps.
+
+Paths: extend `office/runtime/`, `conversations/`, `media/`, tenancy services/controllers/models as approved, shared meeting/settings contracts, `apps/web/src/features/{meetings,workspaces}/`, adapted `MeetingView.tsx`, and `tests/{integration,e2e}/` meeting/lifecycle scenarios. Update corresponding entity plans and D13 record.
+
+Exit: three-plus users and concurrent final-slot joins; private-zone/company isolation; removal of one member blocks their old media while authorized survivors reconnect; camera/screen source caps, permissions and teardown pass. Owner/member roles remain independent across companies. Approved lifecycle/offboarding is rehearsed. Record A03/A07/A08/A11.
+
+### CP10 — Deliver staging, observability and safe recovery
+
+Depends on: CP04 environment, CP07 proven media mechanism and CP09 complete feature path. Design the audit mirror earlier in CP04; do not wait until restore time to collect evidence.
+
+1. Complete pinned Compose/Caddy/media deployment with private networks, least-privilege processes, durable volumes, secrets outside Git and explicit migrations. Configure exact app Origin, safe proxy trust/redaction and protected operational access.
+2. Add readiness distinct from liveness, admission draining, graceful shutdown and fresh runtime/guard epochs. Deploy one office authority initially. Document how a failed rollout returns to a compatible build without restoring stale tickets/leases/generations.
+3. Instrument safe request/event IDs, tick delay, socket/input load, snapshot size, auth/hash saturation, lease expiry, media join success/latency, permit retirement/cutoff, TURN egress, queue age/failure, backup age and audit mirror gaps. Assign alert thresholds and recipients before enabling them.
+4. Implement independently protected security evidence outside application backups, acknowledgement monitoring, retention and restore reconciliation. Define behavior on mirror failure and verify it under outage.
+5. Create encrypted backups with protected restore access. Rehearse restoration in isolation: suspend access, invalidate restored sessions/tokens/invites, retire generations, reconcile later resets/suspensions/removals, require mailbox recovery where history is uncertain, and reconcile expired outbox/queue state.
+6. Resolve D10. If real business data exists, build a dry-run/idempotent offline importer with stable mappings, backups/count/error reports and fresh verified credentials/session invalidation. Otherwise record clean onboarding explicitly; never add JSON/Mongo dual writes.
+7. Add build/deploy/rollback jobs only for the chosen environment with appropriate approval/secrets policy. Document infrastructure/patching/incident/restore owners. Provisioning, real sending and publishing occur as their explicitly scoped implementation/deployment work, not as side effects of this plan.
+
+Paths: `infra/{compose,caddy,mongodb,redis,media}/`, image/build files for apps, `.env.example`, `.github/workflows/`, API health/readiness/drain hooks, worker lifecycle/metrics, `docs/operations/{DEPLOYMENT,INCIDENTS,BACKUP_RESTORE,DELIVERY_RECOVERY}.md`, restricted audit mirror/reconciliation implementation and `tests/integration/operations/`. File boundaries for mirror/supervisor follow the approved D03/D11 design.
+
+Exit: staging starts from documented configuration; readiness/draining and compatible rollback work; alerts trigger in controlled faults; restore cannot resurrect old passwords, removed memberships or stale tokens. Record measured recovery against provisional RPO one hour/RTO four hours. Record A09/A10/A11 and operational limits.
+
+### CP11 — Run the declared pilot and hand over
+
+Depends on: all prior packets and complete evidence prerequisites. Deliverable: a small operationally supported MVP with an honest capacity statement.
+
+1. Define hardware/browser/network and simultaneous-media workload. Exercise the provisional twenty-participant office across more than one tenant; include meeting/proximity distribution, camera/share sources and TURN usage.
+2. Measure simulation latency/backlog, memory/CPU, snapshot bandwidth, SFU resources/egress, media join success/p95, permission handling, reconnect and weak-network behavior. Evaluate the proposed 95% join success and two-second p95 only against the declared profile.
+3. Inject Mongo loss/slowness, cache pressure, queue outage, worker restart, authority restart, guard freeze, SFU control failure and shared-node shutdown. Record tenant impact, actual denial/cutoff and recovery.
+4. Run complete browser journeys, keyboard/accessibility essentials, supported-language/browser coverage and deferred-feature absence. Verify no credential/ticket/media secret appears in logs, storage or bundles.
+5. Resolve failures, tune measured configuration, and rerun affected scenarios. Record each A01–A11 criterion with build, environment, date, responsible person and artifact link. A failure remains open; do not replace evidence with a design statement.
+6. Publish pilot limitations, supported capacity/network profile, incident/restore/patching ownership and operator instructions. Obtain owner pilot signoff and make the approved deployment concrete through the deployment workflow. Any broader public/commercial launch gets a separate scope decision.
+
+Paths: `tests/integration/{load,faults}/`, `tests/e2e/`, declared workload fixtures, `docs/planning/{PILOT_EVIDENCE,ACCEPTANCE}.md`, operations runbooks and relevant configuration. Test scripts/CI must distinguish fast checks from service/fault/browser suites.
+
+Exit: A01–A11 have sufficient actual evidence for the approved pilot scope, all release-blocking failures are resolved, restoration/cutoff budgets are demonstrated or explicitly revised by the owner, and named people own operation. Installing dependencies, rendering a dashboard or passing backend-only tests is not this exit gate.
+
+## 6. Verification matrix and release constraints
+
+| Acceptance | Primary packets | Required evidence still to obtain |
+| --- | --- | --- |
+| A01 browser security | CP04/CP06/CP10 | Real browser cookies, CSRF/Origin/proxy, secret storage and redaction |
+| A02 account lifecycle | CP04 | Real delivery, full browser verification/recovery/session paths, target-host password controls |
+| A03 tenant policy | CP03/CP04/CP09 | Preserve existing local race tests; add new profile/settings/lifecycle and deployed tenant paths |
+| A04 admission | CP03/CP05/CP06 | Ticket replay/expiry/epoch, socket Origin, takeover/reconnect and live removal |
+| A05 world | CP02/CP05/CP06 | Server-time collision/speed, seats, floods, gaps, incompatible versions and stale lease replies |
+| A06 renderer | CP02/CP06 | Provenance plus actual Phaser anchors/occlusion, bridge lifecycle and essential accessibility |
+| A07 media privacy | CP07/CP08/CP09/CP11 | Original/refreshed replay, source restrictions, no bypass and forwarding cutoff under faults |
+| A08 media UX | CP08/CP09/CP11 | Explicit devices, denied permissions, TURN/weak networks, private meetings and migration |
+| A09 delivery | CP04/CP10/CP11 | Real queue/provider acknowledgement/crash/outage, duplicate/expiry/key handling and alerts |
+| A10 operations | CP10/CP11 | Readiness/drain/restart, measured workload/cutoff, independent evidence and safe timed restore |
+| A11 B2B | CP03–CP11 | Two companies across HTTP/socket/media/jobs, lifecycle, current-company UX and noisy-neighbor/shutdown impact |
+
+For each implementation change: run relevant focused tests, then `pnpm check` before a verified implementation handoff. Add real socket/browser/service tests as their capabilities land. Fast CI must not silently claim a real SMTP/SFU/deployment test when using fakes. Add explicit service jobs with controlled fixtures, bounded cleanup and no production credentials.
+
+No Docker execution, infrastructure provisioning, real email, publishing or source implementation is performed by this planning artifact. Earlier backend-only/no-Docker task constraints remain recorded; carry out future environment work under its actual authorized implementation scope.
+
+## 7. Main risks and stop conditions
+
+| Risk | Consequence | Mitigation and decision boundary |
+| --- | --- | --- |
+| Unproven independent SFU shutdown | Media cannot meet retained revocation requirement | CP07 early proof; stop product media if it fails, then obtain an explicit architecture/requirement decision |
+| Organization requirement changes | Tenant schema/routes and all scopes change | Resolve D12 before extending admission/onboarding contracts; replan rather than patching only UI |
+| Imported UI exceeds MVP | Unsupported controls imply features/security the backend lacks | CP06 route/bundle cleanup and browser checks; no hidden legacy backend |
+| Map/asset migration effort is larger than expected | Phaser integration delays | Prove one avatar/object and one map first; preserve notices; block unresolved artwork |
+| Live authorization renewal load | Database contention/tick delay under active users | Measure real read/write budgets separately from simulation; bounded leases fail closed and never wait on queue |
+| Shared SFU emergency stop | Other companies lose calls | Measure and publish blast radius; narrower isolation needs a separately justified infrastructure choice |
+| Ambiguous SMTP acknowledgement | Duplicate or delayed emails | At-least-once delivery, single-use redemption, expiry/supersession, real fault tests and safe replay runbook |
+| Audit gaps or restored old credentials | Backup could reopen removed access | Independent evidence and suspended reconciliation; no automatic reopening of uncertain identities |
+| No staffed delivery estimate/provider access | Calendar dates become fiction | Assign people/access at kickoff and reforecast after CP02/CP07; maintain packet dependencies and evidence |
+
+## 8. Next implementation handoff
+
+The first code slice is CP02 → CP03: approve one map and its coordinate/version contract, add office discovery/bootstrap and atomic one-use ticket issuance/consumption, and test it without Docker. CP00 status corrections and CP01 decision records accompany that work. Account UI/provider setup and the isolated media proof are the next independent work streams when their decisions/access are ready.
+
+Before CP03 starts, its implementer reads the project brief, this drift report, the existing auth API/evidence, the office admission plan and relevant entity contracts. Name the implementer, record D12/D04 and issuance budgets, then commit a concrete implementation scope. Do not start movement, media grants or broad frontend rewrites inside the ticket checkpoint.
+
+Maintain this plan as delivery status changes; detailed feature specifications and optional independent EGM reviews are separate artifacts. No approval is implied for a future feature or open architecture choice merely because its packet appears here.

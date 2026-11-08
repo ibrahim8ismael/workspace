@@ -1,6 +1,6 @@
 # Decision register
 
-Status: source-derived decisions plus planning proposals · Updated: 2026-11-05
+Status: source-derived decisions plus planning proposals · Updated: 2026-11-08
 
 Agreed choices come from the supplied project brief. A recommended default is usable for planning but remains distinguishable from an owner decision. Record the date, rationale, consequences and affected docs when resolving an entry.
 
@@ -19,14 +19,20 @@ React + TypeScript application UI; Phaser renderer rewrite; NestJS HTTP with Soc
 | D03 | Bounded media revocation under Docker | Choose and prove independent guard/SFU shutdown supervision; eight-second target is provisional and unmeasured; normal container restart policies are insufficient evidence | M0 gate |
 | D04 | Immutable map and asset pipeline | Adapt upstream metadata; choose units/versions/anchors; Tiled and atlases optional | M0 |
 | D05 | Hosting and region | Validate same-origin ingress, private services, WebRTC UDP/public IP, TURN/TLS routing and recovery capability | M0 skeleton; finalize before pilot |
-| D06 | Email and encryption secrets | Select provider, sending-domain setup, restricted key store and safe retry/expiry behavior | M0/M1 |
-| D07 | Authentication and lease budgets | Source starting values; choose measured read freshness, hashing parameters, quotas, idle UX and bounded deadlines | Contracts in M0; tune before pilot |
+| D06 | Email and encryption secrets | API/worker inject a validated 32-byte base64 outbox key; encryption/expiry/retries exist. Provider/domain, restricted key store, rotation and actual delivery/fault evidence remain open | M0/M1 |
+| D07 | Authentication and lease budgets | Current HTTP slice: Argon2id 19 MiB/two iterations/one lane, bounded concurrency, 12h absolute/60m idle sessions and 10m recent proof; Mongo budgets. Host benchmarks, deployed proxy/idle UX and live lease budgets remain open | Contracts in M0; tune before pilot |
 | D08 | MVP decoration edits | Fixed map first; map overrides are a conditional model, not commitment to an editor | Before enabling overrides |
 | D09 | Video, membership and workload budgets | Measure provisional 360p/15fps, source caps, six-person zone and 20-person office profile | M3–M5 |
 | D10 | Import versus clean seed | Ask whether real upstream business data exists when migration is implemented; clean onboarding is default if none exists | M0 inventory |
 | D11 | Independent security recovery evidence | Select restricted mirror outside app backups, acknowledgement failure policy and safe restored-access reconciliation | Design M0/M1; drill M5 |
 | D12 | Customer organization/workspace hierarchy | Recommend one company per workspace/tenant with one office; decide whether a parent organization owning multiple workspaces is required before schema freeze | M0, before B003/B011 tenant contracts |
 | D13 | Company onboarding and lifecycle | Choose self-service versus operator-assisted pilot; specify current-company switching, suspension and offboarding without adding commercial billing implicitly | M0/M1 before onboarding flow freeze |
+
+## Implemented defaults versus owner decisions
+
+CP00 records existing code without approving new architecture. [AUTH_AND_ROLES_API.md](../contracts/AUTH_AND_ROLES_API.md) owns exact implemented auth/quota behavior. The current schema and creation API use one workspace/company with one office and self-service creation; that does not formally close D12 or select the full D13 onboarding/suspension/offboarding policy. CP01 must record those choices before further tenant-facing contract freeze. D04 map selection and D02/D03 media choices also remain open.
+
+See [completion plan](../planning/PROJECT_COMPLETION_PLAN.md) for decision dependencies and [progress](../planning/IMPLEMENTATION_PROGRESS.md) for completed documentation work.
 
 ## Boundaries for future changes
 

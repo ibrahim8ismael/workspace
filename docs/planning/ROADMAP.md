@@ -1,6 +1,6 @@
 # Delivery roadmap
 
-Status: planned; dates and implementers unassigned · Updated: 2026-11-05
+Status: partial M0/M1 implementation; full milestone acceptance pending · Updated: 2026-11-08
 
 Milestones are dependency ordered. M0 produces evidence for risky assumptions before broad feature work. A milestone passes only with recorded results in the [acceptance register](ACCEPTANCE.md).
 
@@ -13,16 +13,29 @@ Milestones are dependency ordered. M0 produces evidence for risky assumptions be
 | M4: complete pilot features | Fixed group zones, camera/share, administration polish, reused UI adapters | M3 voice isolation | Six-person default zone cap, private-zone isolation, source limits and concurrent policy changes verified |
 | M5: operational pilot | Declared 20-participant workload, weak-network behavior, alerts, worker recovery and restore drill | M1–M4 evidence | Pilot acceptance complete, named operational owners, demonstrated recovery; no unmeasured public capacity claims |
 
+## Current delivery status
+
+The [completion plan](PROJECT_COMPLETION_PLAN.md) provides the cross-stack packet sequence; [implementation progress](IMPLEMENTATION_PROGRESS.md) records implementer, checks and incremental pushes. M0/M1 are not passed as a whole.
+
+| Milestone | Code/local evidence already available | Still open |
+| --- | --- | --- |
+| M0 | Pinned imported source/assets, exact toolchain/builds, local transaction and HTTP security checks | Approved map contract/Phaser, deployed same-origin environment, media topology/supervision/cutoff proof |
+| M1 | Backend accounts/sessions/company roles, invitations/transfer/counters, encrypted outbox/worker and safe app audit; 32 local backend tests | Browser onboarding/current-company UI, real SMTP/Redis faults, wider password screening, keys/proxy/mirror/recovery evidence |
+| M2 | Office reference persisted with pending-m0; libraries installed | Bootstrap/tickets, authoritative sockets/world/seats/leases/takeover and Phaser integration |
+| M3–M5 | Plans/module boundaries only | Conversations/media/meetings, deployment and measured pilot/recovery |
+
+CP00 is documentation reconciliation only; its completion does not close A01–A11. Remaining implementation follows CP01–CP11.
+
 ## B2B SaaS scope gate
 
 Resolve D12 (one company per workspace versus organization hierarchy) and D13 (company onboarding/lifecycle) before tenant schemas and onboarding freeze. Company isolation, independent memberships and clear company context are MVP requirements. Company quotas and shared-service/noisy-neighbor behavior need M5 evidence. Payments and enterprise identity features remain deferred. See [B2B product plan](../product/B2B_SAAS.md).
 
 ## Suggested working slices
 
-1. M0: pin upstream and clear one avatar/object → define pure geometry and bridge → demonstrate React/Phaser lifecycle.
+1. M0 remaining: use the existing pinned import to select an approved map/avatar/object → freeze pure geometry → demonstrate React/Phaser lifecycle.
 2. M0: choose topology/supervision → isolate media fixture environment → measure replay, guard freeze and shutdown failure behavior.
-3. M1: CSRF/session contract → pending registration + real mail → verification/login/logout → recovery concurrency.
-4. M1: workspace creation → invitation acceptance → member removal and atomic owner transfer.
+3. M1 remaining: preserve the implemented account/session APIs and local race checks → connect browser forms → verify real mail and deployed HTTPS/CSRF.
+4. M1 remaining: connect the implemented company/invitation/removal/transfer APIs to authorized UI → verify tenant switching, real delivery and agreed lifecycle.
 5. M2: one admitted avatar → two-user snapshots/deltas → authoritative collision/seats → fresh reconnect and leases.
 6. M3: explicit opt-in pair → guarded audio → boundary retirement → permission/reconnect/TURN failures.
 7. M4–M5: fixed meetings and explicit video/share → declared pilot profile → restore and operational handover.

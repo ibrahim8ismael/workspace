@@ -372,7 +372,7 @@ The upstream Caddy route uses host.docker.internal for host-networked LiveKit. D
 
 Use maintained pinned images, runtime secrets outside version control, least-privilege containers, durable volumes, readiness/liveness checks and graceful draining. Don't restart an authoritative office behind a load balancer without forcing a new epoch and fresh admission.
 
-Monitor socket counts, event rate, tick delay, memory, snapshot size, media join failures, TURN usage/egress, stale/orphan rooms, lease expiry, auth abuse, queue age and backup failures. Keep minimal restricted security audit events; proposed retention is 30 days.
+Monitor socket counts, event rate, tick delay, memory, snapshot size, media join failures, TURN usage/egress, stale/orphan rooms, lease expiry, auth abuse, queue age and backup failures. Keep minimal restricted security audit events; current application TTL retention is 30 days. Independent recovery evidence storage/retention remains a separate decision.
 
 Provisional MVP quotas inherited from earlier planning: 30 members/workspace, 3 owned workspaces/user, 20 simultaneous office participants, 6 people/meeting zone, 30 input messages/second and 4 KiB application-event payloads. These are unmeasured configuration defaults, not upstream capacity claims. Apply separate login, ticket, grant and delivery budgets; server-required media migration must not let a churning user exhaust everyone else's token budget.
 
@@ -440,7 +440,7 @@ Required implementation evidence before pilot:
 9. Cache eviction versus queue persistence, duplicate worker processing, outbox/enqueue failures and expired encrypted delivery payloads.
 10. Controlled restart/epoch changes, no unguarded fallback, operational alerts and backup restore that cannot resurrect old credentials or revoked membership.
 
-These checks describe future work. No application/infrastructure acceptance results have been obtained by writing this knowledge file.
+These are full release checks. The [auth evidence](docs/planning/AUTH_IMPLEMENTATION_EVIDENCE.md) records local backend subsets already exercised; provider/browser/live-office/media/operational gates remain pending. Writing this knowledge file does not itself establish acceptance.
 
 ## 15. Open decisions and instructions for future changes
 
@@ -449,7 +449,7 @@ These checks describe future work. No application/infrastructure acceptance resu
 | B2B customer tenancy | Agreed B2B SaaS; recommend one company per workspace for MVP; resolve organization → multiple-workspace hierarchy before freezing schemas |
 | Proximity media topology | Recommend all-LiveKit; resolve before implementing media |
 | Frontend build system | Vite selected for the scaffold; use Next.js only with an explicit requirement and owner decision |
-| Exact upstream import | Pin commit; inventory copied code/art and provenance before import |
+| Exact upstream import | Imported code/public assets are pinned and inventoried; review new reuse/derived artwork before adding it |
 | LiveKit revocation enforcement under Docker | Retain security requirement; choose and prove independent supervision in Milestone 0 |
 | Map format and asset build | Adapt upstream metadata; optionally use Tiled and atlas tooling after proving compatibility |
 | Package/image versions | Select maintained compatible versions, lockfiles and image digests at implementation start |

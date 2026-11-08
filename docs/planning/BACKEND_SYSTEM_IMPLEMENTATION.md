@@ -2,6 +2,8 @@
 
 This is the delivery plan for the Gather Lite B2B MVP backend, covering HTTP APIs, Socket.IO application events, WebRTC media and internal service interfaces. The [project brief](../../GATHER_LITE_PROJECT_KNOWLEDGE.md) governs the architecture. The earlier technology-stack document is historical where it specifies Next.js, Colyseus or systemd-only supervision. New contract shapes are proposals until reviewed. The [acceptance register](ACCEPTANCE.md) owns verification status.
 
+The [cross-stack completion plan](PROJECT_COMPLETION_PLAN.md) expands the frontend, renderer, delivery and operational sequence. Its [implementation progress](IMPLEMENTATION_PROGRESS.md) tracks CP00 and incremental pushes. Existing backend stages and acceptance gates below remain applicable; documentation reconciliation does not implement a new service.
+
 ## Starting point
 
 - NestJS already serves liveness, authentication, session and company owner/member APIs. MongoDB transaction tests cover the initial backend. The mail worker and encrypted outbox are implemented, with real SMTP, persistent queue recovery, deployed browser security and audit restore evidence pending. See [auth implementation evidence](AUTH_IMPLEMENTATION_EVIDENCE.md).

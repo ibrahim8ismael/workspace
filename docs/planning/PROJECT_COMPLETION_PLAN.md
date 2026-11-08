@@ -86,11 +86,13 @@ CP04 infrastructure/delivery and CP07 risk proof can progress independently of o
 | Pilot features | Fixed meetings, explicit video/share and company controls | M4; B019/B023 |
 | Operational pilot | Workload, outages, recovery, documented owners and signoff | M5; B020/B021/B023 |
 
-Each packet records a named implementer/reviewer at kickoff, its chosen decisions, commit/build, scenario evidence and remaining limitations. Implementers and calendar dates are currently unassigned. Do not present duration or completion percentages without a staffed estimate; reforecast after the map and media proofs, which carry the largest uncertainty.
+Each packet records a named implementer/reviewer at kickoff, its chosen decisions, commit/build, scenario evidence and remaining limitations. CP00 is implemented by Codex; other implementers and calendar dates remain unassigned. Do not present duration or completion percentages without a staffed estimate; reforecast after the map and media proofs, which carry the largest uncertainty.
 
 ## 5. Ordered work packets
 
 ### CP00 — Reconcile documentation and keep one status source
+
+Status: completed as documentation work on 2026-11-08 by Codex. See [batch/push progress and residual finding disposition](IMPLEMENTATION_PROGRESS.md). Remaining architecture/product implementation is not completed by this packet.
 
 Deliverable: current-status notes with links to code/evidence; historical setup/import records remain dated.
 
@@ -314,7 +316,7 @@ No Docker execution, infrastructure provisioning, real email, publishing or sour
 
 ## 8. Next implementation handoff
 
-The first code slice is CP02 → CP03: approve one map and its coordinate/version contract, add office discovery/bootstrap and atomic one-use ticket issuance/consumption, and test it without Docker. CP00 status corrections and CP01 decision records accompany that work. Account UI/provider setup and the isolated media proof are the next independent work streams when their decisions/access are ready.
+CP00 documentation reconciliation is complete. Next is CP01 decision/contract work; the first application code slice is CP02 → CP03: approve one map and its coordinate/version contract, add office discovery/bootstrap and atomic one-use ticket issuance/consumption, and test it without Docker. CP00 status corrections and CP01 decision records accompany that work. Account UI/provider setup and the isolated media proof are the next independent work streams when their decisions/access are ready.
 
 Before CP03 starts, its implementer reads the project brief, this drift report, the existing auth API/evidence, the office admission plan and relevant entity contracts. Name the implementer, record D12/D04 and issuance budgets, then commit a concrete implementation scope. Do not start movement, media grants or broad frontend rewrites inside the ticket checkpoint.
 

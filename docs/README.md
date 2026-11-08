@@ -10,6 +10,8 @@ Gather Lite is a **B2B SaaS virtual office for companies and their teams**, deli
 
 B2B SaaS is an agreed requirement. Read the [B2B SaaS product plan](product/B2B_SAAS.md) for company tenancy, onboarding, administration and commercial scope. The owner accepted one company/workspace/office and verified-user self-service onboarding on 2026-11-08; a future organization hierarchy requires a separate decision. Payments remain excluded from MVP.
 
+Current implementation checkpoints: CP00 and CP01 first contracts are complete; see [owner decisions](decisions/2026-11-08_CP01.md), [office v1 contract](contracts/OFFICE_V1.md) and [progress](planning/IMPLEMENTATION_PROGRESS.md). CP02 actual map/catalog validation is next. Schema fixtures are not runtime admission/media evidence.
+
 ## Start here
 
 1. Read the [source project brief](../GATHER_LITE_PROJECT_KNOWLEDGE.md).

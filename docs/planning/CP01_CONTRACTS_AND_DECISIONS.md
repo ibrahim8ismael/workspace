@@ -1,6 +1,6 @@
 # CP01 — decisions and first contracts
 
-Started: 2026-11-08. Implementer: Codex. Status: in progress. Parent: [completion plan](PROJECT_COMPLETION_PLAN.md). Push each completed reviewable batch as requested by the owner; record prior commit IDs in [progress](IMPLEMENTATION_PROGRESS.md).
+Started: 2026-11-08. Implementer: Codex. Status: complete for first contract boundary; runtime evidence remains pending. Parent: [completion plan](PROJECT_COMPLETION_PLAN.md). Push each completed reviewable batch as requested by the owner; record prior commit IDs in [progress](IMPLEMENTATION_PROGRESS.md).
 
 ## Owner choices and freeze boundary
 
@@ -13,21 +13,21 @@ Started: 2026-11-08. Implementer: Codex. Status: in progress. Parent: [completio
 | CP01.0 | Record explicit owner choices and open follow-ups across current docs | Six owner choices received; technical validation/operational decisions remain scoped separately |
 | CP01.1 | Strict runtime response/error contracts for the existing auth/company API with leak/compatibility tests | Independent of map geometry and new runtime decisions; preserve current endpoints and response shapes |
 | CP01.2 | First office/event/version contracts, declared budgets and ownership/retry matrix | Implemented and documented in OFFICE_V1.md; map-specific geometry/catalog approval remains CP02. No gateway/ticket endpoint is implemented in CP01 |
-| CP01.3 | Reconcile contracts/docs, run checks and record remaining prerequisites | Do not mark the entire packet complete while an affected contract still requires an unrecorded decision |
+| CP01.3 | Reconcile contracts/docs, run checks and record remaining prerequisites | Complete: owner answers and technical first-interface rules recorded; later registry/runtime/provider/media proof gates remain explicit |
 
-## Current boundary that can be implemented now
+## Implemented existing-API boundary
 
-The existing API has strict input schemas and TypeScript response interfaces. Add strict runtime schemas for safe account/workspace/member/invitation/session projections, auth response wrappers and the existing error envelope. Reject unexpected credential/policy/token fields rather than silently accepting a Mongo model as a public DTO. Keep actual authorization in the API; schemas are validation contracts, not access control.
+The existing API has strict input schemas and TypeScript response interfaces. CP01 added strict runtime schemas for safe account/workspace/member/invitation/session projections, auth response wrappers and the existing error envelope. Reject unexpected credential/policy/token fields rather than silently accepting a Mongo model as a public DTO. Keep actual authorization in the API; schemas are validation contracts, not access control.
 
 Validate compatibility using real existing HTTP responses in backend integration checks and focused negative contract tests. Do not add production response interceptors, modify business policy, add Office endpoints or select map coordinates as side effects of this foundation work.
 
-## Subsequent contract checklist
+## Completed first-contract checklist
 
-- Define safe identifiers, compatible protocol version, map-version reference and strict HTTP bootstrap/ticket request/response schemas.
-- Define bounded movement/event/version/acknowledgement envelopes and public participant projections; exclude identity/session/policy secrets and private call membership.
-- Document transport Origin and namespace admission, single office authority, consume/reserve/ready order, spent-ticket retry, fresh reconnect, event deduplication and explicit takeover semantics.
-- Declare provisional ticket/input/lease/snapshot budgets with measurement status and exact failure behavior; no timing/capacity guarantee before execution evidence.
-- Keep profile/catalog and conversation/source details at their owning phase until fields have a justified implementation contract; empty placeholder schemas are not a completed interface.
+- [x] Define safe identifiers, compatible protocol version, map-version reference and strict HTTP bootstrap/ticket request/response schemas.
+- [x] Define bounded movement/event/version/acknowledgement envelopes and public participant projections; exclude identity/session/policy secrets and private call membership.
+- [x] Document transport Origin and namespace admission, single office authority, consume/reserve/ready order, spent-ticket retry, fresh reconnect, event deduplication and explicit takeover semantics.
+- [x] Declare provisional ticket/input/lease/snapshot budgets with measurement status and exact failure behavior; no timing/capacity guarantee before execution evidence.
+- [x] Keep profile/catalog and conversation/source details at their owning phase until fields have a justified implementation contract; empty placeholder schemas are not a completed interface.
 
 ## Validation and limits
 
@@ -48,3 +48,11 @@ No owner scope answer needed for these first interfaces remains pending. Future 
 The final contract suite contains 18 tests across HTTP, office and conversation files. It covers the imported object:index seat identity format in addition to protocol/leak/state/size cases. Full `pnpm check` passed on 2026-11-08 with 18 contracts, 33 backend and five shared tests, plus formatting, lint, typechecks and all builds. The known lazy LiveKit chunk warning remains; no Docker/real mail/media/browser deployment check was run.
 
 The map header/provenance review is an explicit CP02 prerequisite. No test fixture content hash or body/palette ID is registered as approved map/catalog data by this work.
+
+## Closure and CP02 handoff
+
+CP01 is complete for the initial shared contract boundary. The owner answered all six requested scope choices; no unanswered question blocks the next map-validation packet. The tested package exports strict existing HTTP projections/errors, office v1 versions/limits/manifest/ticket/handshake, event allowlists and command/state/ack/private-conversation/profile shapes. OFFICE_V1.md supplies the ownership, replay, takeover, seat-exit and provisional-budget rules needed by later implementers.
+
+Full local checks passed: **18 contracts + 33 backend + five shared tests**, formatting/lint, TypeScript and all builds. The earlier HTTP contract checkpoint `deff2e0` also [passed hosted CI](https://github.com/ibrahim8ismael/workspace/actions/runs/42477551052). The final office-v1 implementation checkpoint `a62c06b` [passed hosted CI](https://github.com/ibrahim8ismael/workspace/actions/runs/42478738071). The original drift snapshot and historical auth evidence were preserved.
+
+Next: CP02 reviews Vivo source/asset provenance, defines/validates actual collision/seat/zone payloads and approved avatar/catalog IDs, and generates deterministic immutable JSON/hash/manifest artifacts. Syntactic schemas and fixture hashes must never be registered as approval. CP03 then implements real ticket persistence/indexes/budgets/current-policy consume; CP05/CP06 implement runtime/client. Pinned media grant/permit/webhook and supervision design still require CP07 proof, and D13 full lifecycle stays at CP09. No A01–A11 gate is marked passed by this closure.

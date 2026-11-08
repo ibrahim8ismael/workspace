@@ -351,6 +351,8 @@ Use a configured trusted origin for email links, not an untrusted Host header. R
 
 ## 11. API and event contract outline
 
+**CP01 checkpoint (2026-11-08):** The first strict shared HTTP/office/profile/private-conversation schemas and technical version/size/retry/ownership rules are implemented and tested in `packages/contracts`; [OFFICE_V1.md](docs/contracts/OFFICE_V1.md) supplies exact wire shapes. These supersede older proposed event-name details below: the handshake is the only admission path, `office:ready` confirms it, and no `office:join`, legacy SDP/ICE relay, socket media-token issuer or reaction event is part of v1. Office/backend/client/media runtime implementation and actual map approval remain pending.
+
 Define one shared TypeScript contract package with runtime schemas (Zod is the recommended default), event constants, protocol/map versions, limits and safe DTOs. Shared TypeScript types alone do not validate network input. Keep map rules free of framework, filesystem, env and database dependencies.
 
 HTTP APIs include:

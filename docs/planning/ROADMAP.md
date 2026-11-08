@@ -19,12 +19,12 @@ The [completion plan](PROJECT_COMPLETION_PLAN.md) provides the cross-stack packe
 
 | Milestone | Code/local evidence already available | Still open |
 | --- | --- | --- |
-| M0 | Pinned imported source/assets, exact toolchain/builds, local transaction and HTTP security checks | Approved map contract/Phaser, deployed same-origin environment, media topology/supervision/cutoff proof |
-| M1 | Backend accounts/sessions/company roles, invitations/transfer/counters, encrypted outbox/worker and safe app audit; 32 local backend tests | Browser onboarding/current-company UI, real SMTP/Redis faults, wider password screening, keys/proxy/mirror/recovery evidence |
+| M0 | Pinned imported source/assets, exact toolchain/builds, local transaction/HTTP security checks and CP01 first wire schemas with 18 contract tests | Approved map contract/Phaser, deployed same-origin environment, media topology/supervision/cutoff proof |
+| M1 | Backend accounts/sessions/company roles, invitations/transfer/counters, encrypted outbox/worker and safe app audit; 33 local backend tests plus strict response compatibility | Browser onboarding/current-company UI, real SMTP/Redis faults, wider password screening, keys/proxy/mirror/recovery evidence |
 | M2 | Office reference persisted with pending-m0; libraries installed | Bootstrap/tickets, authoritative sockets/world/seats/leases/takeover and Phaser integration |
 | M3–M5 | Plans/module boundaries only | Conversations/media/meetings, deployment and measured pilot/recovery |
 
-CP00 is documentation reconciliation only; its completion does not close A01–A11. Remaining implementation follows CP01–CP11.
+CP00 documentation reconciliation and CP01 owner choices/first contracts are complete. Neither closes A01–A11. Remaining implementation starts with CP02 map/catalog validation and CP03 actual office admission, then follows the later packets.
 
 ## B2B SaaS scope gate
 

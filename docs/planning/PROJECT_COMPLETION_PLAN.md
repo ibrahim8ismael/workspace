@@ -107,7 +107,7 @@ Exit: all identified status/model discrepancies have either a correction or a li
 
 ### CP01 — Close boundary decisions and freeze the first interfaces
 
-Status: contracts implemented; final verification/closure in progress (2026-11-08, Codex). [Owner choices](../decisions/2026-11-08_CP01.md) accept D12, D13 onboarding, D02, Vivo candidate, English-first and desktop Chrome/Edge; see the [scoped contract work](CP01_CONTRACTS_AND_DECISIONS.md) and [progress](IMPLEMENTATION_PROGRESS.md). Other questions retain their recorded gates.
+Status: completed for the first contract boundary (2026-11-08, Codex). [Owner choices](../decisions/2026-11-08_CP01.md) accept D12, D13 onboarding, D02, Vivo candidate, English-first and desktop Chrome/Edge; see the [scoped contract work](CP01_CONTRACTS_AND_DECISIONS.md) and [progress](IMPLEMENTATION_PROGRESS.md). Other questions retain their recorded gates.
 
 Deliverable: decision records and strict shared contracts for the next working slice.
 
@@ -318,8 +318,8 @@ No Docker execution, infrastructure provisioning, real email, publishing or sour
 
 ## 8. Next implementation handoff
 
-CP00 documentation reconciliation is complete. Next is CP01 decision/contract work; the first application code slice is CP02 → CP03: approve one map and its coordinate/version contract, add office discovery/bootstrap and atomic one-use ticket issuance/consumption, and test it without Docker. CP00 status corrections and CP01 decision records accompany that work. Account UI/provider setup and the isolated media proof are the next independent work streams when their decisions/access are ready.
+CP00 documentation reconciliation and CP01 first contracts/owner choices are complete. Next is CP02 → CP03: validate the selected Vivo candidate/provenance and immutable geometry/catalog under the CP01 reference contract, add office discovery/bootstrap and atomic one-use ticket issuance/consumption, and test it without Docker. Carry CP01 decisions/contracts forward; do not repeat or reopen accepted choices without a specific change. Account UI/provider setup and the isolated media proof are the next independent work streams when their decisions/access are ready.
 
-Before CP03 starts, its implementer reads the project brief, this drift report, the existing auth API/evidence, the office admission plan and relevant entity contracts. Name the implementer, record D12/D04 and issuance budgets, then commit a concrete implementation scope. Do not start movement, media grants or broad frontend rewrites inside the ticket checkpoint.
+Before CP03 starts, its implementer reads the project brief, drift report, existing auth API/evidence, accepted CP01 decisions/office-v1 contract and approved CP02 map/catalog evidence. Name the implementer, preserve the recorded issuance budgets, then commit a concrete implementation scope. Do not start movement, media grants or broad frontend rewrites inside the ticket checkpoint.
 
 Maintain this plan as delivery status changes; detailed feature specifications and optional independent EGM reviews are separate artifacts. No approval is implied for a future feature or open architecture choice merely because its packet appears here.

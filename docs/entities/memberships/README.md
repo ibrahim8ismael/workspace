@@ -1,6 +1,6 @@
 # Memberships
 
-Status: draft plan · Updated: 2026-11-05 · Target: M1
+Status: initial persistence implemented; remaining integration/lifecycle work planned · Updated: 2026-11-08 · Target: M1
 
 
 Initial backend scope is now described by the [implemented auth/company API guide](../../contracts/AUTH_AND_ROLES_API.md). Existing plan fields below retain their draft status where not covered by that implementation; production/provider/recovery acceptance remains separate.
@@ -11,18 +11,21 @@ Authorize a user inside one customer-company workspace with an owner or member r
 
 - Owning module: Memberships.
 - State location: MongoDB: memberships.
-- These are proposed contracts and fields, not implemented models. Apply the [baseline](../../README.md#source-precedence) and [cross-cutting rules](../../architecture/README.md#shared-invariants).
+- Fields below describe the current stored model; interface additions and remaining work retain their stated planned status. Apply the [baseline](../../README.md#source-precedence) and [cross-cutting rules](../../architecture/README.md#shared-invariants).
 
-## Proposed data
+## Implemented data
 
-- `id`
+Source: [owning model](../../../apps/api/src/modules/tenancy/tenancy.models.ts).
+
+- `_id`
 - `workspaceId`
 - `userId`
 - `role (owner, member)`
-- `status`
+- `status (active, revoked)`
 - `policyVersion`
 - `joinedAt`
-- `revokedAt`
+
+No revokedAt field is stored. Reactivation preserves _id and resets role/status/joinedAt; a rotating activation grant is planned under CP03 before ticket issuance. HTTP removal does not yet signal a live runtime; CP05 adds hints/leases.
 
 ## Relationships
 
@@ -41,11 +44,11 @@ Authorize a user inside one customer-company workspace with an owner or member r
 ## Interface outline
 
 - GET /api/workspaces/:workspaceId/members.
-- Proposed member removal, leave and owner-transfer commands are tenant scoped; role rules apply per operation.
+- DELETE /api/workspaces/:workspaceId/members/:userId, POST .../leave and POST .../transfer-ownership are implemented with per-operation tenant/role rules.
 
 ## Planning question
 
-Specify reinvitation/reactivation semantics and restricted member-directory fields.
+Current recipient-bound reinvitation reactivates membership; directory exposes userId, displayName, role and joinedAt without email. Add stable activation-grant rotation in CP03 and live revocation in CP05.
 
 ## Next work
 

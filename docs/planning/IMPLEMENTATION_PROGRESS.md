@@ -7,8 +7,8 @@ The owner requested a push after each completed process. Each row below is a rev
 | Batch | Scope | Status | Validation / evidence |
 | --- | --- | --- | --- |
 | CP00.0 | Save the existing EGM installation, drift snapshot and completion plan | Committed/pushed as `34b1841` | Prior full `pnpm check`: 32 backend + five shared tests, all builds. Plugin runtime/cache file equality and formatting/lint checked during installation |
-| CP00.1 | Correct current overview, app/package and provenance status; preserve historical snapshots | Prepared for commit/push | Auth/tenancy/worker/audit source and asset manifests compared; historical evidence retained; local links/formatting checked |
-| CP00.2 | Reconcile actual persistence fields, internal records and entity task status | Pending | Models/services/tests compared with docs; no schema changes |
+| CP00.1 | Correct current overview, app/package and provenance status; preserve historical snapshots | Committed/pushed as `0e9a277` | Auth/tenancy/worker/audit source and asset manifests compared; historical evidence retained; local links/formatting checked |
+| CP00.2 | Reconcile actual persistence fields, internal records and entity task status | Prepared for commit/push | Models/services/tests compared; actual fields/indexes and twelve entity specs/plans reconciled; no schema changes |
 | CP00.3 | Reconcile backlog/roadmap/decisions, link intentionally pending findings and close CP00 | Pending | Documentation coverage, links, formatting and whitespace checks |
 
 ## Status vocabulary

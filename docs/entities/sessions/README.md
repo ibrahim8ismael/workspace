@@ -1,6 +1,6 @@
 # Sessions
 
-Status: draft plan · Updated: 2026-11-05 · Target: M1
+Status: initial persistence implemented; remaining integration/lifecycle work planned · Updated: 2026-11-08 · Target: M1
 
 
 Initial backend scope is now described by the [implemented auth/company API guide](../../contracts/AUTH_AND_ROLES_API.md). Existing plan fields below retain their draft status where not covered by that implementation; production/provider/recovery acceptance remains separate.
@@ -11,22 +11,26 @@ Authenticate browser requests using an opaque cookie and authoritative server st
 
 - Owning module: Auth.
 - State location: MongoDB: sessions.
-- These are proposed contracts and fields, not implemented models. Apply the [baseline](../../README.md#source-precedence) and [cross-cutting rules](../../architecture/README.md#shared-invariants).
+- Fields below describe the current stored model; interface additions and remaining work retain their stated planned status. Apply the [baseline](../../README.md#source-precedence) and [cross-cutting rules](../../architecture/README.md#shared-invariants).
 
-## Proposed data
+## Implemented data
 
-- `id`
-- `tokenDigest`
-- `userId`
-- `issuedAuthVersion`
-- `csrfBinding`
+Source: [owning model](../../../apps/api/src/modules/identity/identity.models.ts).
+
+- `_id`
+- `tokenDigest (private projection)`
+- `csrfSecret (private projection)`
+- `kind (anonymous, authenticated)`
+- `userId (nullable for anonymous)`
+- `authVersion`
+- `version`
 - `createdAt`
-- `lastActivityAt`
 - `absoluteExpiresAt`
 - `idleExpiresAt`
 - `revokedAt`
 - `reauthenticatedAt`
-- `version`
+
+`authVersion`/`csrfSecret` are the implemented equivalents of issuedAuthVersion/csrfBinding. There is no lastActivityAt; explicit extension changes idleExpiresAt. Recent proof lasts ten minutes. Browser session UX and live invalidation remain CP04/CP05 work.
 
 ## Relationships
 

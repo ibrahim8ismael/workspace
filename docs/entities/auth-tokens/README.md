@@ -1,6 +1,6 @@
 # Authentication tokens
 
-Status: draft plan · Updated: 2026-11-05 · Target: M1
+Status: initial persistence implemented; remaining integration/lifecycle work planned · Updated: 2026-11-08 · Target: M1
 
 
 Initial backend scope is now described by the [implemented auth/company API guide](../../contracts/AUTH_AND_ROLES_API.md). Existing plan fields below retain their draft status where not covered by that implementation; production/provider/recovery acceptance remains separate.
@@ -11,19 +11,22 @@ Represent purpose-separated single-use email verification and password recovery 
 
 - Owning module: Auth.
 - State location: MongoDB: auth_tokens.
-- These are proposed contracts and fields, not implemented models. Apply the [baseline](../../README.md#source-precedence) and [cross-cutting rules](../../architecture/README.md#shared-invariants).
+- Fields below describe the current stored model; interface additions and remaining work retain their stated planned status. Apply the [baseline](../../README.md#source-precedence) and [cross-cutting rules](../../architecture/README.md#shared-invariants).
 
-## Proposed data
+## Implemented data
 
-- `id`
+Source: [owning model](../../../apps/api/src/modules/identity/identity.models.ts).
+
+- `_id`
 - `userId`
-- `purpose`
+- `purpose (verify-email, reset-password)`
 - `tokenDigest`
-- `issuedAuthVersion`
+- `authVersion`
 - `expiresAt`
 - `consumedAt`
-- `supersededAt`
 - `createdAt`
+
+Supersession marks consumedAt rather than adding supersededAt. Worker emails contain codes/API instructions; browser token forms/routing and real delivery remain CP04 work.
 
 ## Relationships
 

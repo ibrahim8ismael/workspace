@@ -1,6 +1,6 @@
 # Users
 
-Status: draft plan · Updated: 2026-11-05 · Target: M1
+Status: initial persistence implemented; remaining integration/lifecycle work planned · Updated: 2026-11-08 · Target: M1
 
 
 Initial backend scope is now described by the [implemented auth/company API guide](../../contracts/AUTH_AND_ROLES_API.md). Existing plan fields below retain their draft status where not covered by that implementation; production/provider/recovery acceptance remains separate.
@@ -11,20 +11,23 @@ Represent a person and account eligibility independently of workspace membership
 
 - Owning module: Users / Auth.
 - State location: MongoDB: users.
-- These are proposed contracts and fields, not implemented models. Apply the [baseline](../../README.md#source-precedence) and [cross-cutting rules](../../architecture/README.md#shared-invariants).
+- Fields below describe the current stored model; interface additions and remaining work retain their stated planned status. Apply the [baseline](../../README.md#source-precedence) and [cross-cutting rules](../../architecture/README.md#shared-invariants).
 
-## Proposed data
+## Implemented data
 
-- `id`
+Source: [owning model](../../../apps/api/src/modules/identity/identity.models.ts).
+
+- `_id`
 - `normalizedEmail`
 - `displayName`
-- `verifiedAt`
 - `status (pending, active, suspended)`
+- `verifiedAt`
 - `authVersion`
 - `policyVersion`
 - `ownedWorkspaceCount`
 - `createdAt`
-- `updatedAt`
+
+`updatedAt` and appearance are not stored. Registration display names are 2–80 characters; profile editing and deletion/retention remain planned under CP06/CP09.
 
 ## Relationships
 
@@ -49,7 +52,7 @@ Represent a person and account eligibility independently of workspace membership
 
 ## Planning question
 
-Choose display-name limits and account deletion/retention behavior before exposing deletion.
+Display-name limits are implemented; profile editing and account deletion/retention remain separate CP06/CP09 decisions before exposure.
 
 ## Next work
 

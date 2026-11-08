@@ -1,17 +1,20 @@
 # Audit events implementation plan
 
-Status: planned; no implementation or verification evidence · Target: M1–M5
+Status: initial subset implemented; release and integration work remain open · Updated: 2026-11-08 · Target: M1–M5
+
+Implementation boundary: [current API and limitations](../../contracts/AUTH_AND_ROLES_API.md), [completion plan](../../planning/PROJECT_COMPLETION_PLAN.md) and [CP00 progress](../../planning/IMPLEMENTATION_PROGRESS.md). Checked implementation tasks describe existing code, not production acceptance.
 
 ## Implementation tasks
 
-- [ ] Create security action taxonomy and safe event schema.
-- [ ] Commit relevant mutation/audit record atomically where supported.
+- [x] Record current identity/company action names in a safe audit schema.
+- [ ] Extend taxonomy/metadata only as required by the approved recovery design.
+- [x] Commit implemented security mutations and their audit rows in one Mongo transaction.
 - [ ] Design independent mirror and acknowledgement monitoring.
 - [ ] Write restore reconciliation procedure and restricted audit access rules.
 
 ## Acceptance criteria
 
-The following are future checks, not passing results.
+These are full acceptance checks. Local backend subsets are recorded in [auth evidence](../../planning/AUTH_IMPLEMENTATION_EVIDENCE.md); unchecked items do not imply a full release pass.
 
 - [ ] Secret scanner/projection review finds no token or password content.
 - [ ] Restore predating reset/removal cannot reopen access with old credentials.

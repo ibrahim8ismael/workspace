@@ -1,6 +1,6 @@
 # Audit events
 
-Status: draft plan · Updated: 2026-11-05 · Target: M1–M5
+Status: initial persistence implemented; remaining integration/lifecycle work planned · Updated: 2026-11-08 · Target: M1–M5
 
 
 Initial backend scope is now described by the [implemented auth/company API guide](../../contracts/AUTH_AND_ROLES_API.md). Existing plan fields below retain their draft status where not covered by that implementation; production/provider/recovery acceptance remains separate.
@@ -11,21 +11,21 @@ Record minimal security mutations and support safe restore reconciliation.
 
 - Owning module: Audit / security operations.
 - State location: MongoDB: audit_events plus independent restricted recovery evidence.
-- These are proposed contracts and fields, not implemented models. Apply the [baseline](../../README.md#source-precedence) and [cross-cutting rules](../../architecture/README.md#shared-invariants).
+- Fields below describe the current stored model; interface additions and remaining work retain their stated planned status. Apply the [baseline](../../README.md#source-precedence) and [cross-cutting rules](../../architecture/README.md#shared-invariants).
 
-## Proposed data
+## Implemented data
 
-- `eventId`
-- `occurredAt`
+Source: [owning model](../../../apps/api/src/modules/audit/audit.service.ts).
+
+- `_id`
 - `actorId`
-- `workspaceId`
+- `workspaceId (nullable)`
 - `action`
-- `targetType`
 - `targetId`
-- `result`
-- `policyVersion`
-- `requestId`
-- `independentMirrorAcknowledgement`
+- `createdAt`
+- `expiresAt`
+
+Thirty-day application retention is a TTL index. Proposed targetType/result/policyVersion/requestId/mirror acknowledgements and workspace/time lookup indexing are not implemented. Independent evidence/failure policy/reconciliation remain CP04/CP10 work; no browser query API exists.
 
 ## Relationships
 

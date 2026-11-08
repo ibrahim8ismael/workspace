@@ -1,6 +1,6 @@
 # Assets and provenance
 
-Status: draft plan · Updated: 2026-11-05 · Target: M0–M2
+Status: pinned import inventory implemented; unified rendering catalog pending · Updated: 2026-11-08 · Target: M0–M2
 
 ## Responsibility
 
@@ -10,7 +10,11 @@ Track reusable artwork, derived textures and the rights/evidence needed for dist
 - State location: Versioned static files and provenance manifest.
 - These are proposed contracts and fields, not implemented models. Apply the [baseline](../../README.md#source-precedence) and [cross-cutting rules](../../architecture/README.md#shared-invariants).
 
-## Proposed data
+## Current inventory and proposed catalog
+
+Current [provenance](../../../packages/assets/manifests/provenance.json) records repository/commit, source manifest/location/review, and per-entry destination path/upstreamPath/upstreamBlobSha for 261 public files. It does not yet provide the unified runtime catalog below.
+
+Proposed runtime metadata:
 
 - `assetId`
 - `upstreamRepository`
@@ -34,7 +38,7 @@ Track reusable artwork, derived textures and the rights/evidence needed for dist
 
 ## Invariants and lifecycle
 
-- Pin actual upstream commit; recorded tree SHA is not a commit pin.
+- Source/public imports are pinned to commit 23d6b8999396f9e9d51291bf85bd7b72161f833f; preserve the source manifest and notices.
 - Root MIT does not independently clear every image or third-party reference pack.
 - Preserve notices and record copied paths/modifications before distribution.
 - Generated SVG/React art needs export or reimplementation; PNGs can load directly.
@@ -47,7 +51,7 @@ Track reusable artwork, derived textures and the rights/evidence needed for dist
 
 ## Planning question
 
-Exact reuse set and export tooling remain open until inventory; no upstream files imported by this docs task.
+Imported paths and hashes are inventoried. CP02 selects the approved MVP appearance/map subset and supplies missing dimensions, anchors, frame/layer metadata and any derived-art export pipeline.
 
 ## Next work
 

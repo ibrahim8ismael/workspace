@@ -1,20 +1,24 @@
 # Workspaces implementation plan
 
-Status: planned; no implementation or verification evidence · Target: M1
+Status: initial subset implemented; release and integration work remain open · Updated: 2026-11-08 · Target: M1
+
+Implementation boundary: [current API and limitations](../../contracts/AUTH_AND_ROLES_API.md), [completion plan](../../planning/PROJECT_COMPLETION_PLAN.md) and [CP00 progress](../../planning/IMPLEMENTATION_PROGRESS.md). Checked implementation tasks describe existing code, not production acceptance.
 
 ## Implementation tasks
 
 - [ ] Resolve company-to-workspace cardinality (D12) and onboarding mode (D13) before freezing tenant schemas.
 - [ ] Specify company suspension/offboarding and current-company navigation; keep platform privileges separate from customer roles.
 
-- [ ] Define create/list/detail DTOs and slug policy.
-- [ ] Implement transactional creation with counters and retry result lookup.
-- [ ] Implement scoped administration and atomic owner transfer.
-- [ ] Add owner/member UI and security audit records.
+- [x] Implement create/list/detail DTOs and slug validation/uniqueness.
+- [x] Implement transactional creation with counters and scoped idempotent result lookup.
+- [x] Implement owner-only invitations/removal and transactional ownership transfer.
+- [ ] Implement only the settings/lifecycle controls agreed under D13 (CP09).
+- [x] Commit safe security audit records with company mutations.
+- [ ] Add owner/member onboarding/administration UI under CP04/CP09.
 
 ## Acceptance criteria
 
-The following are future checks, not passing results.
+These are full acceptance checks. Local backend subsets are recorded in [auth evidence](../../planning/AUTH_IMPLEMENTATION_EVIDENCE.md); unchecked items do not imply a full release pass.
 
 - [ ] Concurrent creation cannot exceed owned-workspace quota.
 - [ ] Cross-tenant resource substitution is rejected.

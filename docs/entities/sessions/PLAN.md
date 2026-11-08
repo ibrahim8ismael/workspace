@@ -1,17 +1,20 @@
 # Sessions implementation plan
 
-Status: planned; no implementation or verification evidence · Target: M1
+Status: initial subset implemented; release and integration work remain open · Updated: 2026-11-08 · Target: M1
+
+Implementation boundary: [current API and limitations](../../contracts/AUTH_AND_ROLES_API.md), [completion plan](../../planning/PROJECT_COMPLETION_PLAN.md) and [CP00 progress](../../planning/IMPLEMENTATION_PROGRESS.md). Checked implementation tasks describe existing code, not production acceptance.
 
 ## Implementation tasks
 
-- [ ] Define cookie, CSRF and anonymous bootstrap lifecycle.
-- [ ] Create digest/expiry indexes and authoritative validation service.
-- [ ] Implement revocation, rotation and active-session UI.
-- [ ] Connect session invalidation to office and media lease expiry.
+- [x] Implement cookie, CSRF and safe anonymous bootstrap lifecycle.
+- [x] Create digest/expiry indexes and authoritative validation service.
+- [x] Implement session revocation/rotation/listing and explicit idle extension APIs.
+- [ ] Implement browser session management and warning/extension UX under CP04.
+- [ ] Connect session invalidation to office/media revocation and bounded leases under CP05/CP08.
 
 ## Acceptance criteria
 
-The following are future checks, not passing results.
+These are full acceptance checks. Local backend subsets are recorded in [auth evidence](../../planning/AUTH_IMPLEMENTATION_EVIDENCE.md); unchecked items do not imply a full release pass.
 
 - [ ] Expired rows are unusable before TTL cleanup.
 - [ ] Fixation, wrong CSRF, cross-origin mutation and revoked-session reuse fail.

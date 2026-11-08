@@ -1,6 +1,6 @@
 # Outbox events
 
-Status: draft plan · Updated: 2026-11-05 · Target: M1
+Status: initial outbox implemented; provider/key/recovery gates pending · Updated: 2026-11-08 · Target: M1
 
 
 Initial backend scope is now described by the [implemented auth/company API guide](../../contracts/AUTH_AND_ROLES_API.md). Existing plan fields below retain their draft status where not covered by that implementation; production/provider/recovery acceptance remains separate.
@@ -11,22 +11,18 @@ Commit required asynchronous delivery with its business mutation.
 
 - Owning module: Jobs / domain services.
 - State location: MongoDB: outbox.
-- These are proposed contracts and fields, not implemented models. Apply the [baseline](../../README.md#source-precedence) and [cross-cutting rules](../../architecture/README.md#shared-invariants).
+- The implemented data section reflects current persistence; future interfaces remain planned. Apply the [baseline](../../README.md#source-precedence) and [cross-cutting rules](../../architecture/README.md#shared-invariants).
 
-## Proposed data
+## Implemented data
 
-- `eventId`
-- `operationId`
-- `eventType`
-- `aggregateId`
-- `workspaceId if scoped`
-- `state`
-- `attempts`
-- `availableAt`
-- `expiresAt`
-- `encryptedSecretPayload`
-- `encryptionKeyVersion`
-- `deliveredAt`
+Source: [server-only outbox model](../../../packages/delivery/src/outbox.ts) and [transactional issuer](../../../apps/api/src/modules/identity/delivery/outbox.service.ts).
+
+- `_id`, `subjectId`, `kind`
+- `payload`: nullable encrypted object with `iv`, `tag`, `ciphertext`, `keyVersion`
+- `state (pending, queued, delivered, expired, failed)`, `attempts`
+- `expiresAt`, `cleanupAt`, `createdAt`, `deliveredAt`
+
+There is no operationId/availableAt/direct workspaceId field. Durable command fingerprints/results live in operations. subjectId identifies the owning user or invitation; any future tenant-facing status path must validate the owning invitation/workspace relationship. Key rotation/store choice and actual provider/queue fault evidence remain CP04/CP10 work. Metadata cleanup TTL is seven days after expiry; delivery/expiry purges encrypted secrets earlier.
 
 ## Relationships
 

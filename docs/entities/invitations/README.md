@@ -1,6 +1,6 @@
 # Invitations
 
-Status: draft plan · Updated: 2026-11-05 · Target: M1
+Status: initial persistence implemented; remaining integration/lifecycle work planned · Updated: 2026-11-08 · Target: M1
 
 
 Initial backend scope is now described by the [implemented auth/company API guide](../../contracts/AUTH_AND_ROLES_API.md). Existing plan fields below retain their draft status where not covered by that implementation; production/provider/recovery acceptance remains separate.
@@ -11,20 +11,24 @@ Invite a specific verified mailbox to one workspace.
 
 - Owning module: Invitations.
 - State location: MongoDB: invitations.
-- These are proposed contracts and fields, not implemented models. Apply the [baseline](../../README.md#source-precedence) and [cross-cutting rules](../../architecture/README.md#shared-invariants).
+- Fields below describe the current stored model; interface additions and remaining work retain their stated planned status. Apply the [baseline](../../README.md#source-precedence) and [cross-cutting rules](../../architecture/README.md#shared-invariants).
 
-## Proposed data
+## Implemented data
 
-- `id`
+Source: [owning model](../../../apps/api/src/modules/tenancy/tenancy.models.ts).
+
+- `_id`
 - `workspaceId`
-- `intendedNormalizedEmail`
+- `email`
 - `tokenDigest`
 - `createdBy`
 - `expiresAt`
-- `acceptedAt`
+- `consumedAt`
 - `acceptedBy`
 - `revokedAt`
-- `operationId`
+- `createdAt`
+
+`email` and `consumedAt` implement the proposed intendedNormalizedEmail/acceptedAt concepts. Durable command idempotency is in operations, not an invitation operationId field. Current defaults are seven-day expiry, fifty pending invites and no slot reservation. Recipient UI/real mail remain CP04 work.
 
 ## Relationships
 
@@ -36,19 +40,19 @@ Invite a specific verified mailbox to one workspace.
 ## Invariants and lifecycle
 
 - Recipient-bound single-use random capability; persist only digest.
-- Historical seven-day expiry is a proposed carry-forward default, subject to confirmation.
+- Current expiry is seven days; pending quota is fifty/workspace; invitations do not reserve member slots.
 - Accept only with matching verified active account and current workspace policy.
 - Consume invite, create/reactivate membership and increment count in one transaction; idempotent retries return the same outcome.
 - Secrets stay outside URLs in logs, queue bodies and workspace listings.
 
 ## Interface outline
 
-- Proposed POST/GET /api/workspaces/:workspaceId/invitations; POST invitation accept/revoke commands.
+- POST/GET /api/workspaces/:workspaceId/invitations; POST /api/invitations/accept; DELETE /api/workspaces/:workspaceId/invitations/:invitationId.
 - Acceptance identifies the invite capability but resolves tenant and recipient on the server.
 
 ## Planning question
 
-Finalize invite lifetime and pending-invite quotas; define whether capacity is reserved before acceptance.
+Current lifetime/quota/reservation behavior is recorded above. Complete recipient UI and real provider/outage verification under CP04.
 
 ## Next work
 

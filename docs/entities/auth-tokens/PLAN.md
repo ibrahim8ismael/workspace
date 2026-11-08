@@ -1,17 +1,20 @@
 # Authentication tokens implementation plan
 
-Status: planned; no implementation or verification evidence · Target: M1
+Status: initial subset implemented; release and integration work remain open · Updated: 2026-11-08 · Target: M1
+
+Implementation boundary: [current API and limitations](../../contracts/AUTH_AND_ROLES_API.md), [completion plan](../../planning/PROJECT_COMPLETION_PLAN.md) and [CP00 progress](../../planning/IMPLEMENTATION_PROGRESS.md). Checked implementation tasks describe existing code, not production acceptance.
 
 ## Implementation tasks
 
-- [ ] Define token issuance, supersession and redemption state transitions.
-- [ ] Write token and encrypted email outbox entry in one transaction.
-- [ ] Implement verification password proof and pending-account recovery.
-- [ ] Implement concurrent reset conflict handling and secret-redacted recovery pages.
+- [x] Implement token issuance, supersession and conditional one-time redemption.
+- [x] Write token and encrypted email outbox entry in one transaction.
+- [x] Implement pending-password verification proof and mailbox recovery with credential replacement.
+- [x] Implement concurrent reset/credential conflict handling.
+- [ ] Build browser token forms and safe recovery routing under CP04; current mail uses codes/API instructions.
 
 ## Acceptance criteria
 
-The following are future checks, not passing results.
+These are full acceptance checks. Local backend subsets are recorded in [auth evidence](../../planning/AUTH_IMPLEMENTATION_EVIDENCE.md); unchecked items do not imply a full release pass.
 
 - [ ] Two concurrent redemptions commit at most once.
 - [ ] Wrong-purpose, superseded and expired tokens fail.

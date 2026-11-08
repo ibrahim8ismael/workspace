@@ -1,6 +1,6 @@
 # System entity catalog
 
-Status: initial decomposition · Updated: 2026-11-05
+Status: product entity catalog with implemented and planned boundaries · Updated: 2026-11-08
 
 A folder represents a durable record, runtime entity, static definition or security capability. It does not imply a MongoDB collection. Map overrides are conditional scope; the final four entries are deferred features.
 
@@ -32,6 +32,8 @@ A folder represents a durable record, runtime entity, static definition or secur
 | [Chat messages](chat-messages/README.md) | Deferred | Proposed MongoDB collection; not scheduled |
 | [Calendar events](calendar-events/README.md) | Deferred | Proposed MongoDB collection; not scheduled |
 | [Desk assignments](desk-assignments/README.md) | Deferred | Proposed MongoDB collection; not scheduled |
+
+Internal implementation records also exist: Mongo `operations` stores scoped command fingerprints/results, and `rate_limits` stores Mongo-backed budget counts/TTL. They support existing entity services rather than introducing new customer features. See [actual data model](../architecture/DATA_MODEL.md) for their keys/expiry and limitations.
 
 Each folder contains a specification (`README.md`) and an actionable `PLAN.md`. Service boundaries, deployment components and UI ownership are covered by [architecture](../architecture/README.md).
 

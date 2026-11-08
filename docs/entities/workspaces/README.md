@@ -1,6 +1,6 @@
 # Workspaces
 
-Status: draft plan · Updated: 2026-11-05 · Target: M1
+Status: initial persistence implemented; remaining integration/lifecycle work planned · Updated: 2026-11-08 · Target: M1
 
 
 Initial backend scope is now described by the [implemented auth/company API guide](../../contracts/AUTH_AND_ROLES_API.md). Existing plan fields below retain their draft status where not covered by that implementation; production/provider/recovery acceptance remains separate.
@@ -11,19 +11,22 @@ Define the customer-company tenant boundary for office configuration and collabo
 
 - Owning module: Workspaces.
 - State location: MongoDB: workspaces.
-- These are proposed contracts and fields, not implemented models. Apply the [baseline](../../README.md#source-precedence) and [cross-cutting rules](../../architecture/README.md#shared-invariants).
+- Fields below describe the current stored model; interface additions and remaining work retain their stated planned status. Apply the [baseline](../../README.md#source-precedence) and [cross-cutting rules](../../architecture/README.md#shared-invariants).
 
-## Proposed data
+## Implemented data
 
-- `id`
+Source: [owning model](../../../apps/api/src/modules/tenancy/tenancy.models.ts).
+
+- `_id`
 - `name`
 - `slug`
 - `ownerId`
-- `status`
+- `status (active, suspended)`
 - `policyVersion`
 - `memberCount`
 - `createdAt`
-- `updatedAt`
+
+No updatedAt/closed/archive field or lifecycle endpoint exists. Three owned workspaces/user and thirty members/workspace are implemented starting quotas, not measured capacity or commercial entitlements. D12/D13 remain open; company UI/settings/lifecycle are CP04/CP09 work.
 
 ## Relationships
 
@@ -45,7 +48,7 @@ Define the customer-company tenant boundary for office configuration and collabo
 ## Interface outline
 
 - POST /api/workspaces; GET /api/workspaces and /api/workspaces/:workspaceId.
-- Proposed owner mutation routes require recent reauthentication and policy conflict checks.
+- Existing ownership transfer requires recent password proof and transactional policy checks. Additional settings/lifecycle routes remain planned and require their own contract.
 
 ## Planning question
 

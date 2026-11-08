@@ -1,6 +1,6 @@
 # Credentials
 
-Status: draft plan · Updated: 2026-11-05 · Target: M1
+Status: initial persistence implemented; remaining integration/lifecycle work planned · Updated: 2026-11-08 · Target: M1
 
 
 Initial backend scope is now described by the [implemented auth/company API guide](../../contracts/AUTH_AND_ROLES_API.md). Existing plan fields below retain their draft status where not covered by that implementation; production/provider/recovery acceptance remains separate.
@@ -11,17 +11,20 @@ Store backend-only password material and credential concurrency versions.
 
 - Owning module: Auth.
 - State location: MongoDB: credentials.
-- These are proposed contracts and fields, not implemented models. Apply the [baseline](../../README.md#source-precedence) and [cross-cutting rules](../../architecture/README.md#shared-invariants).
+- Fields below describe the current stored model; interface additions and remaining work retain their stated planned status. Apply the [baseline](../../README.md#source-precedence) and [cross-cutting rules](../../architecture/README.md#shared-invariants).
 
-## Proposed data
+## Implemented data
 
-- `id`
+Source: [owning model](../../../apps/api/src/modules/identity/identity.models.ts).
+
+- `_id`
 - `userId`
-- `passwordHash`
-- `hashAlgorithm`
-- `hashParameters`
-- `credentialVersion`
+- `passwordHash (private projection)`
+- `version`
+- `accessFence`
 - `changedAt`
+
+Argon2id algorithm/parameters are encoded in passwordHash, not separate fields. Current hashing uses 19 MiB, two iterations and one lane with bounded concurrency; comprehensive compromised-password screening and host measurements remain CP04 work.
 
 ## Relationships
 
@@ -43,7 +46,7 @@ Store backend-only password material and credential concurrency versions.
 
 ## Planning question
 
-Select library, exact hashing parameters and breached-password source during M0/M1.
+Library/parameters are implemented as recorded above. Complete compromised-password screening, target-host benchmarks and deployment verification under CP04.
 
 ## Next work
 

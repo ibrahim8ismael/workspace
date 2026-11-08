@@ -1,6 +1,6 @@
 # Background jobs
 
-Status: draft plan · Updated: 2026-11-05 · Target: M1
+Status: initial queue dispatcher/processor implemented; real service gates pending · Updated: 2026-11-08 · Target: M1
 
 
 Initial backend scope is now described by the [implemented auth/company API guide](../../contracts/AUTH_AND_ROLES_API.md). Existing plan fields below retain their draft status where not covered by that implementation; production/provider/recovery acceptance remains separate.
@@ -11,18 +11,15 @@ Execute bounded retryable delivery and maintenance work outside interactive path
 
 - Owning module: Worker / Jobs.
 - State location: Dedicated persistent noeviction BullMQ Redis.
-- These are proposed contracts and fields, not implemented models. Apply the [baseline](../../README.md#source-precedence) and [cross-cutting rules](../../architecture/README.md#shared-invariants).
+- The implemented payload/metadata section reflects current code; future interfaces remain planned. Apply the [baseline](../../README.md#source-precedence) and [cross-cutting rules](../../architecture/README.md#shared-invariants).
 
-## Proposed data
+## Implemented payload and queue metadata
 
-- `jobId`
-- `outboxEventId`
-- `jobType`
-- `attempts`
-- `backoff`
-- `scheduledAt`
-- `result status`
-- `safe errorCode`
+Source: [ID-only job schema](../../../packages/delivery/src/index.ts), [dispatcher](../../../apps/worker/src/outbox/dispatcher.ts) and [worker](../../../apps/worker/src/main.ts).
+
+The application payload contains only `outboxEventId`. BullMQ metadata carries the stable job ID, name, five-attempt ceiling and exponential backoff starting at one second. Completed retention is bounded to one day/1000 jobs; failed retention to seven days/1000 jobs. Worker concurrency is two. Outbox stores attempts and final delivery state; payloads do not carry tokens, email or private policy.
+
+Real persistent Redis/SMTP, crash/ambiguous-acknowledgement recovery and operational alerts remain CP04/CP10 work. Existing tests fake the queue/sender boundary.
 
 ## Relationships
 
@@ -44,7 +41,7 @@ Execute bounded retryable delivery and maintenance work outside interactive path
 
 ## Planning question
 
-Select retry ceilings, retention and provider idempotency capabilities before M1 signoff.
+Retry ceilings and retention are implemented above; verify real provider idempotency/duplicate behavior and persistent queue recovery before M1 signoff.
 
 ## Next work
 

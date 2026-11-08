@@ -1,6 +1,6 @@
 # Offices
 
-Status: draft plan · Updated: 2026-11-05 · Target: M1–M2
+Status: initial persistence implemented; remaining integration/lifecycle work planned · Updated: 2026-11-08 · Target: M1–M2
 
 ## Responsibility
 
@@ -8,17 +8,18 @@ Bind a workspace to one canonical map and an authoritative runtime.
 
 - Owning module: Maps / OfficeRuntime.
 - State location: MongoDB: offices; active world in process memory.
-- These are proposed contracts and fields, not implemented models. Apply the [baseline](../../README.md#source-precedence) and [cross-cutting rules](../../architecture/README.md#shared-invariants).
+- Fields below describe the current stored model; interface additions and remaining work retain their stated planned status. Apply the [baseline](../../README.md#source-precedence) and [cross-cutting rules](../../architecture/README.md#shared-invariants).
 
-## Proposed data
+## Implemented data
 
-- `id`
+Source: [owning model](../../../apps/api/src/modules/tenancy/tenancy.models.ts).
+
+- `_id`
 - `workspaceId`
-- `mapVersionId`
-- `overrideRevision`
-- `spawn`
-- `configurationVersion`
-- `runtime epoch and stateVersion (transient)`
+- `mapVersion`
+- `createdAt`
+
+Creation writes mapVersion pending-m0. Approved manifest/spawn/version validation, bootstrap, backfill and tickets are CP02/CP03 work. Runtime epochs/capacity/draining are CP05; overrideRevision remains conditional, not a required schema addition.
 
 ## Relationships
 

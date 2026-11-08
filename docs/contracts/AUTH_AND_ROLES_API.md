@@ -1,6 +1,6 @@
 # Authentication and company role APIs
 
-Status: backend auth/company API with CP03 office admission · Updated: 2026-11-09. Frontend integration is outside this change. Local/hosted verification results are recorded separately; this document is not production signoff.
+Status: backend auth/company API with CP03 office admission · Updated: 2026-11-09. CP04.1/CP04.2b connect browser onboarding and session/security controls; current-company context is the next slice. Local/hosted verification results are recorded separately; this document is not production signoff.
 
 ## Runtime contract coverage (CP01, 2026-11-08)
 
@@ -8,7 +8,7 @@ Strict browser-safe response schemas for the existing account/workspace/member/i
 
 ## Browser/client contract
 
-The prefix is `/api`. Authentication uses only the opaque `__Host-gather_session` cookie (`Secure; HttpOnly; SameSite=Lax; Path=/`, no Domain). Raw session secrets never appear in JSON. Non-browser test clients can maintain the cookie explicitly; browser integration requires a suitable HTTPS/same-origin deployment and remains future work.
+The prefix is `/api`. Authentication uses only the opaque `__Host-gather_session` cookie (`Secure; HttpOnly; SameSite=Lax; Path=/`, no Domain). Raw session secrets never appear in JSON. Non-browser test clients can maintain the cookie explicitly; browser integration requires a suitable HTTPS/same-origin deployment. Loopback HTTPS onboarding/session flows are verified; public ingress/proxy and real delivery acceptance remain pending.
 
 1. Request `GET /api/auth/csrf` with `Sec-Fetch-Site: same-origin` and `X-Requested-With: XMLHttpRequest`. An optional Origin must exactly match `APP_ORIGIN`. It returns `{ csrfToken }` and creates an anonymous cookie if needed. A valid existing session is preserved.
 2. Every state-changing call sends `Content-Type: application/json`, exact `Origin: <APP_ORIGIN>`, the cookie, and `X-CSRF-Token: <csrfToken>`. Send `{}` for empty commands. Missing/wrong Origin or CSRF fails before domain changes.

@@ -362,11 +362,157 @@
 .workspace-actions .account-secondary {
   margin-top: 3px;
 }
+.security-content {
+  width: min(100%, 1040px);
+}
+.session-lifetime,
+.security-panel {
+  margin-top: 16px;
+  padding: clamp(20px, 3vw, 28px);
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  background: var(--panel);
+  box-shadow: 0 8px 24px #15223c08;
+}
+.session-lifetime h2,
+.security-panel h2 {
+  margin-bottom: 6px;
+  font-size: 17px;
+  letter-spacing: -0.025em;
+}
+.session-lifetime-heading,
+.security-panel-heading,
+.security-logout-all {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+.session-lifetime-heading .account-eyebrow {
+  margin-bottom: 7px;
+}
+.session-lifetime-state,
+.session-lifetime-meta,
+.session-lifetime-note,
+.security-panel > p:not(.account-eyebrow),
+.security-logout-all p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.session-lifetime-state {
+  margin: 18px 0 5px;
+  color: var(--text);
+  font-weight: 650;
+}
+.session-lifetime-state.is-warning {
+  color: #8a4c0c;
+}
+.session-lifetime-meta,
+.session-lifetime-note,
+.security-panel > p:not(.account-eyebrow),
+.security-logout-all p {
+  margin: 0 0 13px;
+}
+.session-lifetime-note {
+  max-width: 68ch;
+  font-size: 12px;
+}
+.session-lifetime > .account-secondary {
+  margin-top: 3px;
+}
+.security-panel-heading {
+  margin-bottom: 14px;
+}
+.security-panel-heading p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.security-session-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.security-session-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px 0;
+  border-top: 1px solid var(--border);
+}
+.security-session-details {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.security-session-details strong {
+  color: var(--text);
+  font-size: 14px;
+}
+.security-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 16px;
+}
+.security-actions .security-panel {
+  height: 100%;
+}
+.security-form {
+  display: grid;
+  gap: 13px;
+  margin-top: 17px;
+}
+.security-logout-all {
+  margin-bottom: 8px;
+}
+.security-logout-all p {
+  margin-bottom: 0;
+}
 @media (max-width: 720px) {
   .workspace-actions {
     grid-template-columns: 1fr;
   }
+  .security-actions {
+    grid-template-columns: 1fr;
+  }
+  .security-session-row {
+    align-items: start;
+    flex-direction: column;
+  }
+  .security-logout-all {
+    align-items: start;
+    flex-direction: column;
+  }
   .workspace-panel > p:not(.account-eyebrow) {
     min-height: auto;
+  }
+}
+@media (max-width: 540px) {
+  .workspace-topbar {
+    height: auto;
+    min-height: 64px;
+    gap: 10px;
+    padding: 10px 16px;
+  }
+  .workspace-user {
+    gap: 8px;
+  }
+  .workspace-user > span {
+    display: none;
+  }
+  .workspace-user button {
+    padding: 8px 10px;
+    white-space: nowrap;
+  }
+  .workspace-content {
+    padding-right: 16px;
+    padding-left: 16px;
   }
 }

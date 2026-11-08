@@ -4,10 +4,13 @@ import { ApiClient, ApiError } from '../../lib/api';
 import { clearLegacyAuthStorage } from '../../lib/legacy-storage';
 import { messageForApi } from './messages';
 import { WorkspaceHome } from '../workspaces/WorkspaceHome';
+import { AccountSecurity } from './AccountSecurity';
+import { useSessionGuard } from './use-session-guard';
 import './account.css';
 
 type AuthView = 'login' | 'register' | 'verify' | 'resend' | 'forgot' | 'reset';
 type AccountState = 'loading' | 'signed-out' | 'signed-in';
+type AppScreen = 'companies' | 'security';
 
 function Shell({ children }: { children: ReactNode }) {
   return (
@@ -322,7 +325,6 @@ function AuthFlow({
 export default function AuthApp() {
   const api = useMemo(() => new ApiClient(), []);
   const generation = useRef(0);
-  const logoutFlight = useRef(false);
   const [state, setState] = useState<AccountState>('loading');
   const [account, setAccount] = useState<AccountDto | null>(null);
   const [workspaces, setWorkspaces] = useState<WorkspaceDto[]>([]);
@@ -333,10 +335,35 @@ export default function AuthApp() {
   const [bootAttempt, setBootAttempt] = useState(0);
   const [canRetryBoot, setCanRetryBoot] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [screen, setScreen] = useState<AppScreen>('companies');
+  const [mutationPending, setMutationPending] = useState(false);
+  const [sessionActionStatus, setSessionActionStatus] = useState('');
+  const [sessionActionError, setSessionActionError] = useState('');
+  const mutationLock = useRef(false);
+  const mutationGeneration = useRef(0);
+  const sessionGuard = useSessionGuard(
+    account?.id ?? null,
+    state === 'signed-in',
+    api,
+    signedOut,
+    mutationLock,
+  );
+
+  useEffect(
+    () => () => {
+      mutationGeneration.current += 1;
+      mutationLock.current = false;
+      api.clearSessionMemory();
+    },
+    [api],
+  );
 
   useEffect(() => {
-    document.title = state === 'signed-in' ? 'Companies · Gather Lite' : 'Gather Lite';
-  }, [state]);
+    document.title =
+      state === 'signed-in'
+        ? `${screen === 'security' ? 'Account security' : 'Companies'} · Gather Lite`
+        : 'Gather Lite';
+  }, [screen, state]);
 
   useEffect(() => {
     const current = ++generation.current;
@@ -389,10 +416,13 @@ export default function AuthApp() {
     setAccount(found);
     setWorkspaces([]);
     setState('signed-in');
+    setScreen('companies');
     setLoadingWorkspaces(true);
     setStatus('');
     setWorkspaceError('');
     setWorkspaceLoadError('');
+    setSessionActionStatus('');
+    setSessionActionError('');
     try {
       const rows = await api.workspaces();
       if (current === generation.current) setWorkspaces(rows);
@@ -412,33 +442,127 @@ export default function AuthApp() {
     }
   }
 
-  function signedOut() {
+  function signedOut(notice = '') {
     generation.current += 1;
+    mutationGeneration.current += 1;
+    mutationLock.current = false;
     api.clearSessionMemory();
+    sessionGuard.reset();
     setAccount(null);
     setWorkspaces([]);
     setLoadingWorkspaces(false);
-    setStatus('');
+    setStatus(notice);
     setWorkspaceError('');
     setWorkspaceLoadError('');
     setCanRetryBoot(false);
+    setLoggingOut(false);
+    setMutationPending(false);
+    setSessionActionStatus('');
+    setSessionActionError('');
+    setScreen('companies');
     setState('signed-out');
   }
 
+  async function runMutation<T>(action: () => Promise<T>, refreshMetadata = false): Promise<T> {
+    if (mutationLock.current) throw new ApiError('mutation_in_progress', 409);
+    mutationLock.current = true;
+    const current = ++mutationGeneration.current;
+    const lifecycle = generation.current;
+    setMutationPending(true);
+    sessionGuard.invalidatePendingReads();
+    try {
+      const result = await action();
+      if (refreshMetadata) await sessionGuard.refresh();
+      if (generation.current !== lifecycle) throw new ApiError('stale_response', null, true);
+      return result;
+    } catch (caught) {
+      if (generation.current !== lifecycle) throw new ApiError('stale_response', null, true);
+      throw caught;
+    } finally {
+      if (mutationGeneration.current === current) {
+        mutationLock.current = false;
+        setMutationPending(false);
+      }
+    }
+  }
+
+  async function reauthenticate(password: string): Promise<AccountDto | null> {
+    const expectedAccountId = account?.id;
+    if (!expectedAccountId) return null;
+    const current = generation.current;
+    sessionGuard.invalidatePendingReads();
+    try {
+      const verified = await api.reauthenticate({ password });
+      if (current !== generation.current) return null;
+      if (verified.id !== expectedAccountId) {
+        signedOut('Your signed-in account changed. Sign in again to continue.');
+        return null;
+      }
+      setAccount(verified);
+      const accepted = await sessionGuard.acceptReauthenticatedSession();
+      if (current !== generation.current || !accepted) return null;
+      return verified;
+    } catch (caught) {
+      if (
+        current !== generation.current ||
+        (caught instanceof ApiError && caught.code === 'stale_response')
+      )
+        return null;
+      if (
+        caught instanceof ApiError &&
+        ((caught.status === 401 && caught.code !== 'invalid_credentials') ||
+          caught.code === 'csrf_rejected')
+      )
+        signedOut('Your session changed. Sign in again to continue.');
+      throw caught;
+    }
+  }
+
+  async function keepWorking() {
+    const current = generation.current;
+    sessionGuard.invalidatePendingReads();
+    setSessionActionStatus('');
+    setSessionActionError('');
+    try {
+      const refreshed = await runMutation(async () => {
+        await api.extendSession();
+        return sessionGuard.refresh();
+      });
+      if (current !== generation.current) return;
+      if (refreshed) setSessionActionStatus('Your session was extended.');
+    } catch (caught) {
+      if (
+        current !== generation.current ||
+        (caught instanceof ApiError && caught.code === 'stale_response')
+      )
+        return;
+      if (
+        caught instanceof ApiError &&
+        (caught.status === 401 || caught.code === 'csrf_rejected')
+      ) {
+        signedOut('Your session changed. Sign in again to continue.');
+      } else setSessionActionError(messageForApi(caught));
+    }
+  }
+
   async function logout() {
-    if (logoutFlight.current) return;
-    logoutFlight.current = true;
+    const current = generation.current;
     setLoggingOut(true);
     setStatus('');
     try {
-      await api.logout();
-      signedOut();
+      await runMutation(() => api.logout());
+      if (current === generation.current) signedOut('You have signed out.');
     } catch (error) {
-      if (error instanceof ApiError && error.status === 401) signedOut();
+      if (
+        current !== generation.current ||
+        (error instanceof ApiError && error.code === 'stale_response')
+      )
+        return;
+      if (error instanceof ApiError && (error.status === 401 || error.code === 'csrf_rejected'))
+        signedOut('Your session changed. Sign in again to continue.');
       else setStatus(messageForApi(error));
     } finally {
-      logoutFlight.current = false;
-      setLoggingOut(false);
+      if (current === generation.current) setLoggingOut(false);
     }
   }
 
@@ -488,6 +612,31 @@ export default function AuthApp() {
     );
   if (!account) return null;
 
+  if (screen === 'security')
+    return (
+      <AccountSecurity
+        account={account}
+        api={api}
+        sessions={sessionGuard.sessions}
+        currentSession={sessionGuard.currentSession}
+        sessionsLoading={sessionGuard.loading}
+        sessionsError={sessionGuard.error}
+        actionStatus={sessionActionStatus}
+        actionError={sessionActionError}
+        mutationPending={mutationPending}
+        runMutation={runMutation}
+        onRefreshSessions={() => void sessionGuard.refresh()}
+        onKeepWorking={() => void keepWorking()}
+        onExpire={() =>
+          signedOut('Your session has reached its estimated expiry. Sign in again to continue.')
+        }
+        onBack={() => setScreen('companies')}
+        onReauthenticate={reauthenticate}
+        onSignedOut={signedOut}
+        onUnauthorized={() => signedOut('Your session changed. Sign in again to continue.')}
+      />
+    );
+
   return (
     <WorkspaceHome
       account={account}
@@ -504,6 +653,19 @@ export default function AuthApp() {
       loggingOut={loggingOut}
       onRetryWorkspaces={() => void retryWorkspaces()}
       onUnauthorized={signedOut}
+      onOpenSecurity={() => setScreen('security')}
+      mutationPending={mutationPending}
+      runMutation={runMutation}
+      currentSession={sessionGuard.currentSession}
+      sessionsLoading={sessionGuard.loading}
+      sessionsError={sessionGuard.error}
+      sessionActionStatus={sessionActionStatus}
+      sessionActionError={sessionActionError}
+      onRefreshSessions={() => void sessionGuard.refresh()}
+      onKeepWorking={() => void keepWorking()}
+      onSessionExpire={() =>
+        signedOut('Your session has reached its estimated expiry. Sign in again to continue.')
+      }
     />
   );
 }

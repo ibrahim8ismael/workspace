@@ -64,3 +64,30 @@ No external delivery or infrastructure deployment is included in these batches. 
 Completed in the CP04.2a commit. Luna implemented `sessions`, validated company detail, JSON `DELETE` revocation, logout-all, password change, reauthentication and explicit extension in the browser adapter. Session/current designation comes from a strictly validated public session DTO; only a current-session revocation clears client session memory. Destructive success handlers and rotation both recheck their originating generation before changing memory.
 
 Codex reviewed headers/ID interpolation, schema rejection, awaited-body races and clearing behavior. Full local `pnpm check` passed **118 tests** (16 browser tests plus the existing 102 non-browser tests), formatting, lint, all workspace typechecks and builds. This batch adds transport adapters; session/security controls and current-company UI are still CP04.2b/CP04.2c. No backend, schema, dependency or mail/infrastructure change was needed.
+
+### CP04.2b — browser verification checklist
+
+Use a real HTTPS browser against the actual API and disposable MongoDB. A private test command file may age the fixture's password-proof timestamp or shorten its idle/absolute deadline; this is fixture-only database control, never a product endpoint or shipped clock override.
+
+1. List two real sessions, revoke the other one, retain the current cookie and confirm the revoked session cannot authenticate.
+2. Reject password change after recent proof expires; verify the password explicitly, observe session/CSRF rotation, then change the password and require signin. Confirm the old password no longer works.
+3. Explicitly extend a near-idle session once; verify no timer/read/focus request performs an extension, and the result does not exceed absolute expiry.
+4. Revoke the current session and sign out all sessions in separate flows; discard account/company/password state and reject old cookies.
+5. Observe warning/expiry after a shortened fixture deadline and refresh after a tab resumes. Treat server policy as authoritative; local countdowns are UI estimates.
+6. Reject stale responses and unexpected session/account replacements; maintain explicit retry/error behavior and verify keyboard/navigation teardown without browser-secret storage.
+
+### CP04.2b — implementation and local evidence
+
+Completed in the CP04.2b commit. Luna implemented `AccountSecurity`, the shared `SessionLifetimeNotice`, pure deadline/current-session checks and `useSessionGuard`. Codex reviewed lifecycle generations, synchronous mutation locking, focus-read throttling, sensitive-error handling and teardown. One mutex covers company/security/logout/extension mutations. Session reads are cancelled before mutations; focus/visibility reads are bounded and blocked by the mutex. Unexpected account/session replacement clears the old UI. Wrong verification/current passwords remain actionable errors instead of false session-expiry signouts.
+
+Estimated expiry clears the account view even when another request is pending; there is no indefinite deferral behind a hung mutation. Root/child generation checks discard its late result. Password inputs reset on submission; current-session revoke, logout-all and password change return to signin with cleared account/company state.
+
+Verification on 2026-11-09:
+
+- Full local `pnpm check` passed **121 tests**: 19 browser + 102 existing non-browser tests, formatting, lint, all workspace typechecks and builds. After the final expiry change, root formatting/ESLint, web typecheck, 19 browser tests and production web build passed again.
+- Headless Chrome **152.0.7977.42**, macOS **26.6.1 arm64**, actual NestJS + loopback HTTPS + disposable MongoDB: two independent sessions; other/current revocation; incorrect verification/current password; expired recent proof; reauthentication cookie/session rotation; password change and old-password rejection; logout-all invalidating another cookie; explicit extension and absolute cap; idle and absolute expiry; unexpected current-session replacement all passed. Independent scenario accounts respect the existing login budgets; no product rate limit was changed.
+- A delayed logout response released after estimated expiry and a new signin did not sign out the new UI. Both an old 401 and a successful response carrying the original cookie-clear header were tested in this Chrome fixture.
+- An extension response was corrupted after the API committed. There was no automatic retry; a readonly refresh recovered its actual outcome. During a 31-second held mutation, focus did not start competing account/session reads. Corrupted successful reauthentication likewise required a fresh check and cleared the unexpected session binding.
+- No browser secret storage or runtime exceptions were observed. The test-only file controls shortened fixture deadlines/aged recent proof; they are outside the repository and expose no HTTP endpoint. No Docker, Redis or actual mail provider was run.
+
+The remaining CP04.2 deliverable is explicit current-company selection and isolated company context in CP04.2c. Edge and public provider/ingress acceptance remain outside this local Chrome evidence.

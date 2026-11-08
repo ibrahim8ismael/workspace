@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { AccountDto, WorkspaceDto } from '@gather/contracts';
-import { ApiClient, ApiError } from '../../lib/api';
+import { ApiClient, ApiError, type SessionDto } from '../../lib/api';
 import { SubmissionKey } from '../../lib/idempotency';
 import { messageForApi } from '../auth/messages';
+import { SessionLifetimeNotice } from '../auth/SessionLifetimeNotice';
 
 type Props = {
   account: AccountDto;
@@ -19,6 +20,17 @@ type Props = {
   loggingOut: boolean;
   onRetryWorkspaces: () => void;
   onUnauthorized: () => void;
+  onOpenSecurity: () => void;
+  mutationPending: boolean;
+  runMutation: <T>(action: () => Promise<T>, refreshMetadata?: boolean) => Promise<T>;
+  currentSession: SessionDto | null;
+  sessionsLoading: boolean;
+  sessionsError: string;
+  sessionActionStatus: string;
+  sessionActionError: string;
+  onRefreshSessions: () => void;
+  onKeepWorking: () => void;
+  onSessionExpire: () => void;
 };
 
 function slugFromName(value: string) {
@@ -50,6 +62,17 @@ export function WorkspaceHome({
   loggingOut,
   onRetryWorkspaces,
   onUnauthorized,
+  onOpenSecurity,
+  mutationPending,
+  runMutation,
+  currentSession,
+  sessionsLoading,
+  sessionsError,
+  sessionActionStatus,
+  sessionActionError,
+  onRefreshSessions,
+  onKeepWorking,
+  onSessionExpire,
 }: Props) {
   const [companyName, setCompanyName] = useState('');
   const [slug, setSlug] = useState('');
@@ -62,8 +85,9 @@ export function WorkspaceHome({
   const acceptKey = useRef(new SubmissionKey());
   const lifecycle = useRef(0);
   const controllers = useRef(new Set<AbortController>());
-  const mutating = creating || accepting || loading || loggingOut || Boolean(loadError);
-  const retryDisabled = creating || accepting || loggingOut;
+  const mutating =
+    creating || accepting || loading || loggingOut || mutationPending || Boolean(loadError);
+  const retryDisabled = creating || accepting || loggingOut || mutationPending;
 
   useEffect(
     () => () => {
@@ -92,7 +116,10 @@ export function WorkspaceHome({
     onError('');
     onStatus('');
     try {
-      const result = await api.createWorkspace(input, key, controller.signal);
+      const result = await runMutation(
+        () => api.createWorkspace(input, key, controller.signal),
+        true,
+      );
       if (current !== lifecycle.current) return;
       createKey.current.clear();
       setCreateUncertain(false);
@@ -105,6 +132,7 @@ export function WorkspaceHome({
       onStatus(`${result.workspace.name} is ready.`);
     } catch (caught) {
       if (current !== lifecycle.current) return;
+      if (caught instanceof ApiError && caught.code === 'stale_response') return;
       if (
         caught instanceof ApiError &&
         (caught.status === 401 || caught.code === 'csrf_rejected')
@@ -133,7 +161,10 @@ export function WorkspaceHome({
     onError('');
     onStatus('');
     try {
-      const result = await api.acceptInvitation(input, key, controller.signal);
+      const result = await runMutation(
+        () => api.acceptInvitation(input, key, controller.signal),
+        true,
+      );
       if (current !== lifecycle.current) return;
       acceptKey.current.clear();
       setAcceptUncertain(false);
@@ -145,6 +176,7 @@ export function WorkspaceHome({
       onStatus(`You joined ${result.workspace.name}.`);
     } catch (caught) {
       if (current !== lifecycle.current) return;
+      if (caught instanceof ApiError && caught.code === 'stale_response') return;
       if (
         caught instanceof ApiError &&
         (caught.status === 401 || caught.code === 'csrf_rejected')
@@ -165,7 +197,14 @@ export function WorkspaceHome({
   return (
     <main className="workspace-shell">
       <header className="workspace-topbar">
-        <a className="workspace-brand" href="/" aria-label="Gather Lite home">
+        <a
+          className="workspace-brand"
+          href="/"
+          aria-label="Gather Lite home"
+          onClick={(event) => {
+            if (mutationPending) event.preventDefault();
+          }}
+        >
           <span className="account-mark" aria-hidden="true">
             G
           </span>
@@ -173,7 +212,14 @@ export function WorkspaceHome({
         </a>
         <div className="workspace-user">
           <span>{account.displayName}</span>
-          <button type="button" disabled={creating || accepting || loggingOut} onClick={onLogout}>
+          <button type="button" disabled={mutating} onClick={onOpenSecurity}>
+            Account security
+          </button>
+          <button
+            type="button"
+            disabled={creating || accepting || loggingOut || mutationPending}
+            onClick={onLogout}
+          >
             {loggingOut ? 'Signing out…' : 'Sign out'}
           </button>
         </div>
@@ -190,6 +236,18 @@ export function WorkspaceHome({
             {account.displayName.trim().slice(0, 1).toUpperCase()}
           </div>
         </section>
+
+        <SessionLifetimeNotice
+          session={currentSession}
+          loading={sessionsLoading}
+          error={sessionsError}
+          actionStatus={sessionActionStatus}
+          actionError={sessionActionError}
+          mutationPending={mutationPending}
+          onRefresh={onRefreshSessions}
+          onExtend={onKeepWorking}
+          onExpire={onSessionExpire}
+        />
 
         {status && (
           <p className="account-message" role="status">

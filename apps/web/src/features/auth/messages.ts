@@ -16,6 +16,10 @@ export function messageForApi(error: unknown) {
       return 'Too many attempts. Wait a little before trying again.';
     case 'csrf_rejected':
       return 'The request could not be verified. Try submitting it again.';
+    case 'reauthentication_required':
+      return 'Verify your password first, then enter your current and new passwords again.';
+    case 'mutation_in_progress':
+      return 'Another action is still in progress. Wait for it to finish, then try again.';
     case 'network_unavailable':
       return 'Could not reach the service. Check your connection and try again.';
     case 'workspace_quota':

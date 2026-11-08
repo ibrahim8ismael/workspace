@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { InjectConnection } from '@nestjs/mongoose';
 import { randomUUID } from 'node:crypto';
-import { Connection, Schema } from 'mongoose';
+import { Schema } from 'mongoose';
+import type { Connection } from 'mongoose';
 import type { ClientSession } from 'mongoose';
 import { registerModel, schemaOptions } from '../../platform/database/models.js';
 

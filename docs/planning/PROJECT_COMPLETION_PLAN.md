@@ -142,6 +142,8 @@ Exit: pure-rule tests cover walls/edges, object collision, spawn, duplicate IDs 
 
 ### CP03 — Implement office bootstrap and one-use admission tickets
 
+Status: completed for the HTTP and internal consumption boundary. See the [CP03 implementation evidence](OFFICE_ADMISSION_IMPLEMENTATION.md#cp03-implementation-evidence).
+
 Depends on: CP01, CP02; local backend tests require no Docker. Deliverable: the exact first backend slice in [OFFICE_ADMISSION_IMPLEMENTATION.md](OFFICE_ADMISSION_IMPLEMENTATION.md).
 
 1. Add authorized office discovery to workspace detail, scoped office bootstrap and POST join-ticket. Validate `(workspaceId, officeId)` together; deny `pending-m0`, unknown maps and incompatible versions.
@@ -320,7 +322,7 @@ No Docker execution, infrastructure provisioning, real email, publishing or sour
 
 ## 8. Next implementation handoff
 
-CP00 documentation reconciliation, CP01 shared contracts and CP02 original Commons map and renderer sample are complete. Next is CP03. Add office discovery, bootstrap and atomic one-use ticket issuance and consumption with local tests. Carry CP01 decisions/contracts forward; do not repeat or reopen accepted choices without a specific change. Account UI/provider setup and the isolated media proof are the next independent work streams when their decisions/access are ready.
+CP00–CP03 are complete. CP04 connects the browser account/company path and delivery environment. CP05 connects the verified ticket consumer to authoritative Socket.IO admission and world state. Carry CP01 decisions/contracts forward; do not repeat or reopen accepted choices without a specific change. Account UI/provider setup and the isolated media proof are the next independent work streams when their decisions/access are ready.
 
 Before CP03 starts, its implementer reads the project brief, drift report, existing auth API/evidence, accepted CP01 decisions/office-v1 contract and approved CP02 map/catalog evidence. Name the implementer, preserve the recorded issuance budgets, then commit a concrete implementation scope. Do not start movement, media grants or broad frontend rewrites inside the ticket checkpoint.
 

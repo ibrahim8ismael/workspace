@@ -1,0 +1,254 @@
+import { Injectable, Inject } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import {
+  OFFICE_LIMITS,
+  OFFICE_PROTOCOL_VERSION,
+  idSchema,
+  mapVersionSchema,
+  protocolVersionSchema,
+  secretSchema,
+} from '@gather/contracts';
+import type { JoinTicketRequest, JoinTicketResponse } from '@gather/contracts';
+import { TenancyModels } from '../tenancy/tenancy.models.js';
+import type { MembershipRecord, OfficeRecord } from '../tenancy/tenancy.models.js';
+import { TenancyService } from '../tenancy/tenancy.service.js';
+import { IdentityModels } from '../identity/identity.models.js';
+import type { ActorContext } from '../identity/sessions/session.service.js';
+import { AbuseService } from '../identity/security/abuse.service.js';
+import { digest, newSecret } from '../identity/security/secrets.js';
+import { DatabaseService } from '../../platform/database/database.service.js';
+import { invariant } from '../../platform/http/errors.js';
+import { APPROVED_OFFICE_MAP_VERSION } from './commons-registry.js';
+import { OfficeEpochRegistry } from './office-epoch.registry.js';
+import { OfficeJoinTicketModels } from './join-ticket.models.js';
+import type { OfficeJoinTicketRecord } from './join-ticket.models.js';
+
+interface AdmissionScope {
+  workspaceId: string;
+  officeId: string;
+  mapVersion: string;
+  protocolVersion: number;
+}
+interface OfficeScope {
+  workspaceId: string;
+  officeId: string;
+}
+
+function checkOffice(office: OfficeRecord, request: JoinTicketRequest) {
+  invariant(office.mapVersion === APPROVED_OFFICE_MAP_VERSION, 409, 'office_not_ready');
+  invariant(office.mapVersion === request.mapVersion, 409, 'map_version_mismatch');
+  invariant(request.protocolVersion === OFFICE_PROTOCOL_VERSION, 409, 'protocol_mismatch');
+}
+
+function grantId(member: MembershipRecord) {
+  return member.membershipGrantId ?? member._id;
+}
+
+@Injectable()
+export class OfficeAdmissionService {
+  constructor(
+    @Inject(TenancyModels) private readonly tenancyModels: TenancyModels,
+    @Inject(TenancyService) private readonly tenancy: TenancyService,
+    @Inject(IdentityModels) private readonly identities: IdentityModels,
+    @Inject(AbuseService) private readonly abuse: AbuseService,
+    @Inject(DatabaseService) private readonly db: DatabaseService,
+    @Inject(OfficeJoinTicketModels) private readonly ticketModels: OfficeJoinTicketModels,
+    @Inject(OfficeEpochRegistry) private readonly epochs: OfficeEpochRegistry,
+  ) {}
+
+  async issue(
+    context: ActorContext,
+    scope: OfficeScope,
+    request: JoinTicketRequest,
+  ): Promise<JoinTicketResponse> {
+    idSchema.parse(scope.workspaceId);
+    idSchema.parse(scope.officeId);
+    mapVersionSchema.parse(request.mapVersion);
+    protocolVersionSchema.parse(request.protocolVersion);
+
+    await this.db.transaction(async (tx) => {
+      await this.tenancy.lockAccess(context, scope.workspaceId, tx);
+      const office = await this.tenancyModels.offices
+        .findOne({ _id: scope.officeId, workspaceId: scope.workspaceId })
+        .session(tx)
+        .lean();
+      invariant(office, 404, 'not_found');
+      checkOffice(office, request);
+    });
+
+    await this.abuse.consume(
+      'office-ticket-actor',
+      context.user._id,
+      OFFICE_LIMITS.ticketsPerActorPerWindow,
+      OFFICE_LIMITS.ticketWindowMs,
+    );
+    await this.abuse.consume(
+      'office-ticket-workspace',
+      scope.workspaceId,
+      OFFICE_LIMITS.ticketsPerWorkspacePerWindow,
+      OFFICE_LIMITS.ticketWindowMs,
+    );
+    await this.abuse.consume(
+      'office-ticket-global',
+      'global',
+      OFFICE_LIMITS.ticketsGloballyPerWindow,
+      OFFICE_LIMITS.ticketWindowMs,
+    );
+
+    const raw = newSecret();
+    const expiresAt = await this.db.transaction(async (tx) => {
+      const { member } = await this.tenancy.lockAccess(context, scope.workspaceId, tx);
+      const office = await this.tenancyModels.offices
+        .findOne({ _id: scope.officeId, workspaceId: scope.workspaceId })
+        .session(tx)
+        .lean();
+      invariant(office, 404, 'not_found');
+      checkOffice(office, request);
+      const now = new Date();
+      const session = await this.identities.sessions
+        .findOne({
+          _id: context.session._id,
+          kind: 'authenticated',
+          userId: context.user._id,
+          authVersion: context.user.authVersion,
+          revokedAt: null,
+          absoluteExpiresAt: { $gt: now },
+          idleExpiresAt: { $gt: now },
+        })
+        .session(tx)
+        .lean();
+      invariant(session, 401, 'unauthorized');
+      const expiry = new Date(
+        Math.min(
+          now.getTime() + OFFICE_LIMITS.maxJoinTicketLifetimeMs,
+          session.absoluteExpiresAt.getTime(),
+          session.idleExpiresAt.getTime(),
+        ),
+      );
+      invariant(expiry.getTime() > now.getTime(), 401, 'unauthorized');
+      const officeEpoch = this.epochs.forOffice(office._id);
+      const record: OfficeJoinTicketRecord = {
+        _id: randomUUID(),
+        ticketDigest: digest(raw),
+        userId: context.user._id,
+        sessionId: session._id,
+        workspaceId: scope.workspaceId,
+        officeId: office._id,
+        membershipGrantId: grantId(member),
+        officeEpoch,
+        mapVersion: office.mapVersion,
+        protocolVersion: request.protocolVersion,
+        expiresAt: expiry,
+        consumedAt: null,
+        createdAt: now,
+      };
+      await this.ticketModels.tickets.create([record], { session: tx });
+      return expiry;
+    });
+
+    return { ticket: raw, expiresAt: expiresAt.toISOString() };
+  }
+
+  async consume(rawTicket: string, scope: AdmissionScope) {
+    invariant(secretSchema.safeParse(rawTicket).success, 401, 'unauthorized');
+    idSchema.parse(scope.workspaceId);
+    idSchema.parse(scope.officeId);
+    mapVersionSchema.parse(scope.mapVersion);
+    protocolVersionSchema.parse(scope.protocolVersion);
+
+    const ticketDigest = digest(rawTicket);
+    const initial = await this.ticketModels.tickets
+      .findOne({ ticketDigest })
+      .select('+ticketDigest')
+      .lean();
+    invariant(initial, 401, 'unauthorized');
+    invariant(
+      initial.officeId === scope.officeId && initial.workspaceId === scope.workspaceId,
+      401,
+      'unauthorized',
+    );
+    invariant(this.epochs.current(initial.officeId) === initial.officeEpoch, 409, 'stale_epoch');
+
+    const consumed = await this.db.transaction(async (tx) => {
+      const now = new Date();
+      const ticket = await this.ticketModels.tickets
+        .findOne({ ticketDigest })
+        .select('+ticketDigest')
+        .session(tx)
+        .lean();
+      invariant(
+        ticket && ticket.consumedAt === null && ticket.expiresAt > now,
+        401,
+        'unauthorized',
+      );
+      invariant(
+        ticket.officeId === scope.officeId && ticket.workspaceId === scope.workspaceId,
+        401,
+        'unauthorized',
+      );
+      invariant(ticket.mapVersion === scope.mapVersion, 409, 'map_version_mismatch');
+      invariant(ticket.protocolVersion === scope.protocolVersion, 409, 'protocol_mismatch');
+
+      const session = await this.identities.sessions
+        .findOne({
+          _id: ticket.sessionId,
+          userId: ticket.userId,
+          kind: 'authenticated',
+          revokedAt: null,
+          absoluteExpiresAt: { $gt: now },
+          idleExpiresAt: { $gt: now },
+        })
+        .session(tx)
+        .lean();
+      invariant(session, 401, 'unauthorized');
+      const user = await this.identities.users
+        .findOne({
+          _id: ticket.userId,
+          status: 'active',
+          verifiedAt: { $ne: null },
+          authVersion: session.authVersion,
+        })
+        .session(tx)
+        .lean();
+      invariant(user, 401, 'unauthorized');
+      const context = { session, user };
+      const { member } = await this.tenancy.lockAccess(context, ticket.workspaceId, tx);
+      invariant(grantId(member) === ticket.membershipGrantId, 401, 'unauthorized');
+      const office = await this.tenancyModels.offices
+        .findOne({
+          _id: ticket.officeId,
+          workspaceId: ticket.workspaceId,
+          mapVersion: ticket.mapVersion,
+        })
+        .session(tx)
+        .lean();
+      invariant(
+        office && office.mapVersion === APPROVED_OFFICE_MAP_VERSION,
+        409,
+        'office_not_ready',
+      );
+      invariant(ticket.officeEpoch === this.epochs.current(ticket.officeId), 409, 'stale_epoch');
+
+      const consumedAt = new Date();
+      invariant(ticket.expiresAt > consumedAt, 401, 'unauthorized');
+      const update = await this.ticketModels.tickets.updateOne(
+        { _id: ticket._id, consumedAt: null, expiresAt: { $gt: consumedAt } },
+        { $set: { consumedAt } },
+        { session: tx },
+      );
+      invariant(update.modifiedCount === 1, 401, 'unauthorized');
+      return {
+        userId: ticket.userId,
+        sessionId: ticket.sessionId,
+        workspaceId: ticket.workspaceId,
+        officeId: ticket.officeId,
+        officeEpoch: ticket.officeEpoch,
+        mapVersion: ticket.mapVersion,
+        protocolVersion: ticket.protocolVersion,
+      };
+    });
+
+    invariant(this.epochs.current(consumed.officeId) === consumed.officeEpoch, 409, 'stale_epoch');
+    return consumed;
+  }
+}

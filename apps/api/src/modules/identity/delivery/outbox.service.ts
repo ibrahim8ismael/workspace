@@ -1,7 +1,7 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectConnection } from '@nestjs/mongoose';
-import { Connection } from 'mongoose';
+import type { Connection } from 'mongoose';
 import type { ClientSession } from 'mongoose';
 import { randomUUID } from 'node:crypto';
 import { outboxModel, encryptionKey, encryptMail } from '@gather/delivery';

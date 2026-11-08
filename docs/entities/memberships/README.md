@@ -1,6 +1,6 @@
 # Memberships
 
-Status: initial persistence implemented; remaining integration/lifecycle work planned · Updated: 2026-11-08 · Target: M1
+Status: initial persistence implemented; remaining integration/lifecycle work planned · Updated: 2026-11-09 · Target: M1
 
 
 Initial backend scope is now described by the [implemented auth/company API guide](../../contracts/AUTH_AND_ROLES_API.md). Existing plan fields below retain their draft status where not covered by that implementation; production/provider/recovery acceptance remains separate.
@@ -23,9 +23,10 @@ Source: [owning model](../../../apps/api/src/modules/tenancy/tenancy.models.ts).
 - `role (owner, member)`
 - `status (active, revoked)`
 - `policyVersion`
+- `membershipGrantId` (optional on older rows)
 - `joinedAt`
 
-No revokedAt field is stored. Reactivation preserves _id and resets role/status/joinedAt; a rotating activation grant is planned under CP03 before ticket issuance. HTTP removal does not yet signal a live runtime; CP05 adds hints/leases.
+Reactivation preserves _id and resets role, status and joinedAt. CP03 assigns a fresh membershipGrantId on first activation and reactivation. Ordinary policy writes retain the grant. Older active rows use their membership ID until reactivation. CP05 adds live revocation hints and authorization leases.
 
 ## Relationships
 
@@ -48,7 +49,7 @@ No revokedAt field is stored. Reactivation preserves _id and resets role/status/
 
 ## Planning question
 
-Current recipient-bound reinvitation reactivates membership; directory exposes userId, displayName, role and joinedAt without email. Add stable activation-grant rotation in CP03 and live revocation in CP05.
+Current recipient-bound reinvitation reactivates membership; directory exposes userId, displayName, role and joinedAt without email. CP03 rotates activation grants. CP05 adds live revocation.
 
 ## Next work
 

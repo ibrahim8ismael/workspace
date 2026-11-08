@@ -6,6 +6,7 @@ import { IdentityModels } from '../../modules/identity/identity.models.js';
 import { TenancyModels } from '../../modules/tenancy/tenancy.models.js';
 import { AuditService } from '../../modules/audit/audit.service.js';
 import { OutboxService } from '../../modules/identity/delivery/outbox.service.js';
+import { OfficeJoinTicketModels } from '../../modules/office/join-ticket.models.js';
 import type { ApiEnvironment } from '../config/environment.js';
 
 @Injectable()
@@ -17,12 +18,14 @@ export class IndexesService implements OnApplicationBootstrap {
     @Inject(TenancyModels) private readonly tenancy: TenancyModels,
     @Inject(AuditService) private readonly audit: AuditService,
     @Inject(OutboxService) private readonly outbox: OutboxService,
+    @Inject(OfficeJoinTicketModels) private readonly officeTickets: OfficeJoinTicketModels,
   ) {}
   async create() {
     await this.identity.createIndexes();
     await this.tenancy.createIndexes();
     await this.audit.model.createIndexes();
     await this.outbox.model.createIndexes();
+    await this.officeTickets.createIndexes();
   }
   async onApplicationBootstrap() {
     const hello = await this.db.connection.db!.admin().command({ hello: 1 });
@@ -68,5 +71,28 @@ export class IndexesService implements OnApplicationBootstrap {
       )
     )
       throw new Error('Missing unique membership index. Run db:indexes.');
+
+    const ticketIndexes = await this.officeTickets.tickets.collection.indexes();
+    const exactSimpleIndex = (index: (typeof ticketIndexes)[number], field: string) =>
+      index.unique === true &&
+      !index.sparse &&
+      !index.partialFilterExpression &&
+      (!index.collation || index.collation.locale === 'simple') &&
+      Object.keys(index.key).length === 1 &&
+      index.key[field] === 1;
+    if (!ticketIndexes.some((index) => exactSimpleIndex(index, 'ticketDigest')))
+      throw new Error('Missing exact unique office ticket digest index. Run db:indexes.');
+    if (
+      !ticketIndexes.some(
+        (index) =>
+          index.expireAfterSeconds === 0 &&
+          !index.sparse &&
+          !index.partialFilterExpression &&
+          (!index.collation || index.collation.locale === 'simple') &&
+          Object.keys(index.key).length === 1 &&
+          index.key['expiresAt'] === 1,
+      )
+    )
+      throw new Error('Missing exact office ticket TTL index. Run db:indexes.');
   }
 }

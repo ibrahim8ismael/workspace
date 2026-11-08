@@ -85,3 +85,4 @@ export const takeoverReferenceSchema = z
 
 export type OfficeBootstrapResponse = z.infer<typeof officeBootstrapResponseSchema>;
 export type JoinTicketRequest = z.infer<typeof joinTicketRequestSchema>;
+export type JoinTicketResponse = z.infer<typeof joinTicketResponseSchema>;

@@ -3,6 +3,7 @@ import { beforeAll, afterAll, beforeEach, describe, it, expect, vi } from 'vites
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { IndexesService } from '../dist/platform/database/indexes.service.js';
+import { DatabaseService } from '../dist/platform/database/database.service.js';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { MongoMemoryReplSet } from 'mongodb-memory-server-core';
 import request from 'supertest';
@@ -26,11 +27,16 @@ import {
   extendSessionResponseSchema,
   officeWorkspaceDetailResponseSchema,
   officeBootstrapResponseSchema,
+  joinTicketResponseSchema,
+  OFFICE_LIMITS,
 } from '@gather/contracts';
 import { IdentityModels } from '../dist/modules/identity/identity.models.js';
 import { TenancyModels } from '../dist/modules/tenancy/tenancy.models.js';
 import { SessionService, actor } from '../dist/modules/identity/sessions/session.service.js';
 import { TenancyService } from '../dist/modules/tenancy/tenancy.service.js';
+import { OfficeAdmissionService } from '../dist/modules/office/office-admission.service.js';
+import { OfficeEpochRegistry } from '../dist/modules/office/office-epoch.registry.js';
+import { OfficeJoinTicketModels } from '../dist/modules/office/join-ticket.models.js';
 import { OutboxService } from '../dist/modules/identity/delivery/outbox.service.js';
 import { PasswordService } from '../dist/modules/identity/security/password.service.js';
 import { deliverOutbox } from '../../worker/dist/processors/delivery.js';
@@ -804,6 +810,484 @@ describe('company roles and isolation', () => {
     expect(await tenancy.memberships.countDocuments({ workspaceId: id, status: 'active' })).toBe(
       30,
     );
+  });
+});
+
+describe('office join tickets', () => {
+  it('issues one-use tickets to active owners and members and persists only their digest', async () => {
+    const owner = await account();
+    const member = await account();
+    const workspaceId = await workspace(owner);
+    await join(owner, workspaceId, member);
+    const office = await tenancy.offices.findOne({ workspaceId }).lean();
+    expect(office).toBeTruthy();
+    const admission = app.get(OfficeAdmissionService);
+    const models = app.get(OfficeJoinTicketModels);
+
+    for (const user of [owner, member]) {
+      if (user === member) {
+        await tenancy.memberships.updateOne(
+          { workspaceId, userId: member.id },
+          { $unset: { membershipGrantId: '' } },
+        );
+      }
+      if (user === owner) {
+        const session = await identities.sessions
+          .findOne({ userId: owner.id })
+          .sort({ createdAt: -1 })
+          .lean();
+        await identities.sessions.updateOne(
+          { _id: session!._id },
+          { $set: { idleExpiresAt: new Date(Date.now() + 10_000) } },
+        );
+      }
+      const response = await user.client.send(
+        'post',
+        `/api/workspaces/${workspaceId}/offices/${office!._id}/join-ticket`,
+        { mapVersion: commonsManifest.mapVersion, protocolVersion: 1 },
+      );
+      status(response, 201);
+      const issued = joinTicketResponseSchema.parse(response.body);
+      const stored = await models.tickets
+        .findOne({ ticketDigest: digest(issued.ticket) })
+        .select('+ticketDigest')
+        .lean();
+      expect(stored).toMatchObject({
+        userId: user.id,
+        workspaceId,
+        officeId: office!._id,
+        mapVersion: commonsManifest.mapVersion,
+        protocolVersion: 1,
+        consumedAt: null,
+      });
+      expect(stored?.ticketDigest).toBe(digest(issued.ticket));
+      if (user === member) {
+        const membership = await tenancy.memberships
+          .findOne({ workspaceId, userId: member.id })
+          .lean();
+        expect(stored?.membershipGrantId).toBe(membership!._id);
+      }
+      expect(JSON.stringify(stored)).not.toContain(issued.ticket);
+      const expiresAt = Date.parse(issued.expiresAt);
+      expect(expiresAt).toBeGreaterThan(Date.now());
+      expect(expiresAt - Date.now()).toBeLessThanOrEqual(30_000);
+      const session = await identities.sessions.findOne({ _id: stored!.sessionId }).lean();
+      expect(expiresAt).toBeLessThanOrEqual(session!.absoluteExpiresAt.getTime());
+      expect(expiresAt).toBeLessThanOrEqual(session!.idleExpiresAt.getTime());
+      status(await user.client.get(`/api/workspaces/${workspaceId}`), 200);
+      const consumed = await admission.consume(issued.ticket, {
+        workspaceId,
+        officeId: office!._id,
+        mapVersion: commonsManifest.mapVersion,
+        protocolVersion: 1,
+      });
+      expect(consumed).toMatchObject({ userId: user.id, workspaceId, officeId: office!._id });
+    }
+  });
+
+  it('rejects malformed, stale, cross-office and unready ticket requests before issuance', async () => {
+    const owner = await account();
+    const workspaceId = await workspace(owner);
+    const otherWorkspaceId = await workspace(owner);
+    const office = await tenancy.offices.findOne({ workspaceId }).lean();
+    const otherOffice = await tenancy.offices.findOne({ workspaceId: otherWorkspaceId }).lean();
+    const path = `/api/workspaces/${workspaceId}/offices/${office!._id}/join-ticket`;
+    status(await request(app.getHttpServer()).post(path).send({}), 401);
+    status(
+      await request(app.getHttpServer())
+        .post(path)
+        .set('Cookie', owner.client.cookie)
+        .set('Origin', 'https://evil.test')
+        .set('X-CSRF-Token', owner.client.csrf)
+        .set('Content-Type', 'application/json')
+        .send({ mapVersion: commonsManifest.mapVersion, protocolVersion: 1 }),
+      403,
+    );
+    status(
+      await request(app.getHttpServer())
+        .post(path)
+        .set('Cookie', owner.client.cookie)
+        .set('Origin', origin)
+        .set('Content-Type', 'application/json')
+        .send({ mapVersion: commonsManifest.mapVersion, protocolVersion: 1 }),
+      403,
+    );
+    status(
+      await owner.client.send(
+        'post',
+        `/api/workspaces/not-a-uuid/offices/${office!._id}/join-ticket`,
+        { mapVersion: commonsManifest.mapVersion, protocolVersion: 1 },
+      ),
+      400,
+    );
+    status(
+      await owner.client.send('post', path, {
+        mapVersion: commonsManifest.mapVersion,
+        protocolVersion: 2,
+      }),
+      400,
+    );
+    status(
+      await owner.client.send('post', path, {
+        mapVersion: commonsManifest.mapVersion,
+        protocolVersion: 1,
+        extra: true,
+      }),
+      400,
+    );
+    status(
+      await owner.client.send(
+        'post',
+        `/api/workspaces/${workspaceId}/offices/${otherOffice!._id}/join-ticket`,
+        { mapVersion: commonsManifest.mapVersion, protocolVersion: 1 },
+      ),
+      404,
+    );
+    status(
+      await owner.client.send('post', path, {
+        mapVersion: `commons-v1-${'0'.repeat(64)}`,
+        protocolVersion: 1,
+      }),
+      409,
+    );
+    expect(
+      (
+        await owner.client.send('post', path, {
+          mapVersion: `commons-v1-${'0'.repeat(64)}`,
+          protocolVersion: 1,
+        })
+      ).body.error.code,
+    ).toBe('map_version_mismatch');
+
+    await tenancy.offices.updateOne({ _id: office!._id }, { $set: { mapVersion: 'pending-m0' } });
+    const pending = await owner.client.send('post', path, {
+      mapVersion: commonsManifest.mapVersion,
+      protocolVersion: 1,
+    });
+    status(pending, 409);
+    expect(pending.body.error.code).toBe('office_not_ready');
+    await tenancy.offices.updateOne(
+      { _id: office!._id },
+      { $set: { mapVersion: commonsManifest.mapVersion } },
+    );
+  });
+
+  it('enforces actor, authorized workspace and global issue budgets without creating tickets', async () => {
+    const owner = await account();
+    const workspaceId = await workspace(owner);
+    const office = await tenancy.offices.findOne({ workspaceId }).lean();
+    const path = `/api/workspaces/${workspaceId}/offices/${office!._id}/join-ticket`;
+    const payload = { mapVersion: commonsManifest.mapVersion, protocolVersion: 1 };
+    const fixedNow = Date.now();
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(fixedNow);
+    const currentBucket = Math.floor(fixedNow / OFFICE_LIMITS.ticketWindowMs);
+    const seed = async (scope: string, key: string, count: number) => {
+      const id = digest(`${scope}:${key}:${currentBucket}`);
+      await identities.rateLimits.updateOne(
+        { _id: id },
+        {
+          $set: { count, expiresAt: new Date((currentBucket + 1) * OFFICE_LIMITS.ticketWindowMs) },
+        },
+        { upsert: true },
+      );
+      return id;
+    };
+    try {
+      const before = await app.get(OfficeJoinTicketModels).tickets.countDocuments({});
+      const actorKey = await seed(
+        'office-ticket-actor',
+        owner.id,
+        OFFICE_LIMITS.ticketsPerActorPerWindow,
+      );
+      status(await owner.client.send('post', path, payload), 429);
+      await identities.rateLimits.deleteOne({ _id: actorKey });
+      const workspaceKey = await seed(
+        'office-ticket-workspace',
+        workspaceId,
+        OFFICE_LIMITS.ticketsPerWorkspacePerWindow,
+      );
+      status(await owner.client.send('post', path, payload), 429);
+      await identities.rateLimits.deleteOne({ _id: workspaceKey });
+      const globalKey = await seed(
+        'office-ticket-global',
+        'global',
+        OFFICE_LIMITS.ticketsGloballyPerWindow,
+      );
+      status(await owner.client.send('post', path, payload), 429);
+      expect(await app.get(OfficeJoinTicketModels).tickets.countDocuments({})).toBe(before);
+      await identities.rateLimits.deleteOne({ _id: globalKey });
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it('allows exactly one concurrent consume, then rejects replay and expiry before TTL cleanup', async () => {
+    const owner = await account();
+    const workspaceId = await workspace(owner);
+    const office = await tenancy.offices.findOne({ workspaceId }).lean();
+    const response = await owner.client.send(
+      'post',
+      `/api/workspaces/${workspaceId}/offices/${office!._id}/join-ticket`,
+      { mapVersion: commonsManifest.mapVersion, protocolVersion: 1 },
+    );
+    status(response, 201);
+    const raw = joinTicketResponseSchema.parse(response.body).ticket;
+    const scope = {
+      workspaceId,
+      officeId: office!._id,
+      mapVersion: commonsManifest.mapVersion,
+      protocolVersion: 1,
+    };
+    const admission = app.get(OfficeAdmissionService);
+    await expect(
+      admission.consume(raw, { ...scope, mapVersion: `commons-v1-${'0'.repeat(64)}` }),
+    ).rejects.toMatchObject({ status: 409 });
+    await expect(
+      admission.consume(raw, { ...scope, officeId: randomUUID() }),
+    ).rejects.toMatchObject({
+      status: 401,
+    });
+    const results = await Promise.allSettled([
+      admission.consume(raw, scope),
+      admission.consume(raw, scope),
+    ]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    await expect(admission.consume(raw, scope)).rejects.toMatchObject({ status: 401 });
+
+    const second = await owner.client.send(
+      'post',
+      `/api/workspaces/${workspaceId}/offices/${office!._id}/join-ticket`,
+      { mapVersion: commonsManifest.mapVersion, protocolVersion: 1 },
+    );
+    const expiring = joinTicketResponseSchema.parse(second.body).ticket;
+    const ticketModels = app.get(OfficeJoinTicketModels);
+    await ticketModels.tickets.updateOne(
+      { ticketDigest: digest(expiring) },
+      { $set: { expiresAt: new Date(Date.now() - 1) } },
+    );
+    await expect(admission.consume(expiring, scope)).rejects.toMatchObject({ status: 401 });
+  });
+
+  it('rejects tickets after epoch rotation and membership reactivation', async () => {
+    const owner = await account();
+    const member = await account();
+    const workspaceId = await workspace(owner);
+    await join(owner, workspaceId, member);
+    const office = await tenancy.offices.findOne({ workspaceId }).lean();
+    const path = `/api/workspaces/${workspaceId}/offices/${office!._id}/join-ticket`;
+    const scope = {
+      workspaceId,
+      officeId: office!._id,
+      mapVersion: commonsManifest.mapVersion,
+      protocolVersion: 1,
+    };
+    const admission = app.get(OfficeAdmissionService);
+    const issue = async () => {
+      const response = await member.client.send('post', path, {
+        mapVersion: commonsManifest.mapVersion,
+        protocolVersion: 1,
+      });
+      status(response, 201);
+      return joinTicketResponseSchema.parse(response.body).ticket;
+    };
+    const epochTicket = await issue();
+    const restartedAdmission = new OfficeAdmissionService(
+      tenancy,
+      app.get(TenancyService),
+      identities,
+      app.get(AbuseService),
+      app.get(DatabaseService),
+      app.get(OfficeJoinTicketModels),
+      new OfficeEpochRegistry(),
+    );
+    await expect(restartedAdmission.consume(epochTicket, scope)).rejects.toMatchObject({
+      status: 409,
+    });
+    app.get(OfficeEpochRegistry).rotate(office!._id);
+    await expect(admission.consume(epochTicket, scope)).rejects.toMatchObject({ status: 409 });
+
+    const staleGrantTicket = await issue();
+    await owner.client.send('delete', `/api/workspaces/${workspaceId}/members/${member.id}`);
+    await join(owner, workspaceId, member);
+    await expect(admission.consume(staleGrantTicket, scope)).rejects.toMatchObject({ status: 401 });
+  });
+
+  it('rechecks logout, account, workspace and membership policy at consumption', async () => {
+    const owner = await account();
+    const member = await account();
+    const workspaceId = await workspace(owner);
+    await join(owner, workspaceId, member);
+    const office = await tenancy.offices.findOne({ workspaceId }).lean();
+    const admission = app.get(OfficeAdmissionService);
+    const scope = {
+      workspaceId,
+      officeId: office!._id,
+      mapVersion: commonsManifest.mapVersion,
+      protocolVersion: 1,
+    };
+    const issue = async () => {
+      const response = await member.client.send(
+        'post',
+        `/api/workspaces/${workspaceId}/offices/${office!._id}/join-ticket`,
+        { mapVersion: commonsManifest.mapVersion, protocolVersion: 1 },
+      );
+      status(response, 201);
+      return joinTicketResponseSchema.parse(response.body).ticket;
+    };
+
+    const suspendedAccountTicket = await issue();
+    await identities.users.updateOne({ _id: member.id }, { $set: { status: 'suspended' } });
+    await expect(admission.consume(suspendedAccountTicket, scope)).rejects.toMatchObject({
+      status: 401,
+    });
+    await identities.users.updateOne({ _id: member.id }, { $set: { status: 'active' } });
+
+    const suspendedWorkspaceTicket = await issue();
+    await tenancy.workspaces.updateOne({ _id: workspaceId }, { $set: { status: 'suspended' } });
+    await expect(admission.consume(suspendedWorkspaceTicket, scope)).rejects.toMatchObject({
+      status: 403,
+    });
+    await tenancy.workspaces.updateOne({ _id: workspaceId }, { $set: { status: 'active' } });
+
+    const passwordResetTicket = await issue();
+    const resetBrowser = new Client();
+    await resetBrowser.bootstrap();
+    status(
+      await resetBrowser.send('post', '/api/auth/forgot-password', { email: member.email }),
+      202,
+    );
+    const resetToken = await mailCode(member.email, 'reset-password');
+    status(
+      await resetBrowser.send('post', '/api/auth/reset-password', {
+        token: resetToken,
+        newPassword,
+      }),
+      200,
+    );
+    await expect(admission.consume(passwordResetTicket, scope)).rejects.toMatchObject({
+      status: 401,
+    });
+
+    const ownerTicketResponse = await owner.client.send(
+      'post',
+      `/api/workspaces/${workspaceId}/offices/${office!._id}/join-ticket`,
+      { mapVersion: commonsManifest.mapVersion, protocolVersion: 1 },
+    );
+    status(ownerTicketResponse, 201);
+    const logoutTicket = joinTicketResponseSchema.parse(ownerTicketResponse.body).ticket;
+    status(await owner.client.send('post', '/api/auth/logout'), 200);
+    await expect(admission.consume(logoutTicket, scope)).rejects.toMatchObject({ status: 401 });
+  });
+
+  it('serializes consume against concurrent membership revocation', async () => {
+    const owner = await account();
+    const member = await account();
+    const workspaceId = await workspace(owner);
+    await join(owner, workspaceId, member);
+    const office = await tenancy.offices.findOne({ workspaceId }).lean();
+    const response = await member.client.send(
+      'post',
+      `/api/workspaces/${workspaceId}/offices/${office!._id}/join-ticket`,
+      { mapVersion: commonsManifest.mapVersion, protocolVersion: 1 },
+    );
+    status(response, 201);
+    const raw = joinTicketResponseSchema.parse(response.body).ticket;
+    const admission = app.get(OfficeAdmissionService);
+    const scope = {
+      workspaceId,
+      officeId: office!._id,
+      mapVersion: commonsManifest.mapVersion,
+      protocolVersion: 1,
+    };
+    const [consumeResult, revokeResult] = await Promise.allSettled([
+      admission.consume(raw, scope),
+      owner.client.send('delete', `/api/workspaces/${workspaceId}/members/${member.id}`),
+    ]);
+    expect(revokeResult.status).toBe('fulfilled');
+    if (revokeResult.status === 'fulfilled') status(revokeResult.value, 200);
+    if (consumeResult.status === 'rejected') {
+      expect(consumeResult.reason).toMatchObject({ status: 403 });
+    }
+    if (consumeResult.status === 'fulfilled') {
+      await expect(admission.consume(raw, scope)).rejects.toMatchObject({ status: 401 });
+    } else {
+      await expect(admission.consume(raw, scope)).rejects.toMatchObject({ status: 403 });
+    }
+  });
+
+  it('checks expiry again after current-policy writes and requires exact startup indexes', async () => {
+    const owner = await account();
+    const workspaceId = await workspace(owner);
+    const office = await tenancy.offices.findOne({ workspaceId }).lean();
+    const path = `/api/workspaces/${workspaceId}/offices/${office!._id}/join-ticket`;
+    const issued = await owner.client.send('post', path, {
+      mapVersion: commonsManifest.mapVersion,
+      protocolVersion: 1,
+    });
+    status(issued, 201);
+    const raw = joinTicketResponseSchema.parse(issued.body).ticket;
+    const ticketModels = app.get(OfficeJoinTicketModels);
+    await ticketModels.tickets.updateOne(
+      { ticketDigest: digest(raw) },
+      { $set: { expiresAt: new Date(Date.now() + 1000) } },
+    );
+    const tenancyService = app.get(TenancyService);
+    const originalLock = tenancyService.lockAccess.bind(tenancyService);
+    let validWhenPolicyLocked = false;
+    const lockSpy = vi.spyOn(tenancyService, 'lockAccess').mockImplementation(async (...args) => {
+      const result = await originalLock(...args);
+      const currentTicket = await ticketModels.tickets
+        .findOne({ ticketDigest: digest(raw) })
+        .lean();
+      validWhenPolicyLocked = Boolean(currentTicket && currentTicket.expiresAt > new Date());
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      return result;
+    });
+    try {
+      await expect(
+        app.get(OfficeAdmissionService).consume(raw, {
+          workspaceId,
+          officeId: office!._id,
+          mapVersion: commonsManifest.mapVersion,
+          protocolVersion: 1,
+        }),
+      ).rejects.toMatchObject({ status: 401 });
+      expect(validWhenPolicyLocked).toBe(true);
+    } finally {
+      lockSpy.mockRestore();
+    }
+
+    const config = app.get(ConfigService);
+    const previous = config.get('DB_AUTO_INDEX');
+    config.set('DB_AUTO_INDEX', 'false');
+    const indexService = app.get(IndexesService);
+    const indexes = await ticketModels.tickets.collection.indexes();
+    const uniqueIndex = indexes.find((index) => index.unique && index.key['ticketDigest'] === 1);
+    const ttlIndex = indexes.find(
+      (index) => index.expireAfterSeconds === 0 && index.key['expiresAt'] === 1,
+    );
+    expect(uniqueIndex?.name).toBeTruthy();
+    expect(ttlIndex?.name).toBeTruthy();
+    try {
+      await ticketModels.tickets.collection.dropIndex(uniqueIndex!.name!);
+      await ticketModels.tickets.collection.createIndex(
+        { ticketDigest: 1, workspaceId: 1 },
+        { unique: true, name: 'incorrect_ticket_digest_constraint' },
+      );
+      await expect(indexService.onApplicationBootstrap()).rejects.toThrow(
+        'office ticket digest index',
+      );
+      await ticketModels.tickets.collection.dropIndex('incorrect_ticket_digest_constraint');
+      await ticketModels.createIndexes();
+      await ticketModels.tickets.collection.dropIndex(ttlIndex!.name!);
+      await expect(indexService.onApplicationBootstrap()).rejects.toThrow(
+        'office ticket TTL index',
+      );
+    } finally {
+      await ticketModels.createIndexes();
+      config.set('DB_AUTO_INDEX', previous);
+    }
   });
 });
 

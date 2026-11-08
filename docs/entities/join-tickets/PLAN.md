@@ -1,21 +1,22 @@
 # Office join tickets implementation plan
 
-Status: planned; no implementation or verification evidence · Target: M2
+Status: HTTP issuance and atomic consume implemented. Socket admission remains CP05 · Updated: 2026-11-09 · Target: M2
 
 ## Implementation tasks
 
 - [x] Define first public issue/response/handshake schemas, safe error/version rules and retry budgets under CP01.
-- [ ] Enforce actual approved map/current policy/expiry and consume behavior under CP03.
-- [ ] Create digest uniqueness and TTL cleanup indexes.
-- [ ] Implement conditional consumption and continuing-policy recheck.
+- [x] Enforce approved map, current policy, expiry and consumption under CP03.
+- [x] Create exact digest uniqueness and TTL cleanup indexes.
+- [x] Implement conditional consumption and current-policy recheck.
 - [ ] Handle capacity denial/restart through a new ticket; no reusable reservation.
 
 ## Acceptance criteria
 
-The following are future checks, not passing results.
+Checked items refer to the local CP03 test boundary. Socket transport and runtime scenarios follow in CP05.
 
-- [ ] Replay, expired, foreign-office and stale-epoch tickets fail.
-- [ ] Two concurrent consumes cannot create two participations.
+- [x] Replay, expired, foreign-office and stale-epoch tickets fail in the CP03 integration tests.
+- [x] Two concurrent consume requests have one winner in the CP03 integration tests.
+- [ ] CP05 maps the winning consume to one runtime participation.
 - [ ] Direct socket connect without ticket or with wrong Origin fails.
 
 ## Dependencies and completion

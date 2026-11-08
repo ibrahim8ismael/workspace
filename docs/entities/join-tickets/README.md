@@ -1,6 +1,6 @@
 # Office join tickets
 
-Status: draft plan · Updated: 2026-11-05 · Target: M2
+Status: HTTP issuance and atomic consumption implemented · Updated: 2026-11-09 · Target: M2
 
 ## Responsibility
 
@@ -8,11 +8,11 @@ Bridge authenticated HTTP policy into one fresh Socket.IO admission.
 
 - Owning module: Auth / Realtime.
 - State location: MongoDB: office_join_tickets.
-- These are proposed contracts and fields, not implemented models. Apply the [baseline](../../README.md#source-precedence) and [cross-cutting rules](../../architecture/README.md#shared-invariants).
+- The fields below describe the implemented ticket model. Apply the [baseline](../../README.md#source-precedence) and [cross-cutting rules](../../architecture/README.md#shared-invariants).
 
-## Proposed data
+## Implemented data
 
-- `id`
+- `_id`
 - `ticketDigest`
 - `userId`
 - `sessionId`
@@ -24,6 +24,7 @@ Bridge authenticated HTTP policy into one fresh Socket.IO admission.
 - `protocolVersion`
 - `expiresAt`
 - `consumedAt`
+- `createdAt`
 
 ## Relationships
 
@@ -40,7 +41,7 @@ Bridge authenticated HTTP policy into one fresh Socket.IO admission.
 - Exact Origin allowlist protects transport; CORS alone is insufficient.
 - Reconnect cannot skip admission via Socket.IO connection-state recovery.
 
-CP01 exports strict public issue/response/handshake shapes in `packages/contracts/src/http/office.ts`; the digest record and runtime are still CP03/CP05 work. [Office v1](../../contracts/OFFICE_V1.md) defines lifetime/budgets, spent-ticket retry and same-session takeover boundaries.
+CP03 implements the [digest model](../../../apps/api/src/modules/office/join-ticket.models.ts), exact unique and TTL indexes, [HTTP issuance and internal consumption](../../../apps/api/src/modules/office/office-admission.service.ts). CP05 connects consumption to Socket.IO reservation and continuing authorization. [Office v1](../../contracts/OFFICE_V1.md) defines lifetime/budgets, spent-ticket retry and same-session takeover boundaries.
 
 ## Interface outline
 

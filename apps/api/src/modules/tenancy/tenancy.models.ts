@@ -21,6 +21,7 @@ export interface MembershipRecord {
   role: 'owner' | 'member';
   status: 'active' | 'revoked';
   policyVersion: number;
+  membershipGrantId?: string;
   joinedAt: Date;
 }
 export interface InvitationRecord {
@@ -69,6 +70,7 @@ const membershipSchema = new Schema<MembershipRecord>(
     role: { type: String, enum: ['owner', 'member'], required: true },
     status: { type: String, enum: ['active', 'revoked'], required: true },
     policyVersion: { type: Number, required: true },
+    membershipGrantId: { type: String, required: false },
     joinedAt: { type: Date, required: true },
   },
   schemaOptions,

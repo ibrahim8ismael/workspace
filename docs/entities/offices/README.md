@@ -1,6 +1,6 @@
 # Offices
 
-Status: initial persistence implemented; remaining integration/lifecycle work planned · Updated: 2026-11-08 · Target: M1–M2
+Status: initial persistence implemented; remaining integration/lifecycle work planned · Updated: 2026-11-09 · Target: M1–M2
 
 ## Responsibility
 
@@ -19,7 +19,7 @@ Source: [owning model](../../../apps/api/src/modules/tenancy/tenancy.models.ts).
 - `mapVersion`
 - `createdAt`
 
-Creation writes the trusted Commons map version from CP03.2. Workspace detail exposes officeId to active members. The bootstrap route resolves both office and workspace IDs after transactional access checks and accepts the trusted Commons manifest. Pending or unknown map versions return office_not_ready. The explicit backfill updates older pending records. Tickets follow in CP03.3/CP03.4. Runtime epochs/capacity/draining are CP05; overrideRevision remains conditional, not a required schema addition.
+Creation writes the trusted Commons map version from CP03.2. Workspace detail exposes officeId to active members. The bootstrap route resolves both office and workspace IDs after transactional access checks and accepts the trusted Commons manifest. Pending or unknown map versions return office_not_ready. The explicit backfill updates older pending records. CP03 implements ticket issuance and atomic consumption. Runtime epochs/capacity/draining are CP05; overrideRevision remains conditional, not a required schema addition.
 
 ## Relationships
 

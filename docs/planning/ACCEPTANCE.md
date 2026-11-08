@@ -1,6 +1,6 @@
 # Acceptance and evidence register
 
-Status: initial backend subset locally verified; deployment/media/pilot gates remain pending · Updated: 2026-11-08
+Status: initial backend subset locally verified; deployment/media/pilot gates remain pending · Updated: 2026-11-09
 
 Documentation review is not implementation verification. Add an evidence record with environment/build, exact scenario, observed result, measurements, date, responsible person and artifact/code link. A failed gate remains open until corrected and rerun.
 
@@ -9,7 +9,7 @@ Documentation review is not implementation verification. Add an evidence record 
 | A01 | M0/M1 browser security | Cookie flags; session/CSRF rotation; anonymous bootstrap cannot overwrite existing session; exact Origin rejection; no secret storage/log leakage | Pending |
 | A02 | M1 account lifecycle | Real mail, verification password proof, pending recovery, expired/superseded token rejection, concurrent reset/login/change handling | Pending |
 | A03 | M1 tenant policy | ID substitution, operator/mass assignment rejection, recipient-bound invite concurrency, owner transfer and exact capacity counters | Pending |
-| A04 | M2 admission | Ticket replay/expiry/epoch tests, direct socket rejection, identity spoofing, fresh reconnect/takeover, revoked membership on open socket | Pending |
+| A04 | M2 admission | Ticket replay/expiry/epoch tests, direct socket rejection, identity spoofing, fresh reconnect/takeover, revoked membership on open socket | CP03 HTTP and atomic-consumption subset locally verified. Socket/runtime scenarios remain CP05 |
 | A05 | M2 world | Server-time speed/collision, seats/exits, last-slot joins, input flood/size limits, version gaps, incompatible map/protocol, stale lease reply rejection | Pending |
 | A06 | M0/M2 renderer | Cleared asset provenance, pixel scale/anchors/occlusion, React/Phaser bridge and cleanup, accessible essential controls | CP02.5 sample locally verified. CP06 office integration and pilot browser evidence pending |
 | A07 | M0/M3 media privacy | Original/refreshed token replay, retired generation, source limits, public bypass, controller loss, guard freeze, failed deletion, independent shutdown and measured forwarding cutoff | Pending |

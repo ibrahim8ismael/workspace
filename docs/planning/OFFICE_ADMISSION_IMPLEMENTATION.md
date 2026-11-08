@@ -1,6 +1,6 @@
 # Office bootstrap and join-ticket implementation plan
 
-This proposal covers the first backend slice of M2, including B003 and B004 prerequisites and the ticket foundation for B015. Full Socket.IO admission and continuing authorization follow under B015 and B017.
+This implemented checkpoint covers the first backend slice of M2, including B003 and B004 prerequisites and the ticket foundation for B015. Full Socket.IO admission and continuing authorization follow under B015 and B017.
 
 ## Scope and prerequisites
 
@@ -20,6 +20,8 @@ CP01 supplies the first office schemas and technical semantics. CP02 supplies th
 | CP03.4 | Atomic ticket consumption and current-policy recheck | Verify one winner under concurrency, plus replay, expiry, stale epoch and policy revocation. Record admission evidence and hand off to CP05 |
 
 CP03.1 reuses the existing transactional session, membership and workspace checks for reads that disclose office state. It starts with the reviewed Commons manifest and verifies its immutable geometry against the source used by the shared collision rules. Pending offices remain discoverable to active members and return `office_not_ready` on bootstrap. Positive bootstrap tests use a configured office fixture until CP03.2 assigns the version.
+
+CP03.3 and CP03.4 are implemented together so the integration tests can exercise issuance and consumption against the same policy records. The internal consumer receives the expected workspace, office, map and protocol from its caller, resolves the stored session and user, and repeats the transactional policy checks before marking a ticket spent. Successful consumption returns internal bindings for CP05. The public HTTP response contains only the raw ticket and its expiry.
 
 ## Stage 1 — Implement the frozen first HTTP contract
 
@@ -65,3 +67,13 @@ Wire the internal consumer into namespace middleware and enforce exact `APP_ORIG
 Demonstrate rejection of direct or wrong-Origin connections, single admission under concurrent final-slot requests, fresh snapshots after reconnect, and removal from an open socket after access is revoked. These scenarios are required to close A04 and the applicable parts of A11.
 
 See the [decision register](../decisions/README.md), [backlog](BACKLOG.md), [HTTP outline](../contracts/HTTP.md), [realtime outline](../contracts/REALTIME.md), [office entity](../entities/offices/PLAN.md), [join-ticket entity](../entities/join-tickets/PLAN.md), [map-version entity](../entities/map-versions/PLAN.md) and [acceptance register](ACCEPTANCE.md).
+
+## CP03 implementation evidence
+
+Implemented by GPT-6 Luna and reviewed by Codex. Final verification and CP03 closure were completed on 2026-11-09. Code lives in the [office module](../../apps/api/src/modules/office/office.module.ts), [ticket service](../../apps/api/src/modules/office/office-admission.service.ts), [ticket model](../../apps/api/src/modules/office/join-ticket.models.ts) and existing tenancy policy operations. The [integration suite](../../apps/api/test/auth.integration.test.ts) exercises actual HTTP requests and MongoDB transactions.
+
+Issuance validates access before counting dedicated ticket budgets, then repeats policy checks in the insertion transaction. It uses current session absolute/idle deadlines and caps expiry at thirty seconds. Membership activation grants rotate on reinvitation. Older rows fall back to membership IDs. Consumption writes session, account, membership and workspace policy records before the conditional ticket update. It checks ticket expiry again after awaited policy work and verifies the office epoch after commit.
+
+The final local `pnpm check` passed 102 tests, including 43 backend tests. Tests cover both roles, strict requests, map and office mismatches, no-store responses, digest-only persistence, short-session expiry, dedicated budgets, concurrent consumption, replay, explicit expiry with TTL cleanup disabled, fresh epoch registry, password reset, logout, suspension, membership reinvitation, concurrent revoke and malformed digest/TTL indexes. Full Socket.IO admission, capacity reservation, snapshots and continuing leases follow in CP05.
+
+New offices use the trusted Commons map. The dry-run/apply backfill was exercised only against temporary fixture data. Production operators must provision the new indexes with `pnpm db:indexes` before the updated API starts. Startup validates the unique digest and TTL constraints and rejects incompatible indexes.

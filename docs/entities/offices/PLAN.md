@@ -1,23 +1,24 @@
 # Offices implementation plan
 
-Status: initial subset implemented; release and integration work remain open · Updated: 2026-11-08 · Target: M1–M2
+Status: initial subset implemented; release and integration work remain open · Updated: 2026-11-09 · Target: M1–M2
 
 Implementation boundary: [current API and limitations](../../contracts/AUTH_AND_ROLES_API.md), [completion plan](../../planning/PROJECT_COMPLETION_PLAN.md) and [CP00 progress](../../planning/IMPLEMENTATION_PROGRESS.md). Checked implementation tasks describe existing code, not production acceptance.
 
 ## Implementation tasks
 
 - [x] Persist one office reference per workspace with a unique workspaceId index.
-- [ ] Validate approved immutable map/spawn and backfill pending-m0 under CP02/CP03.
+- [x] Validate the immutable Commons map and spawn and backfill pending offices under CP02/CP03.
 - [ ] Implement office lifecycle, epoch creation and serialized command dispatch.
 - [ ] Implement capacity, draining and fresh-restart behavior.
-- [ ] Expose authorized bootstrap and safe runtime metrics.
+- [x] Expose authorized office discovery and bootstrap.
+- [ ] Expose safe runtime metrics in CP05.
 
 ## Acceptance criteria
 
 These are full acceptance checks. Local backend subsets are recorded in [auth evidence](../../planning/AUTH_IMPLEMENTATION_EVIDENCE.md); unchecked items do not imply a full release pass.
 
 - [ ] Two joins competing for the last slot admit only one.
-- [ ] Foreign workspace/office combinations fail.
+- [x] Foreign workspace/office combinations fail in local CP03 HTTP tests.
 - [ ] Restart invalidates tickets and deltas from the previous epoch.
 
 ## Dependencies and completion

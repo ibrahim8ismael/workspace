@@ -13,7 +13,7 @@ CP01 freezes the first shared office v1 schemas and technical interface semantic
 
 ## Existing response contracts
 
-CP01 adds strict runtime schemas for the current auth/company projections in `packages/contracts/src/http/responses.ts` and safe current HTTP errors in `packages/contracts/src/errors.ts`. These are exported validation contracts exercised against real HTTP responses; the API has not gained an automatic response interceptor. CP03.1 implements office discovery and bootstrap against the trusted Commons manifest. Ticket and realtime work follow in later batches.
+CP01 adds strict runtime schemas for the current auth/company projections in `packages/contracts/src/http/responses.ts` and safe current HTTP errors in `packages/contracts/src/errors.ts`. These are exported validation contracts exercised against real HTTP responses; the API has not gained an automatic response interceptor. CP03 implements office discovery, bootstrap and one-use ticket issuance against the trusted Commons manifest. Its internal consumer checks current policy transactionally. CP05 adds realtime admission.
 
 ## Implemented routes
 
@@ -49,13 +49,13 @@ Paths are shown relative to `/api`. The linked reference supplies status codes, 
 | `POST /workspaces/:workspaceId/leave` | Current member leaves. Owner transfers first |
 | `POST /workspaces/:workspaceId/transfer-ownership` | Current owner with recent proof transfers to an eligible existing member |
 
-## Proposed MVP additions
+## Office admission and remaining MVP additions
 
-| Stage | Method and path | Draft request/result | Authorization and behavior |
+| Stage | Method and path | Request/result | Authorization and behavior |
 | --- | --- | --- | --- |
 | M2 | `GET /workspaces/:workspaceId` | Add `officeId` to detail response | Current workspace member. Keep list/create contracts intact |
 | M2 | `GET /workspaces/:workspaceId/offices/:officeId` | Return `{ officeId, workspaceId, mapVersion, protocolVersion, manifest }` | Scoped membership. Return `office_not_ready` for missing or unapproved map configuration |
-| M2 | `POST /workspaces/:workspaceId/offices/:officeId/join-ticket` | `{ mapVersion, protocolVersion }` → `201 { ticket, expiresAt }` | Recheck current session and membership inside the write. 30-second maximum, one-use, bound to the office runtime epoch and active grant |
+| M2 | `POST /workspaces/:workspaceId/offices/:officeId/join-ticket` | `{ mapVersion, protocolVersion }` → `201 { ticket, expiresAt }` | Implemented in CP03. Recheck current session and membership inside the write. 30-second maximum, capped by session expiry, one-use, bound to the API office epoch and active grant |
 | M2 | `POST /workspaces/:workspaceId/offices/:officeId/join-ticket` takeover extension | Add explicit takeover intent and a short-lived server-issued reference identifying the participation to replace | Draft follow-on. Confirm the target is still the actor's current participation in this office and epoch at consume/reservation. Normal admission leaves an existing tab alone |
 | M2 | `PATCH /auth/me/profile` | Strict nonempty subset of `{ displayName, appearance }`. Return updated safe profile | Actor updates only their account. Use a bounded display name and IDs from the approved appearance catalog. The office runtime publishes a safe projection to the actor's authorized office |
 | M3 | `POST /conversations/:conversationId/media-token` | `{ participationId, conversationVersion }` → `200 { serverUrl, token, expiresAt, conversationVersion, generation }` | Check that the referenced live participation belongs to the same session and current conversation. Resolve tenant, generation, identity and publish sources server-side and install the exact current permit before signing. See [media contract](MEDIA.md) |

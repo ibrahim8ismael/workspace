@@ -60,7 +60,7 @@ export class TenancyService {
     invariant(workspace, 403, 'workspace_unavailable');
     return { workspace, member };
   }
-  private async lockAccess(context: ActorContext, id: string, tx: ClientSession, owner = false) {
+  async lockAccess(context: ActorContext, id: string, tx: ClientSession, owner = false) {
     await this.sessions.lockActor(context, tx);
     const member = await this.models.memberships
       .findOneAndUpdate(
@@ -136,6 +136,7 @@ export class TenancyService {
               role: 'owner',
               status: 'active',
               policyVersion: 0,
+              membershipGrantId: randomUUID(),
               joinedAt: new Date(),
             },
           ],
@@ -395,7 +396,12 @@ export class TenancyService {
             await this.models.memberships.updateOne(
               { workspaceId: workspace._id, userId: context.user._id },
               {
-                $set: { role: 'member', status: 'active', joinedAt: new Date() },
+                $set: {
+                  role: 'member',
+                  status: 'active',
+                  joinedAt: new Date(),
+                  membershipGrantId: randomUUID(),
+                },
                 $inc: { policyVersion: 1 },
                 $setOnInsert: { _id: randomUUID() },
               },

@@ -1,0 +1,44 @@
+# CP04 — browser accounts, companies and delivery
+
+Started on 2026-11-09. Implementation by GPT-6 Luna, with planning, review and verification by Codex. The owner requested this delegation arrangement. Parent scope is the [completion plan](PROJECT_COMPLETION_PLAN.md#cp04--finish-delivery-same-origin-browser-auth-and-company-onboarding).
+
+## Delivery batches
+
+| Batch | Deliverable | Verification |
+| --- | --- | --- |
+| CP04.1 | Browser API adapter and account/company onboarding | Register, verify, sign in, recover password, list/create companies and accept an invitation through real HTTPS browser requests. Validate request/response boundaries and explicit durable-command retries |
+| CP04.2 | Session settings, reauthentication and current-company context | Session list/revoke/logout-all, password change, explicit idle extension and teardown across account/company changes |
+| CP04.3 | Reproducible private delivery environment | TLS ingress, transaction-capable MongoDB, persistent Redis queue, explicit worker and local mail sink. Configure service boundaries before running the environment |
+| CP04.4 | Delivery fault evidence and staging-provider setup | Commit/enqueue ordering, restart/duplicates, ambiguous delivery acknowledgement, queue outage, expiry and actual authorized SMTP delivery |
+| CP04.5 | Security and operational handoff | Review cookie/Origin/proxy behavior, password workload, audit-mirror requirements, environment evidence and remaining pilot limits |
+
+## CP04.1 verification boundary
+
+Use the existing account and company contracts from the [API reference](../contracts/AUTH_AND_ROLES_API.md). The browser owns cookies and automatic Origin headers. The client keeps CSRF in memory, sends JSON mutations, validates responses and uses explicit retries with stable idempotency keys for durable company operations.
+
+The default application entry moves to the authenticated account/company path. The Commons renderer sample keeps its development route. Office admission and the integrated renderer follow in CP05/CP06.
+
+Local browser verification uses a disposable MongoDB replica set, the actual NestJS API and a loopback HTTPS server serving the built client. Fixture verification/invitation codes are read privately from the encrypted outbox for the test. Actual mail delivery and persistent queue behavior are verified in later batches.
+
+## CP04.1 review checklist
+
+- Keep cookie identity independent of imported localStorage identities and remove known legacy credential/admin/invitation keys while preserving preferences.
+- Deduplicate CSRF bootstrap; rotate memory on successful login; fence late response bodies before they change session state.
+- Never retry a mutation automatically. An unconfirmed company/invitation result retains the same key for an explicit same-payload retry, including malformed success responses and server/gateway failures.
+- Ignore company results after screen/account teardown, prevent overlapping submissions and avoid overwriting a newly created membership with an older list response.
+- Keep code/password inputs out of URLs, storage and logging. Use form labels, keyboard submission, visible errors and focus when the screen changes.
+- Validate against the actual API with loopback HTTPS, disposable transaction-capable MongoDB and a private outbox fixture. This does not establish real SMTP, persistent queue, public ingress, Edge or pilot acceptance.
+
+## CP04.1 implementation and local evidence
+
+Implemented on 2026-11-09 by GPT-6 Luna; reviewed and independently verified by Codex.
+
+- `apps/web/src/lib/api.ts` validates shared request/response schemas, binds browser fetch correctly, deduplicates CSRF bootstrap, rotates the token on login and fences stale bodies before changing session memory. Requests use same-origin credentials and no-store caching. Mutations never retry automatically.
+- `SubmissionKey` keeps the same command key for an explicit same-payload retry after transport errors, malformed success responses or 5xx responses. The company UI prevents overlapping mutations/list reloads and ignores responses after teardown. A rejected authenticated CSRF request clears the account view before another mutation.
+- The account screens implement registration, code verification/resend, login, forgotten/reset password and logout. Company list/create/invitation acceptance show the server-owned role. Known legacy session/browser-identity/admin/invitation keys are removed; preferences are retained. Blocked browser storage does not prevent startup.
+- Root `pnpm check` passed **110 tests**: 19 contracts, 30 world, five exporter, five legacy shared, eight web and 43 backend. Formatting, ESLint, workspace typechecks and all builds passed. The production web build contains one 336.35 kB JavaScript entry and excludes the old office/LiveKit and development Phaser entry paths.
+- Headless Chrome **152.0.7977.42**, macOS **26.6.1 arm64**, loopback HTTPS + actual NestJS + disposable MongoDB replica set: registration → private outbox code → verification → login → company creation → cookie reload → invitation acceptance as member → password recovery passed. The test corrupted a creation response after the API committed; the client made no automatic retry, reused the original key on explicit retry and displayed exactly one company.
+- A real-cookie account-switch check passed: after another login replaced the browser cookie, a company command using the old in-memory CSRF was rejected, the old account/company UI cleared and no company was created for the new account.
+- Additional browser checks passed for recovery from an initial `/me` 503, legacy-secret cleanup while retaining a theme preference, password input clearing across views, blocked localStorage and a 390 px layout without horizontal overflow. Secure/HttpOnly/host-only session-cookie attributes, empty auth storage and zero runtime exceptions were checked in the main flow. The narrow viewport is a layout smoke check, not mobile-browser acceptance.
+
+Verification used private fixture reads, not actual email delivery. Edge, public TLS/ingress/proxy behavior, persistent Redis, worker/SMTP faults, session settings and integrated office/media remain unverified here. CP04 is still in progress; CP04.2 is next. No Docker or external mail service was run. Hosted CI is recorded on the closing commit's GitHub Actions run after push.

@@ -161,7 +161,7 @@ Exit: real HTTP/Mongo tests for owner/member/two-company access, ID substitution
 
 ### CP04 — Finish delivery, same-origin browser auth and company onboarding
 
-Depends on: onboarding/provider/hosting decisions, existing backend APIs. Can progress alongside CP02/CP03.
+Depends on: onboarding/provider/hosting decisions, existing backend APIs. CP03 is complete. Delivery batches and browser-verification boundaries are tracked in [CP04_BROWSER_AND_DELIVERY.md](CP04_BROWSER_AND_DELIVERY.md).
 
 1. Build a private reproducible non-media environment: Caddy TLS, web/API, transaction-capable Mongo, persistent queue Redis, worker and a local mail sink. Use explicit start commands and separate disposable cache configuration. API container binding must be private-network reachable; the current loopback default cannot be copied unchanged into a separate container.
 2. Configure SMTP/domain and protected outbox-key storage for a controlled staging test. Verify real verification, recovery and invitation delivery with authorized test recipients. Choose code-entry UX or a separately reviewed no-referrer/history-safe link flow; current emails provide backend code instructions.

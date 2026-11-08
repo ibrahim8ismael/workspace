@@ -1,6 +1,6 @@
 # Delivery roadmap
 
-Status: partial M0/M1 implementation; full milestone acceptance pending · Updated: 2026-11-08
+Status: partial M0/M1 implementation; full milestone acceptance pending · Updated: 2026-11-09
 
 Milestones are dependency ordered. M0 produces evidence for risky assumptions before broad feature work. A milestone passes only with recorded results in the [acceptance register](ACCEPTANCE.md).
 
@@ -19,20 +19,20 @@ The [completion plan](PROJECT_COMPLETION_PLAN.md) provides the cross-stack packe
 
 | Milestone | Code/local evidence already available | Still open |
 | --- | --- | --- |
-| M0 | Pinned imported source/assets, exact toolchain/builds, local transaction/HTTP security checks and CP01 first wire schemas with 18 contract tests | Approved map contract/Phaser, deployed same-origin environment, media topology/supervision/cutoff proof |
-| M1 | Backend accounts/sessions/company roles, invitations/transfer/counters, encrypted outbox/worker and safe app audit; 33 local backend tests plus strict response compatibility | Browser onboarding/current-company UI, real SMTP/Redis faults, wider password screening, keys/proxy/mirror/recovery evidence |
-| M2 | Office reference persisted with pending-m0; libraries installed | Bootstrap/tickets, authoritative sockets/world/seats/leases/takeover and Phaser integration |
+| M0 | Pinned import/toolchain, strict contracts, original Commons map/catalog and verified React/Phaser sample; local transaction/HTTP and loopback HTTPS browser checks | Deployed same-origin environment and media supervisor/cutoff proof |
+| M1 | Backend accounts/sessions/company roles, invitations/transfer/counters, encrypted outbox/worker and safe app audit; 43 backend tests plus CP04.1 account/company browser onboarding and strict response compatibility | Browser session settings/current-company UI, real SMTP/Redis faults, wider password screening, keys/proxy/mirror/recovery evidence |
+| M2 | Approved Commons assignment/bootstrap, map backfill and one-use ticket issue/consume verified in CP03 | Authoritative sockets/world/seats/leases/takeover and integrated Phaser office |
 | M3–M5 | Plans/module boundaries only | Conversations/media/meetings, deployment and measured pilot/recovery |
 
-CP00 documentation reconciliation and CP01 owner choices/first contracts are complete. Neither closes A01–A11. Remaining implementation starts with CP02 map/catalog validation and CP03 actual office admission, then follows the later packets.
+CP00–CP03 are complete. CP04.1 connects browser onboarding; remaining CP04 work covers session/current-company UI, delivery and infrastructure. CP05 adds authoritative realtime office state. These local results do not close A01–A11.
 
 ## B2B SaaS scope gate
 
-D12 one company/workspace/office and D13 verified-user self-service onboarding are accepted (2026-11-08). D13 lifecycle/retention/export remains open before those controls. [CP01 contracts](../contracts/OFFICE_V1.md) cover the first wire boundary; CP02/CP03 still need actual map data and backend admission. Company isolation, independent memberships and clear company context are MVP requirements. Company quotas and shared-service/noisy-neighbor behavior need M5 evidence. Payments and enterprise identity features remain deferred. See [B2B product plan](../product/B2B_SAAS.md).
+D12 one company/workspace/office and D13 verified-user self-service onboarding are accepted (2026-11-08). D13 lifecycle/retention/export remains open before those controls. [CP01 contracts](../contracts/OFFICE_V1.md) cover the first wire boundary; CP02/CP03 now supply actual map data and scoped backend admission. Company isolation, independent memberships and clear company context are MVP requirements. Company quotas and shared-service/noisy-neighbor behavior need M5 evidence. Payments and enterprise identity features remain deferred. See [B2B product plan](../product/B2B_SAAS.md).
 
 ## Suggested working slices
 
-1. M0 remaining: use the existing pinned import to select an approved map/avatar/object → freeze pure geometry → demonstrate React/Phaser lifecycle.
+1. M0 foundation: original Commons geometry/catalog and React/Phaser sample are complete; preserve their verified boundary through office integration.
 2. M0: choose topology/supervision → isolate media fixture environment → measure replay, guard freeze and shutdown failure behavior.
 3. M1 remaining: preserve the implemented account/session APIs and local race checks → connect browser forms → verify real mail and deployed HTTPS/CSRF.
 4. M1 remaining: connect the implemented company/invitation/removal/transfer APIs to authorized UI → verify tenant switching, real delivery and agreed lifecycle.

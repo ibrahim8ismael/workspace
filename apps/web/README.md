@@ -1,17 +1,21 @@
-# Imported web client
+# Browser client
 
 Run `pnpm dev:web` at the repository root, then open http://localhost:5173. Use `pnpm dev` to start the web client and existing NestJS starter together. No Docker service starts automatically.
 
-The entrypoint is `main.tsx` at this directory's root. The user-imported React/SVG client is preserved in its upstream layout while migration is in progress. It resolves map and office helpers from `../shared/`; `@gather/legacy-shared` is also an explicit workspace dependency. Vite and TypeScript configuration are restored and included in root pnpm checks.
+The entrypoint is `main.tsx`. Its default branch loads the authenticated account/company UI under `src/features/{auth,workspaces}`. The development-only `/?commons-preview=1` renderer sample remains available. Imported root-level React/SVG office files are retained for migration but are unreachable from the default entry.
 
 ## Current integration boundary
 
-The dashboard, map rendering, entry dialog and public artwork load locally. The imported client still expects the upstream workspace/account APIs, `/config`, and raw `/ws` protocol. NestJS now implements `/api/auth/*`, company `/api/workspaces` routes and liveness. The imported account paths, slug-based workspace request/response shapes, `/config` and raw `/ws` remain incompatible or absent; matching a route prefix does not make the legacy contract work. Workspace creation, authenticated multiplayer and calls do not work against the new backend yet. No legacy backend or mock business API was added to disguise that gap.
+The browser API adapter uses the existing NestJS `/api/auth/*`, `/api/workspaces` and invitation-acceptance contracts. It validates public schemas, uses same-origin cookies, keeps CSRF in memory, and sends JSON mutations without automatic command retries. Company creation and invitation acceptance retain an in-memory idempotency key for an explicit retry of an uncertain result. Account changes discard prior client state.
 
-This is a migration client, not an approved production SaaS implementation. LocalStorage session/admin keys, P2P signaling, recorder/chat/calendar features and React/SVG rendering remain upstream code to replace, remove or adapt under the existing project scope. Socket.IO, cookie sessions, Phaser and current-generation media enforcement remain planned.
+Available account screens cover registration, email verification and resend, login, forgotten/reset password and logout. The company screen lists owner/member roles, creates a company and accepts an invitation code. No office-entry control is exposed until the realtime/renderer integration is ready. Session settings, reauthentication, password change and idle extension follow in CP04.2.
+
+Secure cookie authentication requires same-origin HTTPS with `APP_ORIGIN` matching the browser origin and `/api` forwarded to the private API. The plain HTTP Vite URL is for UI development; it does not establish production cookie behavior. Local browser verification uses disposable HTTPS/Mongo fixtures and reads test codes privately from the encrypted outbox. Real SMTP, persistent queue and ingress/proxy acceptance remain separate CP04 work; see [delivery batches](../../docs/planning/CP04_BROWSER_AND_DELIVERY.md).
+
+The old `/config`, slug-based APIs, localStorage identity, raw `/ws`, P2P signaling and React/SVG office code remain migration material. They are not connected product features. Preserve upstream licensing/provenance when those files are later retired.
 
 ## Checks and compatibility
 
-`pnpm check` covers formatting, lint, TypeScript, shared import/map regression tests and production builds. TypeScript `strict` and unused-code checks remain enabled. This imported client uses the upstream settings for `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes` (both false); the stricter package/API defaults are unchanged. Re-enable these extra checks as modules are migrated. Browser/server import restrictions and Rules of Hooks apply to the imported files; the full React compiler lint preset remains on future `src/` feature code.
+`pnpm check` covers formatting, lint, TypeScript, browser API regressions, shared import/map tests and production builds. TypeScript `strict` and unused-code checks remain enabled. This imported client uses the upstream settings for `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes` (both false); the stricter package/API defaults are unchanged. Re-enable these extra checks as modules are migrated. Browser/server import restrictions and Rules of Hooks apply to the imported files; the full React compiler lint preset remains on future `src/` feature code.
 
 The public files were restored from the same pinned upstream commit and checked against its Git blob hashes. Preserve `LICENSE.upstream` and the asset README notices. Local-only private reference packs are excluded from Git. The complete source/asset provenance is recorded in [UPSTREAM_IMPORT.json](../../docs/migration/UPSTREAM_IMPORT.json).

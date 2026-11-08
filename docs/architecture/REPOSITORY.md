@@ -6,7 +6,7 @@ The owner approved the refined structure and requested library installation with
 
 | Path | Responsibility | Current implementation |
 |---|---|---|
-| apps/web | Imported React/Vite client, temporarily in upstream root-level layout | Dashboard and React/SVG office entry view; legacy backend integration pending |
+| apps/web | Imported React/Vite client, temporarily in upstream root-level layout | Authenticated account/company UI under src; imported React/SVG office retained but unreachable from default entry |
 | apps/shared | Imported JavaScript office/map helpers and adjacent declarations | Private pnpm workspace with import/map regression tests |
 | Future apps/web/src/features/office | Planned React controls, Phaser, typed bridge, realtime adapter and state | Original empty scaffold replaced by owner import; feature restructuring pending |
 | apps/api | NestJS modular HTTP and future Socket.IO/runtime host | Backend authentication, company roles, validation, cookies/CSRF, Mongo transactions and liveness |
@@ -17,8 +17,8 @@ The owner approved the refined structure and requested library installation with
 | apps/api/src/modules/audit | Transactional security event recording | Implemented safe audit records and 30-day TTL; independent recovery mirror pending |
 | apps/worker | Outbox dispatch and delivery processors/providers | Explicitly configured BullMQ/SMTP worker; no real mail sent in tests |
 | packages/contracts | Public runtime schemas and DTOs | Liveness plus auth/company request schemas and safe account/workspace DTOs |
-| packages/world | Pure engine-independent rules | Point type only; coordinate units and map format open |
-| packages/assets | Asset provenance inventory | Records pinned public assets currently under apps/web/public; private reference art excluded |
+| packages/world | Pure engine-independent rules | Original Commons geometry, collision/reachability and shared map validation |
+| packages/assets | Asset provenance inventory | Original Commons SVG sources, immutable manifest/catalog and provenance; legacy public assets separately recorded |
 | packages/delivery | Server-only outbox/job contracts shared with worker | Strict ID job schema, Mongo outbox schema and authenticated encryption helpers |
 | packages/tooling | Strict TS Node/React configurations and ESLint composition | Configured and used by workspace checks |
 | spikes/media-enforcement | M0 custom guard/supervision proof outside production apps | Planning README only |
@@ -46,4 +46,4 @@ Version/compatibility references consulted: [Vite prerequisites](https://vite.de
 
 The [web import notes](../migration/WEB_IMPORT.md) supersede the original empty-web setup status and explain source provenance, compatibility settings and backend limitations.
 
-The [backend-only auth/company API guide](../contracts/AUTH_AND_ROLES_API.md) supersedes the original empty identity/tenancy/worker status. Office/media runtime, frontend integration and production release evidence remain pending.
+The [backend-only auth/company API guide](../contracts/AUTH_AND_ROLES_API.md) supersedes the original empty identity/tenancy/worker status. Office/media runtime, integrated office frontend and production release evidence remain pending.

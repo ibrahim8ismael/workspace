@@ -1,0 +1,372 @@
+.account-shell,
+.workspace-shell {
+  width: 100%;
+  height: 100dvh;
+  overflow: auto;
+  color: var(--text);
+  background:
+    radial-gradient(ellipse at 12% 0%, #dbe6fa 0, transparent 42%),
+    radial-gradient(ellipse at 100% 96%, #f1dfd6 0, transparent 36%), var(--shell);
+}
+.account-frame {
+  display: grid;
+  align-content: start;
+  justify-items: center;
+  min-height: 100%;
+  padding: clamp(24px, 6vh, 64px) 20px 48px;
+}
+.account-brand,
+.workspace-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  font-size: 17px;
+  letter-spacing: -0.03em;
+  text-decoration: none;
+}
+.account-mark {
+  display: inline-grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 11px;
+  color: #fff;
+  background: #263b60;
+  font-size: 17px;
+  font-weight: 750;
+  letter-spacing: -0.06em;
+}
+.account-card {
+  width: min(100%, 430px);
+  margin-top: clamp(38px, 8vh, 82px);
+  padding: clamp(24px, 5vw, 40px);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  box-shadow: 0 20px 60px #16213a12;
+}
+.account-eyebrow {
+  margin-bottom: 10px;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.13em;
+}
+.account-card h1,
+.workspace-heading h1 {
+  margin-bottom: 8px;
+  color: var(--text);
+  font-size: clamp(27px, 4vw, 34px);
+  letter-spacing: -0.045em;
+  line-height: 1.1;
+}
+.account-card h1:focus {
+  outline: none;
+}
+.account-subtitle,
+.workspace-lead {
+  margin-bottom: 27px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.account-card form,
+.workspace-form {
+  display: grid;
+  gap: 16px;
+}
+.account-field {
+  display: grid;
+  gap: 7px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+}
+.account-field input {
+  width: 100%;
+  min-height: 45px;
+  padding: 0 13px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--text);
+  background: var(--panel);
+  font-size: 14px;
+  font-weight: 450;
+}
+.account-field input::placeholder {
+  color: #98a0ac;
+}
+.account-primary,
+.account-secondary {
+  display: inline-flex;
+  min-height: 45px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 17px;
+  border: 1px solid #263b60;
+  border-radius: 9px;
+  color: #fff;
+  background: #263b60;
+  font-size: 14px;
+  font-weight: 680;
+}
+.account-primary:hover:not(:disabled) {
+  background: #1e2f4d;
+}
+.account-secondary {
+  color: #263b60;
+  background: transparent;
+}
+.account-secondary:hover:not(:disabled) {
+  background: #263b600c;
+}
+.account-message {
+  margin: 0 0 17px;
+  padding: 11px 13px;
+  border: 1px solid #9bc8ac;
+  border-radius: 9px;
+  color: #245d3a;
+  background: #edf7f0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.account-message.is-error {
+  border-color: #e0aaaa;
+  color: #8a2525;
+  background: #fff1f0;
+}
+.account-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 18px;
+  margin-top: 21px;
+  padding-top: 17px;
+  border-top: 1px solid var(--border);
+}
+.account-links button {
+  padding: 4px 0;
+  color: #465d7f;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+}
+.account-links button:hover:not(:disabled) {
+  color: #152b4f;
+  text-decoration: underline;
+}
+.workspace-shell {
+  background: var(--shell);
+}
+.workspace-topbar {
+  display: flex;
+  height: 70px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 clamp(20px, 5vw, 64px);
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+.workspace-user {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.workspace-user button {
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--panel);
+  font-size: 12px;
+  font-weight: 650;
+}
+.workspace-content {
+  width: min(100%, 1040px);
+  margin: 0 auto;
+  padding: clamp(32px, 6vh, 64px) 24px 72px;
+}
+.workspace-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 31px;
+}
+.workspace-heading h1 {
+  margin-bottom: 7px;
+}
+.workspace-heading .account-eyebrow {
+  margin-bottom: 12px;
+}
+.workspace-lead {
+  margin-bottom: 0;
+}
+.workspace-avatar,
+.company-avatar {
+  display: grid;
+  flex: none;
+  place-items: center;
+  color: #354966;
+  background: #e1e9f4;
+  font-weight: 700;
+}
+.workspace-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+}
+.company-panel,
+.workspace-panel {
+  padding: clamp(20px, 3vw, 28px);
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  background: var(--panel);
+  box-shadow: 0 8px 24px #15223c08;
+}
+.panel-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+.panel-heading h2,
+.workspace-panel h2 {
+  margin-bottom: 6px;
+  font-size: 17px;
+  letter-spacing: -0.025em;
+}
+.panel-heading p,
+.workspace-panel > p:not(.account-eyebrow) {
+  margin-bottom: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.company-count {
+  display: grid;
+  min-width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 8px;
+  color: #47556b;
+  background: #f0f3f7;
+  font-size: 12px;
+  font-weight: 700;
+}
+.company-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.company-row {
+  display: flex;
+  min-height: 68px;
+  align-items: center;
+  gap: 13px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+.company-avatar {
+  width: 39px;
+  height: 39px;
+  border-radius: 12px;
+}
+.company-name {
+  display: grid;
+  flex: 1;
+  gap: 4px;
+  min-width: 0;
+}
+.company-name strong {
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.company-name span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.role-pill {
+  padding: 5px 9px;
+  border-radius: 999px;
+  color: #385274;
+  background: #eef3fa;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+.role-owner {
+  color: #6b4f1e;
+  background: #faf1dd;
+}
+.workspace-empty {
+  margin: 0;
+  padding: 21px 0 4px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 13px;
+}
+.workspace-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 17px;
+}
+.workspace-panel .account-eyebrow {
+  margin-bottom: 12px;
+}
+.workspace-panel h2 {
+  margin-bottom: 7px;
+}
+.workspace-panel > p:not(.account-eyebrow) {
+  min-height: 40px;
+  margin-bottom: 19px;
+}
+.workspace-form {
+  gap: 13px;
+}
+.workspace-form .account-field input {
+  min-height: 42px;
+}
+.slug-input {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  gap: 8px;
+  padding-left: 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--muted);
+  background: var(--panel);
+  font-size: 13px;
+  font-weight: 450;
+}
+.slug-input input {
+  min-width: 0;
+  min-height: 40px !important;
+  padding-left: 0;
+  border: 0;
+  outline: 0;
+}
+.slug-input:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.workspace-actions .account-primary,
+.workspace-actions .account-secondary {
+  margin-top: 3px;
+}
+@media (max-width: 720px) {
+  .workspace-actions {
+    grid-template-columns: 1fr;
+  }
+  .workspace-panel > p:not(.account-eyebrow) {
+    min-height: auto;
+  }
+}

@@ -1,7 +1,7 @@
 # Gather Lite — Project Knowledge and Implementation Brief
 
-**Version:** 1.3
-**Updated:** 2026-11-06
+**Version:** 1.4
+**Updated:** 2026-11-08
 **Status:** Architecture and migration brief; initial backend auth/company APIs implemented; frontend, office/media integration and production gates remain pending.
 **Audience:** The project owner, developers, and Codex working in the implementation repository.
 
@@ -40,9 +40,11 @@ The owner selected this direction:
 
 This is a frontend reuse and backend migration project, with a renderer rewrite. It is more work than hosting an unmodified upstream fork, and it should proceed through small working slices.
 
-**Repository setup update (2026-11-05):** The owner authorized the refined monorepo structure, library installation and incremental GitHub pushes, with no Docker execution. React/Vite, pnpm workspaces, the NestJS API scaffold, a non-consuming worker scaffold and shared contracts/world/assets/delivery/tooling packages now exist. See [repository implementation layout](docs/architecture/REPOSITORY.md) and [setup evidence](docs/planning/SETUP_PROGRESS.md). The API liveness route is the only implemented endpoint. Product authorization and media-enforcement requirements remain unverified.
+**Historical repository setup snapshot (2026-11-05; superseded by the backend update below):** The owner authorized the refined monorepo structure, library installation and incremental GitHub pushes, with no Docker execution. React/Vite, pnpm workspaces, the NestJS API scaffold, a non-consuming worker scaffold and shared contracts/world/assets/delivery/tooling packages now exist. See [repository implementation layout](docs/architecture/REPOSITORY.md) and [setup evidence](docs/planning/SETUP_PROGRESS.md). The API liveness route is the only implemented endpoint. Product authorization and media-enforcement requirements remain unverified.
 
 **Backend update (2026-11-06):** The owner requested backend-only authentication and company roles, with no frontend connection. The plan was committed before implementation. The initial implementation covers account/session/password flows, company owner/member policy, invitation/ownership transactions, audit records and encrypted mail outbox/worker plumbing. See [API contract and limitations](docs/contracts/AUTH_AND_ROLES_API.md). Real SMTP deliverability, production infrastructure, independent audit recovery evidence and office/media authorization remain separate gates. No Docker was run.
+
+**Documentation reconciliation (2026-11-08):** The [drift snapshot](docs/planning/2026-11-08_DRIFT_REPORT.md), [completion plan](docs/planning/PROJECT_COMPLETION_PLAN.md) and [implementation progress](docs/planning/IMPLEMENTATION_PROGRESS.md) distinguish implemented/local checks from pending browser, office, media and operational evidence. This update changes documentation only; no pilot gate is closed.
 
 ## 3. Current stack and superseded decisions
 
@@ -70,10 +72,10 @@ The old Next.js/Colyseus architecture is superseded by the current React/Phaser/
 
 **Repository:** https://github.com/VictorSandovalDev/OpenOfficeForAll  
 **Inspected branch:** main  
-**Inspected Git tree SHA:** 23d6b8999396f9e9d51291bf85bd7b72161f833f  
-**Inventory observed:** 498 blobs, including code, configuration, documentation and image assets. The tree SHA is not recorded as a commit SHA.
+**Imported upstream commit (confirmed during import):** 23d6b8999396f9e9d51291bf85bd7b72161f833f
+**Inventory observed:** 498 blobs, including code, configuration, documentation and image assets. The initial tree-only identification was resolved during import; the pinned commit and copied paths are recorded in [import provenance](docs/migration/UPSTREAM_IMPORT.json).
 
-The conversation inspected the repository tree, package manifest, key server and account modules, frontend integration hooks, renderer/navigation excerpts, deployment files and documentation. It did not read every source line or visually inspect every asset, run the application, run upstream tests, or conduct a security audit. Pin a real upstream commit before import and review all code actually reused.
+The conversation inspected the repository tree, package manifest, key server and account modules, frontend integration hooks, renderer/navigation excerpts, deployment files and documentation. It did not read every source line or visually inspect every asset, run the application, run upstream tests, or conduct a security audit. The imported source/public assets are now pinned and inventoried; review newly reused code/assets and preserve their notices. Historical upstream observations do not prove the current migrated product behavior.
 
 ### 4.1 Actual upstream stack
 
@@ -278,7 +280,8 @@ Essential constraints to preserve in the spike:
 | Workspace memberships, roles, invitations | MongoDB with tenant-scoped queries and unique indexes |
 | Workspace configuration, decoration edits, map version | MongoDB; base map/assets remain immutable versioned static content |
 | Live positions, seat occupancy, current conversation state | Office owner's memory; reconstruct/reauthorize on restart |
-| Cache, rate-limit counters, expiring hints | Redis with bounded TTL and documented failure behavior |
+| Cache and expiring hints | Redis planned for disposable state; never authoritative permissions |
+| Current HTTP/auth rate-limit counters | MongoDB `rate_limits` via AbuseService, with TTL cleanup; not Redis in the implemented slice |
 | Background queue state | Dedicated BullMQ Redis with persistence and noeviction |
 | Durable event awaiting delivery | MongoDB transactional outbox |
 | Images/sprite atlases | Static build/CDN/object storage, not base64 blobs inside user records |

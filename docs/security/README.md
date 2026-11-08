@@ -1,6 +1,6 @@
 # Security and authorization plan
 
-Status: required controls and proposed defaults; unverified · Updated: 2026-11-05
+Status: initial HTTP auth/tenant controls locally verified; browser/live/production gates pending · Updated: 2026-11-08
 
 ## Permission baseline
 
@@ -44,4 +44,4 @@ Customer-company permissions remain independent for users in several companies. 
 - Separate cache/queue failure policies; queue payload IDs only, encrypted expiring mail secrets, restricted keys.
 - Independent audit evidence and suspended restored access prevent backup rollback from reviving old credentials or memberships.
 
-See [acceptance evidence](../planning/ACCEPTANCE.md), [media permit plan](../entities/media-permits/PLAN.md) and [operations](../operations/README.md). All checks remain future implementation work.
+See [acceptance evidence](../planning/ACCEPTANCE.md), [media permit plan](../entities/media-permits/PLAN.md) and [operations](../operations/README.md). Local portions of account/session/CSRF/tenant/crypto checks are recorded in [auth implementation evidence](../planning/AUTH_IMPLEMENTATION_EVIDENCE.md). Deployed browser policy, broader compromised-password screening, live socket/media authorization, secret redaction at ingress and independent recovery remain pending; no full release gate is passed by this summary.

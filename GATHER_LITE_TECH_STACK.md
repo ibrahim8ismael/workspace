@@ -6,6 +6,8 @@
 
 This version replaces the earlier plan and review appendix with one consistent design. Authentication is owned by the NestJS backend. The decisions below include engineering defaults selected for the MVP; numerical limits are starting configurations to verify, not measured performance claims.
 
+> Historical reference, labeled 2026-11-08: the current [project brief](GATHER_LITE_PROJECT_KNOWLEDGE.md) supersedes conflicting Next.js, Colyseus, five-minute recent-proof and systemd-only supervision choices below. Current auth behavior is documented in [AUTH_AND_ROLES_API.md](docs/contracts/AUTH_AND_ROLES_API.md). Preserve this dated design as history; do not implement its superseded choices.
+
 ## 1. Product and selected stack
 
 Gather Lite is a desktop virtual office for small remote teams: enter a shared 2D map, move an avatar, see availability, and talk through proximity. The first technical slice is two users, one map, one authorized voice conversation.

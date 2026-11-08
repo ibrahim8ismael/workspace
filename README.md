@@ -44,7 +44,7 @@ pnpm dev
 | --------------------- | ---------------------------------------------------------------------- |
 | `pnpm dev:web`        | Web development server only                                            |
 | `pnpm dev:api`        | API compiler watch plus Node restart with decorator metadata           |
-| `pnpm dev:worker`     | Worker scaffold; exits until processors are implemented                |
+| `pnpm dev:worker`     | Configured Mongo outbox/BullMQ/SMTP worker; starts separately          |
 | `pnpm build:packages` | Rebuild shared packages after changing their source                    |
 | `pnpm build`          | Build shared packages, API, worker and production web assets           |
 | `pnpm typecheck`      | Check TypeScript across all source packages                            |

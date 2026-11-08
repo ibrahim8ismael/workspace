@@ -1,6 +1,6 @@
 # Repository implementation layout
 
-Status: scaffold plus imported web/shared client; product integration pending · Updated: 2026-11-05
+Status: imported client and backend identity/tenancy/delivery/audit implemented; office/media integration pending · Updated: 2026-11-08
 
 The owner approved the refined structure and requested library installation with incremental pushes and no Docker execution. This page supersedes the earlier suggested folder decomposition; architecture/security requirements in the source brief still apply.
 
@@ -13,7 +13,8 @@ The owner approved the refined structure and requested library installation with
 | apps/api/src/modules/identity | Accounts, credentials, sessions, tokens and auth delivery | Implemented backend account lifecycle and session/CSRF guards |
 | apps/api/src/modules/tenancy | Workspace company boundary, memberships, invitations and policies | Implemented scoped owner/member APIs, invitations and owner/capacity transactions |
 | apps/api/src/modules/office | Maps, admission, authoritative movement, seats and gateway adapters | Empty module and tracked feature folders; no open socket gateway |
-| apps/api/src/modules/conversations, media, audit | Policy-owned conversation, media and audit work | Empty module boundaries |
+| apps/api/src/modules/conversations, media | Policy-owned conversation and media work | Empty module boundaries |
+| apps/api/src/modules/audit | Transactional security event recording | Implemented safe audit records and 30-day TTL; independent recovery mirror pending |
 | apps/worker | Outbox dispatch and delivery processors/providers | Explicitly configured BullMQ/SMTP worker; no real mail sent in tests |
 | packages/contracts | Public runtime schemas and DTOs | Liveness plus auth/company request schemas and safe account/workspace DTOs |
 | packages/world | Pure engine-independent rules | Point type only; coordinate units and map format open |
@@ -23,10 +24,11 @@ The owner approved the refined structure and requested library installation with
 | spikes/media-enforcement | M0 custom guard/supervision proof outside production apps | Planning README only |
 | infra | Future Compose/Caddy/Mongo/Redis/media settings | Empty tracked directories; no containers run |
 | tests/integration, tests/e2e | Cross-service tests | Empty tracked directories; no passing feature evidence |
+| plugins/egm, .agents/plugins, .codex/config.toml | Project-local EGM planning/review tooling | Pinned complete upstream runtime and enabled project marketplace; not an application dependency |
 
 ## Ownership rules
 
-Domain Mongo models and business policies belong to their owning API module. Do not create a global generic database repository. Shared delivery records are the specific exception needed by API and worker; their persistence/encryption design remains future work. A module may split controllers, services, policies and adapters when implementation warrants it.
+Domain Mongo models and business policies belong to their owning API module. Do not create a global generic database repository. Shared delivery records are the specific exception needed by API and worker; their Mongo persistence and authenticated encryption are implemented in `packages/delivery/src/outbox.ts`. A module may split controllers, services, policies and adapters when implementation warrants it.
 
 Public contracts and pure world code cannot import NestJS, database/queue/media server dependencies or application code. Browser code cannot import the server-only delivery package. ESLint blocks the named package patterns; this is a development boundary check, not a complete security sandbox.
 

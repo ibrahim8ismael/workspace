@@ -1,10 +1,10 @@
 # Gather Lite project documentation
 
-Current review (2026-11-08): read the [documentation/code drift report](planning/2026-11-08_DRIFT_REPORT.md) and [full MVP completion plan](planning/PROJECT_COMPLETION_PLAN.md) for the current baseline, remaining work, dependencies and evidence gates. Older status statements below and in linked plans retain their original dates; discrepancies are identified in the report. The completion plan is proposed delivery work, not approval of open decisions or release signoff.
+Current review (2026-11-08): read the [documentation/code drift report](planning/2026-11-08_DRIFT_REPORT.md) and [full MVP completion plan](planning/PROJECT_COMPLETION_PLAN.md) for the current baseline, remaining work, dependencies and evidence gates. Historical evidence retains its original dates; current documentation corrections are tracked in the [implementation progress](planning/IMPLEMENTATION_PROGRESS.md). The completion plan is proposed delivery work, not approval of open decisions or release signoff.
 
-Status: initial planning baseline · Updated: 2026-11-05
+Status: initial backend implemented; office/client/media integration pending · Updated: 2026-11-08
 
-Gather Lite is a **B2B SaaS virtual office for companies and their teams**, delivered through a browser with React application controls, a Phaser world, NestJS APIs, Socket.IO authoritative office state, MongoDB/Mongoose durable data, Redis/BullMQ jobs, and self-hosted LiveKit media. The monorepo scaffold and dependencies are installed, and the imported web/shared client renders locally; integration with the new backend and product authorization remain unimplemented. Product schemas, routes, tasks and acceptance checks below remain proposed or planned unless supported by implementation evidence. The scaffold liveness route and job-reference schema are recorded in the repository setup notes.
+Gather Lite is a **B2B SaaS virtual office for companies and their teams**, delivered through a browser with React application controls, a Phaser world, NestJS APIs, Socket.IO authoritative office state, MongoDB/Mongoose durable data, Redis/BullMQ jobs, and self-hosted LiveKit media. The monorepo tooling, imported web/shared client, backend account/session/company authorization, transactional audit records and encrypted mail outbox/worker are implemented. The imported frontend is not connected to those APIs. Phaser, office admission/simulation, Socket.IO and production media enforcement remain planned. The [implemented API reference](contracts/AUTH_AND_ROLES_API.md) describes current backend contracts; other schemas, routes and acceptance checks retain their proposal status unless supported by code and evidence. Local backend tests do not establish provider, deployment or pilot acceptance.
 
 ## Product direction
 
@@ -22,7 +22,7 @@ B2B SaaS is an agreed requirement. Read the [B2B SaaS product plan](product/B2B_
 
 ## Source precedence
 
-- [GATHER_LITE_PROJECT_KNOWLEDGE.md](../GATHER_LITE_PROJECT_KNOWLEDGE.md) v1.3 is the authoritative supplied architecture/migration brief. Its agreed, recommended and open statuses remain distinct.
+- [GATHER_LITE_PROJECT_KNOWLEDGE.md](../GATHER_LITE_PROJECT_KNOWLEDGE.md) v1.4 is the authoritative supplied architecture/migration brief. Its agreed, recommended and open statuses remain distinct.
 - [GATHER_LITE_TECH_STACK.md](../GATHER_LITE_TECH_STACK.md) is historical where it conflicts with that brief. In particular, Next.js, Colyseus and a systemd-only media deployment must not silently replace the current React/Phaser/NestJS/Socket.IO/Docker direction.
 - These docs decompose that brief into initial entity and delivery plans. New names, routes, field choices and task IDs are proposals; they do not establish owner approval or implemented behavior.
 - Source links are retained for traceability; this documentation task did not independently reverify upstream libraries, versions or capabilities.

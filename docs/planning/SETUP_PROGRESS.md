@@ -1,5 +1,7 @@
 # Repository setup progress
 
+Historical snapshot: the stage results below describe repository setup on 2026-11-05. Current state (2026-11-08) has ten workspace projects including root and `apps/shared`, imported source/assets and initial auth/company/audit/delivery code. See [auth evidence](AUTH_IMPLEMENTATION_EVIDENCE.md) and [completion progress](IMPLEMENTATION_PROGRESS.md). Historical counts, scaffold behavior and test scope below are preserved as observations at the original setup commits.
+
 Scope authorized: create the agreed monorepo structure, install libraries, and push incremental commits. Do not run Docker.
 
 | Stage | Work | Status |

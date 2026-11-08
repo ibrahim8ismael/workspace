@@ -20,7 +20,7 @@ The web source currently retains its upstream flat structure; the earlier `apps/
 
 Local frozen/offline pnpm install succeeds. Browser smoke checks exercised the dashboard, navigation into the office entry screen, shared module resolution and public image requests: no uncaught page errors and no failed asset requests. Production build, lint, typecheck and all five shared regression checks passed locally before push. No Docker command is needed for these checks.
 
-The current NestJS service has only process liveness. Legacy `/api/workspaces` reads return 404 once the API is up (root development startup can initially return proxy 502 while the API compiler starts), and legacy account, socket and media integration is pending. The visual check did not authenticate a user, create a company, join multiplayer or verify calls. Those remain product implementation gates; no mock service or automatic legacy backend was introduced.
+Current boundary (2026-11-08): NestJS now exposes account/session/company APIs in addition to liveness. `/api/workspaces` requires authentication and uses the new UUID-based DTOs; the imported client still expects the legacy contract. The liveness-only/404 behavior observed during the original import smoke test is historical. Legacy account, socket and media integration remains pending. The visual check did not authenticate a user, create a company, join multiplayer or verify calls. Those remain product implementation gates; no mock service or automatic legacy backend was introduced.
 
 ## Verified commands
 

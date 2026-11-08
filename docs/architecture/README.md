@@ -1,6 +1,6 @@
 # Architecture plan
 
-Status: draft decomposition of the supplied project brief · Updated: 2026-11-05
+Status: draft decomposition of the supplied project brief · Updated: 2026-11-08
 
 ## Runtime boundaries
 
@@ -56,7 +56,7 @@ Start with one modular NestJS process owning HTTP, Socket.IO and the office simu
 
 ## Repository layout
 
-The initial scaffold now uses feature-owned web folders and grouped API modules (identity, tenancy, office, conversations, media and audit). See [implemented repository layout](REPOSITORY.md) for actual paths and package ownership. The worker is separate, public contracts and world rules are shared, and delivery contracts are server-only. Media enforcement remains under `spikes/` pending proof.
+The API uses grouped modules (identity, tenancy, office, conversations, media and audit). The active imported frontend remains flat under `apps/web`; feature-owned React/Phaser folders are planned, not the current source layout. See [implemented repository layout](REPOSITORY.md) for actual paths and package ownership. The worker is separate, public contracts and world rules are shared, and delivery contracts are server-only. Media enforcement remains under `spikes/` pending proof.
 
 The earlier proposed separate Auth/Users/Workspaces/Memberships module names map into these grouped module boundaries; their entity responsibilities and tenant/security requirements still apply. No feature or infrastructure deployment is established by empty folders.
 

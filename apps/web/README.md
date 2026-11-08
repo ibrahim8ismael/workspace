@@ -6,7 +6,7 @@ The entrypoint is `main.tsx` at this directory's root. The user-imported React/S
 
 ## Current integration boundary
 
-The dashboard, map rendering, entry dialog and public artwork load locally. The imported client still expects the upstream workspace/account APIs, `/config`, and raw `/ws` protocol. Those are not implemented by the NestJS starter, which only exposes `/api/health/live`. Workspace creation, authenticated multiplayer and calls do not work against the new backend yet. No legacy backend or mock business API was added to disguise that gap.
+The dashboard, map rendering, entry dialog and public artwork load locally. The imported client still expects the upstream workspace/account APIs, `/config`, and raw `/ws` protocol. NestJS now implements `/api/auth/*`, company `/api/workspaces` routes and liveness. The imported account paths, slug-based workspace request/response shapes, `/config` and raw `/ws` remain incompatible or absent; matching a route prefix does not make the legacy contract work. Workspace creation, authenticated multiplayer and calls do not work against the new backend yet. No legacy backend or mock business API was added to disguise that gap.
 
 This is a migration client, not an approved production SaaS implementation. LocalStorage session/admin keys, P2P signaling, recorder/chat/calendar features and React/SVG rendering remain upstream code to replace, remove or adapt under the existing project scope. Socket.IO, cookie sessions, Phaser and current-generation media enforcement remain planned.
 

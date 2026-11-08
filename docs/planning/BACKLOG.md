@@ -2,14 +2,14 @@
 
 Status: imported client and initial backend implemented; office/media/production work pending · Updated: 2026-11-08
 
-IDs remain stable planning references. The [completion plan](PROJECT_COMPLETION_PLAN.md) orders remaining cross-stack work; [implementation progress](IMPLEMENTATION_PROGRESS.md) records completed CP00 batches and pushes. Initial backend implementation evidence is in [AUTH_IMPLEMENTATION_EVIDENCE.md](AUTH_IMPLEMENTATION_EVIDENCE.md). Implementation/local verification and full release acceptance are separate.
+IDs remain stable planning references. The [completion plan](PROJECT_COMPLETION_PLAN.md) orders remaining cross-stack work; [implementation progress](IMPLEMENTATION_PROGRESS.md) records completed batches and pushes. Initial backend implementation evidence is in [AUTH_IMPLEMENTATION_EVIDENCE.md](AUTH_IMPLEMENTATION_EVIDENCE.md). Implementation/local verification and full release acceptance are separate.
 
 | ID | Target | Concrete task and reviewable output | Depends on | Current status / remaining work |
 |---|---|---|---|---|
 | B001 | M0 | Pin actual upstream commit; write path/asset/license inventory and blocked reuse list | None | Imported pin/path/public-file inventory implemented; future derived assets still require review |
 | B002 | M0 | Partial: Vite/pnpm/Node/TypeScript and exact library pins selected with buildable scaffold; browser matrix and deployment image pins remain open | D01; see SETUP_PROGRESS.md | Toolchain/pins/builds implemented; browser matrix and image pins pending |
 | B003 | M0 | Define runtime schemas, opaque IDs, errors, protocol/map version and event acknowledgement rules | B002 | CP01 first HTTP/office/event/version/error/profile/conversation shapes implemented and tested; actual geometry/catalog CP02 and runtime enforcement remain pending |
-| B004 | M0 | Freeze immutable geometry/seat/zone format; select one cleared avatar/object sample | B001, B003 | CP01 manifest/hash/pixel reference contract and Vivo candidate selected; approved geometry/catalog/export and provenance review pending CP02 |
+| B004 | M0 | Freeze immutable geometry/seat/zone format; select one cleared avatar/object sample | B001, B003 | Owner replaced Vivo with original `commons` after CP02 source review; pure collision foundation implemented/tested. Contract rename, actual geometry/catalog/export and renderer evidence remain pending CP02 |
 | B005 | M0 | Mount one Phaser scene in React and demonstrate pixel anchors/occlusion/cleanup | B004 | Pending: Phaser sample/bridge (CP02/CP06) |
 | B006 | M0 | Specify host-only session, anonymous CSRF bootstrap, exact Origin and secret-redaction contract | B003 | HTTP cookie/CSRF/Origin contract implemented and locally verified; deployed browser/edge redaction pending (CP04) |
 | B007 | M0 | Build Compose/Caddy/private Mongo replica-set and Redis skeleton; demonstrate transactions and same-origin routes | B002, B006 | Pending: same-origin/private service environment (CP04); temporary Mongo transactions already tested |
@@ -21,7 +21,7 @@ IDs remain stable planning references. The [completion plan](PROJECT_COMPLETION_
 | B013 | M1 | Select mail/key storage; implement encrypted outbox, dispatcher and ID-only jobs; demonstrate actual delivery | B011, D06 | Encryption/dispatcher/ID jobs/SMTP adapter implemented; provider, keys and real queue fault evidence pending (CP04/CP10) |
 | B014 | M1 | Implement tenant creation, matching-recipient invitation and owner/member concurrency rules | B011, B012, B013 | Backend tenant/invite/owner/member transactions implemented/local tests; browser/lifecycle/live integration pending |
 | B015 | M2 | Implement ticket consume → runtime reservation → ready/snapshot lifecycle | B003, B014 | CP01 issue/bootstrap/handshake shapes and ordering/budgets defined; backend consume/runtime admission pending CP03/CP05 |
-| B016 | M2 | Implement intent-driven movement, collision, seat serialization and snapshot gap repair | B004, B005, B015 | Pending authoritative world/client (CP02/CP05/CP06) |
+| B016 | M2 | Implement intent-driven movement, collision, seat serialization and snapshot gap repair | B004, B005, B015 | Pure discrete collision foundation locally verified (CP02.1); authoritative runtime movement/seats/gap repair and client remain pending CP05/CP06 |
 | B017 | M2 | Implement continuing authorization, monotonic deadlines, fresh epochs and explicit takeover | B012, B015 | CP01 epoch/version/lease/retry/takeover boundary documented; live enforcement pending CP05 |
 | B018 | M3 | Implement proximity state machine and guarded current-generation voice grants | B010, B016, B017 | Pending conversations/guarded voice (CP07/CP08) |
 | B019 | M4 | Add fixed group admission, camera/share sources, safe React controls and tenant UI polish | B018 | Pending meeting/video/share/admin integration (CP09) |
@@ -32,7 +32,7 @@ IDs remain stable planning references. The [completion plan](PROJECT_COMPLETION_
 
 ## First implementation entry point
 
-CP00 reconciles the status above. Next, close the relevant B022 decisions and freeze remaining B003/B004 contracts, then deliver CP02/CP03 against the existing backend. Preserve B012/B014 behavior rather than implementing it again. Connect minimal company/auth UI and real delivery under CP04; the imported UI remains migration material until legacy secret/transport assumptions are removed. Do not expand product media before B008–B010 produce evidence.
+CP00 and CP01 are complete. Continue [CP02](CP02_WORLD_AND_MAP.md) with the original `commons` map and its contract/catalog/export, then CP03 against the existing backend. Preserve B012/B014 behavior rather than implementing it again. Connect minimal company/auth UI and real delivery under CP04; the imported UI remains migration material until legacy secret/transport assumptions are removed. Do not expand product media before B008–B010 produce evidence.
 
 The [system backend implementation plan](BACKEND_SYSTEM_IMPLEMENTATION.md) maps these items to HTTP, Socket.IO, LiveKit and private service interfaces. Its first M2 checkpoint uses the [office bootstrap and join-ticket plan](OFFICE_ADMISSION_IMPLEMENTATION.md) for the HTTP and ticket foundation of B015.
 

@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "test": "pnpm build && tsc -p tsconfig.tests.json && vitest run --config vitest.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "exports": {
@@ -16,6 +17,7 @@
   "devDependencies": {
     "@gather/tooling": "workspace:*",
     "typescript": "6.0.3",
-    "@types/node": "24.19.2"
+    "@types/node": "24.19.2",
+    "vitest": "5.1.0"
   }
 }

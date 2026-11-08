@@ -1,5 +1,16 @@
-/** Geometry primitive only; units/map semantics will be frozen in M0. */
-export interface WorldPoint {
-  readonly x: number;
-  readonly y: number;
-}
+export type {
+  TileCollision,
+  TileCollisionInput,
+  TilePoint,
+  WorldBounds,
+  WorldPoint,
+} from './types.js';
+export {
+  TILE_SIZE_PX,
+  canStep,
+  createTileCollision,
+  isBlockedTile,
+  isEdgeBlocked,
+  isTileInBounds,
+  pixelToTile,
+} from './collision.js';

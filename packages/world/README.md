@@ -53,14 +53,14 @@ The discrete wall/diagonal rule was adapted from the pinned upstream shared geom
 retain [the upstream MIT notice](LICENSE.upstream). No upstream map coordinates or artwork are
 included in this package.
 
-This is not a CP02 completion claim. This collision-only delta contains no map layout,
-collision/seat/zone definitions, content hash/version, asset catalog or contract rename. Seats and
-zones, map export and renderer validation remain later CP02 work.
+`COMMONS_GEOMETRY` is the original static floor plan for the `commons` map. It contains
+the spawn, walls, object blockers, chairs and zones as deeply frozen JSON data. The room
+layout is recorded in the [CP02 plan](../../docs/planning/CP02_WORLD_AND_MAP.md#original-commons-floor-plan).
 
-The owner has replaced the imported Vivo candidate with an original multi-room office map whose
-engineering ID will be `commons`, with `commons-v1-<sha256>` versions. See
-[decision D04](../../docs/decisions/2026-11-08_CP02.md). The actual layout, collision/seat/zone
-definitions, artwork/catalog and immutable hash still require CP02 validation and approval.
+`validateOfficeGeometry` checks typed geometry and returns pixel bounds, collision data and
+a tile reachability query. It throws a `RangeError` on the first invalid field. A future reader
+of untrusted JSON needs a separate structural decoder before calling it. The catalog, immutable
+export and Phaser sample are the remaining CP02 batches.
 
 The imported Vivo files remain historical migration material only. Their measured Gather 2.0
 reference geometry and art provenance are unresolved and must not be promoted into an approved map
@@ -69,5 +69,5 @@ no legacy map data is imported here.
 
 ## Verification
 
-`pnpm test:world` builds the package, typechecks the tests and runs the synthetic-fixture suite. The
-root `pnpm check` includes this command.
+`pnpm test:world` builds the package, typechecks the tests and exercises collision rules and the
+original floor plan. The root `pnpm check` includes this command.

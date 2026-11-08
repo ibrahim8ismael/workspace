@@ -26,3 +26,17 @@ Read-only inspection of `apps/shared/maps/vivo.js` reports 32-pixel tiles, a 52 
 The map header says it was generated from `docs/references/vivo/vivo-map-spec.json` and measures the reference office “Vivo” in Gather 2.0. That reference source is not present in this checkout. The [import pin](../migration/UPSTREAM_IMPORT.json) and retained `apps/shared/LICENSE.upstream` establish copied-code provenance, but do not resolve the geometry's external-reference attribution. The [project brief](../../GATHER_LITE_PROJECT_KNOWLEDGE.md) explicitly excludes third-party Gather branding/maps/art and ignored private reference packs. The owner therefore accepted an original replacement; Vivo remains historical migration input, without an approved runtime hash.
 
 The [asset inventory](../../packages/assets/manifests/provenance.json) pins public files. The avatar READMEs describe upstream-user PixelLab exports, 92 × 92 canvases and a shared `(46,69)` foot anchor; the pixel asset README separately identifies generated/procedural artwork. These are source declarations, not a newly completed clearance or measured Phaser demonstration. No new texture or approved appearance catalog has been produced in CP02.1.
+
+## Original Commons floor plan
+
+Codex designed the 24 × 16 tile floor plan for CP02.3. OpenCode implemented it from the coordinates below. The lobby spawn is at tile `(11,8)`, centered at pixel `(368,272)` in the 768 × 512 pixel world. Tile ranges include the start and exclude the end.
+
+| Room | Columns | Rows | Open boundary |
+| --- | --- | --- | --- |
+| Northwest meeting room | `[1,9)` | `[1,6)` | South at column 4 |
+| Southeast meeting room | `[15,23)` | `[10,15)` | North at column 18 |
+| Southwest quiet room | `[1,8)` | `[10,15)` | East at row 12 |
+
+Each meeting room contains a table and two chairs. The static geometry defines 73 wall edges, eight furniture tiles, four chairs and 12 ordered exit entries. An independent graph traversal reached all 376 walkable tiles from the lobby and verified the three door openings and every chair exit. The quiet room has its own zone kind for later policy integration.
+
+The layout uses original dimensions, room boundaries, object positions, IDs and names. The source geometry is plain data and can feed the deterministic export after the asset catalog is selected. Retain the upstream notice for the adapted collision rules, as recorded in the [world package](../../packages/world/README.md).

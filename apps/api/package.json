@@ -9,7 +9,8 @@
     "start": "node --env-file-if-exists=../../.env dist/main.js",
     "dev": "pnpm build && concurrently --kill-others \"tsc -p tsconfig.json --watch --preserveWatchOutput\" \"node --watch --env-file-if-exists=../../.env dist/main.js\"",
     "test": "pnpm build && tsc -p tsconfig.tests.json && vitest run --config vitest.config.ts",
-    "db:indexes": "pnpm build && node --env-file-if-exists=../../.env dist/platform/database/create-indexes.js"
+    "db:indexes": "pnpm build && node --env-file-if-exists=../../.env dist/platform/database/create-indexes.js",
+    "db:backfill-office-map": "pnpm build && node --env-file-if-exists=../../.env dist/platform/database/backfill-office-map.js"
   },
   "dependencies": {
     "@gather/contracts": "workspace:*",

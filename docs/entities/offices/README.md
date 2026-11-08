@@ -19,7 +19,7 @@ Source: [owning model](../../../apps/api/src/modules/tenancy/tenancy.models.ts).
 - `mapVersion`
 - `createdAt`
 
-Creation writes mapVersion pending-m0 at CP03.1. Workspace detail exposes officeId to active members. The bootstrap route resolves both office and workspace IDs after transactional access checks and accepts the trusted Commons manifest. Pending or unknown map versions return office_not_ready. Version assignment/backfill and tickets follow in CP03.2–CP03.4. Runtime epochs/capacity/draining are CP05; overrideRevision remains conditional, not a required schema addition.
+Creation writes the trusted Commons map version from CP03.2. Workspace detail exposes officeId to active members. The bootstrap route resolves both office and workspace IDs after transactional access checks and accepts the trusted Commons manifest. Pending or unknown map versions return office_not_ready. The explicit backfill updates older pending records. Tickets follow in CP03.3/CP03.4. Runtime epochs/capacity/draining are CP05; overrideRevision remains conditional, not a required schema addition.
 
 ## Relationships
 

@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectConnection } from '@nestjs/mongoose';
-import { Connection, Schema } from 'mongoose';
-import type { Model } from 'mongoose';
+import { Schema } from 'mongoose';
+import type { Connection, Model } from 'mongoose';
 import { registerModel, schemaOptions } from '../../platform/database/models.js';
 
 export interface WorkspaceRecord {

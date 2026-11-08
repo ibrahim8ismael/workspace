@@ -56,6 +56,8 @@ if (
 
 const approved = Object.freeze(manifest);
 
+export const APPROVED_OFFICE_MAP_VERSION = approved.mapVersion;
+
 export function trustedOfficeBootstrap(
   officeId: string,
   workspaceId: string,

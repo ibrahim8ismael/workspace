@@ -39,6 +39,7 @@ import type { Queue } from 'bullmq';
 import { AbuseService } from '../dist/modules/identity/security/abuse.service.js';
 import { digest } from '../dist/modules/identity/security/secrets.js';
 import { configureHttp } from '../dist/platform/http/configure.js';
+import { backfillOfficeMap } from '../dist/modules/office/backfill-office-map.js';
 
 const origin = 'https://api.gather.test';
 const password = 'a quartz river beneath the lantern';
@@ -488,7 +489,7 @@ describe('company roles and isolation', () => {
     status(await owner.client.get(`/api/workspaces/not-a-uuid/offices/${officeId}`), 400);
     status(await owner.client.get(`/api/workspaces/${workspaceId}/offices/not-a-uuid`), 400);
 
-    await tenancy.offices.updateOne({ _id: officeId }, { $set: { mapVersion: approved } });
+    expect(office!.mapVersion).toBe(approved);
     for (const client of [owner.client, member.client]) {
       const response = await client.get(route);
       status(response, 200);
@@ -518,6 +519,64 @@ describe('company roles and isolation', () => {
     await tenancy.workspaces.updateOne({ _id: workspaceId }, { $set: { status: 'suspended' } });
     status(await owner.client.get(route), 403);
     await tenancy.workspaces.updateOne({ _id: workspaceId }, { $set: { status: 'active' } });
+  });
+
+  it('backfills only pending office maps with an explicit repeatable apply flag', async () => {
+    const owner = await account();
+    const workspaceId = await workspace(owner);
+    const office = await tenancy.offices.findOne({ workspaceId }).lean();
+    expect(office?.mapVersion).toBe(commonsManifest.mapVersion);
+    const pendingId = randomUUID();
+    const configuredId = randomUUID();
+    const pendingWorkspaceId = randomUUID();
+    const configuredWorkspaceId = randomUUID();
+    await tenancy.offices.create([
+      {
+        _id: pendingId,
+        workspaceId: pendingWorkspaceId,
+        mapVersion: 'pending-m0',
+        createdAt: new Date(),
+      },
+      {
+        _id: configuredId,
+        workspaceId: configuredWorkspaceId,
+        mapVersion: `commons-v1-${'0'.repeat(64)}`,
+        createdAt: new Date(),
+      },
+    ]);
+
+    expect(await backfillOfficeMap(tenancy.offices)).toEqual({
+      pending: 1,
+      updated: 0,
+      remaining: 1,
+    });
+    expect((await tenancy.offices.findById(pendingId).lean())?.mapVersion).toBe('pending-m0');
+    expect(await backfillOfficeMap(tenancy.offices, true)).toEqual({
+      pending: 1,
+      updated: 1,
+      remaining: 0,
+    });
+    expect(await backfillOfficeMap(tenancy.offices, true)).toEqual({
+      pending: 0,
+      updated: 0,
+      remaining: 0,
+    });
+
+    const backfilled = await tenancy.offices.findById(pendingId).lean();
+    const preserved = await tenancy.offices.findById(configuredId).lean();
+    expect(backfilled).toMatchObject({
+      _id: pendingId,
+      workspaceId: pendingWorkspaceId,
+      mapVersion: commonsManifest.mapVersion,
+    });
+    expect(preserved).toMatchObject({
+      _id: configuredId,
+      workspaceId: configuredWorkspaceId,
+      mapVersion: `commons-v1-${'0'.repeat(64)}`,
+    });
+    expect((await tenancy.offices.findById(office!._id).lean())?.mapVersion).toBe(
+      commonsManifest.mapVersion,
+    );
   });
 
   it('creates one owner and an office record atomically and reconciles idempotent retries', async () => {

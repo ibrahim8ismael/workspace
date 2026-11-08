@@ -11,8 +11,9 @@ The external `opencode-delegate` skill supplies the brief/review workflow. Its r
 ## Bounded batches
 
 1. **CP02.1 — discrete collision foundation:** pure TypeScript pixel-to-tile, bounds, furniture tile and wall-edge rules in `packages/world`; explicit map inputs, symmetric edges and both-path diagonal checks; synthetic fixtures and a root `test:world` gate. Reject invalid tile moves. No continuous movement, seat authority, actual map export or approved registry in this batch.
-2. **Map provenance and geometry inventory:** the owner accepted an original replacement after the source review; see the [CP02 decision](../decisions/2026-11-08_CP02.md). Design `commons` independently, without copying Vivo's layout. Inventory spawn, walls, object/seat IDs, exits and zones. Record source notices separately for code, geometry and artwork.
-3. **Seats/zones and map validation:** immutable definitions, unique IDs, valid bounds, reachable spawn and deterministic valid exits, with shared tests. Preserve the accepted seat-ID and pixel conventions.
+2. **CP02.2 — original map identity:** update and test the office v1 manifest and join-ticket contract for `commons-v1-<sha256>`. The shared schema rejects the former Vivo identity and `pending-m0`.
+3. **CP02.3 — original geometry, seats and zones:** the owner accepted an original replacement after the source review; see the [CP02 decision](../decisions/2026-11-08_CP02.md). Design `commons` independently, without copying Vivo's layout. Inventory spawn, walls, object/seat IDs, exits and zones. Record source notices separately for code, geometry and artwork.
+   Validate immutable definitions, unique IDs, bounds, reachability from spawn and deterministic valid exits with shared tests. Preserve the seat ID and pixel conventions.
 4. **Immutable export/catalog:** deterministic UTF-8 geometry serialization and SHA-256, asset-manifest binding, approved registry and changed-content/new-version behavior. No hash is approved until the content and catalog checks pass.
 5. **Phaser sample:** one reviewed avatar/object, foot origins, nearest-neighbor sampling, sitting/standing occlusion and React lifecycle evidence. This is partial renderer evidence; full office integration remains CP06.
 

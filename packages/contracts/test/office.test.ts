@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   OFFICE_PROTOCOL_VERSION,
+  MVP_MAP_ID,
   OFFICE_LIMITS,
   fitsJsonByteLimit,
   officeBootstrapResponseSchema,
@@ -24,10 +25,10 @@ import {
 const id = '11111111-1111-4111-8111-111111111111';
 const other = '22222222-2222-4222-8222-222222222222';
 const hash = 'a'.repeat(64);
-const version = `vivo-v1-${hash}`;
+const version = `${MVP_MAP_ID}-v1-${hash}`;
 const manifest = {
   formatVersion: 1,
-  mapId: 'vivo',
+  mapId: MVP_MAP_ID,
   mapVersion: version,
   contentHash: hash,
   coordinateUnits: 'pixels',
@@ -93,7 +94,7 @@ describe('office v1 contracts (fixtures do not approve a map or grant access)', 
       { ...manifest, contentHash: 'b'.repeat(64) },
       { ...manifest, geometryPath: 'https://untrusted.example/maps.json' },
       { ...manifest, geometryPath: '/maps/../private.json' },
-      { ...manifest, geometryPath: `/maps/vivo-v1-${'b'.repeat(64)}.json` },
+      { ...manifest, geometryPath: `/maps/${MVP_MAP_ID}-v1-${'b'.repeat(64)}.json` },
       { ...manifest, spawn: { x: 1664, y: 100 } },
       { ...manifest, bounds: { width: Infinity, height: 1600 } },
       { ...manifest, adminKey: 'secret' },
@@ -107,7 +108,52 @@ describe('office v1 contracts (fixtures do not approve a map or grant access)', 
     expect(
       officeBootstrapResponseSchema.safeParse({
         ...bootstrap,
-        mapVersion: `vivo-v1-${'b'.repeat(64)}`,
+        mapVersion: `${MVP_MAP_ID}-v1-${'b'.repeat(64)}`,
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects a self-consistent Vivo manifest and other pre-commons map identities', () => {
+    const vivoHash = 'c'.repeat(64);
+    const vivoVersion = `vivo-v1-${vivoHash}`;
+    const vivoManifest = {
+      ...manifest,
+      mapId: 'vivo',
+      mapVersion: vivoVersion,
+      contentHash: vivoHash,
+      geometryPath: `/maps/${vivoVersion}.json`,
+    };
+    expect(
+      officeBootstrapResponseSchema.safeParse({
+        ...bootstrap,
+        mapVersion: vivoVersion,
+        manifest: vivoManifest,
+      }).success,
+    ).toBe(false);
+    expect(
+      joinTicketRequestSchema.safeParse({ mapVersion: vivoVersion, protocolVersion: 1 }).success,
+    ).toBe(false);
+    for (const changed of [
+      { ...manifest, mapId: 'campus' },
+      { ...manifest, mapId: 'vivo' },
+      { ...manifest, mapVersion: `campus-v1-${hash}` },
+      { ...manifest, mapVersion: `vivo-v1-${hash}` },
+      { ...manifest, mapVersion: `commons-v2-${hash}` },
+      { ...manifest, mapVersion: `commons-v1-${'B'.repeat(64)}` },
+      { ...manifest, contentHash: 'b'.repeat(64) },
+      { ...manifest, geometryPath: `/maps/vivo-v1-${hash}.json` },
+      { ...manifest, geometryPath: `/maps/campus-v1-${hash}.json` },
+      { ...manifest, geometryPath: `/maps/${version}.json/extra` },
+      { ...manifest, mapVersion: 'pending-m0' },
+    ])
+      expect(
+        officeBootstrapResponseSchema.safeParse({ ...bootstrap, manifest: changed }).success,
+      ).toBe(false);
+    expect(
+      officeBootstrapResponseSchema.safeParse({
+        ...bootstrap,
+        mapVersion: 'pending-m0',
+        manifest: { ...manifest, mapVersion: 'pending-m0' },
       }).success,
     ).toBe(false);
   });

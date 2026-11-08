@@ -12,6 +12,7 @@ import {
 import { OFFICE_LIMITS } from '../limits.js';
 
 export const worldPointSchema = z.object({ x: z.number().min(0), y: z.number().min(0) }).strict();
+const mapGeometryPathPattern = new RegExp(`^/maps/${MVP_MAP_ID}-v1-[a-f0-9]{64}\\.json$`);
 export const mapManifestSchema = z
   .object({
     formatVersion: z.literal(MAP_FORMAT_VERSION),
@@ -27,7 +28,7 @@ export const mapManifestSchema = z
       })
       .strict(),
     spawn: worldPointSchema,
-    geometryPath: z.string().regex(/^\/maps\/vivo-v1-[a-f0-9]{64}\.json$/),
+    geometryPath: z.string().regex(mapGeometryPathPattern),
     assetManifestVersion: z
       .string()
       .min(1)
@@ -36,7 +37,7 @@ export const mapManifestSchema = z
   })
   .strict()
   .superRefine((value, ctx) => {
-    if (value.mapVersion !== `vivo-v1-${value.contentHash}`)
+    if (value.mapVersion !== `${MVP_MAP_ID}-v1-${value.contentHash}`)
       ctx.addIssue({ code: 'custom', path: ['mapVersion'], message: 'Map hash/version mismatch' });
     if (value.geometryPath !== `/maps/${value.mapVersion}.json`)
       ctx.addIssue({

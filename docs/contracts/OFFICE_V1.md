@@ -1,16 +1,17 @@
-# Office protocol v1 — CP01 contract checkpoint
+# Office protocol v1 — current shared contract
 
-Date: 2026-11-08. Implementer: Codex. Scope: exported schemas and technical interface decisions for CP02/CP03/CP05/CP06. These contracts do not implement an office endpoint, runtime, browser adapter, media guard or approved map artifact.
+Date: 2026-11-08. CP01 implementer: Codex. CP02 map-identity implementation: OpenCode / DeepSeek V4.1 Flash Free (`max`), reviewed by Codex. Scope: exported schemas and technical interface decisions for CP02/CP03/CP05/CP06. These contracts do not implement an office endpoint, runtime, browser adapter, media guard or approved map artifact.
 
-Owner choices: [D12/D13/D02/D04 and pilot scope](../decisions/2026-11-08_CP01.md). MVP is one company/workspace/office, verified-user self-service, Vivo, all-LiveKit, English-first desktop Chrome/Edge. No additional owner decision is inferred for full lifecycle, hosting/providers or the supervision mechanism.
+Owner choices: [D12/D13/D02/D04 and pilot scope](../decisions/2026-11-08_CP01.md). MVP is one company/workspace/office, verified-user self-service, an original multi-room `commons` office, all-LiveKit, English-first desktop Chrome/Edge. [CP02 D04](../decisions/2026-11-08_CP02.md) supersedes the original Vivo candidate. No additional owner decision is inferred for full lifecycle, hosting/providers or the supervision mechanism.
 
 ## Versions, map identity and static references
 
 Exports: `packages/contracts/src/versions.ts` and `http/office.ts`.
 
-- `OFFICE_PROTOCOL_VERSION = 1`, `MAP_FORMAT_VERSION = 1`, `MVP_MAP_ID = vivo`, tile size 32. These are the first new protocol's identifiers; they do not describe the legacy `/ws` protocol.
+- `OFFICE_PROTOCOL_VERSION = 1`, `MAP_FORMAT_VERSION = 1`, `MVP_MAP_ID = commons`, tile size 32. These are the first new protocol's identifiers; they do not describe the legacy `/ws` protocol.
 - Coordinates are pixels with the origin at the top-left, positive x right and y down, matching the imported map convention. Positions may be fractional; dimensions/tile size are positive integers. Bounds exclude x = width and y = height.
-- Immutable version format is `vivo-v1-<64 lowercase SHA-256 hex characters>`. `pending-m0`, client labels and unversioned map IDs cannot satisfy the admission schema.
+- Immutable version format is `commons-v1-<64 lowercase SHA-256 hex characters>`. `pending-m0`, client labels and unversioned map IDs cannot satisfy the admission schema.
+- This pre-admission CP02 identity change rejects the former `vivo` ID and `vivo-v1-*` versions, including self-consistent old manifests. No deployed new-protocol office runtime exists to migrate; persisted `pending-m0` offices remain unready. This does not rename the legacy migration UI or approve replacement geometry.
 - A manifest contains formatVersion, mapId, mapVersion, contentHash, coordinateUnits, tileSize, bounds, spawn, geometryPath and assetManifestVersion. Its version must embed contentHash and geometryPath must be exactly `/maps/<mapVersion>.json`. External URLs, traversal/query/token paths and unknown fields are rejected.
 - CP02 produces and verifies the actual geometry bytes, content hash, safe spawn and approved assets. Hash the exact immutable UTF-8 geometry JSON without a BOM; use sorted object keys and preserve meaningful array order (for example exit priority). Include the selected asset-manifest version in the hashed geometry payload. A content/asset-reference change requires a new hash/version. Tests must prove deterministic export. The CP01 test hash/body IDs are fixtures, not approved versions/catalog entries.
 - The server must resolve the manifest/version from its approved registry. A syntactically valid version or self-consistent client manifest never proves approval, collision validity or tenant access. The trusted CP02 data registry must also validate the referenced asset-manifest version and any collision/seat/zone definitions.

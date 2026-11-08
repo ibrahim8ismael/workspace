@@ -10,6 +10,20 @@ import type { Response as HttpResponse } from 'supertest';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { decryptMail } from '@gather/delivery';
+import {
+  accountResponseSchema,
+  authenticatedResponseSchema,
+  csrfResponseSchema,
+  apiErrorResponseSchema,
+  messageResponseSchema,
+  workspaceResponseSchema,
+  workspacesResponseSchema,
+  membersResponseSchema,
+  invitationResponseSchema,
+  invitationsResponseSchema,
+  sessionsResponseSchema,
+  extendSessionResponseSchema,
+} from '@gather/contracts';
 import { IdentityModels } from '../dist/modules/identity/identity.models.js';
 import { TenancyModels } from '../dist/modules/tenancy/tenancy.models.js';
 import { SessionService, actor } from '../dist/modules/identity/sessions/session.service.js';
@@ -35,11 +49,18 @@ let outbox: OutboxService;
 
 function status(response: HttpResponse, expected: number) {
   expect(response.status, response.body.error?.code).toBe(expected);
+  if (response.status >= 400) apiErrorResponseSchema.parse(response.body);
 }
 class Client {
   cookie = '';
   csrf = '';
   capture(response: HttpResponse) {
+    if (response.status < 400) {
+      if (response.body.csrfToken) {
+        if (response.body.account) authenticatedResponseSchema.parse(response.body);
+        else csrfResponseSchema.parse(response.body);
+      } else if (response.body.message) messageResponseSchema.parse(response.body);
+    }
     const values = response.headers['set-cookie'];
     const cookie = (Array.isArray(values) ? values : [values]).find(
       (value: unknown) => typeof value === 'string' && value.startsWith('__Host-gather_session='),
@@ -393,6 +414,42 @@ describe('backend account authentication', () => {
 });
 
 describe('company roles and isolation', () => {
+  it('matches strict public contracts on real account, tenant, invitation and session responses', async () => {
+    const owner = await account();
+    const created = await owner.client.send('post', '/api/workspaces', {
+      name: 'Contract Company',
+      slug: `contract-${randomUUID()}`,
+    });
+    status(created, 201);
+    const id = workspaceResponseSchema.parse(created.body).workspace.id;
+    const me = await owner.client.get('/api/auth/me');
+    status(me, 200);
+    accountResponseSchema.parse(me.body);
+    const list = await owner.client.get('/api/workspaces');
+    status(list, 200);
+    workspacesResponseSchema.parse(list.body);
+    const detail = await owner.client.get(`/api/workspaces/${id}`);
+    status(detail, 200);
+    workspaceResponseSchema.parse(detail.body);
+    const members = await owner.client.get(`/api/workspaces/${id}/members`);
+    status(members, 200);
+    membersResponseSchema.parse(members.body);
+    const invited = await owner.client.send('post', `/api/workspaces/${id}/invitations`, {
+      email: 'contract-recipient@example.com',
+    });
+    status(invited, 201);
+    invitationResponseSchema.parse(invited.body);
+    const invitations = await owner.client.get(`/api/workspaces/${id}/invitations`);
+    status(invitations, 200);
+    invitationsResponseSchema.parse(invitations.body);
+    const sessions = await owner.client.get('/api/auth/sessions');
+    status(sessions, 200);
+    sessionsResponseSchema.parse(sessions.body);
+    const extended = await owner.client.send('post', '/api/auth/session/extend');
+    status(extended, 200);
+    extendSessionResponseSchema.parse(extended.body);
+  });
+
   it('creates one owner and an office record atomically and reconciles idempotent retries', async () => {
     const owner = await account();
     const key = randomUUID();

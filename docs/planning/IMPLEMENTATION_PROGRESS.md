@@ -40,8 +40,8 @@ Implementer: Codex. Scope and freeze gates: [CP01_CONTRACTS_AND_DECISIONS.md](CP
 
 | Batch | Scope | Status | Evidence / limits |
 | --- | --- | --- | --- |
-| CP01.0 | Record owner choices and affected documentation | Prepared for commit/push | Owner accepted D12, D13 self-service onboarding and D02 all-LiveKit; map/language/browser questions pending |
-| CP01.1 | Existing API runtime response/error contracts and compatibility/leak checks | In progress | Preserve current API behavior; independent of new office geometry |
+| CP01.0 | Record owner choices and affected documentation | Committed/pushed as `1dc5f62` | First three owner choices recorded; later Vivo/English/Chrome-Edge answers are recorded with CP01.1 |
+| CP01.1 | Existing API runtime response/error contracts and compatibility/leak checks | Validated; prepared for commit/push | Full pnpm check passed: five contracts tests, five shared tests and 33 backend tests; real HTTP safe projections/error/auth envelopes checked; all builds passed |
 | CP01.2 | Office/event/version contracts, budgets, retries and ownership matrix | Pending relevant choices | No office gateway/ticket endpoint is implemented by contract schemas |
 | CP01.3 | Final checks, documentation and packet status | Pending | Do not close unrecorded decisions or claim product/runtime acceptance |
 

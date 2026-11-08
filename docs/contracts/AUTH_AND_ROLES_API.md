@@ -2,6 +2,10 @@
 
 Status: initial backend implementation · Updated: 2026-11-06. Frontend integration is outside this change. Local/hosted verification results are recorded separately; this document is not production signoff.
 
+## Runtime contract coverage (CP01, 2026-11-08)
+
+Strict browser-safe response schemas for the existing account/workspace/member/invitation/session DTOs and response wrappers are exported from `packages/contracts/src/http/responses.ts`. Existing HTTP error codes and the exact safe envelope are exported from `packages/contracts/src/errors.ts`. Integration checks parse real responses; negative contract tests reject internal credentials/session/policy fields and raw exception content. This adds shared validation contracts without changing route behavior or installing a response interceptor.
+
 ## Browser/client contract
 
 The prefix is `/api`. Authentication uses only the opaque `__Host-gather_session` cookie (`Secure; HttpOnly; SameSite=Lax; Path=/`, no Domain). Raw session secrets never appear in JSON. Non-browser test clients can maintain the cookie explicitly; browser integration requires a suitable HTTPS/same-origin deployment and remains future work.

@@ -9,6 +9,10 @@ Auth and company APIs are implemented in the initial backend. The [auth and role
 - Preserve the existing `{ error: { code, message, requestId } }` response and status conventions. Use `400` for invalid input, `401` for invalid sessions, `403` for policy/Origin/CSRF denial, `404` for absent or mismatched scoped resources, `409` for state/version conflicts, `413` for oversized bodies, `415` for unsupported content type, `429` for throttling and `503` for unavailable authoritative dependencies. Keep enumeration-sensitive flows generic and use the existing `Retry-After` convention for throttling.
 - Preserve existing idempotency requirements. For new durable commands, specify actor/tenant/operation key scope, request fingerprint and stable result on retry where required. Session/ticket/media secrets stay out of generic idempotency storage. Fresh ticket/grant retries are rate-limited and reauthorized. Audit security mutations with safe metadata.
 
+## Existing response contracts
+
+CP01 adds strict runtime schemas for the current auth/company projections in `packages/contracts/src/http/responses.ts` and safe current HTTP errors in `packages/contracts/src/errors.ts`. These are exported validation contracts exercised against real HTTP responses; the API has not gained an automatic response interceptor. Office routes/events below remain separate pending runtime work.
+
 ## Implemented routes
 
 Paths are shown relative to `/api`. The linked reference supplies status codes, exact request shapes, CSRF bootstrap headers, token handling and idempotency rules. Implementation status describes available code. Hosted provider and deployed-origin checks remain in the [acceptance register](../planning/ACCEPTANCE.md).

@@ -4,13 +4,13 @@ Started: 2026-11-08. Implementer: Codex. Status: in progress. Parent: [completio
 
 ## Owner choices and freeze boundary
 
-[Owner decision record](../decisions/2026-11-08_CP01.md): D12 one company/workspace/office, D13 verified-user self-service creation, D02 all-LiveKit are accepted. Full company lifecycle, map/renderer validation and media enforcement acceptance remain separate gates. Initial map candidate, language and browser matrix are awaiting explicit answers.
+[Owner decision record](../decisions/2026-11-08_CP01.md): D12 one company/workspace/office, D13 verified-user self-service creation, D02 all-LiveKit are accepted. Full company lifecycle, map/renderer validation and media enforcement acceptance remain separate gates. The owner also selected Vivo as the initial map candidate, English-first UI and desktop Chrome/Edge validation. Map geometry/art and actual browser compatibility still require CP02/CP06 evidence.
 
 ## Batches
 
 | Batch | Deliverable | Dependencies / completion |
 | --- | --- | --- |
-| CP01.0 | Record explicit owner choices and open follow-ups across current docs | First three choices received; remaining scope questions pending |
+| CP01.0 | Record explicit owner choices and open follow-ups across current docs | Six owner choices received; technical validation/operational decisions remain scoped separately |
 | CP01.1 | Strict runtime response/error contracts for the existing auth/company API with leak/compatibility tests | Independent of map geometry and new runtime decisions; preserve current endpoints and response shapes |
 | CP01.2 | First office/event/version contracts, declared budgets and ownership/retry matrix | Wait for relevant choices; map-specific geometry/catalog freeze belongs to CP02. No gateway/ticket endpoint is implemented in CP01 |
 | CP01.3 | Reconcile contracts/docs, run checks and record remaining prerequisites | Do not mark the entire packet complete while an affected contract still requires an unrecorded decision |
@@ -32,3 +32,7 @@ Validate compatibility using real existing HTTP responses in backend integration
 ## Validation and limits
 
 Contract tests must reject overposting, invalid IDs/timestamps/versions/ranges, stale epoch/base-version application where specified, and secret-bearing projections. Full `pnpm check` and hosted CI run on implementation checkpoints. Local schemas/tests do not establish browser support, real media cutoff, provider delivery or A01–A11 release acceptance.
+
+## CP01.1 evidence
+
+On 2026-11-08, full `pnpm check` passed with five contracts tests, five shared tests and 33 backend tests, plus formatting, lint, typechecking and builds. A real HTTP/Mongo projection scenario covers account/company/invitation/session responses; existing error/auth helper checks now parse their strict envelopes. The SMTP/queue boundaries remain faked. No business endpoint, production response interceptor, office or media runtime was added. The lazy LiveKit bundle warning remains.

@@ -1,0 +1,18 @@
+{
+  "assetManifestVersion": "commons-art-v1-c8b015529d31999841c00e9b5962f226f694467b811540d5eb9c01740951770f",
+  "bounds": {
+    "height": 512,
+    "width": 768
+  },
+  "contentHash": "d980be0345e864c38446a3f4effeaf12534e4ae68c10926e3c190d69c1958364",
+  "coordinateUnits": "pixels",
+  "formatVersion": 1,
+  "geometryPath": "/maps/commons-v1-d980be0345e864c38446a3f4effeaf12534e4ae68c10926e3c190d69c1958364.json",
+  "mapId": "commons",
+  "mapVersion": "commons-v1-d980be0345e864c38446a3f4effeaf12534e4ae68c10926e3c190d69c1958364",
+  "spawn": {
+    "x": 368,
+    "y": 272
+  },
+  "tileSize": 32
+}

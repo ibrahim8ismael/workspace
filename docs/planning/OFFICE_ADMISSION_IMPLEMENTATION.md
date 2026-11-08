@@ -5,10 +5,10 @@ This proposal covers the first backend slice of M2, including B003 and B004 prer
 ## Scope and prerequisites
 
 - Use the current model of one company workspace with one office. The owner accepted D12 one company/workspace/office and D13 self-service verified-user creation on 2026-11-08. D13 lifecycle/offboarding remains open. The office slice uses the existing workspace status policy.
-- Before enabling ticket issuance, validate one fixed map from the cleared asset inventory. Agree on its immutable version, spawn and coordinate convention under D04/B004. A test fixture can unblock contract and policy work while the map is being selected.
+- Before enabling ticket issuance, use the original fixed Commons map selected under D04/B004. Use its trusted immutable manifest and validated spawn. Synthetic manifest fixtures are useful for contract tests.
 - Implement the HTTP bootstrap, ticket issuance and an internal atomic consume operation in `apps/api`. Cover both `owner` and `member`. Keep the first checkpoint backend-only. Schedule the Socket.IO consumer, React/Phaser integration, movement, seats and media as separate work. Use the existing non-Docker test setup.
 
-CP01 supplies [first office schemas and technical semantics](../contracts/OFFICE_V1.md). CP02 still must generate/approve actual Vivo map data and catalog; CP03 still must implement the routes/model/indexes/consume logic below. Schema fixtures are not approved maps or admission evidence.
+CP01 supplies the first office schemas and technical semantics. CP02 supplies the original Commons geometry and catalog. CP03 implements the routes, indexes and consume logic below. See [office v1](../contracts/OFFICE_V1.md) and the [Commons implementation plan](CP02_WORLD_AND_MAP.md).
 
 ## Stage 1 — Implement the frozen first HTTP contract
 
@@ -25,7 +25,7 @@ Use existing `401`, `403`, `415`, `429` and `503` behavior. Return `400 validati
 ## Stage 2 — Prepare the office and map
 
 1. Reuse the `offices` collection and its unique `workspaceId` index. Keep transactional office creation in tenancy. Put bootstrap and admission logic in `apps/api/src/modules/office`, reusing tenancy policy and session guards across modules.
-2. Put the first reviewed map manifest and spawn validation in `packages/world`, with no browser or NestJS dependency. The server chooses the map and spawn from the office's configured version. An unknown version, missing map or `pending-m0` returns `office_not_ready` from bootstrap and ticket issuance.
+2. Resolve the office's stored map version against the trusted manifest from `packages/assets`. Use the spawn and bounds verified with `packages/world`. An unknown version, missing map or `pending-m0` returns `office_not_ready` from bootstrap and ticket issuance.
 3. Once the map is approved, use its version for new offices and provide an explicit, repeatable backfill that updates only `mapVersion: pending-m0` on existing offices. Preserve office IDs and the workspace relationship. Verify that rerunning the backfill leaves configured offices intact.
 
 ## Stage 3 — Issue and consume a scoped ticket

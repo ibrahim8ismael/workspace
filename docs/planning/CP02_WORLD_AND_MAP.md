@@ -14,7 +14,7 @@ The external `opencode-delegate` skill supplies the brief/review workflow. Its r
 2. **CP02.2 — original map identity:** update and test the office v1 manifest and join-ticket contract for `commons-v1-<sha256>`. The shared schema rejects the former Vivo identity and `pending-m0`.
 3. **CP02.3 — original geometry, seats and zones:** the owner accepted an original replacement after the source review; see the [CP02 decision](../decisions/2026-11-08_CP02.md). Design `commons` independently, without copying Vivo's layout. Inventory spawn, walls, object/seat IDs, exits and zones. Record source notices separately for code, geometry and artwork.
    Validate immutable definitions, unique IDs, bounds, reachability from spawn and deterministic valid exits with shared tests. Preserve the seat ID and pixel conventions.
-4. **Immutable export/catalog:** deterministic UTF-8 geometry serialization and SHA-256, asset-manifest binding, approved registry and changed-content/new-version behavior. No hash is approved until the content and catalog checks pass.
+4. **CP02.4 — immutable export and catalog:** deterministic UTF-8 geometry, catalog and sprite digests, one trusted manifest and read-only drift checks.
 5. **Phaser sample:** one reviewed avatar/object, foot origins, nearest-neighbor sampling, sitting/standing occlusion and React lifecycle evidence. This is partial renderer evidence; full office integration remains CP06.
 
 Each completed batch updates [implementation progress](IMPLEMENTATION_PROGRESS.md), is independently checked, then committed and pushed. CP03 waits for an approved CP02 map/catalog; the collision foundation alone does not satisfy that dependency.
@@ -39,4 +39,14 @@ Codex designed the 24 × 16 tile floor plan for CP02.3. OpenCode implemented it 
 
 Each meeting room contains a table and two chairs. The static geometry defines 73 wall edges, eight furniture tiles, four chairs and 12 ordered exit entries. An independent graph traversal reached all 376 walkable tiles from the lobby and verified the three door openings and every chair exit. The quiet room has its own zone kind for later policy integration.
 
-The layout uses original dimensions, room boundaries, object positions, IDs and names. The source geometry is plain data and can feed the deterministic export after the asset catalog is selected. Retain the upstream notice for the adapted collision rules, as recorded in the [world package](../../packages/world/README.md).
+The layout uses original dimensions, room boundaries, object positions, IDs and names. The deterministic export binds the source geometry to the versioned art catalog. Retain the upstream notice for the adapted collision rules, as recorded in the [world package](../../packages/world/README.md).
+
+## Versioned output and adoption
+
+`pnpm build:commons` generates the map and catalog from the validated Commons layout and the original project sprites. The catalog records one appearance pair, standing and sitting views in four directions, pixel dimensions, foot origins, and the drawing order for table, avatar and chair. Its frame list represents static poses. See the [Commons art sources](../../packages/assets/source/commons/README.md).
+
+The catalog hashes the exact sprite bytes and refers to each sprite by its digest. Geometry and catalog use compact UTF-8 JSON with sorted object keys. Arrays retain their source order, including seat exit priority. A change in a sprite updates the catalog version, which also changes the geometry version because the geometry includes that catalog version.
+
+The first version is `commons-v1-d980be0345e864c38446a3f4effeaf12534e4ae68c10926e3c190d69c1958364` and binds catalog `commons-art-v1-c8b015529d31999841c00e9b5962f226f694467b811540d5eb9c01740951770f`. Both identifiers contain the full SHA-256 of their files. `pnpm check:commons` recomputes and compares all current output bytes. See the [geometry](../../packages/assets/maps/commons-v1-d980be0345e864c38446a3f4effeaf12534e4ae68c10926e3c190d69c1958364.json) and [catalog](../../packages/assets/manifests/commons-art-v1-c8b015529d31999841c00e9b5962f226f694467b811540d5eb9c01740951770f.json).
+
+CP03 reads the trusted manifest and matches it against the stored office version before admission. A map upgrade creates a new version and keeps the previous immutable files. At runtime, drain the office, retire its epoch, switch the configured map version, and require fresh bootstrap and admission. The browser sample comes next. See the [Commons manifest](../../packages/assets/manifests/commons-map.json).

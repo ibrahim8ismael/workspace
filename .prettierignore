@@ -8,5 +8,9 @@ docs/
 # Preserve imported static asset notices and metadata verbatim.
 apps/web/public/
 
+# Canonical hash-addressed Commons bytes are generated without a trailing newline.
+packages/assets/maps/commons-v1-*.json
+packages/assets/manifests/commons-art-v1-*.json
+
 # Preserve the vendored EGM runtime exactly as distributed upstream.
 plugins/egm/

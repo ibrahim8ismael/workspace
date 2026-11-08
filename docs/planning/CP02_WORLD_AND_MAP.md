@@ -50,3 +50,9 @@ The catalog hashes the exact sprite bytes and refers to each sprite by its diges
 The first version is `commons-v1-d980be0345e864c38446a3f4effeaf12534e4ae68c10926e3c190d69c1958364` and binds catalog `commons-art-v1-c8b015529d31999841c00e9b5962f226f694467b811540d5eb9c01740951770f`. Both identifiers contain the full SHA-256 of their files. `pnpm check:commons` recomputes and compares all current output bytes. See the [geometry](../../packages/assets/maps/commons-v1-d980be0345e864c38446a3f4effeaf12534e4ae68c10926e3c190d69c1958364.json) and [catalog](../../packages/assets/manifests/commons-art-v1-c8b015529d31999841c00e9b5962f226f694467b811540d5eb9c01740951770f.json).
 
 CP03 reads the trusted manifest and matches it against the stored office version before admission. A map upgrade creates a new version and keeps the previous immutable files. At runtime, drain the office, retire its epoch, switch the configured map version, and require fresh bootstrap and admission. The browser sample comes next. See the [Commons manifest](../../packages/assets/manifests/commons-map.json).
+
+## CP02.5 renderer sample plan
+
+Use `/?commons-preview=1` as a development-only entry point. Load the reviewed geometry, catalog and sprite URLs through Vite. Show the first chair and table in the northwest meeting room. Anchor the standing and sitting poses at the same tile center, use nearest-neighbor sampling, and draw the chair foreground over the seated avatar. React buttons expose Sit, Stand, Close preview and Open preview to keyboard users.
+
+Verify the rendered pixels and pose anchor in a local browser. Close and reopen the scene to check that each open scene owns one canvas and that closing it releases the Phaser game. Check the production build for the absence of the sample and Phaser bundle. Record the observed browser and test results under A06. Full office rendering, runtime inputs and pilot browser coverage follow later.

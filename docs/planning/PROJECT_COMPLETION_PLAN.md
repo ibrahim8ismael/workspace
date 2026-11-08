@@ -107,6 +107,8 @@ Exit: all identified status/model discrepancies have either a correction or a li
 
 ### CP01 — Close boundary decisions and freeze the first interfaces
 
+Status: in progress (2026-11-08, Codex). [Owner choices](../decisions/2026-11-08_CP01.md) accept D12, D13 onboarding and D02; see the [scoped contract work](CP01_CONTRACTS_AND_DECISIONS.md) and [progress](IMPLEMENTATION_PROGRESS.md). Other questions retain their recorded gates.
+
 Deliverable: decision records and strict shared contracts for the next working slice.
 
 1. Resolve D12 and the required D13 onboarding subset; preserve current owner/member semantics and independent company roles. Record map/browser choice and D02/D03 experiment scope.

@@ -40,7 +40,7 @@ Start with one modular NestJS process owning HTTP, Socket.IO and the office simu
 
 ## Shared invariants
 
-- B2B SaaS is the product requirement. Recommended MVP: one company per workspace/tenant. Global identities have independent company memberships; platform operations are separate from customer roles. Resolve any organization hierarchy before schema freeze.
+- B2B SaaS is the product requirement. Accepted MVP (2026-11-08): one company per workspace/tenant with one office. Global identities have independent company memberships; platform operations are separate from customer roles. A future organization hierarchy requires a separate scope/migration decision.
 - Shared-service budgets must isolate company workloads; measure noisy-neighbor and shared media-shutdown impact. See the [product plan](../product/B2B_SAAS.md).
 
 - MongoDB is authoritative for identity, session and tenant policy. Redis is not a substitute for current authorization.

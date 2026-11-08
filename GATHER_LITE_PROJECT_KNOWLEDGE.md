@@ -1,6 +1,6 @@
 # Gather Lite — Project Knowledge and Implementation Brief
 
-**Version:** 1.4
+**Version:** 1.5
 **Updated:** 2026-11-08
 **Status:** Architecture and migration brief; initial backend auth/company APIs implemented; frontend, office/media integration and production gates remain pending.
 **Audience:** The project owner, developers, and Codex working in the implementation repository.
@@ -24,7 +24,7 @@ The owner's conversational preference is Arabic. Technical documentation is main
 
 Gather Lite is a browser-based virtual office: people walk around a shared 2D space, see who is available, approach colleagues, join meeting areas, and communicate through voice, video, and screen sharing.
 
-**Agreed product clarification (2026-11-05):** Gather Lite is a **B2B SaaS** product for companies and their teams. Company/customer tenancy, isolated access and company administration are core planning requirements. The recommended MVP mapping is one customer company per workspace/tenant with one office; whether an explicit organization entity must own multiple workspaces is open and must be resolved before freezing tenant schemas. A global user identity may hold independent memberships in multiple customer tenants; permissions never carry across them. Platform operations privileges are separate from customer owner/member roles. See [B2B SaaS product plan](docs/product/B2B_SAAS.md).
+**Agreed product clarification (2026-11-05):** Gather Lite is a **B2B SaaS** product for companies and their teams. Company/customer tenancy, isolated access and company administration are core planning requirements. The owner accepted one customer company per workspace/tenant with one office on 2026-11-08 (D12); a parent organization/multiple-workspace hierarchy is outside MVP and requires a separate future decision. A global user identity may hold independent memberships in multiple customer tenants; permissions never carry across them. Platform operations privileges are separate from customer owner/member roles. See [B2B SaaS product plan](docs/product/B2B_SAAS.md).
 
 B2B SaaS positioning does not by itself change the existing decision to exclude payments from MVP. Pricing, subscriptions, commercial entitlements, enterprise identity features and contractual service levels remain future product decisions.
 
@@ -46,6 +46,8 @@ This is a frontend reuse and backend migration project, with a renderer rewrite.
 
 **Documentation reconciliation (2026-11-08):** The [drift snapshot](docs/planning/2026-11-08_DRIFT_REPORT.md), [completion plan](docs/planning/PROJECT_COMPLETION_PLAN.md) and [implementation progress](docs/planning/IMPLEMENTATION_PROGRESS.md) distinguish implemented/local checks from pending browser, office, media and operational evidence. This update changes documentation only; no pilot gate is closed.
 
+**CP01 owner choices (2026-11-08):** One company/workspace/office, verified-user self-service creation and all-LiveKit media are accepted. See [decision details](docs/decisions/2026-11-08_CP01.md). No lifecycle/supervision or pilot acceptance is implied.
+
 ## 3. Current stack and superseded decisions
 
 | Layer | Current direction | Status and responsibility |
@@ -60,7 +62,7 @@ This is a frontend reuse and backend migration project, with a renderer rewrite.
 | Cache and temporary coordination | Redis | Agreed; usage and correctness requirements must be explicit |
 | Background jobs | BullMQ + dedicated production Redis | Retained from prior planning: email, outbox delivery, retryable work |
 | Audio/video transport | Self-hosted LiveKit OSS SFU | Agreed integration; LiveKit handles WebRTC media and signaling |
-| Media topology | LiveKit for both proximity and meeting calls | Recommended MVP default; owner has not explicitly finalized P2P versus SFU for proximity |
+| Media topology | LiveKit for both proximity and meeting calls | Agreed by owner on 2026-11-08 (D02); D03 enforcement proof remains required |
 | Ingress | Caddy | Agreed: TLS, static frontend hosting and HTTP/Socket.IO routing |
 | Packaging/deployment | Docker and Docker Compose initially | Agreed: separately runnable services and persistent volumes |
 | Media revocation enforcement | Application authorization plus a proven signaling/control enforcement design | Retained security requirement; Docker-compatible mechanism needs an early proof of concept |
@@ -236,9 +238,9 @@ With LiveKit, do not recreate its SDP/ICE exchange over Socket.IO. Application e
 
 ### 8.1 Topology choice
 
-**Recommended MVP default:** LiveKit for proximity and group meetings, with no parallel P2P stack. This reduces negotiation/reconnect code paths and centralizes media access control, at the cost of SFU bandwidth and operational responsibility.
+**Accepted by owner (2026-11-08, D02):** LiveKit for proximity and group meetings, with no parallel production P2P stack. This reduces negotiation/reconnect code paths and centralizes media access control, at the cost of SFU bandwidth and operational responsibility.
 
-**Alternative discussed:** native browser P2P for proximity, LiveKit for groups, matching upstream. NestJS/Socket.IO would relay SDP/ICE and validate signaling recipients; TURN would still be needed. This adds two media lifecycles and makes server-enforced termination of established direct media harder. It is not selected by the owner yet. Resolve before implementing media; do not build both by default.
+**Alternative discussed:** native browser P2P for proximity, LiveKit for groups, matching upstream. NestJS/Socket.IO would relay SDP/ICE and validate signaling recipients; TURN would still be needed. This adds two media lifecycles and makes server-enforced termination of established direct media harder. The owner selected all-LiveKit on 2026-11-08; this hybrid alternative is not the MVP direction.
 
 mediasoup was considered: an OSS SFU toolkit using Node APIs and C++ media workers, requiring us to own more signaling, room and transport orchestration. LiveKit remains the chosen integration because it already supplies these components. Self-hosted OSS is distinct from LiveKit Cloud features.
 
@@ -446,8 +448,8 @@ These are full release checks. The [auth evidence](docs/planning/AUTH_IMPLEMENTA
 
 | Decision | Planning default / required resolution |
 |---|---|
-| B2B customer tenancy | Agreed B2B SaaS; recommend one company per workspace for MVP; resolve organization → multiple-workspace hierarchy before freezing schemas |
-| Proximity media topology | Recommend all-LiveKit; resolve before implementing media |
+| B2B customer tenancy | Accepted 2026-11-08: one company/workspace/office; self-service creation by verified users. D13 lifecycle remains open |
+| Proximity media topology | Accepted 2026-11-08: all-LiveKit; implement only after D03 enforcement proof |
 | Frontend build system | Vite selected for the scaffold; use Next.js only with an explicit requirement and owner decision |
 | Exact upstream import | Imported code/public assets are pinned and inventoried; review new reuse/derived artwork before adding it |
 | LiveKit revocation enforcement under Docker | Retain security requirement; choose and prove independent supervision in Milestone 0 |

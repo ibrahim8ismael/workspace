@@ -8,13 +8,13 @@ Gather Lite provides virtual offices to businesses and their teams. The customer
 
 ## Tenant model
 
-Recommended MVP default: **one customer company = one workspace/tenant = one fixed office**. This reuses the currently planned workspace and membership model. A person has a global account and independent company memberships; joining another company grants no access to the first company's data or calls. Present the current company clearly in navigation, invitations and administrative actions.
+Accepted MVP model (owner, 2026-11-08): **one customer company = one workspace/tenant = one fixed office**. This reuses the currently planned workspace and membership model. A person has a global account and independent company memberships; joining another company grants no access to the first company's data or calls. Present the current company clearly in navigation, invitations and administrative actions.
 
-Open before schema freeze: whether customers need multiple workspaces under one organization from the first release. If required, add an organization entity, explicit organization membership/roles, and organization-to-workspace policy relationships; update indexes, API scopes, quotas and runtime/media policy consistently. The current note does not approve that additional hierarchy automatically. See D12 in the [decision register](../decisions/README.md).
+D12 is resolved for MVP: do not add a parent organization/multiple-workspace hierarchy. A future hierarchy needs a separately approved migration and consistent updates to indexes, API scopes, quotas and runtime/media policy. See the [CP01 decision record](../decisions/2026-11-08_CP01.md).
 
 ## Company onboarding and administration
 
-- Company onboarding creates the customer tenant, initial owner and office transactionally. Choose self-service, operator-assisted pilots or a combination before implementing the full flow (D13).
+- Company onboarding creates the customer tenant, initial owner and office transactionally. The owner selected verified-user self-service creation on 2026-11-08 (D13 onboarding). Existing engineering quotas still apply; full lifecycle/retention/export decisions remain open.
 - Owners invite verified team members, remove access and transfer ownership through current tenant policy. Owner/member remain the MVP roles; a separate company admin role is a future choice.
 - A global account can switch only among its current authorized companies. Invitations identify the intended company and recipient; accepting one cannot grant unrelated tenant access.
 - Platform operators are separate from customer owners. Company ownership grants no infrastructure or cross-company privileges. Any future support access requires explicit scoped authorization and an audit trail; no implicit impersonation or global support bypass.
@@ -36,7 +36,7 @@ SSO, SCIM provisioning, custom domains, organization hierarchies, advanced roles
 
 ## Planning acceptance
 
-- [ ] Resolve customer-to-workspace cardinality and onboarding mode before tenant schema/flow freeze.
+- [x] Record owner choice: one company/workspace/office and verified-user self-service onboarding. This is a decision checkpoint, not runtime acceptance.
 - [ ] Verify company A cannot read company B's APIs, socket state, invitations, jobs or media with substituted IDs.
 - [ ] Verify a user in two companies retains independent roles, current-company context and membership revocation behavior.
 - [ ] Verify tenant suspension/offboarding behavior once specified, including live office/media removal.

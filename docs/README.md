@@ -8,7 +8,7 @@ Gather Lite is a **B2B SaaS virtual office for companies and their teams**, deli
 
 ## Product direction
 
-B2B SaaS is an agreed requirement. Read the [B2B SaaS product plan](product/B2B_SAAS.md) for company tenancy, onboarding, administration and commercial scope. One company per workspace is the recommended MVP mapping; a separate organization hierarchy remains open. Payments remain excluded from MVP.
+B2B SaaS is an agreed requirement. Read the [B2B SaaS product plan](product/B2B_SAAS.md) for company tenancy, onboarding, administration and commercial scope. The owner accepted one company/workspace/office and verified-user self-service onboarding on 2026-11-08; a future organization hierarchy requires a separate decision. Payments remain excluded from MVP.
 
 ## Start here
 
@@ -22,7 +22,7 @@ B2B SaaS is an agreed requirement. Read the [B2B SaaS product plan](product/B2B_
 
 ## Source precedence
 
-- [GATHER_LITE_PROJECT_KNOWLEDGE.md](../GATHER_LITE_PROJECT_KNOWLEDGE.md) v1.4 is the authoritative supplied architecture/migration brief. Its agreed, recommended and open statuses remain distinct.
+- [GATHER_LITE_PROJECT_KNOWLEDGE.md](../GATHER_LITE_PROJECT_KNOWLEDGE.md) v1.5 is the authoritative supplied architecture/migration brief. Its agreed, recommended and open statuses remain distinct.
 - [GATHER_LITE_TECH_STACK.md](../GATHER_LITE_TECH_STACK.md) is historical where it conflicts with that brief. In particular, Next.js, Colyseus and a systemd-only media deployment must not silently replace the current React/Phaser/NestJS/Socket.IO/Docker direction.
 - These docs decompose that brief into initial entity and delivery plans. New names, routes, field choices and task IDs are proposals; they do not establish owner approval or implemented behavior.
 - Source links are retained for traceability; this documentation task did not independently reverify upstream libraries, versions or capabilities.

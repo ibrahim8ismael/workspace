@@ -32,4 +32,17 @@ CP00.1 hosted [CI passed](https://github.com/ibrahim8ismael/workspace/actions/ru
 
 Documentation validation checks local file links, Markdown table column counts, code-fence balance, `pnpm format:check` and `git diff --check`. Existing full local `pnpm check` evidence includes 32 backend/five shared tests; application code has not changed in CP00. Full hosted CI runs on each main-branch push; a newer push can cancel an older run. Source implementation/provider/office/media/restore acceptance remains separate.
 
-Next packet: **CP01 — decisions and first contracts**. D12/D13, the approved map/catalog and media topology/supervision decisions retain their recorded open status. CP00 did not choose them or start CP02/CP03 implementation.
+At CP00 closure, CP01 decisions remained open. CP01 has now started below; explicit later owner choices are recorded without changing that historical boundary.
+
+## CP01 — decisions and first contracts (in progress)
+
+Implementer: Codex. Scope and freeze gates: [CP01_CONTRACTS_AND_DECISIONS.md](CP01_CONTRACTS_AND_DECISIONS.md).
+
+| Batch | Scope | Status | Evidence / limits |
+| --- | --- | --- | --- |
+| CP01.0 | Record owner choices and affected documentation | Prepared for commit/push | Owner accepted D12, D13 self-service onboarding and D02 all-LiveKit; map/language/browser questions pending |
+| CP01.1 | Existing API runtime response/error contracts and compatibility/leak checks | In progress | Preserve current API behavior; independent of new office geometry |
+| CP01.2 | Office/event/version contracts, budgets, retries and ownership matrix | Pending relevant choices | No office gateway/ticket endpoint is implemented by contract schemas |
+| CP01.3 | Final checks, documentation and packet status | Pending | Do not close unrecorded decisions or claim product/runtime acceptance |
+
+CP00 closing commit `d5c14fd` was pushed and [hosted CI passed](https://github.com/ibrahim8ismael/workspace/actions/runs/42476452849).

@@ -38,7 +38,7 @@ Use Engine.IO admission and namespace policy together. Socket.IO documentation e
 | M3 | `conversation:leave` | Client → server | Target current conversation ID/version. Leave and reconcile its generation, suppress immediate automatic rematching until eligibility resets |
 | M4 | `meeting:join`, `meeting:leave` | Client → server | Fixed zone ID and current version where applicable. Enforce physical/access/capacity policy. Membership and media readiness arrive via `conversation:update` |
 
-Optional bounded reactions require a separate scope decision. Persistent chat and SDP/ICE relay are outside the selected application event inventory.
+Optional bounded reactions require a separate scope decision. Persistent chat and SDP/ICE relay are outside the selected application event inventory. D02 was explicitly accepted on 2026-11-08: LiveKit handles media for both call types; there is no new production P2P relay path.
 
 ## Runtime and continuing authority
 

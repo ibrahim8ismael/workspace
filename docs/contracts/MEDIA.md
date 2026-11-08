@@ -1,6 +1,6 @@
 # WebRTC and LiveKit integration plan
 
-The recommended D02 topology uses self-hosted LiveKit for opt-in proximity audio and fixed private meetings. The browser uses native WebRTC through the LiveKit client SDK. The production media path depends on the D03 enforcement spike. See the [decision register](../decisions/README.md) and [implementation sequence](../planning/BACKEND_SYSTEM_IMPLEMENTATION.md).
+The owner-accepted D02 topology (2026-11-08) uses self-hosted LiveKit for opt-in proximity audio and fixed private meetings. The browser uses native WebRTC through the LiveKit client SDK. The production media path depends on the D03 enforcement spike. See the [decision register](../decisions/README.md) and [implementation sequence](../planning/BACKEND_SYSTEM_IMPLEMENTATION.md).
 
 ## Libraries and network boundaries
 

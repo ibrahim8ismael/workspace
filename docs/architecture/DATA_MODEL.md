@@ -4,7 +4,7 @@ Status: initial identity/tenant/delivery models implemented; office/runtime addi
 
 ## Customer tenancy
 
-B2B SaaS customer isolation is required. The planning default maps a company to `workspaces`; a global user holds independent tenant memberships. Resolve D12 before schema freeze if a customer must own multiple workspaces under an organization. No organization or subscription collection is selected yet. Tenant-specific queries, indexes, idempotency/cache keys, jobs and audits must retain explicit scope.
+B2B SaaS customer isolation is required. The owner accepted one company/workspace/office for MVP under D12 on 2026-11-08; a global user holds independent tenant memberships. A future multiple-workspace organization hierarchy needs a separate decision and migration. No organization or subscription collection is selected yet. Tenant-specific queries, indexes, idempotency/cache keys, jobs and audits must retain explicit scope.
 
 ## Durable records
 

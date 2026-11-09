@@ -334,7 +334,19 @@ The live E2E now follows the original Commons northwest room entrance, positions
 | --- | --- | --- | --- |
 | CP06.6 | Preserve shared seat state through deltas, stop movement on key release, verify wall collision and race two browsers for one seat | Locally verified against OrbStack app services | `pnpm test:e2e:live`: 1 Chromium test passed through real Caddy/API/Socket.IO; `pnpm test:web`: 32 tests passed; `pnpm test:e2e`: 1 mocked browser test passed, live test skipped as intended; web typecheck, production build and ESLint passed |
 
-The test adds persistent local accounts, workspaces and Mailpit messages; do not point it at shared or production data. Browser reconnect/version recovery, second-company isolation, route/renderer teardown, accessibility/visual review, shared command budgets and load remain. Next: CP06.7 closes the browser recovery and isolation gaps, or records each as a separate acceptance gate.
+The test adds persistent local accounts, workspaces and Mailpit messages; do not point it at shared or production data. At CP06.6, browser reconnect/version recovery, company isolation, route/renderer teardown, accessibility/visual review, shared command budgets and load remain. CP06.7 closes the office roster isolation and renderer route-lifecycle slices; browser recovery/accessibility and shared budgets/load remain for later acceptance.
+
+## CP06.7 — Company isolation and Phaser route lifecycle
+
+The live E2E now creates a second workspace for the owner. While the member is connected to the first workspace's office, the owner enters the second office. Each browser sees exactly one participant and its roster excludes the other company's user. This is a browser-office slice of isolation evidence; it does not close the broader HTTP/invitation/media/company-policy gate A11.
+
+The test returns the second browser from the office to company details, verifies the live Phaser canvas has been removed, then reopens and reenters the office and verifies exactly one canvas is mounted. Both clients leave cleanly afterward.
+
+| Batch | Scope | Status | Evidence |
+| --- | --- | --- | --- |
+| CP06.7 | Two-company office roster isolation and live scene route teardown/reopen | Locally verified against OrbStack app services | `pnpm test:e2e:live`: 1 Chromium test passed, including separate company offices, exclusive rosters and one canvas after remount. ESLint passed for the expanded live test |
+
+These checks create additional local test workspaces and Mailpit messages that persist in the local development volumes. Do not run against shared or production data. Remaining CP06 work is browser version-gap/reconnect recovery and keyboard/accessibility/visual review; next packet: CP06.8.
 
 ## CP04.5a — security and operations boundary review
 

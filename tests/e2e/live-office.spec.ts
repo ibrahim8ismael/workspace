@@ -178,6 +178,7 @@ test('live two-browser admission, movement, collision, and seat contention', asy
   const member = await createAccount(memberEmail);
   let ownerContext: Awaited<ReturnType<typeof companyPage>>['context'] | undefined;
   let memberContext: Awaited<ReturnType<typeof companyPage>>['context'] | undefined;
+  let ownerSecondContext: Awaited<ReturnType<typeof companyPage>>['context'] | undefined;
   try {
     const workspaceResponse = await postJson(
       owner.client,
@@ -324,9 +325,51 @@ test('live two-browser admission, movement, collision, and seat contention', asy
     await expect(memberPage.getByText('1 person in the office')).toBeVisible();
     await memberPage.getByRole('button', { name: 'Leave office' }).click();
     await expect(memberPage.getByText('Not connected to the office.')).toBeVisible();
+
+    const secondWorkspaceResponse = await postJson(
+      owner.client,
+      '/api/workspaces',
+      { name: `CP06.7 ${randomUUID().slice(0, 8)}`, slug: `cp067-${randomUUID().slice(0, 12)}` },
+      owner.csrf,
+      true,
+    );
+    expect(secondWorkspaceResponse.status()).toBe(201);
+    const secondWorkspaceBody = (await secondWorkspaceResponse.json()) as {
+      workspace: { id: string };
+    };
+    const ownerSecondOffice = await companyPage(
+      browser,
+      owner.client,
+      secondWorkspaceBody.workspace.id,
+    );
+    ownerSecondContext = ownerSecondOffice.context;
+    const ownerSecondPage = ownerSecondOffice.page;
+    await memberPage.getByRole('button', { name: 'Enter office' }).click();
+    await ownerSecondPage.getByRole('button', { name: 'Enter office' }).click();
+    await expect(memberPage.getByText('1 person in the office')).toBeVisible();
+    await expect(ownerSecondPage.getByText('1 person in the office')).toBeVisible();
+    const memberRoster = memberPage.getByRole('list', { name: 'People in the office' });
+    const ownerRoster = ownerSecondPage.getByRole('list', { name: 'People in the office' });
+    await expect(memberRoster).toContainText(memberName);
+    await expect(memberRoster).not.toContainText(ownerName);
+    await expect(ownerRoster).toContainText(ownerName);
+    await expect(ownerRoster).not.toContainText(memberName);
+
+    await ownerSecondPage.getByRole('button', { name: 'Back to company details' }).click();
+    await expect(
+      ownerSecondPage.getByRole('button', { name: 'Open office preview' }),
+    ).toBeVisible();
+    await expect(ownerSecondPage.locator('.live-commons-scene canvas')).toHaveCount(0);
+    await ownerSecondPage.getByRole('button', { name: 'Open office preview' }).click();
+    await ownerSecondPage.getByRole('button', { name: 'Enter office' }).click();
+    await expect(ownerSecondPage.getByText('1 person in the office')).toBeVisible();
+    await expect(ownerSecondPage.locator('.live-commons-scene canvas')).toHaveCount(1);
+    await ownerSecondPage.getByRole('button', { name: 'Leave office' }).click();
+    await memberPage.getByRole('button', { name: 'Leave office' }).click();
   } finally {
     await ownerContext?.close();
     await memberContext?.close();
+    await ownerSecondContext?.close();
     await owner.client.dispose();
     await member.client.dispose();
   }

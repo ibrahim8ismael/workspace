@@ -21,6 +21,8 @@ interface OfficeSocketData {
   officeReservation?: OfficeReservation;
   officeCleanupRegistered?: boolean;
   officeLeaseTimer?: ReturnType<typeof setTimeout>;
+  officeLeaseExpiryTimer?: ReturnType<typeof setTimeout>;
+  officeLeaseDeadline?: number;
 }
 type OfficeSocket = Socket & { data: Socket['data'] & OfficeSocketData };
 
@@ -131,7 +133,10 @@ export class OfficeGateway
 
   private cleanup(socket: OfficeSocket) {
     if (socket.data.officeLeaseTimer) clearTimeout(socket.data.officeLeaseTimer);
+    if (socket.data.officeLeaseExpiryTimer) clearTimeout(socket.data.officeLeaseExpiryTimer);
     delete socket.data.officeLeaseTimer;
+    delete socket.data.officeLeaseExpiryTimer;
+    delete socket.data.officeLeaseDeadline;
     const ticket = socket.data.officeAdmission;
     const reservation = socket.data.officeReservation;
     if (!ticket || !reservation) return;
@@ -162,9 +167,26 @@ export class OfficeGateway
     ticket: ConsumedOfficeTicket,
     leaseDeadline: number,
   ) {
-    socket.data.officeLeaseTimer = setTimeout(() => {
-      void this.checkAuthorizationLease(socket, ticket, leaseDeadline);
-    }, OFFICE_LIMITS.socketPolicyCheckIntervalMs);
+    if (socket.data.officeLeaseTimer) clearTimeout(socket.data.officeLeaseTimer);
+    if (socket.data.officeLeaseExpiryTimer) clearTimeout(socket.data.officeLeaseExpiryTimer);
+    socket.data.officeLeaseDeadline = leaseDeadline;
+    socket.data.officeLeaseExpiryTimer = setTimeout(
+      () => {
+        if (socket.connected && socket.data.officeLeaseDeadline === leaseDeadline) {
+          this.endAccess(socket, 'server_unavailable');
+        }
+      },
+      Math.max(0, leaseDeadline - performance.now()),
+    );
+    socket.data.officeLeaseTimer = setTimeout(
+      () => {
+        void this.checkAuthorizationLease(socket, ticket, leaseDeadline);
+      },
+      Math.min(
+        OFFICE_LIMITS.socketPolicyCheckIntervalMs,
+        Math.max(0, leaseDeadline - performance.now()),
+      ),
+    );
   }
 
   private async checkAuthorizationLease(

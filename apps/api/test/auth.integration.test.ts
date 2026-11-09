@@ -1529,6 +1529,39 @@ describe('office socket admission', () => {
     }
   });
 
+  it('expires a socket lease before a delayed policy response can renew it', async () => {
+    const owner = await account();
+    const workspaceId = await workspace(owner);
+    const { ticket } = await issueTicket(owner, workspaceId);
+    const client = officeSocket({ ticket, protocolVersion: 1 });
+    let releaseDelayedPolicy: (() => void) | undefined;
+    const admission = app.get(OfficeAdmissionService);
+    try {
+      const ready = nextSocketEvent<unknown>(client, 'office:ready');
+      await connectSocket(client);
+      await ready;
+      const authorization = vi.spyOn(admission, 'isSocketAuthorized').mockImplementation(
+        () =>
+          new Promise<boolean>((resolve) => {
+            releaseDelayedPolicy = () => resolve(true);
+          }),
+      );
+      try {
+        const accessEnded = nextSocketEvent<Record<string, unknown>>(client, 'office:access-ended');
+        const disconnected = nextSocketEvent<string>(client, 'disconnect');
+        await expect(accessEnded).resolves.toMatchObject({ reason: 'server_unavailable' });
+        await expect(disconnected).resolves.toBeTruthy();
+        releaseDelayedPolicy?.();
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(client.connected).toBe(false);
+      } finally {
+        authorization.mockRestore();
+      }
+    } finally {
+      client.disconnect();
+    }
+  });
+
   it('rejects missing and foreign Origins before consuming the ticket', async () => {
     const owner = await account();
     const workspaceId = await workspace(owner);

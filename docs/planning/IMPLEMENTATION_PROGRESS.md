@@ -310,6 +310,8 @@ Codex connected the map controls to `presence:update`, `seat:sit` and `seat:stan
 
 The mocked browser transport does not prove two real clients competing for the same chair. Full Socket.IO seat-race, denial UX, reconnect resync and browser access-loss behavior remain acceptance work.
 
+After CP06.4, the owner-authorized OrbStack `app` profile was rebuilt from the pushed source. Both API and Caddy containers returned healthy; HTTPS `/` and `/api/health/live` each returned HTTP 200. Existing MongoDB, Redis, Mailpit and worker containers remained running with their retained local volumes. This verifies the rebuilt local delivery stack only; no real account was created and no authenticated browser-to-API/socket session or two-browser test was performed in this runtime check.
+
 ## CP04.5a — security and operations boundary review
 
 Codex reviewed the current HTTP configuration, password service, audit model, local proxy and existing evidence. The review found the local implementation controls and the outstanding deployment gaps; it made no runtime/security-policy changes. See the [CP04.5a findings](CP04_BROWSER_AND_DELIVERY.md#cp045a--security-and-operations-boundary-review).

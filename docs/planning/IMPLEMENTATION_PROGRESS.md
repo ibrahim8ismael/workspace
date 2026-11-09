@@ -346,7 +346,17 @@ The test returns the second browser from the office to company details, verifies
 | --- | --- | --- | --- |
 | CP06.7 | Two-company office roster isolation and live scene route teardown/reopen | Locally verified against OrbStack app services | `pnpm test:e2e:live`: 1 Chromium test passed, including separate company offices, exclusive rosters and one canvas after remount. ESLint passed for the expanded live test |
 
-These checks create additional local test workspaces and Mailpit messages that persist in the local development volumes. Do not run against shared or production data. Remaining CP06 work is browser version-gap/reconnect recovery and keyboard/accessibility/visual review; next packet: CP06.8.
+These checks create additional local test workspaces and Mailpit messages that persist in the local development volumes. Do not run against shared or production data. Remaining CP06 work is deliberate socket reconnect recovery and keyboard/accessibility/visual review; next packet: CP06.9.
+
+## CP06.8 — Browser snapshot recovery after a dropped delta
+
+The live test now proxies one browser's real Socket.IO frames while leaving the second browser and API untouched. After arming the proxy, it drops the owner's next `world:delta` when availability changes to Busy. The observer stays stale and has no Busy roster entry. The owner changes to Away; this next delta has a base version beyond the observer's current version. The browser detects the gap, sends `world:resync`, receives the API's full `world:snapshot`, and renders Away in the roster.
+
+| Batch | Scope | Status | Evidence |
+| --- | --- | --- | --- |
+| CP06.8 | Prove browser-side version-gap detection and full-snapshot recovery over the actual Socket.IO path | Locally verified against OrbStack app services | `pnpm test:e2e:live`: 1 Chromium test passed with one server delta deliberately withheld; the test observed the subsequent resync request, full snapshot and recovered Away state |
+
+This closes version-gap recovery for a dropped delta. Unexpected socket disconnect/fresh-ticket reconnect and broader accessibility/visual signoff remain; next packet: CP06.9.
 
 ## CP04.5a — security and operations boundary review
 

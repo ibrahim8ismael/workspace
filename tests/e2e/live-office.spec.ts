@@ -147,6 +147,34 @@ async function moveToTile(
   );
 }
 
+async function interceptWorldVersionGap(page: import('@playwright/test').Page) {
+  const probe = {
+    armed: false,
+    droppedDelta: false,
+    resyncRequested: false,
+    snapshotReceived: false,
+  };
+  await page.routeWebSocket(/\/socket\.io\//, (webSocket) => {
+    const server = webSocket.connectToServer();
+    webSocket.onMessage((message) => {
+      if (probe.armed && typeof message === 'string' && message.includes('"world:resync"'))
+        probe.resyncRequested = true;
+      server.send(message);
+    });
+    server.onMessage((message) => {
+      if (typeof message === 'string' && probe.armed) {
+        if (!probe.droppedDelta && message.includes('"world:delta"')) {
+          probe.droppedDelta = true;
+          return;
+        }
+        if (message.includes('"world:snapshot"')) probe.snapshotReceived = true;
+      }
+      webSocket.send(message);
+    });
+  });
+  return probe;
+}
+
 async function companyPage(browser: Browser, client: APIRequestContext, workspaceId: string) {
   const context = await browser.newContext({
     storageState: await client.storageState(),
@@ -219,6 +247,7 @@ test('live two-browser admission, movement, collision, and seat contention', asy
     memberContext = memberOffice.context;
     const ownerPage = ownerOffice.page;
     const memberPage = memberOffice.page;
+    const gapProbe = await interceptWorldVersionGap(memberPage);
 
     await ownerPage.getByRole('button', { name: 'Enter office' }).click();
     await expect(ownerPage.getByText('1 person in the office')).toBeVisible();
@@ -243,14 +272,18 @@ test('live two-browser admission, movement, collision, and seat contention', asy
       })
       .toBe(true);
 
+    const ownerName = `E2E ${ownerEmail.split('@')[0]}`;
+    gapProbe.armed = true;
     await ownerPage.getByRole('button', { name: 'Busy' }).click();
-    await expect(memberPage.locator('[data-availability="busy"]')).toContainText(
-      `E2E ${ownerEmail.split('@')[0]}`,
-    );
+    await expect.poll(() => gapProbe.droppedDelta).toBe(true);
+    await expect(memberPage.locator('[data-availability="busy"]')).toHaveCount(0);
+    await ownerPage.getByRole('button', { name: 'Away' }).click();
+    await expect.poll(() => gapProbe.resyncRequested).toBe(true);
+    await expect.poll(() => gapProbe.snapshotReceived).toBe(true);
+    await expect(memberPage.locator('[data-availability="away"]')).toContainText(ownerName);
 
     const contestedSeat = 'Sit · commons-northwest-table:1';
     await ownerPage.locator('.live-commons-scene canvas').click();
-    const ownerName = `E2E ${ownerEmail.split('@')[0]}`;
     const memberName = `E2E ${memberEmail.split('@')[0]}`;
     await moveToTile(ownerPage, ownerName, { tx: 4, ty: 5 });
     await moveToTile(ownerPage, ownerName, { tx: 4, ty: 4 });

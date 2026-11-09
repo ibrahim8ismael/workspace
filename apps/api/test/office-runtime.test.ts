@@ -381,4 +381,59 @@ describe('office runtime reservations', () => {
     );
     expect(released?.delta.seats).toEqual([{ seatId, occupantParticipationId: null }]);
   });
+
+  it('returns a current safe snapshot for a known gap and rejects impossible future versions', () => {
+    const runtime = new OfficeRuntimeService();
+    const active = ticket(1);
+    const reservation = runtime.reserve(active, 'socket-1');
+    const originalVersion = reservation.ready.snapshot.stateVersion;
+
+    const availability = runtime.setAvailability(
+      active.officeId,
+      active.workspaceId,
+      active.userId,
+      'socket-1',
+      reservation.participationId,
+      active.officeEpoch,
+      'busy',
+    );
+    expect(availability && typeof availability !== 'string').toBe(true);
+
+    const repaired = runtime.resync(
+      active.officeId,
+      active.workspaceId,
+      active.userId,
+      'socket-1',
+      reservation.participationId,
+      active.officeEpoch,
+      originalVersion,
+    );
+    expect(typeof repaired).not.toBe('string');
+    if (typeof repaired === 'string') throw new Error(repaired);
+    expect(repaired.snapshot.stateVersion).toBe(originalVersion + 1);
+    expect(repaired.snapshot.participants[0]?.availability).toBe('busy');
+
+    expect(
+      runtime.resync(
+        active.officeId,
+        active.workspaceId,
+        active.userId,
+        'socket-1',
+        reservation.participationId,
+        active.officeEpoch,
+        repaired.snapshot.stateVersion + 1,
+      ),
+    ).toBe('stale_version');
+    expect(
+      runtime.resync(
+        active.officeId,
+        active.workspaceId,
+        'another-user',
+        'socket-1',
+        reservation.participationId,
+        active.officeEpoch,
+        originalVersion,
+      ),
+    ).toBe('unauthorized');
+  });
 });

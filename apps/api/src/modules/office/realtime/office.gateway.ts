@@ -16,7 +16,9 @@ import {
   seatSitEventSchema,
   seatStandEventSchema,
   worldInputEventSchema,
+  worldResyncEventSchema,
   worldDeltaSchema,
+  worldSnapshotSchema,
 } from '@gather/contracts';
 import { OfficeAdmissionService } from '../office-admission.service.js';
 import type { ConsumedOfficeTicket, OfficeReservation } from '../runtime/office-runtime.service.js';
@@ -31,6 +33,7 @@ interface OfficeSocketData {
   officeLeaseDeadline?: number;
   officeMovementAttemptTimestamps?: number[];
   officeCommandAttemptTimestamps?: number[];
+  officeResyncAttemptTimestamps?: number[];
 }
 type OfficeSocket = Socket & { data: Socket['data'] & OfficeSocketData };
 
@@ -287,6 +290,35 @@ export class OfficeGateway
       );
       this.reply(acknowledge, parsed.data.eventId, error);
     });
+    socket.on('world:resync', (raw: unknown, acknowledge?: unknown) => {
+      if (!this.allowOfficeCommand(socket) || !this.allowWorldResync(socket)) {
+        this.reply(acknowledge, this.eventId(raw), 'rate_limited');
+        return;
+      }
+      const parsed = worldResyncEventSchema.safeParse(raw);
+      if (!parsed.success) {
+        this.reply(acknowledge, this.eventId(raw), 'validation_failed');
+        return;
+      }
+      const ticket = socket.data.officeAdmission;
+      const reservation = socket.data.officeReservation;
+      if (!ticket || !reservation) return;
+      const result = this.runtime.resync(
+        ticket.officeId,
+        ticket.workspaceId,
+        ticket.userId,
+        socket.id,
+        reservation.participationId,
+        parsed.data.officeEpoch,
+        parsed.data.payload.stateVersion,
+      );
+      if (typeof result === 'string') {
+        this.reply(acknowledge, parsed.data.eventId, result);
+        return;
+      }
+      socket.emit('world:snapshot', worldSnapshotSchema.parse(result.snapshot));
+      this.reply(acknowledge, parsed.data.eventId, null);
+    });
     socket.on('presence:update', (raw: unknown, acknowledge?: unknown) => {
       if (!this.allowOfficeCommand(socket)) {
         this.reply(acknowledge, this.eventId(raw), 'rate_limited');
@@ -412,6 +444,20 @@ export class OfficeGateway
     }
     attempts.push(now);
     socket.data.officeCommandAttemptTimestamps = attempts;
+    return true;
+  }
+
+  private allowWorldResync(socket: OfficeSocket) {
+    const now = performance.now();
+    const attempts = (socket.data.officeResyncAttemptTimestamps ?? []).filter(
+      (at: number) => now - at < 1000,
+    );
+    if (attempts.length >= OFFICE_LIMITS.worldResyncsPerSecond) {
+      socket.data.officeResyncAttemptTimestamps = attempts;
+      return false;
+    }
+    attempts.push(now);
+    socket.data.officeResyncAttemptTimestamps = attempts;
     return true;
   }
 

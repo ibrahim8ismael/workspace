@@ -140,6 +140,16 @@ The `/office` gateway accepts strict directional intent only from an admitted so
 
 CP05.3b uses a 30-command-per-second per-socket rolling window for presence/seat commands. The runtime rejects sit while directional intent is still active, requires the chair tile or a reachable adjacent tile, snaps the avatar to the chair center, blocks other movement onto an occupied chair tile, avoids chair tiles for initial spawn and clears occupancy during participation cleanup. Stand chooses the first manifest-ordered valid exit not occupied by another participant. The runtime and limiters remain process-local; per-workspace/shared limits, duplicate-command outcome cache and real two-client seat competition through Socket.IO remain acceptance work. Browser client integration is CP06. Real Mongo-outage, tick/broadcast load, resync and takeover evidence remain open.
 
+### CP05.4a — Snapshot gap recovery
+
+The gateway now accepts strict `world:resync` requests only from the admitted actor and current office epoch. It rejects a client version ahead of the authoritative state and returns a validated current snapshot to that socket. The request is subject to both the 30-command-per-second office cap and a separate three-resyncs-per-second socket cap. The browser-side delta-gap detection and recovery loop remains CP06.
+
+| Batch | Scope | Status | Evidence |
+| --- | --- | --- | --- |
+| CP05.4a | Current snapshot recovery after a missed delta; future-version rejection; bounded resync | Complete locally for one API process | Full `pnpm --dir apps/api test`: 77/77 passed; includes runtime snapshot/version/actor checks and a live Socket.IO test for recovery after a missed availability delta, future-version rejection and 3/sec resync throttling |
+
+Explicit takeover, replay/deduplication for commands, per-workspace/shared rate budgets, multi-instance fencing, Mongo outage drills, browser integration and measured load remain open.
+
 ## CP04 — browser accounts, companies and delivery (in progress)
 
 The [CP04 delivery batches](CP04_BROWSER_AND_DELIVERY.md) separate browser onboarding, session settings, the private environment, real delivery and operational handoff. Luna implemented CP04.1/CP04.2. The owner selected OpenCode DeepSeek V4.1 Flash Free at max effort for CP04.3; Codex plans, reviews and independently verifies before each push.

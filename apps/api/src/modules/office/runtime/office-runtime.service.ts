@@ -256,6 +256,29 @@ export class OfficeRuntimeService {
     return this.change(office, [participant.publicState]);
   }
 
+  resync(
+    officeId: string,
+    workspaceId: string,
+    userId: string,
+    socketId: string,
+    participationId: string,
+    officeEpoch: string,
+    knownStateVersion: number,
+  ):
+    { roomId: string; snapshot: WorldSnapshot } | 'stale_epoch' | 'stale_version' | 'unauthorized' {
+    const office = this.offices.get(officeId);
+    const participant = office?.participants.get(participationId);
+    if (!office || office.workspaceId !== workspaceId || office.officeEpoch !== officeEpoch)
+      return 'stale_epoch';
+    if (!participant || participant.userId !== userId || participant.socketId !== socketId)
+      return 'unauthorized';
+    if (knownStateVersion > office.stateVersion) return 'stale_version';
+    return {
+      roomId: this.roomId(workspaceId, officeId),
+      snapshot: this.currentSnapshot(office),
+    };
+  }
+
   sit(
     officeId: string,
     workspaceId: string,
@@ -521,14 +544,31 @@ export class OfficeRuntimeService {
     joining: WorldSnapshot['participants'][number],
     stateVersion: number,
   ): WorldSnapshot {
+    return this.toSnapshot(
+      office,
+      [...office.participants.values()].map((p) => p.publicState).concat(joining),
+      stateVersion,
+    );
+  }
+
+  private currentSnapshot(office: OfficeRuntime): WorldSnapshot {
+    return this.toSnapshot(
+      office,
+      [...office.participants.values()].map((participant) => participant.publicState),
+      office.stateVersion,
+    );
+  }
+
+  private toSnapshot(
+    office: OfficeRuntime,
+    participants: WorldSnapshot['participants'],
+    stateVersion: number,
+  ): WorldSnapshot {
     return worldSnapshotSchema.parse({
       officeEpoch: office.officeEpoch,
       stateVersion,
       serverTime: Date.now(),
-      participants: [
-        ...[...office.participants.values()].map((participant) => participant.publicState),
-        joining,
-      ],
+      participants,
       seats: [...office.seats].map(([seatId, occupantParticipationId]) => ({
         seatId,
         occupantParticipationId,

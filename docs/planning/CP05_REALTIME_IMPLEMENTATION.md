@@ -1,6 +1,6 @@
 # CP05 — Authoritative Socket.IO office implementation plan
 
-Status: CP05.1–CP05.3b implemented and locally verified for one API process; CP05.4 and browser integration remain · Updated: 2026-11-09
+Status: CP05.1–CP05.4a implemented and locally verified for one API process; CP05.4b and browser integration remain · Updated: 2026-11-09
 
 CP05 builds the server-owned realtime office on top of completed CP02 map rules and CP03 bootstrap/tickets. The wire contract is in [OFFICE_V1](../contracts/OFFICE_V1.md) and [REALTIME](../contracts/REALTIME.md). The implementation plan in [PROJECT_COMPLETION_PLAN](PROJECT_COMPLETION_PLAN.md#cp05--build-the-authoritative-socketio-office) remains the acceptance baseline. This file orders the work into reviewable, locally testable batches.
 
@@ -38,9 +38,13 @@ Actual Socket.IO clients and the transaction-capable Mongo fixture cover valid a
 
 The API suite now exercises the three Socket.IO command paths and availability delta; runtime coverage moves two avatars, confirms a seat-tile conflict, grants one seat claim, rejects the competing claim, checks the ordered exit and verifies release on stand/disconnect. This remains process-local. Per-workspace command budgets, event replay/deduplication, client UI, multi-process seat authority and measured load are open. The broader A05 gate still needs real two-client seat competition through the Socket.IO surface and recovery integration.
 
-### CP05.4 — Snapshot/delta recovery and explicit takeover
+### CP05.4a — Snapshot/delta gap recovery
 
-Publish size-bounded versioned deltas, validate base versions and repair gaps only from a current snapshot. Implement explicit same-actor takeover with a short-lived one-use server reference; retire the old participation before activating the replacement and release its seat. Exercise disconnects, concurrent takeover, lost acknowledgements, resync limits, company switches and graceful shutdown.
+**Implemented locally for one API process.** `world:resync` validates the current socket binding and epoch, rejects a client version ahead of the server, and returns a complete schema-validated snapshot of the current office projection. It uses a shared 30-per-second socket command cap plus a stricter three-resyncs-per-second socket cap. The API tests verify that a client missing an availability delta receives the newer state, and that a future version is rejected. The client-side delta validator already checks the accepted epoch/base version; the browser recovery loop remains CP06 work.
+
+### CP05.4b — Explicit takeover and lifecycle
+
+Implement explicit same-actor/session takeover using a short-lived one-use server reference; retire the old participation before activating the replacement and release its seat. Exercise concurrent takeover, lost acknowledgements, takeover reference replay/expiry, company switches and graceful shutdown. The ordinary CP03 ticket request stays unchanged. This batch, client reconnect wiring and multi-instance fencing remain open.
 
 ## Completion gate
 
@@ -50,4 +54,4 @@ CP04 SMTP setup and CP04 independent audit delivery remain separate release gate
 
 ## Current execution status
 
-CP05.1–CP05.3b were implemented locally by Codex after OpenCode DeepSeek reported its free quota exhausted. See the code in `apps/api/src/modules/office/{realtime,runtime}/`, the API integration suite and the implementation-progress record. The API is not ready for a production office: real Mongo outage drills, multi-instance coordination, per-workspace budgets, gap recovery/takeover, browser integration and load evidence remain open.
+CP05.1–CP05.4a were implemented locally by Codex after OpenCode DeepSeek reported its free quota exhausted. See the code in `apps/api/src/modules/office/{realtime,runtime}/`, the API integration suite and the implementation-progress record. The API is not ready for a production office: real Mongo outage drills, multi-instance coordination, per-workspace budgets, explicit takeover, browser integration and load evidence remain open.

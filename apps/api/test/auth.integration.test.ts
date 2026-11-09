@@ -31,6 +31,7 @@ import {
   officeReadySchema,
   officeCommandAckSchema,
   worldDeltaSchema,
+  worldSnapshotSchema,
   OFFICE_LIMITS,
 } from '@gather/contracts';
 import { IdentityModels } from '../dist/modules/identity/identity.models.js';
@@ -1531,6 +1532,79 @@ describe('office socket admission', () => {
         eventId: stand.eventId,
         ok: false,
         error: { code: 'seat_unavailable' },
+      });
+    } finally {
+      client.disconnect();
+    }
+  });
+
+  it('repairs a missed world delta with a current safe snapshot', async () => {
+    const owner = await account();
+    const workspaceId = await workspace(owner);
+    const { ticket } = await issueTicket(owner, workspaceId);
+    const client = officeSocket({ ticket, protocolVersion: 1 });
+    try {
+      const readyEvent = nextSocketEvent<unknown>(client, 'office:ready');
+      await connectSocket(client);
+      const ready = officeReadySchema.parse(await readyEvent);
+      const deltaEvent = nextSocketEvent<unknown>(client, 'world:delta');
+      const presence = {
+        eventId: randomUUID(),
+        officeEpoch: ready.snapshot.officeEpoch,
+        payload: { availability: 'busy' },
+      };
+      await new Promise<void>((resolve) => client.emit('presence:update', presence, resolve));
+      await deltaEvent;
+
+      const snapshotEvent = nextSocketEvent<unknown>(client, 'world:snapshot');
+      const resync = {
+        eventId: randomUUID(),
+        officeEpoch: ready.snapshot.officeEpoch,
+        payload: { stateVersion: ready.snapshot.stateVersion },
+      };
+      const ack = await new Promise<unknown>((resolve) => {
+        client.emit('world:resync', resync, resolve);
+      });
+      expect(officeCommandAckSchema.parse(ack)).toEqual({ eventId: resync.eventId, ok: true });
+      const snapshot = worldSnapshotSchema.parse(await snapshotEvent);
+      expect(snapshot.stateVersion).toBe(ready.snapshot.stateVersion + 1);
+      expect(snapshot.participants).toContainEqual(
+        expect.objectContaining({ participationId: ready.participationId, availability: 'busy' }),
+      );
+
+      const impossible = {
+        ...resync,
+        eventId: randomUUID(),
+        payload: { stateVersion: snapshot.stateVersion + 1 },
+      };
+      const impossibleAck = await new Promise<unknown>((resolve) => {
+        client.emit('world:resync', impossible, resolve);
+      });
+      expect(officeCommandAckSchema.parse(impossibleAck)).toMatchObject({
+        eventId: impossible.eventId,
+        ok: false,
+        error: { code: 'stale_version' },
+      });
+
+      const third = { ...resync, eventId: randomUUID() };
+      const thirdSnapshotEvent = nextSocketEvent<unknown>(client, 'world:snapshot');
+      const thirdAck = await new Promise<unknown>((resolve) => {
+        client.emit('world:resync', third, resolve);
+      });
+      expect(officeCommandAckSchema.parse(thirdAck)).toMatchObject({
+        eventId: third.eventId,
+        ok: true,
+      });
+      await thirdSnapshotEvent;
+
+      const fourth = { ...resync, eventId: randomUUID() };
+      const fourthAck = await new Promise<unknown>((resolve) => {
+        client.emit('world:resync', fourth, resolve);
+      });
+      expect(officeCommandAckSchema.parse(fourthAck)).toMatchObject({
+        eventId: fourth.eventId,
+        ok: false,
+        error: { code: 'rate_limited' },
       });
     } finally {
       client.disconnect();

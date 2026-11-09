@@ -3,6 +3,7 @@ import {
   officeReadySchema,
   officeSocketAuthSchema,
   officeCommandAckSchema,
+  worldInputEventSchema,
   worldSnapshotSchema,
   type OfficeBootstrapResponse,
   type OfficeReady,
@@ -38,6 +39,7 @@ export class OfficeClient {
   private readonly listeners = new Set<() => void>();
   private connectGeneration = 0;
   private resyncPending = false;
+  private inputSequence = 0;
   private closed = false;
 
   constructor(
@@ -168,6 +170,7 @@ export class OfficeClient {
     this.closed = true;
     this.connectGeneration += 1;
     this.resyncPending = false;
+    this.inputSequence = 0;
     this.socket?.disconnect();
     this.socket = null;
     this.state = EMPTY_STATE;
@@ -201,6 +204,24 @@ export class OfficeClient {
       const ack = officeCommandAckSchema.safeParse(raw);
       if (!ack.success || !ack.data.ok) this.resyncPending = false;
     });
+  }
+
+  move(dx: -1 | 0 | 1, dy: -1 | 0 | 1) {
+    const socket = this.socket;
+    const ready = this.state.ready;
+    const snapshot = this.state.snapshot;
+    if (!socket?.connected || !ready || !snapshot || this.state.status !== 'connected') return;
+    const participant = snapshot.participants.find(
+      (person) => person.participationId === ready.participationId,
+    );
+    if (!participant) return;
+    this.inputSequence = Math.max(this.inputSequence, participant.lastProcessedInputSequence) + 1;
+    const event = worldInputEventSchema.parse({
+      eventId: crypto.randomUUID(),
+      officeEpoch: ready.snapshot.officeEpoch,
+      payload: { sequence: this.inputSequence, dx, dy },
+    });
+    socket.emit('world:input', event);
   }
 
   private fail(message: string) {

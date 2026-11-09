@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import type { OfficeWorkspaceDetail } from '../../lib/api';
 import { ApiClient } from '../../lib/api';
 import { CommonsScene } from '../../../commons-preview/CommonsScene';
+import { LiveCommonsScene } from '../../../commons-preview/LiveCommonsScene';
 import { OfficePreviewChat } from './OfficePreviewChat';
 import { OfficeClient } from '../office/office-client';
 import './office-preview.css';
@@ -94,7 +95,16 @@ export function CompanyOfficePreview({ api, detail, onBack }: Props) {
                 : 'Read-only local renderer using the approved Commons geometry and art.'}
             </p>
           </div>
-          <CommonsScene />
+          {connected && state.bootstrap && state.ready && state.snapshot ? (
+            <LiveCommonsScene
+              bootstrap={state.bootstrap}
+              snapshot={state.snapshot}
+              localParticipationId={state.ready.participationId}
+              onMovement={(dx, dy) => client.move(dx, dy)}
+            />
+          ) : (
+            <CommonsScene />
+          )}
         </section>
 
         <OfficePreviewChat

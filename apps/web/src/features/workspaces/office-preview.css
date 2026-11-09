@@ -134,6 +134,17 @@
   background: #eef1ec;
 }
 
+.office-preview-map .live-commons-scene .commons-scene-host {
+  min-height: 360px;
+  padding: 8px;
+}
+
+.office-preview-map .live-commons-scene canvas {
+  display: block;
+  max-width: 100%;
+  image-rendering: pixelated;
+}
+
 .office-preview-map .commons-scene-status {
   color: var(--muted);
   font-size: 12px;

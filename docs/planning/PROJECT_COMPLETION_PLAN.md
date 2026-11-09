@@ -195,7 +195,7 @@ Exit: two real Socket.IO test clients move/collide/sit; final seat/capacity race
 
 ### CP06 — Replace the legacy office path with Phaser and typed client adapters
 
-Status: CP06.1 client core and CP06.2 authenticated office entry/live roster are implemented and locally verified. Live coordinates are not yet drawn by Phaser, and text messaging remains unavailable. See [implementation progress](IMPLEMENTATION_PROGRESS.md#cp061-typed-office-client-core).
+Status: CP06.1 client core, CP06.2 authenticated office entry/live roster and CP06.3 Phaser world rendering/movement input are implemented and locally verified with a mocked browser transport. Real API/two-browser, smooth reconciliation/accessibility and text messaging remain. See [implementation progress](IMPLEMENTATION_PROGRESS.md#cp061-typed-office-client-core).
 
 Depends on: CP02 sample, CP04 account/company path and CP05 protocol. Deliverable: the browser-based two-user office.
 
@@ -207,7 +207,7 @@ Depends on: CP02 sample, CP04 account/company path and CP05 protocol. Deliverabl
 6. Remove or hide unsupported chat/calendar/recording/editor/desk-ownership/reactive legacy focus controls from the MVP routes and bundles where practical. Keep useful artwork and licensed helpers; delete obsolete transport/auth adapters after callers move.
 7. Verify keyboard/focus/dialog behavior, zoom/essential controls, resize and reduced-motion behavior where applicable. Product language/RTL expansion follows CP01's explicit scope, not chat language.
 
-CP06.1 implements the typed browser boundary first: fetch a company-scoped bootstrap, request a short-lived ticket in memory, connect WebSocket-only to `/office`, validate `office:ready`, apply only contiguous epoch/version deltas and request a full snapshot on a gap. CP06.2 mounts it behind an explicit action in the authenticated company route, displays connection/access states and the server roster, and closes it on leave or route teardown. Text chat remains disconnected because the MVP has no chat message API or realtime event contract; do not mark its composer live until a separately scoped backend contract exists.
+CP06.1 implements the typed browser boundary first: fetch a company-scoped bootstrap, request a short-lived ticket in memory, connect WebSocket-only to `/office`, validate `office:ready`, apply only contiguous epoch/version deltas and request a full snapshot on a gap. CP06.2 mounts it behind an explicit action in the authenticated company route, displays connection/access states and the server roster, and closes it on leave or route teardown. CP06.3 replaces the static preview with the version-checked Commons map, server-positioned avatars/seats, local camera follow and keyboard movement intent. Text chat remains disconnected because the MVP has no chat message API or realtime event contract; do not mark its composer live until a separately scoped backend contract exists.
 
 Existing paths to migrate: `apps/web/{App.tsx,VivoScene.tsx,MiniOffice.tsx,useOffice.ts,AvatarEditor.tsx,avatarLook.ts,avatarSprite.ts,navigation.ts,types.ts,styles.css,scene.css,main.tsx,vite.config.ts}`; reused sprite/public files retain notices. Update imported shared tests deliberately when import ownership changes.
 

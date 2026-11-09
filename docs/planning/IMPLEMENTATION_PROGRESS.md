@@ -290,7 +290,15 @@ Codex mounted `OfficeClient` in the company-scoped office screen. A person enter
 | --- | --- | --- | --- |
 | CP06.2 | Authenticated office entry, live connection status/roster, explicit leave and teardown | Locally verified; real service integration remains | Web typecheck passed; `pnpm test:web`: 30/30; `pnpm test:e2e`: 1 Chromium test passed. E2E verifies that preview rendering does not admit a socket before the user chooses Enter. The browser test still mocks auth/company APIs and does not exercise a live API/socket or a second browser |
 
-The next renderer batch must load the approved map geometry and art, draw current server positions/seats, send bounded movement intent from keyboard input and reconcile the local participant to authoritative snapshots/deltas. A real two-browser entry/move/leave test follows. No text-chat route exists in the accepted MVP contracts; adding message storage/transient delivery requires a product and backend scope decision.
+## CP06.3 — Live Commons rendering and keyboard movement
+
+Codex extended the approved Commons catalog loader to expose all versioned avatar/object textures and added a live Phaser scene. Before drawing, it compares the authenticated bootstrap map version with the bundled manifest. The scene renders the complete fixed geometry, room zones, walls, furniture, chairs and the server snapshot's avatars/labels; the camera follows the local participation. Arrow keys and WASD send sequenced, epoch-bound movement intent at a bounded cadence through `OfficeClient`; accepted positions still come from authoritative server snapshots/deltas. Seat poses are derived only from the server `seatId`. Static preview remains before entry.
+
+| Batch | Scope | Status | Evidence |
+| --- | --- | --- | --- |
+| CP06.3 | Version-checked full map render, live participant/seat projection and keyboard movement intent | Locally verified with mocked office transport | Web typecheck and build passed; web unit suite passed 31/31; Playwright Chromium E2E passed 1/1 through mocked bootstrap/ticket/Socket.IO ready, canvas rendering, live roster, movement event and leave |
+
+The browser test uses a protocol-shaped mock socket and does not replace the API's actual Socket.IO integration tests. Real browser-to-API sessions, two-browser collision/seat tests, visual anchor/occlusion review, camera/zoom/accessibility checks and prediction/interpolation remain. The event validates and sends input; no client-side collision authority was added. Text chat still has no backend contract.
 
 ## CP04.5a — security and operations boundary review
 

@@ -16,6 +16,9 @@ import { language, setLanguage } from '../i18n';
 vi.mock('../commons-preview/CommonsScene', () => ({
   CommonsScene: () => null,
 }));
+vi.mock('../commons-preview/LiveCommonsScene', () => ({
+  LiveCommonsScene: () => null,
+}));
 
 const workspaceId = '7b839c68-a211-48f2-a38f-d15e7558a4ea';
 const detail: OfficeWorkspaceDetail = {

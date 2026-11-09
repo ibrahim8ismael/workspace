@@ -5,7 +5,7 @@ import { createCommonsSceneCleanup } from './scene-lifecycle';
 import './preview.css';
 
 type Preview = ReturnType<typeof readPreview>;
-type Frame = Preview['standing'];
+type Frame = Preview['avatarFrames'][number] | Preview['objectFrames'][number];
 type Pose = 'standing' | 'sitting';
 
 function mountScene(

@@ -76,11 +76,11 @@ export function readPreview() {
   );
   if (!room) throw new Error('Commons preview chair is outside a meeting room');
 
-  function frame(key: string, sprite: Sprite | undefined, layer: string) {
+  function frame<T extends Sprite>(key: string, sprite: T | undefined, layer: string) {
     const url = sprite && urls[`../../../packages/assets${sprite.path}`];
     const depth = catalog.drawOrder.indexOf(layer);
     if (!sprite || !url || depth < 0) throw new Error(`Missing Commons preview texture: ${key}`);
-    return { key, url, depth, ...sprite };
+    return { key, url, depth, ...sprite } as T & { key: string; url: string; depth: number };
   }
   const tableArt = catalog.objects.find(
     ({ spriteId }) => spriteId === catalog.bindings.tableSpriteId,
@@ -100,9 +100,17 @@ export function readPreview() {
   };
   const standing = frame('standing', avatar('standing'), 'avatar');
   const sitting = frame('sitting', avatar('sitting'), 'avatar');
+  const avatarFrames = catalog.avatar.frames.map((sprite) =>
+    frame(sprite.frameId, sprite, 'avatar'),
+  );
+  const objectFrames = catalog.objects.map((sprite) => frame(sprite.spriteId, sprite, sprite.role));
   if (!tableArt || !chairArt) throw new Error('Commons preview object art is missing');
   return {
+    manifest,
     geometry,
+    catalog,
+    avatarFrames,
+    objectFrames,
     room,
     table,
     seat,

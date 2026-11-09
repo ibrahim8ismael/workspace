@@ -91,3 +91,9 @@ Configuration references are the [Compose specification](https://compose-spec.gi
 CP04.3b passed on 2026-11-09 using Docker Engine 29.8.2, Compose 5.5.0, OrbStack, Linux arm64 containers and Headless Chrome 152.0.7977.42 on macOS 26.6.1. All three application image targets built. Actual verification, invitation and recovery mail reached Mailpit. A paused BullMQ job survived full environment recreation and was delivered after resume; the queue, database, inbox and encryption key were retained, while optional cache data was discarded.
 
 After verification the project containers were stopped with the documented `down` command. Named volumes and the ignored private settings file were retained. Run setup before first use of new data; a normal restart uses the app/worker profiles without the setup profile. Include the optional cache profile only if needed. External SMTP/provider delivery, public ingress, Edge and production acceptance remain later checkpoints.
+
+## Manual testing session
+
+On 2026-11-09 the owner requested the local environment and frontend be left running for manual testing. The `app` and `worker` profiles were restarted from the verified images and retained volumes on the `orbstack` Docker context. Frontend signin rendering, same-origin API health, CA-validated HTTPS and Origin checks passed; no browser runtime exceptions were observed. The application is available at `https://localhost:8443` and the captured inbox at `http://localhost:8025` while those services remain running.
+
+If the selected Docker context points to another engine, use `docker --context orbstack compose` in place of `docker compose` in the commands above. This selects the existing local engine for that command without changing the global Docker context. The local certificate is still not installed in the OS trust store, so the manual browser may show a certificate warning.

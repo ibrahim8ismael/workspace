@@ -437,3 +437,9 @@ Validation: mocked Chromium Playwright E2E passed, including map focus, Tab trav
 Implemented `spikes/media-enforcement/permit-state.mjs`: default denial, guard epoch/nonce/sequence checks, exact actor/room/source/version bindings, five-second request-start deadlines, atomic snapshots, empty-snapshot removal and irreversible explicit generation retirement during the process lifetime. The caller must supply monotonic time and authenticate strict policy DTOs. No production integration exists.
 
 Validation: five Node tests passed covering binding substitution, delayed/expired responses, stale sequences/nonce/epoch, retirement replay and atomic invalid snapshots. This is algorithm evidence only. LiveKit pinning, authenticated signaling, independent supervisor, durable retirement/cold restart and measured forwarding cutoff remain CP07 requirements. Official token lifecycle documentation was checked; self-hosted removal alone does not invalidate existing tokens.
+
+## CP07.2 — Experimental independent-supervisor policy (2026-11-10)
+
+Added `spikes/media-enforcement/supervisor-state.mjs`: three-second cold-start/progress deadlines, exact outstanding nonce/version installation acknowledgements, guard epoch and increasing sequence checks, latched shutdown and retry after failed/unconfirmed fixed-target stop calls. Guard input cannot select the shutdown target. This is an injectable policy model; no running independent supervisor or Docker adapter is claimed.
+
+Validation: nine Node tests passed across permit and supervisor state. Supervisor scenarios cover cold-start expiry, incorrect/replayed ACKs, late progress and failed/unconfirmed shutdown retries. Actual process independence, adapter timeouts, pinned SFU, signaling enforcement, retirement durability and measured forwarding cutoff remain open before CP08 integration.

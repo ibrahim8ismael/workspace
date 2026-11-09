@@ -545,3 +545,9 @@ Actual combined source/room/controller-loss/watchdog-crash run passed. First rec
 Added fixed-target fixture stop denial to the child watchdog and escalation on stop-unconfirmed in the surviving guardian. The test modifies no Docker daemon state: only the first process's actuator is denied. The guardian uses its own actuator and confirms stopped state.
 
 Actual combined two-company/source/controller-loss run passed: first stop unconfirmed, child terminated, guardian stop confirmed 467.149ms after child exit; audio cutoff 3346ms/video 2906ms, second-room video cutoff 2909ms after fault. Both original/refreshed replays remained denied and source permission checks passed. Shared Docker API/host/VM failures and simultaneous loss of both enforcement processes remain outside this successful process-level fault experiment and require a separate deployment fencing boundary to include in a hard guarantee.
+
+## CP07.17 — Full signed publication-source subset checks (2026-11-10)
+
+Source review found guard admission checked microphone alone despite broader signed JWT publication grants. Added `source-grants.mjs` requiring explicit nonempty unique publisher sources and checking every source against the installed permit; broad/unknown/screen-share-audio grants are denied. Test fixtures now issue minimal sources and explicitly label captured tracks as microphone/camera. Initial strict-source runs correctly rejected unlabeled synthetic publications; those labels were fixed before recording success.
+
+Twenty regression tests passed. Full real two-room/source/controller-loss/primary-stop-denial experiment passed: audio cutoff 3137ms/video 2747ms, second-room video 2744ms; original/refreshed replay false. This closes the discovered source-subset gap at admission. Application source-grant issuance and post-join permission changes remain separate integration work; shared Docker/host failure remains an infrastructure limitation.

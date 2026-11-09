@@ -2,6 +2,7 @@
 import { TokenVerifier } from '../../apps/api/node_modules/livekit-server-sdk/dist/AccessToken.js';
 import { createSignalingGuard } from './signaling-guard.mjs';
 import { performance } from 'node:perf_hooks';
+import { sourceGrantsAllowed } from './source-grants.mjs';
 import { PermitState } from './permit-state.mjs';
 import { pullPolicy } from './policy-pull.mjs';
 import { RetirementStore } from './retirement-store.mjs';
@@ -59,6 +60,7 @@ const guard = createSignalingGuard({
           claims.video?.room === 'company-b-fixture' &&
           ['publisher-b', 'receiver-b'].includes(claims.sub))) &&
       !retired.has(claims.video.room) &&
+      sourceGrantsAllowed(claims, policyEnabled ? permits : undefined) &&
       (!policyEnabled ||
         permits.allows({
           generation: claims.video.room,

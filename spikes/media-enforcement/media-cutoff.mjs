@@ -199,6 +199,7 @@ try {
       roomJoin: true,
       room: 'cutoff-fixture',
       canPublish: identity === 'publisher',
+      canPublishSources: identity === 'publisher' ? [1, 2] : [],
       canSubscribe: identity === 'receiver',
     });
     return grant.toJwt();
@@ -352,7 +353,9 @@ try {
       window.oscillator = oscillator;
       await audio.resume();
       window.fixtureAudio = audio;
-      await window.room.localParticipant.publishTrack(destination.stream.getAudioTracks()[0]);
+      await window.room.localParticipant.publishTrack(destination.stream.getAudioTracks()[0], {
+        source: window.LivekitClient.Track.Source.Microphone,
+      });
       const canvas = document.createElement('canvas');
       canvas.width = 320;
       canvas.height = 240;
@@ -364,7 +367,10 @@ try {
         ctx.fillStyle = 'black';
         ctx.fillText(String(n), 20, 20);
       }, 50);
-      await window.room.localParticipant.publishTrack(canvas.captureStream(20).getVideoTracks()[0]);
+      await window.room.localParticipant.publishTrack(
+        canvas.captureStream(20).getVideoTracks()[0],
+        { source: window.LivekitClient.Track.Source.Camera },
+      );
     },
     await token('publisher'),
   );
@@ -392,6 +398,7 @@ try {
         roomJoin: true,
         room: 'company-b-fixture',
         canPublish: identity === 'publisher-b',
+        canPublishSources: identity === 'publisher-b' ? [1] : [],
         canSubscribe: identity === 'receiver-b',
       });
       return grant.toJwt();
@@ -437,6 +444,7 @@ try {
         }, 50);
         await window.room.localParticipant.publishTrack(
           canvas.captureStream(20).getVideoTracks()[0],
+          { source: window.LivekitClient.Track.Source.Camera },
         );
       },
       { jwt: await secondToken('publisher-b'), url: signaling },

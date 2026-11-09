@@ -339,3 +339,16 @@ positive microphone control passed. Shared Docker API failure, host/VM failure
 and loss of both enforcement processes need an external fencing failure domain
 if the deployment's guarantee includes them; no local-process design can claim
 that infrastructure resilience from this experiment.
+
+## CP07.17 complete source-grant admission
+
+`source-grants.mjs` checks every signed JWT publication source against the current
+permit. Publisher grants must have explicit, nonempty, unique source lists;
+unknown sources and screen-share audio are denied. A JWT authorizing both camera
+and microphone is rejected when policy permits microphone alone. Subscriber-only
+grants remain eligible for the separate identity/room/admission checks.
+Synthetic publication now labels microphone/camera explicitly rather than relying
+on unrestricted unknown-source defaults. Fixture publishers receive only the
+needed signed sources. Twenty regression tests pass. The combined real two-room,
+source, policy-loss and denied-primary-stop run passed again: first-room last
+video/audio 2747ms/3137ms; second-room video 2744ms. Replay remained denied.

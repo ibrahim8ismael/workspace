@@ -1,6 +1,6 @@
 # CP04 — browser accounts, companies and delivery
 
-Started on 2026-11-09. Implementation by GPT-6 Luna, with planning, review and verification by Codex. The owner requested this delegation arrangement. Parent scope is the [completion plan](PROJECT_COMPLETION_PLAN.md#cp04--finish-delivery-same-origin-browser-auth-and-company-onboarding).
+Started on 2026-11-09. GPT-6 Luna implemented CP04.1 and CP04.2. The owner selected OpenCode with DeepSeek V4.1 Flash Free at max effort for CP04.3. Codex owns planning, review, independent verification, documentation and pushes. Parent scope is the [completion plan](PROJECT_COMPLETION_PLAN.md#cp04--finish-delivery-same-origin-browser-auth-and-company-onboarding).
 
 ## Delivery batches
 
@@ -101,3 +101,28 @@ Headless Chrome 152.0.7977.42 on macOS 26.6.1 arm64 exercised the production bui
 The final `pnpm check` passed 121 tests, including 19 browser adapter/session tests and 43 backend tests. Formatting, lint, workspace typechecks and production builds passed.
 
 CP04.2 is complete. CP04.3 covers the reproducible private delivery environment.
+
+## CP04.3 execution checkpoints
+
+The owner selected OpenCode with `opencode/deepseek-v4.1-flash-free#max` for the remaining implementation on 2026-11-09. Codex owns planning, review, independent verification, documentation and pushes. Existing configuration drafts are the handoff input.
+
+| Checkpoint | Scope | Verification |
+| --- | --- | --- |
+| CP04.3a | Private local Compose files, pinned build images, replica-set/index setup, persistent queue, optional cache, explicit worker and local inbox | Official Compose schema, configuration review, key creation and initialization failure checks, repository gates |
+| CP04.3b | Authorized environment startup and end-to-end local delivery | Actual image builds, internal networking, HTTPS/cookies/Origin, replica-set transactions, queue/inbox persistence, captured verification/recovery/invitations and worker restart |
+
+The [local runbook](../../infra/README.md) contains the concrete startup sequence and private settings. It uses `https://localhost:8443`, a loopback inbox on port 8025 and internal container networks. The existing setup constraint is “Do not run Docker”, recorded in [setup progress](SETUP_PROGRESS.md). Runtime startup requires an explicit owner instruction after configuration review.
+
+CP04.2c was pushed as `0f087b0` and [hosted CI passed](https://github.com/ibrahim8ismael/workspace/actions/runs/42545164151).
+
+### CP04.3a — configuration review and evidence
+
+Completed on 2026-11-09 with OpenCode `opencode/deepseek-v4.1-flash-free#max` implementing the configuration and Codex independently reviewing it. The exported session records that exact provider/model/variant, a completed final response and zero reported cost. The CLI relay did not produce its normal result artifact; session export, actual files and independent checks supplied the review evidence. No Docker command was executed.
+
+Codex independently ran the full `pnpm check`: **121 tests**, formatting, lint, workspace typechecks and production builds passed. Final checks also passed the official Compose JSON schema at revision `3a4a6995e4a971f6173dff9130cb3e38e6738651`, private-port/network/profile assertions, image digest/platform checks, scoped lint and syntax checks. The temporary Mongo initializer harness covered fresh initialization, idempotent reuse, concurrent initialization, configuration drift, unrelated errors and the primary polling deadline. These checks do not replace actual mongosh/container execution; individual network calls still use driver timeouts.
+
+The key helper was verified in disposable directories for exclusive creation, mode `0600`, canonical 32-byte base64, refusal to overwrite, invalid placeholder rejection and no secret output. Codex then generated the ignored local settings file once; its key is retained privately and is excluded from Git and the build context. The implementer's final claim that this file was absent was stale and was corrected by independent review.
+
+Accepted configuration choices: setup jobs are explicit and the existing API startup index validator remains authoritative; the local worker uses development mode for plaintext SMTP to Mailpit; the cache is optional; runtime images retain the workspace dependency tree; mongosh globals are declared only for `infra/mongodb/**/*.js` without disabling lint rules. These are local configurations, not a production deployment.
+
+CP04.3b remains open: actual image builds, setup/restart, HTTPS/cookies/Origin, transactional writes, real queue-to-inbox delivery and persistence. CP04.4 provider delivery and later operational acceptance are not completed by this checkpoint.

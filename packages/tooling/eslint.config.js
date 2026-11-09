@@ -26,6 +26,12 @@ export default tseslint.config(
     },
   },
   {
+    files: ['infra/mongodb/**/*.js'],
+    languageOptions: {
+      globals: { db: 'readonly', print: 'readonly', quit: 'readonly', sleep: 'readonly' },
+    },
+  },
+  {
     files: ['apps/web/src/**/*.{ts,tsx}'],
     plugins: { 'react-hooks': hooks, 'react-refresh': refresh },
     rules: {

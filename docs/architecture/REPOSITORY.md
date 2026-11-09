@@ -22,7 +22,7 @@ The owner approved the refined structure and requested library installation with
 | packages/delivery | Server-only outbox/job contracts shared with worker | Strict ID job schema, Mongo outbox schema and authenticated encryption helpers |
 | packages/tooling | Strict TS Node/React configurations and ESLint composition | Configured and used by workspace checks |
 | spikes/media-enforcement | M0 custom guard/supervision proof outside production apps | Planning README only |
-| infra | Future Compose/Caddy/Mongo/Redis/media settings | Empty tracked directories; no containers run |
+| infra | Local Compose/Caddy/Mongo/Redis/mail settings; future media configuration | Private local Compose/build/proxy/setup configuration prepared in CP04.3a. Runtime checkpoint pending |
 | tests/integration, tests/e2e | Cross-service tests | Empty tracked directories; no passing feature evidence |
 | plugins/egm, .agents/plugins, .codex/config.toml | Project-local EGM planning/review tooling | Pinned complete upstream runtime and enabled project marketplace; not an application dependency |
 

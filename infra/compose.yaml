@@ -1,0 +1,245 @@
+name: gather-lite-local
+
+services:
+  mongo:
+    image: mongo:8.2.6@sha256:9690b268c50317b2988a7f84f514a2cdcf4de6836e12c295b48f3a203731fce1
+    hostname: mongo
+    command: [mongod, --replSet, rs0, --bind_ip_all]
+    healthcheck:
+      test:
+        [
+          CMD,
+          mongosh,
+          --quiet,
+          mongodb://127.0.0.1:27017/admin,
+          --eval,
+          'if (db.adminCommand({ping: 1}).ok !== 1) quit(1)',
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    volumes:
+      - mongo-data:/data/db
+    networks: [data]
+    restart: unless-stopped
+
+  # Run the setup profile before the app profile. The API validates these
+  # indexes at startup, so skipping this step fails closed.
+  mongo-init:
+    image: mongo:8.2.6@sha256:9690b268c50317b2988a7f84f514a2cdcf4de6836e12c295b48f3a203731fce1
+    profiles: [setup]
+    entrypoint: [mongosh, mongodb://mongo:27017/admin, --quiet, --file, /scripts/init-replica.js]
+    depends_on:
+      mongo:
+        condition: service_healthy
+    volumes:
+      - ./mongodb/init-replica.js:/scripts/init-replica.js:ro
+    networks: [data]
+    restart: 'no'
+
+  indexes:
+    image: gather-lite-api-local
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
+      target: api-runtime
+    profiles: [setup]
+    env_file: [./.env.local]
+    environment:
+      NODE_ENV: production
+    command: [node, apps/api/dist/platform/database/create-indexes.js]
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+    networks: [data]
+    restart: 'no'
+
+  redis-queue:
+    image: redis:8.2.3-alpine@sha256:08ad0b1d280850169a790dba1393ff7a90aef951fc19632cf4d3ce4f78e679ba
+    command:
+      [
+        redis-server,
+        --appendonly,
+        'yes',
+        --appendfsync,
+        everysec,
+        --maxmemory,
+        256mb,
+        --maxmemory-policy,
+        noeviction,
+        --protected-mode,
+        'no',
+      ]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    volumes:
+      - queue-data:/data
+    networks: [data]
+    restart: unless-stopped
+
+  # Optional disposable cache. The current API does not use it and it keeps no data.
+  redis-cache:
+    image: redis:8.2.3-alpine@sha256:08ad0b1d280850169a790dba1393ff7a90aef951fc19632cf4d3ce4f78e679ba
+    profiles: [cache]
+    command:
+      [
+        redis-server,
+        --save,
+        '',
+        --appendonly,
+        'no',
+        --maxmemory,
+        64mb,
+        --maxmemory-policy,
+        allkeys-lru,
+        --protected-mode,
+        'no',
+      ]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    networks: [data]
+    restart: unless-stopped
+
+  api:
+    image: gather-lite-api-local
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
+      target: api-runtime
+    profiles: [app]
+    env_file: [./.env.local]
+    environment:
+      NODE_ENV: production
+      API_HOST: 0.0.0.0
+      API_PORT: '3000'
+      APP_ORIGIN: https://localhost:8443
+      DB_AUTO_INDEX: 'false'
+      REDIS_CACHE_URL: redis://redis-cache:6379
+      REDIS_QUEUE_URL: redis://redis-queue:6379
+    depends_on:
+      mongo:
+        condition: service_healthy
+    expose: ['3000']
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          --input-type=module,
+          -e,
+          "fetch('http://127.0.0.1:3000/api/health/live').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [edge, data]
+
+  caddy:
+    image: gather-lite-web-local
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
+      target: web-runtime
+    profiles: [app]
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - 127.0.0.1:8443:8443
+    healthcheck:
+      test:
+        [
+          CMD-SHELL,
+          'curl --fail --silent --show-error --insecure --output /dev/null https://localhost:8443/ && curl --fail --silent --show-error --insecure --output /dev/null https://localhost:8443/api/health/live',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 5s
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [edge]
+    restart: unless-stopped
+
+  mailpit:
+    image: axllent/mailpit:v1.33.1@sha256:aef2aacc11f075ec0fb6874275ee4a421e688e11a96ebb296134d1735c7761ce
+    profiles: [worker]
+    environment:
+      MP_DATABASE: /data/mailpit.db
+      MP_DISABLE_VERSION_CHECK: 'true'
+      MP_QUIET: 'true'
+      MP_ALLOWED_HOSTS: localhost:8025,127.0.0.1:8025
+    ports:
+      - 127.0.0.1:8025:8025
+    healthcheck:
+      test: [CMD, /mailpit, readyz]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 5s
+    volumes:
+      - mailpit-data:/data
+    networks: [data]
+    restart: unless-stopped
+
+  worker:
+    image: gather-lite-worker-local
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
+      target: worker-runtime
+    profiles: [worker]
+    env_file: [./.env.local]
+    environment:
+      NODE_ENV: development
+      REDIS_QUEUE_URL: redis://redis-queue:6379
+      SMTP_HOST: mailpit
+      SMTP_PORT: '1025'
+      SMTP_SECURE: 'false'
+      SMTP_REQUIRE_TLS: 'false'
+      SMTP_USER: ''
+      SMTP_PASSWORD: ''
+      SMTP_FROM: noreply@gather.local
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis-queue:
+        condition: service_healthy
+      mailpit:
+        condition: service_healthy
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [data]
+    restart: unless-stopped
+
+networks:
+  edge:
+    internal: true
+  data:
+    internal: true
+
+volumes:
+  mongo-data:
+  queue-data:
+  caddy-data:
+  caddy-config:
+  mailpit-data:

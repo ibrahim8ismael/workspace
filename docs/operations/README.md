@@ -1,6 +1,8 @@
 # Deployment and operations plan
 
-Status: design/runbook outline; no services provisioned · Updated: 2026-11-05
+Status: local delivery configuration prepared, with runtime verification pending · Updated: 2026-11-09
+
+The [local delivery runbook](../../infra/README.md) defines the CP04.3 localhost configuration and explicit setup/start commands. Runtime evidence is tracked in the [CP04 delivery plan](../planning/CP04_BROWSER_AND_DELIVERY.md).
 
 ## Deployment contract
 

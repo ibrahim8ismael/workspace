@@ -1,5 +1,87 @@
-# Infrastructure
+# Local delivery environment
 
-Reserved directories: `compose`, `caddy`, `mongodb`, `redis`, and `media`.
+CP04.3a prepares the local Compose configuration. Runtime validation is the next checkpoint. The existing setup authorization says “Do not run Docker”; see [setup progress](../docs/planning/SETUP_PROGRESS.md). Starting this environment requires an explicit owner instruction.
 
-No deployment manifests, containers or services are configured or started by this scaffold. Future changes must follow [operations requirements](../docs/operations/README.md), keep internal services private and prove independent media supervision. Do not add Docker startup to install/build hooks.
+## Service layout
+
+| Service     | Purpose                                    | Host access               |
+| ----------- | ------------------------------------------ | ------------------------- |
+| Caddy       | Built web files and HTTPS `/api` proxy     | `https://localhost:8443`  |
+| API         | Existing account/company API               | Private container network |
+| MongoDB     | Single-node `rs0` replica set              | Private container network |
+| Queue Redis | Durable mail queue, AOF and `noeviction`   | Private container network |
+| Cache Redis | Optional disposable cache profile          | Private container network |
+| Worker      | Outbox dispatch and SMTP delivery          | Explicit `worker` profile |
+| Mailpit     | Local message capture and persistent inbox | `http://localhost:8025`   |
+
+The `edge` and `data` networks are internal. Published ports bind to host loopback. The API uses `API_HOST=0.0.0.0` inside its container, with `APP_ORIGIN=https://localhost:8443`. Caddy routes API requests before its static-file fallback and removes forwarding headers before proxying. The API retains its existing proxy policy.
+
+MongoDB, queue Redis, the inbox and Caddy certificates use named volumes. The cache profile is optional and disposable. The local worker delivers to Mailpit. SMTP TLS is disabled in that development profile. The application’s production SMTP validation requires TLS.
+
+## Prepare the private settings
+
+Run from the repository root, using Node 24.18+ on the 24.x line and pnpm 10.33.x.
+
+```sh
+node infra/init-local-env.mjs
+```
+
+The helper creates `infra/.env.local` with mode `0600` and a random 32-byte outbox key. It refuses to replace an existing file. Keep that file with the persistent local data across restarts so queued messages remain decryptable. The template is [`.env.local.example`](../.env.local.example).
+
+## Explicit startup sequence
+
+These commands are for the runtime checkpoint after the owner authorizes Docker execution. Docker Compose v2 is required.
+
+First build and run the setup job. It starts MongoDB, initializes the expected single-node replica set and provisions the existing API indexes.
+
+```sh
+docker compose --env-file infra/.env.local -f infra/compose.yaml --profile setup build indexes
+docker compose --env-file infra/.env.local -f infra/compose.yaml --profile setup run --rm indexes
+```
+
+The replica-set initializer can be repeated. It rejects a different existing configuration. The API checks required indexes at startup.
+
+Start the web/API profile and its private services.
+
+```sh
+docker compose --env-file infra/.env.local -f infra/compose.yaml --profile app up --build -d
+```
+
+Start delivery explicitly when ready to capture local messages.
+
+```sh
+docker compose --env-file infra/.env.local -f infra/compose.yaml --profile app --profile worker up --build -d worker
+```
+
+The optional cache can be started with its `cache` profile.
+
+```sh
+docker compose --env-file infra/.env.local -f infra/compose.yaml --profile app --profile worker --profile cache up -d redis-cache
+```
+
+## Local TLS and browser checks
+
+Caddy issues the localhost certificate using its internal CA. Export its public root certificate to verify HTTPS with a client.
+
+```sh
+docker compose --env-file infra/.env.local -f infra/compose.yaml --profile app cp caddy:/data/caddy/pki/authorities/local/root.crt /private/tmp/gather-local-root.crt
+curl --cacert /private/tmp/gather-local-root.crt https://localhost:8443/api/health/live
+```
+
+Certificate trust installation is a separate explicit action. The health route checks API liveness. Runtime acceptance also covers cookie/Origin behavior, MongoDB transactions, persistence, worker delivery and restart recovery.
+
+Open `https://localhost:8443` and the local inbox at `http://localhost:8025`. Register a fixture account and use its captured verification code in the application. Verify company creation, invitation acceptance and password recovery through the same origin. The local inbox contains sensitive one-time codes.
+
+## Stop and retain state
+
+```sh
+docker compose --env-file infra/.env.local -f infra/compose.yaml --profile app --profile worker --profile cache --profile setup down
+```
+
+Named volumes and `infra/.env.local` retain the local database, queue, inbox, certificates and outbox key for the next run.
+
+## Pins and references
+
+The Dockerfile and Compose file pin image digests for Node 24.18.0, MongoDB 8.2.6, Redis 8.2.3, Caddy 2.11.9 and Mailpit 1.33.1. Linux amd64 and arm64 manifest entries were verified against the official registry on 2026-11-09. Application dependencies use the frozen pnpm lockfile.
+
+Configuration references are the [Compose specification](https://compose-spec.github.io/compose-spec/), [Caddy proxy documentation](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy), [Caddy local TLS settings](https://caddyserver.com/docs/caddyfile/options), [Mailpit Docker image](https://mailpit.axllent.org/docs/install/docker/) and [Mailpit runtime options](https://mailpit.axllent.org/docs/configuration/runtime-options/). Review and runtime evidence belong in the [CP04 delivery plan](../docs/planning/CP04_BROWSER_AND_DELIVERY.md).

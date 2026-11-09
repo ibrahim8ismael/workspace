@@ -7,8 +7,20 @@ export function createSignalingGuard({ upstream, origin, authorize }) {
   const sockets = new Set();
   async function permitted(req, path) {
     if (req.method !== 'GET' || req.headers.origin !== origin) return false;
+    if (req.url.length > 16384) return false;
     const url = new URL(req.url, 'http://fixture.invalid');
-    if (url.pathname !== path || url.searchParams.getAll('access_token').length !== 1) return false;
+    const v1 = path === '/rtc' ? '/rtc/v1' : '/rtc/v1/validate';
+    if (![path, v1].includes(url.pathname) || url.searchParams.getAll('access_token').length !== 1)
+      return false;
+    if (url.pathname === v1) {
+      const joined = url.searchParams.getAll('join_request');
+      if (
+        joined.length !== 1 ||
+        !/^[A-Za-z0-9_-]+={0,2}$/.test(joined[0]) ||
+        joined[0].length > 12000
+      )
+        return false;
+    }
     const token = url.searchParams.get('access_token');
     if (!token || token.length > 8192) return false;
     let timer;

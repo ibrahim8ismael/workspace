@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { createSignalingGuard } from '../signaling-guard.mjs';
-test('validation requires exact origin/path and authorized token; unknown v1 is denied', async () => {
+test('validation requires exact origin/path and authorized token; malformed v1 is denied', async () => {
   let forwarded = 0;
   const upstream = http.createServer((req, res) => {
     forwarded++;
@@ -43,6 +43,11 @@ test('validation requires exact origin/path and authorized token; unknown v1 is 
     assert.equal(good.status, 200);
     assert.equal(await good.text(), 'validated');
     assert.equal(forwarded, 1);
+    const v1 = await fetch(base + '/rtc/v1/validate?access_token=valid&join_request=AA', {
+      headers: { Origin: 'http://fixture.test' },
+    });
+    assert.equal(v1.status, 200);
+    assert.equal(forwarded, 2);
   } finally {
     guard.close();
     await new Promise((resolve) => upstream.close(resolve));

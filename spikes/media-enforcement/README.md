@@ -119,3 +119,32 @@ claim validation. The prior working unguarded media harness is preserved as the
 baseline. Thirteen state/loopback tests pass, including refusal to proxy unknown
 v1/admin paths, wrong origins, bad or duplicate tokens. SFU signaling is still
 published on loopback in that baseline: network bypass isolation remains open.
+
+## CP07.7 verified v1 admission and real audio/video cutoff
+
+Source inspection of installed client 2.23.0 corrects CP07.6's diagnosis: v1 still
+sends the JWT as `access_token`; `join_request` contains connection settings, not
+an alternative authorization credential. The gate now accepts exact `/rtc/v1`
+and `/rtc/v1/validate` paths, bounds the complete URL and base64url join request,
+and passes that request unchanged to the pinned LiveKit server for decoding.
+It does not infer authorization from reconnect settings or participant SIDs.
+The media fixture wires SDK signature/issuer/expiry verification (zero clock
+tolerance), exact room/identity checks and durable generation retirement into the
+gate. After retirement it restarts both guard and SFU and asserts that the same
+original receiver token is rejected. Failure of this assertion now fails the run.
+
+The fixture also publishes a real 660Hz synthetic WebRTC audio track. The receiver
+attaches/plays remote audio and samples its waveform every 20ms, counting samples
+with amplitude greater than 0.01. On 2026-11-10 the guarded experiment observed
+89 video frames, 249 active audio samples, last video frame at 3460ms and last
+active waveform at 3793ms after initiating supervisor shutdown. Both counters
+stayed stable in the post-settling one-second observation. Old token accepted
+after guard/SFU restart: false. Earlier audio attempts failed their activity
+precondition until remote audio was attached to a playing element; those attempts
+provide no cutoff evidence.
+
+This proves one guarded fixture path, not network bypass exclusion: direct SFU
+signaling remains reachable on host loopback. Refreshed-token tests, source-grant
+binding, authenticated policy pulls, independent guard process/freeze scenarios,
+controller loss, control failure, protected retirement storage and production
+supervisor privilege separation remain CP07 gates. No production integration.

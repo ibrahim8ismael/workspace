@@ -102,3 +102,20 @@ coordination. Missing/lost storage is an operational failure requiring isolation
 and reconciliation; constructing an empty store does not prove reconciliation.
 The LiveKit direct-signaling replay failure remains open until a guard uses this
 state and all SFU signaling bypass routes are isolated.
+
+## CP07.6 initial signaling gate — incomplete compatibility
+
+`signaling-guard.mjs` implements a fixed-upstream HTTP/WebSocket gate with exact
+Origin, one bounded query token, injected asynchronous authorization with a
+one-second deadline, and an allowlist for legacy `/rtc` and `/rtc/validate` only.
+Unknown paths, duplicate tokens and authorization failures are denied. The caller
+must cryptographically verify JWT claims and bind them to current durable policy;
+this module does not provide that wiring or continuing media authorization.
+
+The actual installed LiveKit client 2.23.0 uses `/rtc/v1` with an encoded join
+request. A real guarded publisher/receiver attempt failed at signaling admission.
+This unsupported path stays denied; do not enable it without bounded decoding and
+claim validation. The prior working unguarded media harness is preserved as the
+baseline. Thirteen state/loopback tests pass, including refusal to proxy unknown
+v1/admin paths, wrong origins, bad or duplicate tokens. SFU signaling is still
+published on loopback in that baseline: network bypass isolation remains open.

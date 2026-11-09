@@ -216,7 +216,7 @@ Codex authored a repeatable Playwright UI E2E after the owner explicitly selecte
 
 | Batch | Scope | Status | Evidence |
 | --- | --- | --- | --- |
-| CP06 preview E2E | Browser journey through mocked sign-in, company scope, map/chat preview and return | Locally verified; commit/push follows this row | `pnpm test:e2e`: 1 Chromium test passed after the full `pnpm check`. Local setup: `pnpm exec playwright install chromium`; CI installs Chromium automatically. This does not test live API authorization, SMTP, Edge, or realtime presence |
+| CP06 preview E2E | Browser journey through mocked sign-in, company scope, map/chat preview and return | Complete, committed/pushed in `bef6e44` | `pnpm test:e2e`: 1 Chromium test passed after the full `pnpm check`. Local setup: `pnpm exec playwright install chromium`; CI installs Chromium automatically. This does not test live API authorization, SMTP, Edge, or realtime presence |
 
 ## CP04.5a — security and operations boundary review
 

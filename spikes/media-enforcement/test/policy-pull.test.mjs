@@ -74,3 +74,30 @@ test('oversized authenticated responses cannot install policy', async () => {
     false,
   );
 });
+
+test('installation acknowledgement is emitted only after authenticated successful install', async () => {
+  const events = [];
+  const state = new PermitState('epoch', () => 0);
+  const options = {
+    endpoint: 'http://fixture',
+    key,
+    state,
+    onRequest: (challenge) => events.push(['request', challenge.nonce]),
+    onInstalled: (snapshot) => events.push(['installed', snapshot.nonce]),
+  };
+  assert.equal(
+    await pullPolicy({ ...options, fetchImpl: transport((b) => b, 'wrong-key') }),
+    false,
+  );
+  assert.deepEqual(
+    events.map((event) => event[0]),
+    ['request'],
+  );
+  events.length = 0;
+  assert.equal(await pullPolicy({ ...options, fetchImpl: transport() }), true);
+  assert.deepEqual(
+    events.map((event) => event[0]),
+    ['request', 'installed'],
+  );
+  assert.equal(events[0][1], events[1][1]);
+});

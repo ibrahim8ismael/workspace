@@ -22,9 +22,12 @@ const docker = async (...args) =>
 const image =
   'livekit/livekit-server@sha256:25cd902de7cacbd5f1f779f6a6ac1eae20ba8f56b0935934ce6b0ab80d1e3d20';
 const isolated = process.argv.includes('--isolated');
+const policyLoss = process.argv.includes('--policy-loss');
+if (policyLoss && !isolated) throw new Error('--policy-loss requires --isolated');
+const policyKey = randomBytes(32).toString('hex');
 const secret = randomBytes(32).toString('hex');
 const config = `port: 7880\nbind_addresses: [${isolated ? '127.0.0.1' : '0.0.0.0'}]\nrtc:\n  tcp_port: 17881\n  node_ip: 127.0.0.1\n  use_external_ip: false\nkeys:\n  fixture: ${secret}\n`;
-let id, browser, watchdog, guard, guardId, progressTimer;
+let id, browser, watchdog, guard, guardId, progressTimer, policyId, progressLogs;
 const retirementDirectory = await mkdtemp(join(tmpdir(), 'cp07-guard-'));
 let retirement;
 const server = createServer(async (req, res) => {
@@ -83,6 +86,25 @@ try {
         guardId = undefined;
       }
       const root = process.cwd();
+      if (policyLoss && !policyId) {
+        policyId = await docker(
+          'run',
+          '-d',
+          '--network',
+          `container:${id}`,
+          '--read-only',
+          '--cap-drop',
+          'ALL',
+          '-v',
+          `${root}/spikes:/workspace/spikes:ro`,
+          '-e',
+          `CP07_POLICY_KEY=${policyKey}`,
+          'node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d',
+          'node',
+          '/workspace/spikes/media-enforcement/policy-process.mjs',
+        );
+      }
+
       guardId = await docker(
         'run',
         '-d',
@@ -107,6 +129,14 @@ try {
         `CP07_ORIGIN=${origin}`,
         '-e',
         'CP07_RETIREMENTS=/retirements',
+        ...(policyLoss
+          ? [
+              '-e',
+              'CP07_POLICY_ENDPOINT=http://127.0.0.1:7886/policy',
+              '-e',
+              `CP07_POLICY_KEY=${policyKey}`,
+            ]
+          : []),
         'node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d',
         'node',
         '/workspace/spikes/media-enforcement/guard-process.mjs',
@@ -274,7 +304,7 @@ try {
       throw new Error('Invalid refreshed fixture token');
   }
   if (isolated) retirement = new RetirementStore(retirementDirectory);
-  const progressStall = process.argv.includes('--progress-stall');
+  const progressStall = policyLoss || process.argv.includes('--progress-stall');
   if (!progressStall) retirement.retire('cutoff-fixture');
   const freezeGuard = process.argv.includes('--freeze-guard');
   if (freezeGuard && !progressStall) {
@@ -306,8 +336,29 @@ try {
       );
     };
     watchdog.stdin.on('error', () => {});
-    progress();
-    progressTimer = setInterval(progress, 500);
+    if (policyLoss) {
+      progressLogs = spawn(
+        'docker',
+        ['--context', context, 'logs', '--follow', '--tail', '0', guardId],
+        { stdio: ['ignore', 'pipe', 'ignore'] },
+      );
+      let pending = '';
+      progressLogs.stdout.on('data', (chunk) => {
+        pending += chunk.toString();
+        const lines = pending.split('\n');
+        pending = lines.pop();
+        for (const line of lines) {
+          try {
+            const message = JSON.parse(line);
+            if (['expect', 'ack'].includes(message.kind))
+              watchdog.stdin.write(JSON.stringify(message) + '\n');
+          } catch {}
+        }
+      });
+    } else {
+      progress();
+      progressTimer = setInterval(progress, 500);
+    }
     await new Promise((resolve) => setTimeout(resolve, 4000));
     clearInterval(progressTimer);
     if (watchdog.exitCode !== null) throw new Error('Supervisor stopped during valid progress');
@@ -317,6 +368,10 @@ try {
     }));
     if (healthy.frames <= before.frames || healthy.audio <= before.audio)
       throw new Error('Media did not continue during healthy progress');
+    if (policyLoss) {
+      await docker('rm', '-f', policyId);
+      policyId = undefined;
+    }
     retirement.retire('cutoff-fixture');
     if (freezeGuard) await docker('pause', guardId);
     startedAt = Date.now();
@@ -373,7 +428,11 @@ try {
 
   console.log(
     JSON.stringify({
-      scenario: progressStall ? 'fixture-install-progress-then-stall' : 'missing-guard-progress',
+      scenario: policyLoss
+        ? 'authenticated-controller-loss'
+        : progressStall
+          ? 'fixture-install-progress-then-stall'
+          : 'missing-guard-progress',
       isolated,
       freezeGuard,
       staleTokenAcceptedAfterRestart,
@@ -388,6 +447,8 @@ try {
   );
 } finally {
   clearInterval(progressTimer);
+  progressLogs?.kill();
+  if (policyId) await docker('rm', '-f', policyId);
   guard?.close();
   if (guardId) await docker('rm', '-f', guardId);
   watchdog?.kill();

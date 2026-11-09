@@ -8,7 +8,14 @@ export function validPolicySignature(key, body, signature) {
   );
 }
 /** Authenticated, bounded policy transport; installation owns request-start expiry/sequence validation. */
-export async function pullPolicy({ endpoint, key, state, fetchImpl = fetch }) {
+export async function pullPolicy({
+  endpoint,
+  key,
+  state,
+  fetchImpl = fetch,
+  onRequest = () => {},
+  onInstalled = () => {},
+}) {
   if (typeof key !== 'string' || Buffer.byteLength(key) < 32)
     throw new Error('policy key too short');
   const challenge = state.beginPull(randomBytes(32).toString('hex'));
@@ -16,6 +23,7 @@ export async function pullPolicy({ endpoint, key, state, fetchImpl = fetch }) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 1000);
   try {
+    onRequest(challenge);
     const response = await fetchImpl(endpoint, {
       method: 'POST',
       redirect: 'error',
@@ -64,7 +72,9 @@ export async function pullPolicy({ endpoint, key, state, fetchImpl = fetch }) {
       )
     )
       return false;
-    return state.install(snapshot);
+    if (!state.install(snapshot)) return false;
+    onInstalled(snapshot);
+    return true;
   } catch {
     return false;
   } finally {

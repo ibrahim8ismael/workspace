@@ -217,3 +217,29 @@ nonce, signed extra fields, oversized responses and permit expiry after controll
 loss. Policy tests use injected Response objects and are not a deployed controller
 or real media outage experiment. This transport is not yet connected to the
 running guard/supervisor; the earlier media progress ACKs remain fixture-generated.
+
+## CP07.11 real authenticated controller loss
+
+`--run-local --isolated --policy-loss` starts a separate restricted policy container
+in the private SFU namespace. Its HTTP listener binds namespace loopback port
+7886, which is not published. Requests and responses use an independent random
+HMAC key. `policy-process.mjs` is a synthetic authority granting two fixed fixture
+identities, not the application's authorization service. The guard pulls every
+500ms without overlapping requests, installs through PermitState and emits an ACK
+only after successful authenticated installation. The harness relays actual guard
+stdout events to the independent supervisor's private stdin; it generates no ACKs
+in this mode. Docker-log forwarding is fixture plumbing, not a production control
+channel. The static fixture epoch still needs production boot-epoch ownership.
+
+Before faults, the fixture verifies advancing audio/video for four seconds under
+this real pull/install/ACK loop. It then removes the policy container, persists
+generation retirement and measures media cessation. Observed 2026-11-10: 168
+frames / 446 active audio samples, last video 2877ms and audio 3238ms after the
+fault operation completes. Supervisor reported stop at 7086.772ms from its own
+earlier startup. Both original and refreshed-token replays were rejected after
+guard/SFU restart. Containers and temporary retirement state were cleaned up.
+
+Eighteen tests pass, including ACK suppression for invalid signed policy. Remaining:
+control and supervisor failure injection, source-specific grant enforcement,
+shared-node impact, deployment authority/key isolation and application-policy
+integration. This mode does not make the entire CP07 release gate accepted.

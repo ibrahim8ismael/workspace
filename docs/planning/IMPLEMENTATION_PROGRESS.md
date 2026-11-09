@@ -431,3 +431,9 @@ Validation: `pnpm test:e2e:live`: one Chromium test passed against the authorize
 Accessibility review found that the live map was not keyboard-focusable while Phaser read global cursor/WASD state. The map now exposes a named focusable group with a visible focus outline. Pointer interaction focuses that group. Movement is sent only while focus remains within the map; losing focus stops active intent.
 
 Validation: mocked Chromium Playwright E2E passed, including map focus, Tab traversal to Busy, movement on the map, release-to-stop, and no movement when an action button receives arrow keys. Web typecheck, targeted ESLint and whitespace checks passed. Formal screen-reader and installed Chrome/Edge review remain open; no browser matrix acceptance is claimed. CP07 is the next implementation dependency.
+
+## CP07.1 — Experimental permit policy state
+
+Implemented `spikes/media-enforcement/permit-state.mjs`: default denial, guard epoch/nonce/sequence checks, exact actor/room/source/version bindings, five-second request-start deadlines, atomic snapshots, empty-snapshot removal and irreversible explicit generation retirement during the process lifetime. The caller must supply monotonic time and authenticate strict policy DTOs. No production integration exists.
+
+Validation: five Node tests passed covering binding substitution, delayed/expired responses, stale sequences/nonce/epoch, retirement replay and atomic invalid snapshots. This is algorithm evidence only. LiveKit pinning, authenticated signaling, independent supervisor, durable retirement/cold restart and measured forwarding cutoff remain CP07 requirements. Official token lifecycle documentation was checked; self-hosted removal alone does not invalidate existing tokens.

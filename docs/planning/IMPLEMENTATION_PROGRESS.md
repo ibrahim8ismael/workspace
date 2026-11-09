@@ -419,3 +419,9 @@ Codex implemented a version-1 allowlisted projection and SHA-256 digest in `audi
 | CP04.5c | Same-transaction versioned audit projection and outbox | Local implementation complete; delivery/recovery open | Stable event ID, digest, index and rollback integration coverage added. No provider selected/configured; pending outbox has no consumer or cleanup policy |
 
 After review of that concrete design, delivery still requires owner agreement on the independent storage boundary, retention/immutability, mirror-lag budget and affected actions during a prolonged outage. Target-host Argon2 and ingress measurements still wait for a real deployment target.
+
+## CP06.10c — Live transport-loss recovery
+
+The live two-browser test now discards all frames in both directions on one existing WebSocket, including Engine.IO heartbeat messages. After the real heartbeat deadlines expire, the member sees `Office connection closed.` and the owner sees the participant count fall to one. The member then enters with fresh bootstrap/ticket state and both browsers see two participants again. New WebSocket connections restore normal forwarding. The remaining movement, collision, seat contention, company isolation and renderer teardown checks also pass.
+
+Validation: `pnpm test:e2e:live`: one Chromium test passed against the authorized local Docker stack (approximately 1.5 minutes); targeted ESLint, Prettier and whitespace checks passed. This closes the combined local browser-to-Caddy/API transport-loss scenario. Formal visual anchor/occlusion, screen-reader and Chrome/Edge acceptance, followed by CP07 media enforcement proof, remain open.

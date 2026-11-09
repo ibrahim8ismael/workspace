@@ -150,18 +150,22 @@ async function moveToTile(
 async function interceptWorldVersionGap(page: import('@playwright/test').Page) {
   const probe = {
     armed: false,
+    interrupted: false,
     droppedDelta: false,
     resyncRequested: false,
     snapshotReceived: false,
   };
   await page.routeWebSocket(/\/socket\.io\//, (webSocket) => {
+    probe.interrupted = false;
     const server = webSocket.connectToServer();
     webSocket.onMessage((message) => {
+      if (probe.interrupted) return;
       if (probe.armed && typeof message === 'string' && message.includes('"world:resync"'))
         probe.resyncRequested = true;
       server.send(message);
     });
     server.onMessage((message) => {
+      if (probe.interrupted) return;
       if (typeof message === 'string' && probe.armed) {
         if (!probe.droppedDelta && message.includes('"world:delta"')) {
           probe.droppedDelta = true;
@@ -177,6 +181,9 @@ async function interceptWorldVersionGap(page: import('@playwright/test').Page) {
       probe.armed = true;
     },
     state: probe,
+    interrupt: () => {
+      probe.interrupted = true;
+    },
   };
 }
 
@@ -291,9 +298,11 @@ test('live two-browser admission, movement, collision, and seat contention', asy
     await expect.poll(() => gapProbe.state.snapshotReceived).toBe(true);
     await expect(memberPage.locator('[data-availability="away"]')).toContainText(ownerName);
 
-    await memberPage.getByRole('button', { name: 'Leave office' }).click();
-    await expect(memberPage.getByText('Not connected to the office.')).toBeVisible();
-    await expect(ownerPage.getByText('1 person in the office')).toBeVisible();
+    gapProbe.interrupt();
+    await expect(memberPage.getByText('Office connection closed.')).toBeVisible({
+      timeout: 65_000,
+    });
+    await expect(ownerPage.getByText('1 person in the office')).toBeVisible({ timeout: 65_000 });
     await memberPage.getByRole('button', { name: 'Enter office' }).click();
     await expect(memberPage.getByText('2 people in the office')).toBeVisible();
     await expect(ownerPage.locator('[data-availability="away"]')).toContainText(ownerName);

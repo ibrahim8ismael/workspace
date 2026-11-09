@@ -19,6 +19,9 @@ import {
   sessionsResponseSchema,
   verifyEmailSchema,
   officeWorkspaceDetailResponseSchema,
+  officeBootstrapResponseSchema,
+  joinTicketRequestSchema,
+  joinTicketResponseSchema,
   workspaceResponseSchema,
   workspacesResponseSchema,
 } from '@gather/contracts';
@@ -204,6 +207,39 @@ export class ApiClient {
     ).workspace;
     if (workspace.id !== parsedId.data) throw new ApiError('invalid_response', 200);
     return workspace;
+  }
+
+  async officeBootstrap(workspaceId: string, officeId: string, signal?: AbortSignal) {
+    const parsedWorkspaceId = idSchema.safeParse(workspaceId);
+    const parsedOfficeId = idSchema.safeParse(officeId);
+    if (!parsedWorkspaceId.success || !parsedOfficeId.success)
+      throw new ApiError('validation_failed', 400);
+    return this.get(
+      `/workspaces/${encodeURIComponent(parsedWorkspaceId.data)}/offices/${encodeURIComponent(parsedOfficeId.data)}`,
+      officeBootstrapResponseSchema,
+      signal,
+    );
+  }
+
+  async officeJoinTicket(
+    workspaceId: string,
+    officeId: string,
+    input: unknown,
+    signal?: AbortSignal,
+  ) {
+    const parsedWorkspaceId = idSchema.safeParse(workspaceId);
+    const parsedOfficeId = idSchema.safeParse(officeId);
+    const parsedInput = joinTicketRequestSchema.safeParse(input);
+    if (!parsedWorkspaceId.success || !parsedOfficeId.success || !parsedInput.success)
+      throw new ApiError('validation_failed', 400);
+    return this.mutate(
+      `/workspaces/${encodeURIComponent(parsedWorkspaceId.data)}/offices/${encodeURIComponent(parsedOfficeId.data)}/join-ticket`,
+      parsedInput.data,
+      joinTicketRequestSchema,
+      joinTicketResponseSchema,
+      undefined,
+      signal,
+    );
   }
 
   async sessions(signal?: AbortSignal): Promise<SessionDto[]> {

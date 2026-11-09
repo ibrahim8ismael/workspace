@@ -272,6 +272,16 @@ Codex authored a repeatable Playwright UI E2E after the owner explicitly selecte
 | --- | --- | --- | --- |
 | CP06 preview E2E | Browser journey through mocked sign-in, company scope, map/chat preview and return | Complete, committed/pushed in `bef6e44` | `pnpm test:e2e`: 1 Chromium test passed after the full `pnpm check`. Local setup: `pnpm exec playwright install chromium`; CI installs Chromium automatically. This does not test live API authorization, SMTP, Edge, or realtime presence |
 
+## CP06.1 — Typed office client core
+
+Codex added the browser-side typed HTTP and realtime foundation for live office entry. `ApiClient` now validates workspace/office IDs and response contracts for the office bootstrap and one-use join ticket. `OfficeClient` keeps the ticket in memory, opens only the `/office` WebSocket namespace, validates the ready payload and runtime events, applies deltas only when epoch/base-version match the accepted snapshot, and asks the server for a fresh snapshot after a gap. Teardown invalidates in-flight bootstrap work and disconnects the socket. It does not yet replace the disconnected company preview with a live office route.
+
+| Batch | Scope | Status | Evidence |
+| --- | --- | --- | --- |
+| CP06.1 | Typed office bootstrap/ticket client, socket lifecycle and pure snapshot/delta reducer | Locally verified; not a release gate | Web TypeScript typecheck passed; focused world-state tests passed 3/3 for contiguous update, gap recovery and stale epoch rejection |
+
+The existing `ChatView` has no message persistence or server event contract. The office roster and movement can be connected to CP05, while text sending remains explicitly disabled pending an agreed chat scope and backend implementation. CP06.2 will mount the client from the authenticated company context and show live connection/access states; subsequent batches will connect the renderer and test a two-user journey.
+
 ## CP04.5a — security and operations boundary review
 
 Codex reviewed the current HTTP configuration, password service, audit model, local proxy and existing evidence. The review found the local implementation controls and the outstanding deployment gaps; it made no runtime/security-policy changes. See the [CP04.5a findings](CP04_BROWSER_AND_DELIVERY.md#cp045a--security-and-operations-boundary-review).

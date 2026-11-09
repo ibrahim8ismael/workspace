@@ -183,4 +183,5 @@ export const officeAccessEndedSchema = z
 
 export type WorldSnapshot = z.infer<typeof worldSnapshotSchema>;
 export type WorldDelta = z.infer<typeof worldDeltaSchema>;
+export type OfficeReady = z.infer<typeof officeReadySchema>;
 export type WorldInputEvent = z.infer<typeof worldInputEventSchema>;

@@ -18,11 +18,28 @@ if (
 const child = spawn(
   process.execPath,
   [new URL('./supervisor-process.mjs', import.meta.url).pathname, context, id, epoch],
-  { stdio: ['pipe', 'pipe', 'inherit'] },
+  {
+    stdio: ['pipe', 'pipe', 'inherit'],
+    env: {
+      ...process.env,
+      ...(process.argv.includes('--deny-primary-stop') ? { CP07_FIXTURE_DENY_STOP: '1' } : {}),
+    },
+  },
 );
 process.stdin.pipe(child.stdin);
 child.stdin.on('error', () => {});
 child.stdout.pipe(process.stdout);
+let pending = '';
+child.stdout.on('data', (chunk) => {
+  pending += chunk.toString();
+  const lines = pending.split('\n');
+  pending = lines.pop();
+  for (const line of lines) {
+    try {
+      if (JSON.parse(line).state === 'stop-unconfirmed') child.kill('SIGTERM');
+    } catch {}
+  }
+});
 process.stdout.write(JSON.stringify({ kind: 'worker-started', pid: child.pid }) + '\n');
 process.on('SIGTERM', () => {
   child.kill('SIGTERM');

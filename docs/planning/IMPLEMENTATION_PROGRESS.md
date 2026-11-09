@@ -539,3 +539,9 @@ Remaining tenant gate: two concurrently authorized rooms/companies, absence of c
 Added `--company-isolation`: separate policy/guard mappings authorize four real Chromium participants across two fixture rooms. Exclusive receiver rosters and second-room subscribed track owners are asserted while both rooms actually receive media. This is media room isolation; application tenant identity/role integration is still separate.
 
 Actual combined source/room/controller-loss/watchdog-crash run passed. First receiver sees only publisher; second sees/subscribes only publisher-b. Guardian stopping the shared SFU interrupts both rooms: second-room last video at 165ms after fault, 121 frames; first-room video/audio cutoff 129ms/512ms. Original and refreshed replay remain denied. This demonstrates confidentiality isolation and measures node-wide availability impact, not fault-independent company availability. Next: shutdown-control failure evidence and supported deployment failure boundary.
+
+## CP07.16 — Failed primary stop command and independent fallback (2026-11-10)
+
+Added fixed-target fixture stop denial to the child watchdog and escalation on stop-unconfirmed in the surviving guardian. The test modifies no Docker daemon state: only the first process's actuator is denied. The guardian uses its own actuator and confirms stopped state.
+
+Actual combined two-company/source/controller-loss run passed: first stop unconfirmed, child terminated, guardian stop confirmed 467.149ms after child exit; audio cutoff 3346ms/video 2906ms, second-room video cutoff 2909ms after fault. Both original/refreshed replays remained denied and source permission checks passed. Shared Docker API/host/VM failures and simultaneous loss of both enforcement processes remain outside this successful process-level fault experiment and require a separate deployment fencing boundary to include in a hard guarantee.

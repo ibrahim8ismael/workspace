@@ -503,6 +503,7 @@ try {
       context,
       id,
       'media-fixture',
+      ...(process.argv.includes('--deny-primary-stop') ? ['--deny-primary-stop'] : []),
     ],
     { stdio: ['pipe', 'pipe', 'inherit'] },
   );

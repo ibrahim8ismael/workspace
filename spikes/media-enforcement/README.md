@@ -322,3 +322,20 @@ the unrelated authorized second room: its last video frame was 165ms after fault
 initiation (121 frames received). First-room video/audio cutoff: 129ms/512ms.
 Original/refreshed replay after restart remained denied. This records deliberate
 node-wide collateral interruption; it does not claim per-tenant availability.
+
+## CP07.16 primary stop-adapter failure with surviving guardian
+
+`--guarded-supervisor --deny-primary-stop` injects stop denial into only the child
+watchdog (after fixed-target safety checks). The guardian detects stop-unconfirmed,
+terminates the child and independently stops/inspects the same SFU. This tests a
+failed primary actuator, not a shared Docker daemon outage. The injection is
+fixture-only and never changes the real Docker daemon or other containers.
+
+Actual combined two-room/source/policy-loss run passed: primary reported stop-
+unconfirmed, guardian confirmed stop 467.149ms after child exit, first-room audio
+3346ms/video 2906ms after the fault and second-room video 2909ms. Original and
+refreshed tokens remained denied after restart; camera/screen rejection and
+positive microphone control passed. Shared Docker API failure, host/VM failure
+and loss of both enforcement processes need an external fencing failure domain
+if the deployment's guarantee includes them; no local-process design can claim
+that infrastructure resilience from this experiment.

@@ -23,6 +23,7 @@ const supervisor = new SupervisorState({
   epoch,
   clock: () => performance.now(),
   stop: async () => {
+    if (process.env.CP07_FIXTURE_DENY_STOP === '1') throw new Error('fixture stop adapter denied');
     if ((await docker('inspect', '--format', '{{.State.Running}}', containerId)) === 'false')
       return true;
     await docker('kill', '--signal', 'KILL', containerId);

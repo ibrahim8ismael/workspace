@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
-import { mapManifestSchema, OFFICE_PROTOCOL_VERSION } from '@gather/contracts';
+import { appearanceSchema, mapManifestSchema, OFFICE_PROTOCOL_VERSION } from '@gather/contracts';
 import { COMMONS_GEOMETRY, validateOfficeGeometry } from '@gather/world';
 import manifestJson from '@gather/assets/manifests/commons-map.json' with { type: 'json' };
 import type { OfficeBootstrapResponse } from '@gather/contracts';
@@ -42,6 +42,13 @@ if (
 ) {
   throw new Error('Trusted Commons asset manifest hash mismatch');
 }
+const artManifest: unknown = JSON.parse(artBytes.toString('utf8'));
+if (!artManifest || typeof artManifest !== 'object' || !('defaultAppearance' in artManifest)) {
+  throw new Error('Trusted Commons default appearance is missing');
+}
+export const APPROVED_OFFICE_DEFAULT_APPEARANCE = Object.freeze(
+  appearanceSchema.parse(artManifest.defaultAppearance),
+);
 const validated = validateOfficeGeometry(COMMONS_GEOMETRY);
 if (
   validated.bounds.width !== manifest.bounds.width ||

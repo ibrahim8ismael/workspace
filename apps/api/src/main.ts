@@ -5,10 +5,12 @@ import { ConfigService } from '@nestjs/config';
 import { configureHttp } from './platform/http/configure.js';
 import { AppModule } from './app.module.js';
 import type { ApiEnvironment } from './platform/config/environment.js';
+import { OfficeSocketAdapter } from './modules/office/realtime/office-socket.adapter.js';
 
 const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
 app.useBodyParser('json', { limit: '4kb' });
 const config = app.get(ConfigService<ApiEnvironment, true>);
 configureHttp(app);
+app.useWebSocketAdapter(new OfficeSocketAdapter(app, config.get('APP_ORIGIN', { infer: true })));
 app.enableShutdownHooks();
 await app.listen(config.get('API_PORT', { infer: true }), config.get('API_HOST', { infer: true }));

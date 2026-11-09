@@ -1,6 +1,6 @@
 # CP05 — Authoritative Socket.IO office implementation plan
 
-Status: implementation slices defined; first code batch not started · Updated: 2026-11-09
+Status: CP05.1 implemented and verified locally; CP05.2–CP05.4 remain · Updated: 2026-11-09
 
 CP05 builds the server-owned realtime office on top of completed CP02 map rules and CP03 bootstrap/tickets. The wire contract is in [OFFICE_V1](../contracts/OFFICE_V1.md) and [REALTIME](../contracts/REALTIME.md). The implementation plan in [PROJECT_COMPLETION_PLAN](PROJECT_COMPLETION_PLAN.md#cp05--build-the-authoritative-socketio-office) remains the acceptance baseline. This file orders the work into reviewable, locally testable batches.
 
@@ -18,13 +18,13 @@ CP05 builds the server-owned realtime office on top of completed CP02 map rules 
 
 ### CP05.1 — Socket transport, ticket admission and ready snapshot
 
-Implement the Nest Socket.IO adapter and `/office` gateway. Enforce exact origin, WebSocket-only transport and inbound size limits. Validate `officeSocketAuthSchema`, consume the one-use CP03 ticket, reserve a bounded office participation, construct the initial safe world snapshot, subscribe the admitted socket and emit `office:ready`. Roll provisional reservations back on failed activation and release them on disconnect. Keep connection-state recovery disabled.
+**Complete locally.** The Nest Socket.IO adapter and `/office` gateway enforce exact `APP_ORIGIN`, WebSocket-only transport, a 4 KiB Engine.IO message limit and disabled connection-state recovery. The gateway validates `officeSocketAuthSchema`, consumes the one-use CP03 ticket, reserves a maximum of 20 participants with one active participation per user/workspace, creates unique reachable spawn positions and emits a contract-validated safe `office:ready` snapshot. It publishes join/removal deltas, releases provisional reservations on disconnect/failure and disconnects old-epoch sockets before admitting into a new runtime epoch.
 
-Tests use actual Socket.IO clients and the transaction-capable Mongo test fixture: valid admission, foreign/missing Origin, malformed auth, ticket replay, capacity/duplicate participation, snapshot contract and disconnect cleanup. A completed CP05.1 alone is development evidence; continuing authorization and movement are still absent.
+Actual Socket.IO clients and the transaction-capable Mongo fixture cover valid admission, foreign/missing Origin, oversized raw packets, malformed auth, ticket replay, duplicate participation, capacity, epoch replacement, safe two-user snapshots and disconnect cleanup. The full API suite passes 57 tests. The handshake has no independent rate budget yet; CP05.2 must choose/enforce attempt and timeout budgets before deployment. CP05.1 is development evidence only; continuing authorization, movement and seat commands are still absent.
 
 ### CP05.2 — Continuing authorization and revocation
 
-Add per-participation bounded policy leases with request-start monotonic deadlines and ordered replies. Recheck session, account, workspace and membership using the current primary policy. Connect committed logout/session rotation, password reset, suspension and membership removal to runtime revocation. Verify delayed replies, Mongo loss, idle unauthorized sockets, reconnect and restart epoch rotation. Expired or uncertain authority releases capacity and removes the participant from later broadcasts.
+Choose/enforce connection-attempt and namespace-handshake timeout budgets without trusting client-supplied forwarded IP headers. Add per-participation bounded policy leases with request-start monotonic deadlines and ordered replies. Recheck session, account, workspace and membership using the current primary policy. Connect committed logout/session rotation, password reset, suspension and membership removal to runtime revocation. Verify delayed replies, Mongo loss, idle unauthorized sockets, reconnect and restart epoch rotation. Expired or uncertain authority releases capacity and removes the participant from later broadcasts.
 
 ### CP05.3 — Serialized world commands and seats
 
@@ -42,4 +42,4 @@ CP04 SMTP setup and CP04 independent audit delivery remain separate release gate
 
 ## Current execution status
 
-The plans/contracts are ready for CP05.1. No runtime code has been added for CP05 yet. After the owner explicitly approved sending the relevant CP05.1 files to OpenCode DeepSeek, the model reported that its free usage limit was exhausted before reading or changing project files. The batch is waiting for an author/model decision.
+CP05.1 was implemented locally by Codex after the owner selected Codex when OpenCode DeepSeek reported its free quota exhausted. See the code in `apps/api/src/modules/office/{realtime,runtime}/`, the API integration suite and the implementation-progress record. The API is not ready for a production office: the next batch must add continuing authorization and committed-change revocation before a participation can rely on a live socket.

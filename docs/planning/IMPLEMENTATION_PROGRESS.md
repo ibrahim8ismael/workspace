@@ -102,11 +102,19 @@ The final local evidence and remaining boundary are recorded in the [CP03 plan](
 
 CP03.3/CP03.4 was pushed as `b352177` and [hosted CI passed](https://github.com/ibrahim8ismael/workspace/actions/runs/42528012842).
 
-CP03 closed on 2026-11-09. CP04 browser/company integration and CP05 authoritative office runtime are the next implementation packets.
+CP03 closed on 2026-11-09. CP04 browser/company integration and CP05 authoritative office runtime are in progress.
 
 ## CP05 — authoritative Socket.IO office
 
-Codex split the existing CP05 contract into reviewable batches in the [CP05 implementation plan](CP05_REALTIME_IMPLEMENTATION.md): ticket admission and ready snapshot; continuing authorization/revocation; serialized movement/seats; versioned recovery/takeover. No CP05 runtime code has been changed. After the owner explicitly approved sending the relevant CP05.1 files to OpenCode DeepSeek, OpenCode reported that its free usage limit was exhausted before it read or changed project files. Implementation author/model selection awaits the owner.
+Codex split the existing CP05 contract into reviewable batches in the [CP05 implementation plan](CP05_REALTIME_IMPLEMENTATION.md): ticket admission and ready snapshot; continuing authorization/revocation; serialized movement/seats; versioned recovery/takeover. The owner selected Codex to implement CP05.1 locally after OpenCode DeepSeek reported its free quota exhausted.
+
+### CP05.1 — Socket transport, ticket admission and ready snapshot
+
+Codex added a Nest Socket.IO adapter and `/office` gateway with exact `APP_ORIGIN`, WebSocket-only transport, a 4 KiB Engine.IO message bound and no connection-state recovery. The namespace validates the strict handshake auth, consumes the existing ticket in Mongo, derives identity/scope from the stored ticket, serializes active participation and capacity reservations, uses trusted Commons spawn/default appearance, emits contract-validated snapshots/deltas and cleans up disconnects. Epoch replacement disconnects sockets from the old in-memory runtime before admitting the new epoch. The initial snapshot includes static seats as unoccupied; later CP05.3 owns seat transitions. No movement or continuing lease/revocation is implemented in this batch.
+
+| Batch | Scope | Status | Evidence |
+| --- | --- | --- | --- |
+| CP05.1 | Engine.IO Origin/size gate, one-use ticket admission, runtime reservation and ready snapshot | Complete locally; production runtime incomplete | `pnpm --filter @gather/api test`: 57/57 pass, including real Socket.IO clients for valid/invalid Origin, oversized packet, malformed auth, replay, duplicate participation, epoch replacement, two-user snapshot, disconnect cleanup and capacity. Formatting, lint and API build pass |
 
 ## CP04 — browser accounts, companies and delivery (in progress)
 

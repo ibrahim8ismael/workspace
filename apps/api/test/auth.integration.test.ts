@@ -28,6 +28,7 @@ import {
   officeWorkspaceDetailResponseSchema,
   officeBootstrapResponseSchema,
   joinTicketResponseSchema,
+  officeReadySchema,
   OFFICE_LIMITS,
 } from '@gather/contracts';
 import { IdentityModels } from '../dist/modules/identity/identity.models.js';
@@ -47,6 +48,10 @@ import { AbuseService } from '../dist/modules/identity/security/abuse.service.js
 import { digest } from '../dist/modules/identity/security/secrets.js';
 import { configureHttp } from '../dist/platform/http/configure.js';
 import { backfillOfficeMap } from '../dist/modules/office/backfill-office-map.js';
+import { OfficeSocketAdapter } from '../dist/modules/office/realtime/office-socket.adapter.js';
+import { io } from 'socket.io-client';
+import type { Socket } from 'socket.io-client';
+import type { AddressInfo } from 'node:net';
 
 const origin = 'https://api.gather.test';
 const password = 'a quartz river beneath the lantern';
@@ -61,6 +66,38 @@ let outbox: OutboxService;
 function status(response: HttpResponse, expected: number) {
   expect(response.status, response.body.error?.code).toBe(expected);
   if (response.status >= 400) apiErrorResponseSchema.parse(response.body);
+}
+function socketOriginUrl() {
+  const address = app.getHttpServer().address() as AddressInfo;
+  if (!address || typeof address === 'string') throw new Error('Expected a local API address');
+  return `http://127.0.0.1:${address.port}/office`;
+}
+function officeSocket(
+  auth: Record<string, unknown>,
+  requestOrigin: string | null = origin,
+): Socket {
+  return io(socketOriginUrl(), {
+    autoConnect: false,
+    forceNew: true,
+    reconnection: false,
+    timeout: 5000,
+    transports: ['websocket'],
+    auth,
+    ...(requestOrigin === null ? {} : { extraHeaders: { Origin: requestOrigin } }),
+  });
+}
+function connectSocket(socket: Socket) {
+  return new Promise<void>((resolve, reject) => {
+    socket.once('connect', () => resolve());
+    socket.once('connect_error', (error) => reject(error));
+    socket.connect();
+  });
+}
+function nextSocketEvent<T>(socket: Socket, event: string) {
+  return new Promise<T>((resolve, reject) => {
+    socket.once(event, (payload: T) => resolve(payload));
+    socket.once('connect_error', (error) => reject(error));
+  });
 }
 class Client {
   cookie = '';
@@ -196,6 +233,7 @@ beforeAll(async () => {
   app = module.createNestApplication<NestExpressApplication>({ bodyParser: false, logger: false });
   app.useBodyParser('json', { limit: '4kb' });
   configureHttp(app);
+  app.useWebSocketAdapter(new OfficeSocketAdapter(app, origin));
   await app.listen(0, '127.0.0.1');
   identities = app.get(IdentityModels);
   tenancy = app.get(TenancyModels);
@@ -1288,6 +1326,210 @@ describe('office join tickets', () => {
     } finally {
       await ticketModels.createIndexes();
       config.set('DB_AUTO_INDEX', previous);
+    }
+  });
+});
+
+describe('office socket admission', () => {
+  async function issueTicket(user: Awaited<ReturnType<typeof account>>, workspaceId: string) {
+    const office = await tenancy.offices.findOne({ workspaceId }).lean();
+    if (!office) throw new Error('Office missing');
+    const response = await user.client.send(
+      'post',
+      `/api/workspaces/${workspaceId}/offices/${office._id}/join-ticket`,
+      { mapVersion: commonsManifest.mapVersion, protocolVersion: 1 },
+    );
+    status(response, 201);
+    return {
+      office,
+      ticket: joinTicketResponseSchema.parse(response.body).ticket,
+    };
+  }
+
+  it('admits a valid ticket and emits a safe contract-valid ready snapshot', async () => {
+    const owner = await account();
+    const workspaceId = await workspace(owner);
+    const { office, ticket } = await issueTicket(owner, workspaceId);
+    const client = officeSocket({ ticket, protocolVersion: 1 });
+    const readyEvent = nextSocketEvent<unknown>(client, 'office:ready');
+    try {
+      await connectSocket(client);
+      const ready = officeReadySchema.parse(await readyEvent);
+      expect(ready).toMatchObject({ workspaceId, officeId: office._id, protocolVersion: 1 });
+      expect(ready.snapshot.participants).toHaveLength(1);
+      expect(ready.snapshot.participants[0]).toMatchObject({
+        displayName: 'Test Person',
+        appearance: { bodyId: 'commons-worker', paletteId: 'teal' },
+        position: { x: 368, y: 272 },
+        seatId: null,
+      });
+      expect(ready.snapshot.seats.length).toBeGreaterThan(0);
+      expect(ready.snapshot.seats.every((seat) => seat.occupantParticipationId === null)).toBe(
+        true,
+      );
+      expect(Object.keys(ready.snapshot.participants[0]!)).not.toContain('userId');
+      expect(Object.keys(ready.snapshot.participants[0]!)).not.toContain('sessionId');
+    } finally {
+      client.disconnect();
+    }
+  });
+
+  it('rejects missing and foreign Origins before consuming the ticket', async () => {
+    const owner = await account();
+    const workspaceId = await workspace(owner);
+    const { ticket } = await issueTicket(owner, workspaceId);
+    const invalidOrigins = [
+      officeSocket({ ticket, protocolVersion: 1 }, null),
+      officeSocket({ ticket, protocolVersion: 1 }, 'https://evil.example'),
+    ];
+    try {
+      for (const client of invalidOrigins) await expect(connectSocket(client)).rejects.toBeTruthy();
+      const record = await app
+        .get(OfficeJoinTicketModels)
+        .tickets.findOne({ ticketDigest: digest(ticket) })
+        .lean();
+      expect(record?.consumedAt).toBeNull();
+    } finally {
+      for (const client of invalidOrigins) client.disconnect();
+    }
+  });
+
+  it('rejects malformed handshake auth without exposing parser details', async () => {
+    const client = officeSocket({ ticket: 'invalid', protocolVersion: 1, role: 'owner' });
+    try {
+      await expect(connectSocket(client)).rejects.toMatchObject({ message: 'unauthorized' });
+    } finally {
+      client.disconnect();
+    }
+  });
+
+  it('closes oversized raw handshake packets at the transport boundary', async () => {
+    const client = officeSocket({
+      ticket: 'a'.repeat(43),
+      protocolVersion: 1,
+      ignored: 'x'.repeat(5000),
+    });
+    try {
+      const outcome = await new Promise<'connected' | 'rejected' | 'closed' | 'timeout'>(
+        (resolve) => {
+          const timer = setTimeout(() => resolve('timeout'), 5000);
+          client.once('connect', () => {
+            clearTimeout(timer);
+            resolve('connected');
+          });
+          client.once('connect_error', () => {
+            clearTimeout(timer);
+            resolve('rejected');
+          });
+          client.io.once('error', () => {
+            clearTimeout(timer);
+            resolve('rejected');
+          });
+          client.io.once('open', () => {
+            client.io.engine?.once('close', () => {
+              clearTimeout(timer);
+              resolve('closed');
+            });
+          });
+          client.connect();
+        },
+      );
+      expect(outcome).toMatch(/^(rejected|closed)$/);
+    } finally {
+      client.disconnect();
+    }
+  });
+
+  it('rejects ticket replay and a second active participation for the same user', async () => {
+    const owner = await account();
+    const workspaceId = await workspace(owner);
+    const { ticket: firstTicket } = await issueTicket(owner, workspaceId);
+    const { ticket: duplicateTicket } = await issueTicket(owner, workspaceId);
+    const first = officeSocket({ ticket: firstTicket, protocolVersion: 1 });
+    const replay = officeSocket({ ticket: firstTicket, protocolVersion: 1 });
+    const duplicate = officeSocket({ ticket: duplicateTicket, protocolVersion: 1 });
+    try {
+      await connectSocket(first);
+      await expect(connectSocket(replay)).rejects.toMatchObject({ message: 'unauthorized' });
+      await expect(connectSocket(duplicate)).rejects.toMatchObject({
+        message: 'participation_conflict',
+      });
+    } finally {
+      first.disconnect();
+      replay.disconnect();
+      duplicate.disconnect();
+    }
+  });
+
+  it('disconnects old-epoch sockets before admitting into the replacement runtime', async () => {
+    const owner = await account();
+    const workspaceId = await workspace(owner);
+    const { office, ticket: oldTicket } = await issueTicket(owner, workspaceId);
+    const oldSocket = officeSocket({ ticket: oldTicket, protocolVersion: 1 });
+    const oldReadyEvent = nextSocketEvent<unknown>(oldSocket, 'office:ready');
+    let newSocket: Socket | undefined;
+    try {
+      await connectSocket(oldSocket);
+      const oldReady = officeReadySchema.parse(await oldReadyEvent);
+      const accessEndedEvent = nextSocketEvent<Record<string, unknown>>(
+        oldSocket,
+        'office:access-ended',
+      );
+      const oldDisconnectEvent = nextSocketEvent<string>(oldSocket, 'disconnect');
+      app.get(OfficeEpochRegistry).rotate(office._id);
+      const { ticket: newTicket } = await issueTicket(owner, workspaceId);
+      newSocket = officeSocket({ ticket: newTicket, protocolVersion: 1 });
+      const newReadyEvent = nextSocketEvent<unknown>(newSocket, 'office:ready');
+      await connectSocket(newSocket);
+
+      const accessEnded = await accessEndedEvent;
+      expect(accessEnded).toMatchObject({
+        officeEpoch: oldReady.snapshot.officeEpoch,
+        reason: 'server_unavailable',
+      });
+      await oldDisconnectEvent;
+      const newReady = officeReadySchema.parse(await newReadyEvent);
+      expect(newReady.snapshot.officeEpoch).not.toBe(oldReady.snapshot.officeEpoch);
+      expect(newReady.snapshot.participants).toHaveLength(1);
+    } finally {
+      oldSocket.disconnect();
+      newSocket?.disconnect();
+    }
+  });
+
+  it('shows the second admitted user in snapshots and removes a disconnected user', async () => {
+    const owner = await account();
+    const member = await account();
+    const workspaceId = await workspace(owner);
+    await join(owner, workspaceId, member);
+    const { ticket: ownerTicket } = await issueTicket(owner, workspaceId);
+    const { ticket: memberTicket } = await issueTicket(member, workspaceId);
+    const ownerSocket = officeSocket({ ticket: ownerTicket, protocolVersion: 1 });
+    const ownerReadyEvent = nextSocketEvent<unknown>(ownerSocket, 'office:ready');
+    let memberSocket: Socket | undefined;
+    try {
+      await connectSocket(ownerSocket);
+      const ownerReady = officeReadySchema.parse(await ownerReadyEvent);
+      const joinedEvent = nextSocketEvent<Record<string, unknown>>(ownerSocket, 'world:delta');
+      memberSocket = officeSocket({ ticket: memberTicket, protocolVersion: 1 });
+      const memberReadyEvent = nextSocketEvent<unknown>(memberSocket, 'office:ready');
+      await connectSocket(memberSocket);
+      const memberReady = officeReadySchema.parse(await memberReadyEvent);
+      expect(ownerReady.snapshot.participants).toHaveLength(1);
+      expect(memberReady.snapshot.participants).toHaveLength(2);
+      expect(memberReady.snapshot.participants[0]?.position).not.toEqual(
+        memberReady.snapshot.participants[1]?.position,
+      );
+      const joined = await joinedEvent;
+      expect(joined['participants']).toHaveLength(1);
+
+      const removedEvent = nextSocketEvent<Record<string, unknown>>(ownerSocket, 'world:delta');
+      memberSocket.disconnect();
+      const removed = await removedEvent;
+      expect(removed['removedParticipationIds']).toContain(memberReady.participationId);
+    } finally {
+      ownerSocket.disconnect();
+      memberSocket?.disconnect();
     }
   });
 });

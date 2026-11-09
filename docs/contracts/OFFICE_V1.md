@@ -1,6 +1,6 @@
 # Office protocol v1 — current shared contract
 
-Date: 2026-11-08. CP01 implementer: Codex. CP02 map-identity implementation: OpenCode / DeepSeek V4.1 Flash Free (`max`), reviewed by Codex. Scope: exported schemas and technical interface decisions for CP02/CP03/CP05/CP06. These contracts do not implement an office endpoint, runtime, browser adapter or media guard. The reviewed Commons map artifact lives in the assets package.
+Date: 2026-11-08; CP05.1 implementation status added 2026-11-09. CP01 implementer: Codex. CP02 map-identity implementation: OpenCode / DeepSeek V4.1 Flash Free (`max`), reviewed by Codex. Scope: exported schemas and technical interface decisions for CP02/CP03/CP05/CP06. CP03 provides office bootstrap and one-use HTTP tickets. CP05.1 now provides a partial Socket.IO gateway, ticket-backed in-memory admission and safe ready snapshots; continuing authorization, world commands, browser adapter and media guard remain unimplemented. The reviewed Commons map artifact lives in the assets package.
 
 Owner choices: [D12/D13/D02/D04 and pilot scope](../decisions/2026-11-08_CP01.md). MVP is one company/workspace/office, verified-user self-service, an original multi-room `commons` office, all-LiveKit, English-first desktop Chrome/Edge. [CP02 D04](../decisions/2026-11-08_CP02.md) supersedes the original Vivo candidate. No additional owner decision is inferred for full lifecycle, hosting/providers or the supervision mechanism.
 
@@ -23,12 +23,12 @@ Exports: `packages/contracts/src/versions.ts` and `http/office.ts`.
 | Workspace detail extension | `officeWorkspaceDetailResponseSchema`: `{ workspace: <existing DTO plus officeId> }` | CP03 tenancy detail only; create/list retain their existing shapes |
 | Office bootstrap | `officeBootstrapResponseSchema`: `{ officeId, workspaceId, mapVersion, protocolVersion, manifest }` | CP03 scoped office service; top-level and manifest versions must agree |
 | POST join-ticket | `joinTicketRequestSchema`: strict `{ mapVersion, protocolVersion }`; `joinTicketResponseSchema`: `{ ticket, expiresAt }` | CP03 authenticated/CSRF/Origin protected; only the response contains the raw capability |
-| Socket handshake | `officeSocketAuthSchema`: strict `{ ticket, protocolVersion }` | CP05 Engine.IO exact-Origin plus `/office` middleware; no client identity/role/spawn |
+| Socket handshake | `officeSocketAuthSchema`: strict `{ ticket, protocolVersion }` | CP05.1 Engine.IO exact-Origin, WebSocket-only, 4 KiB transport bound and `/office` middleware; no client identity/role/spawn |
 | Future takeover reference | `takeoverReferenceSchema`: `{ participationId, officeEpoch, reference }` | CP05 extension only; not accepted in an ordinary CP03 ticket body |
 
-The ticket issuer derives user/session/company/office/map/protocol/current epoch/activation-grant identity from server policy. Store only the digest, explicitly check expiry and cap by actual session lifetime. A membership activation grant stays stable through ordinary policy writes and changes on reactivation. This must be implemented before ticket issuance.
+CP03 derives user/session/company/office/map/protocol/current epoch/activation-grant identity from server policy, stores only the ticket digest, checks expiry and caps lifetime by the actual session. A membership activation grant stays stable through ordinary policy writes and changes on reactivation. CP05.1 accepts only the raw ticket and protocol version over Socket.IO auth, then derives all remaining scope from the ticket record.
 
-Consume once in a transaction with fresh current-policy conditional writes. After commit, recheck epoch and serialize runtime reservation; then capture snapshot, activate room participation and emit ready. A consumed ticket stays spent if later reservation fails or the response is lost. A retry requests a fresh ticket and repeats policy checks within issuance budgets. Mongo transactions do not make the in-memory runtime transactional.
+CP03 consumes once in a transaction with fresh current-policy conditional writes. CP05.1 uses strict auth to derive ticket scope from the stored ticket, rechecks current session/account/workspace/membership/map/epoch in that transaction, then reserves capacity in the in-memory runtime, builds the validated snapshot, subscribes and emits ready. A consumed ticket stays spent if a later reservation fails or the response is lost. A retry requests a fresh ticket and repeats policy checks within issuance budgets. Mongo transactions do not make the in-memory runtime transactional. Periodic lease renewal, immediate post-commit revocation and movement/seat commands remain future CP05 work.
 
 ## State and command shapes
 

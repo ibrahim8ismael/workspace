@@ -239,6 +239,7 @@ export class OfficeAdmissionService {
       invariant(update.modifiedCount === 1, 401, 'unauthorized');
       return {
         userId: ticket.userId,
+        displayName: user.displayName,
         sessionId: ticket.sessionId,
         workspaceId: ticket.workspaceId,
         officeId: ticket.officeId,
@@ -250,5 +251,22 @@ export class OfficeAdmissionService {
 
     invariant(this.epochs.current(consumed.officeId) === consumed.officeEpoch, 409, 'stale_epoch');
     return consumed;
+  }
+
+  async consumeSocketTicket(rawTicket: string, protocolVersion: number) {
+    invariant(secretSchema.safeParse(rawTicket).success, 401, 'unauthorized');
+    protocolVersionSchema.parse(protocolVersion);
+    const ticket = await this.ticketModels.tickets
+      .findOne({ ticketDigest: digest(rawTicket) })
+      .select('+ticketDigest')
+      .read('primary')
+      .lean();
+    invariant(ticket, 401, 'unauthorized');
+    return this.consume(rawTicket, {
+      workspaceId: ticket.workspaceId,
+      officeId: ticket.officeId,
+      mapVersion: ticket.mapVersion,
+      protocolVersion,
+    });
   }
 }

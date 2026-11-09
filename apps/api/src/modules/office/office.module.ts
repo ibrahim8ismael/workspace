@@ -5,11 +5,24 @@ import { OfficeController } from './office.controller.js';
 import { OfficeJoinTicketModels } from './join-ticket.models.js';
 import { OfficeAdmissionService } from './office-admission.service.js';
 import { OfficeEpochRegistry } from './office-epoch.registry.js';
+import { OfficeRuntimeService } from './runtime/office-runtime.service.js';
+import { OfficeGateway } from './realtime/office.gateway.js';
 
 @Module({
   imports: [TenancyModule, IdentityModule],
-  providers: [OfficeJoinTicketModels, OfficeAdmissionService, OfficeEpochRegistry],
+  providers: [
+    OfficeJoinTicketModels,
+    OfficeAdmissionService,
+    OfficeEpochRegistry,
+    OfficeRuntimeService,
+    OfficeGateway,
+  ],
   controllers: [OfficeController],
-  exports: [OfficeJoinTicketModels, OfficeAdmissionService, OfficeEpochRegistry],
+  exports: [
+    OfficeJoinTicketModels,
+    OfficeAdmissionService,
+    OfficeEpochRegistry,
+    OfficeRuntimeService,
+  ],
 })
 export class OfficeModule {}

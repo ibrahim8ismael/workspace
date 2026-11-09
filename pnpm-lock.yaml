@@ -138,6 +138,9 @@ importers:
       mongodb-memory-server-core:
         specifier: 11.3.0
         version: 11.3.0(bare-buffer@3.7.1)
+      socket.io-client:
+        specifier: 4.8.4
+        version: 4.8.4
       supertest:
         specifier: 7.3.1
         version: 7.3.1

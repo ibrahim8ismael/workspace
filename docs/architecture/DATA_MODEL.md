@@ -24,8 +24,9 @@ The following collections exist. Mongo `_id` is the stored identity; safe API DT
 | offices | `_id`; unique `workspaceId` | mapVersion currently pending-m0; no live runtime |
 | outbox | `_id`; state + createdAt; subjectId + kind | payload, attempts, expiresAt, cleanupAt, deliveredAt; purge secrets on delivery/expiry; TTL cleanupAt |
 | audit_events | `_id`; TTL expiresAt | createdAt and thirty-day expiry; independent recovery mirror absent |
+| audit_mirror_outbox | `_id` (same stable event ID); state + createdAt | versioned allowlisted projection and SHA-256 digest; pending only, no dispatcher, acknowledgement, or cleanup policy |
 
-Source of truth: [identity models](../../apps/api/src/modules/identity/identity.models.ts), [tenancy models](../../apps/api/src/modules/tenancy/tenancy.models.ts), [outbox schema](../../packages/delivery/src/outbox.ts), [audit schema](../../apps/api/src/modules/audit/audit.service.ts) and [index provisioning/startup checks](../../apps/api/src/platform/database/indexes.service.ts).
+Source of truth: [identity models](../../apps/api/src/modules/identity/identity.models.ts), [tenancy models](../../apps/api/src/modules/tenancy/tenancy.models.ts), [outbox schema](../../packages/delivery/src/outbox.ts), [audit and audit mirror outbox schemas](../../apps/api/src/modules/audit/audit.service.ts) and [index provisioning/startup checks](../../apps/api/src/platform/database/indexes.service.ts).
 
 The proposed `office_join_tickets` collection does not exist yet. CP03 adds its digest uniqueness and TTL alongside map/protocol/epoch/session/activation-grant binding. Audit workspace/time lookup indexing, operation-result retention, independent mirror acknowledgement and any additional outbox tenant projection require an explicit owning contract; none is claimed by the table above.
 

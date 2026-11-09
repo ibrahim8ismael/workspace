@@ -24,6 +24,7 @@ export class IndexesService implements OnApplicationBootstrap {
     await this.identity.createIndexes();
     await this.tenancy.createIndexes();
     await this.audit.model.createIndexes();
+    await this.audit.mirrorOutbox.createIndexes();
     await this.outbox.model.createIndexes();
     await this.officeTickets.createIndexes();
   }

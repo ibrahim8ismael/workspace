@@ -10,7 +10,7 @@ Initial backend scope is now described by the [implemented auth/company API guid
 Record minimal security mutations and support safe restore reconciliation.
 
 - Owning module: Audit / security operations.
-- State location: MongoDB: audit_events plus independent restricted recovery evidence.
+- State location: MongoDB `audit_events` plus `audit_mirror_outbox`; independent restricted recovery evidence is not connected yet.
 - Fields below describe the current stored model; interface additions and remaining work retain their stated planned status. Apply the [baseline](../../README.md#source-precedence) and [cross-cutting rules](../../architecture/README.md#shared-invariants).
 
 ## Implemented data
@@ -26,6 +26,8 @@ Source: [owning model](../../../apps/api/src/modules/audit/audit.service.ts).
 - `expiresAt`
 
 Thirty-day application retention is a TTL index. Proposed targetType/result/policyVersion/requestId/mirror acknowledgements and workspace/time lookup indexing are not implemented. Independent evidence/failure policy/reconciliation remain CP04/CP10 work; no browser query API exists.
+
+`AuditService.record` also inserts one immutable version-1 projection into `audit_mirror_outbox` in the same Mongo transaction. Its `_id`/`eventId` matches the audit row, and its SHA-256 digest covers the ordered projection fields. It currently remains `pending`: there is no dispatcher, external destination, acknowledgement or outbox cleanup policy. This local collection shares the application's database and backup boundary and is not independent recovery evidence. Do not treat the mirror as operational or production ready.
 
 ## Relationships
 

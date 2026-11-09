@@ -8,7 +8,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import { MongoMemoryReplSet } from 'mongodb-memory-server-core';
 import request from 'supertest';
 import type { Response as HttpResponse } from 'supertest';
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { decryptMail, type MailPayload } from '@gather/delivery';
 import commonsManifest from '@gather/assets/manifests/commons-map.json' with { type: 'json' };
@@ -38,6 +38,7 @@ import { OfficeAdmissionService } from '../dist/modules/office/office-admission.
 import { OfficeEpochRegistry } from '../dist/modules/office/office-epoch.registry.js';
 import { OfficeJoinTicketModels } from '../dist/modules/office/join-ticket.models.js';
 import { OutboxService } from '../dist/modules/identity/delivery/outbox.service.js';
+import { AuditService } from '../dist/modules/audit/audit.service.js';
 import { PasswordService } from '../dist/modules/identity/security/password.service.js';
 import { deliverOutbox } from '../../worker/dist/processors/delivery.js';
 import { dispatchOutbox } from '../../worker/dist/outbox/dispatcher.js';
@@ -1355,6 +1356,83 @@ describe('credential concurrency and durable mail', () => {
     }
     expect(await identities.users.countDocuments({ normalizedEmail: email })).toBe(0);
     expect(await identities.credentials.countDocuments()).toBe(before);
+  });
+  it('writes a versioned audit mirror row with the audit event in the same transaction', async () => {
+    const browser = new Client();
+    await browser.bootstrap();
+    const email = `audit-mirror-${randomUUID()}@example.com`;
+    status(
+      await browser.send('post', '/api/auth/register', {
+        email,
+        password,
+        displayName: 'Audit Mirror Test',
+      }),
+      202,
+    );
+    const user = await identities.users.findOne({ normalizedEmail: email }).lean();
+    if (!user) throw new Error('Account missing');
+    const audit = app.get(AuditService);
+    const event = await audit.model
+      .findOne({ action: 'account.registered', targetId: user._id })
+      .lean();
+    if (!event) throw new Error('Audit event missing');
+    const mirror = await audit.mirrorOutbox.findById(event._id).lean();
+    if (!mirror) throw new Error('Audit mirror outbox row missing');
+    expect(mirror).toMatchObject({
+      _id: event._id,
+      schemaVersion: 1,
+      eventId: event._id,
+      actorId: event.actorId,
+      workspaceId: event.workspaceId,
+      action: event.action,
+      targetId: event.targetId,
+      state: 'pending',
+    });
+    expect(mirror.occurredAt.getTime()).toBe(event.createdAt.getTime());
+    const projection = {
+      schemaVersion: 1,
+      eventId: event._id,
+      occurredAt: event.createdAt.toISOString(),
+      actorId: event.actorId,
+      workspaceId: event.workspaceId,
+      action: event.action,
+      targetId: event.targetId,
+    };
+    expect(mirror.digest).toBe(
+      createHash('sha256').update(JSON.stringify(projection), 'utf8').digest('hex'),
+    );
+  });
+  it('rolls the security mutation and audit row back when mirror-outbox insertion fails', async () => {
+    const browser = new Client();
+    await browser.bootstrap();
+    const email = `audit-mirror-rollback-${randomUUID()}@example.com`;
+    const audit = app.get(AuditService);
+    const beforeAudit = await audit.model.countDocuments();
+    const beforeMirror = await audit.mirrorOutbox.countDocuments();
+    const beforeCredentials = await identities.credentials.countDocuments();
+    const beforeTokens = await identities.tokens.countDocuments();
+    const beforeMailOutbox = await outbox.model.countDocuments();
+    const spy = vi
+      .spyOn(audit.mirrorOutbox, 'create')
+      .mockRejectedValueOnce(new Error('injected-audit-mirror-failure'));
+    try {
+      status(
+        await browser.send('post', '/api/auth/register', {
+          email,
+          password,
+          displayName: 'Audit Rollback Test',
+        }),
+        503,
+      );
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await identities.users.countDocuments({ normalizedEmail: email })).toBe(0);
+    expect(await identities.credentials.countDocuments()).toBe(beforeCredentials);
+    expect(await identities.tokens.countDocuments()).toBe(beforeTokens);
+    expect(await outbox.model.countDocuments()).toBe(beforeMailOutbox);
+    expect(await audit.model.countDocuments()).toBe(beforeAudit);
+    expect(await audit.mirrorOutbox.countDocuments()).toBe(beforeMirror);
   });
   it('queues record IDs only and purges the encrypted payload after delivery', async () => {
     const browser = new Client();

@@ -166,7 +166,7 @@ Source and existing evidence were reviewed on 2026-11-09 without changing runtim
 
 Passwords use Argon2id with 19,456 KiB memory, two iterations and one lane. The service admits at most four concurrent operations (about 76 MiB of configured Argon2 memory at that bound, before process/runtime overhead). This is a source-derived estimate, not a target-host benchmark or safe production capacity declaration. The current short weak-password set is not a comprehensive compromised-password screen.
 
-Security mutations write to the Mongo `audit_events` collection in the same transaction, with a 30-day TTL. There is no independent audit mirror or defined mirror-failure policy yet. A backup/restore process must not treat restored sessions, credentials or memberships as proof of current authority. These controls and gaps are not evidence of production readiness.
+Security mutations write to Mongo `audit_events` with a 30-day TTL and now insert a versioned projection into `audit_mirror_outbox` in the same transaction. The local outbox has no dispatcher, cleanup or independent destination; it is not independent audit evidence. Mirror-failure and restore policies remain open. A backup/restore process must not treat restored sessions, credentials or memberships as proof of current authority. These controls and gaps are not evidence of production readiness.
 
 | CP04.5 review item | Current evidence | Remaining acceptance |
 | --- | --- | --- |
@@ -176,7 +176,7 @@ Security mutations write to the Mongo `audit_events` collection in the same tran
 | Audit evidence | Transactional Mongo records with 30-day TTL | Independent mirror, retention, access, redaction and mirror-failure policy |
 | Mail and delivery | Local Mailpit, Redis outage/recovery, expiry and duplicate/lost-ack tests | External provider explicitly deferred by owner; staging SMTP gate remains open |
 
-CP04.5 is still in progress. The target-independent audit-mirror proposal and decision gates are in [CP04.5b](CP04_AUDIT_MIRROR_DESIGN.md). Do not claim capacity, public ingress, provider delivery or pilot readiness until the target environment and required evidence exist.
+CP04.5 is still in progress. The audit-mirror design and local outbox are in [CP04.5b–c](CP04_AUDIT_MIRROR_DESIGN.md). Local pending rows are not independently durable recovery evidence; do not claim capacity, public ingress, provider delivery or pilot readiness until the target environment and required evidence exist.
 
 ### CP04.4a1 — outbox fault contract tests
 

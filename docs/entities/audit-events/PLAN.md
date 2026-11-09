@@ -9,7 +9,8 @@ Implementation boundary: [current API and limitations](../../contracts/AUTH_AND_
 - [x] Record current identity/company action names in a safe audit schema.
 - [ ] Extend taxonomy/metadata only as required by the approved recovery design.
 - [x] Commit implemented security mutations and their audit rows in one Mongo transaction.
-- [ ] Design independent mirror and acknowledgement monitoring.
+- [x] Commit a versioned, digested mirror projection to a local outbox with each audit row.
+- [ ] Deliver outbox events to an independently administered immutable destination and monitor acknowledgements.
 - [ ] Write restore reconciliation procedure and restricted audit access rules.
 
 ## Acceptance criteria
@@ -23,7 +24,7 @@ These are full acceptance checks. Local backend subsets are recorded in [auth ev
 ## Dependencies and completion
 
 - Follow the relationships and invariants in the [entity specification](README.md).
-- The target-independent [CP04.5b audit mirror design](../../planning/CP04_AUDIT_MIRROR_DESIGN.md) proposes an outbox and records the storage, retention, and outage decisions still required. It does not select a provider or mark implementation complete.
+- The [CP04.5b–c audit mirror design and local outbox](../../planning/CP04_AUDIT_MIRROR_DESIGN.md) records the implemented same-transaction projection and the storage, retention, delivery, and outage decisions still required. The local outbox is not independent evidence and has no cleanup/dispatcher.
 - Resolve: Choose independent audit storage, retention and mutation failure policy during M0/M1.
 - Before starting, freeze relevant runtime DTOs and error behavior in [HTTP](../../contracts/HTTP.md) / [realtime](../../contracts/REALTIME.md) contracts.
 - Completion requires code references, relevant check results and unresolved limitations in the [acceptance register](../../planning/ACCEPTANCE.md). No milestone is complete from documentation alone.

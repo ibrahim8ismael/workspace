@@ -1,12 +1,12 @@
-# CP04.5b — Independent audit mirror design
+# CP04.5b–c — Independent audit mirror design and local outbox
 
-Status: proposal for owner review; no external storage, retention, or outage policy selected · Updated: 2026-11-09
+Status: local transactional projection/outbox implemented; remote delivery and recovery acceptance remain open · Updated: 2026-11-09
 
-This design continues CP04.5 without configuring a provider or changing runtime code. It follows the existing [audit entity boundary](../entities/audit-events/README.md), [recovery runbook](../operations/README.md#safe-backup-restore-procedure), and owner decision that external SMTP is deferred. Audit mirroring is a separate recovery control; it does not use or depend on the mail provider.
+This work follows the existing [audit entity boundary](../entities/audit-events/README.md), [recovery runbook](../operations/README.md#safe-backup-restore-procedure), and owner decision that external SMTP is deferred. Audit mirroring is a separate recovery control; it does not use or depend on the mail provider. CP04.5c now writes a provider-neutral row in `audit_mirror_outbox`; it does not configure an external destination or claim independent recovery evidence.
 
 ## Current boundary
 
-`AuditService.record` stores successful security mutations in MongoDB `audit_events` in the same transaction as the account/company mutation. The record currently contains `_id`, `actorId`, nullable `workspaceId`, `action`, `targetId`, `createdAt`, and a thirty-day `expiresAt`. The API assigns a safe request ID, but it is not passed into the audit record. The taxonomy is limited to committed mutations; denied requests and general access events are not a complete audit trail. The current collection belongs to the same database and backup domain as the business records, so it is not an independent recovery source.
+`AuditService.record` stores successful security mutations in MongoDB `audit_events` and now adds an `audit_mirror_outbox` row in the same transaction. Both use the same stable UUID event ID. The projection stores schema version 1, occurrence time, actor/workspace IDs, action, target ID, a SHA-256 digest over canonical ordered JSON fields, and `pending` state. The audit record retains its thirty-day TTL; outbox rows currently have no dispatcher, acknowledgement, or cleanup policy and will accumulate. Do not enable this incomplete capture path for production until a delivery/retention policy is accepted. The API assigns a safe request ID, but it is not passed into the audit record. The taxonomy is limited to committed mutations; denied requests and general access events are not a complete audit trail. Both collections belong to the same database and backup domain, so neither is an independent recovery source.
 
 ## Recommended delivery shape
 
@@ -37,7 +37,7 @@ Never mirror passwords, password hashes, session or CSRF secrets, invitation/res
 
 ## Delivery and recovery behavior
 
-1. The existing mutation transaction inserts the local audit record and one mirror-outbox record. Transaction rollback removes both.
+1. Implemented: the existing mutation transaction inserts the local audit record and one mirror-outbox record. Transaction rollback removes both. See [`AuditService`](../../apps/api/src/modules/audit/audit.service.ts) and its Mongo integration tests.
 2. The dispatcher selects pending rows, computes/carries the canonical digest and sends the versioned event using its stable event ID.
 3. The mirror validates schema and digest, performs an immutable create, and returns a durable acknowledgement.
 4. The dispatcher records acknowledgement and applies the approved local outbox cleanup. A lost acknowledgement causes a retry with the same event ID and bytes.
@@ -56,7 +56,7 @@ Recommended outage posture: retain local transactional evidence in the outbox an
 | Event schema | Versioned allowlist, stable ID, target type, optional request ID and digest | Confirm whether request IDs are needed and which action/target mappings must be included |
 | Access and key ownership | Application can create but cannot list/delete immutable history; recovery operators have separately audited read access | Name the operational owner and define encryption-key rotation and break-glass procedure |
 
-Do not create provider resources or change security-mutation behavior until the destination, retention, and failure policy are accepted. The code follow-up should implement a unit-tested projection/digest and same-transaction outbox first, then a provider adapter and failure/recovery integration tests after an actual destination is selected.
+Do not create provider resources or change security-mutation behavior until the destination, retention, and failure policy are accepted. The local projection/digest and same-transaction outbox are implemented; next implement a bounded dispatcher only after selecting destination, retention, ownership, and outage behavior, then run provider failure/recovery integration tests.
 
 ## Acceptance tests for the future implementation
 

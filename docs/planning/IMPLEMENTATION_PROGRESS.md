@@ -227,3 +227,13 @@ Codex reviewed the current HTTP configuration, password service, audit model, lo
 | CP04.5a | Source/evidence review of proxy, password workload, audit and delivery limits | Review complete; operational work remains | Strict Origin and local cookie tests exist; proxy trust is disabled; Argon2id concurrency is capped at four; audit is a transaction-local Mongo record with a 30-day TTL. Target-host benchmark, public ingress, independent audit mirror and real provider remain open |
 
 The owner deferred staging SMTP, so CP04.5 and non-provider local work can continue without external sending. Do not mark the production acceptance rows passed on the strength of source review. Next CP04.5 work requires an independently durable audit-mirror choice/policy and target-host measurements when a deployment target exists.
+
+### CP04.5b — audit mirror design proposal
+
+Codex reviewed the existing `AuditService`, entity contract and restore runbook, then wrote a target-independent [audit mirror design](CP04_AUDIT_MIRROR_DESIGN.md). It recommends a same-transaction mirror outbox, stable event IDs, at-least-once idempotent delivery, a separately administered immutable destination and suspended access during incomplete restore reconciliation. This is a design proposal only: it creates no provider resources, changes no mutation behavior and does not claim recovery acceptance.
+
+| Batch | Scope | Status | Evidence |
+| --- | --- | --- | --- |
+| CP04.5b | Audit event projection, durable delivery/retry, outage and restore requirements | Design drafted; owner choices required before implementation | Existing fields/actions and missing request ID/target type reconciled; options/trade-offs and acceptance cases documented. Destination, retention/immutability, maximum lag/failure policy and operational ownership remain unselected |
+
+After review of that concrete design, the implementation packet needs owner agreement on the independent storage boundary, retention/immutability, mirror-lag budget and affected actions during a prolonged outage. Target-host Argon2 and ingress measurements still wait for a real deployment target.

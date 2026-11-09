@@ -23,6 +23,7 @@ These are full acceptance checks. Local backend subsets are recorded in [auth ev
 ## Dependencies and completion
 
 - Follow the relationships and invariants in the [entity specification](README.md).
+- The target-independent [CP04.5b audit mirror design](../../planning/CP04_AUDIT_MIRROR_DESIGN.md) proposes an outbox and records the storage, retention, and outage decisions still required. It does not select a provider or mark implementation complete.
 - Resolve: Choose independent audit storage, retention and mutation failure policy during M0/M1.
 - Before starting, freeze relevant runtime DTOs and error behavior in [HTTP](../../contracts/HTTP.md) / [realtime](../../contracts/REALTIME.md) contracts.
 - Completion requires code references, relevant check results and unresolved limitations in the [acceptance register](../../planning/ACCEPTANCE.md). No milestone is complete from documentation alone.

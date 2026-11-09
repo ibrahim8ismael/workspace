@@ -176,7 +176,7 @@ Security mutations write to the Mongo `audit_events` collection in the same tran
 | Audit evidence | Transactional Mongo records with 30-day TTL | Independent mirror, retention, access, redaction and mirror-failure policy |
 | Mail and delivery | Local Mailpit, Redis outage/recovery, expiry and duplicate/lost-ack tests | External provider explicitly deferred by owner; staging SMTP gate remains open |
 
-CP04.5 is still in progress. Continue with a target-independent audit-mirror design and a security/operations checklist; do not claim capacity, public ingress, provider delivery or pilot readiness until the target environment and required evidence exist.
+CP04.5 is still in progress. The target-independent audit-mirror proposal and decision gates are in [CP04.5b](CP04_AUDIT_MIRROR_DESIGN.md). Do not claim capacity, public ingress, provider delivery or pilot readiness until the target environment and required evidence exist.
 
 ### CP04.4a1 — outbox fault contract tests
 

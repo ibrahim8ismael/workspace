@@ -5,11 +5,24 @@
   color: #203832;
 }
 
-.commons-preview canvas {
+.commons-scene {
+  min-width: 0;
+}
+
+.commons-scene-host {
+  min-height: 224px;
+  overflow: auto;
+}
+
+.commons-scene canvas {
   display: block;
   max-width: 100%;
   height: auto;
   image-rendering: pixelated;
+}
+
+.commons-scene-status {
+  margin: 0 0 0.5rem;
 }
 
 .commons-preview-controls {
@@ -19,7 +32,8 @@
   margin-top: 1rem;
 }
 
-.commons-preview button {
+.commons-preview button,
+.commons-scene button {
   padding: 0.5rem 0.8rem;
   border: 1px solid #36584b;
   border-radius: 0.25rem;
@@ -27,7 +41,8 @@
   color: inherit;
 }
 
-.commons-preview button:focus-visible {
+.commons-preview button:focus-visible,
+.commons-scene button:focus-visible {
   outline: 2px solid #36584b;
   outline-offset: 2px;
 }

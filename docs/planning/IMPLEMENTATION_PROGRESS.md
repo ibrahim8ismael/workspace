@@ -195,3 +195,17 @@ OpenCode DeepSeek V4.1 Flash Free at max effort added a test simulating the send
 | Batch | Scope | Status | Evidence |
 | --- | --- | --- | --- |
 | CP04.4b1 | Mongo-backed lost-ack retry and duplicate possibility | Complete in this test commit | Focused integration test passed; it asserts identical token twice, retained encrypted payload after first failure, final payload cleanup and no later replay |
+
+On 2026-11-09 the owner deferred CP04.4c external SMTP setup and asked to continue with CP04.5. This leaves real-provider delivery unaccepted and no external emails sent; see [the delivery decision](CP04_BROWSER_AND_DELIVERY.md#owner-direction--external-smtp-deferred). The local CP04.4 fault coverage remains separate from provider acceptance.
+
+## Authenticated Commons map and chat preview — first CP06 test seam
+
+The owner asked to connect the approved map and existing chat UI to the authenticated company flow so browser/unit tests can start. OpenCode DeepSeek V4.1 Flash Free at max effort wrote the initial UI slice and focused tests. Its free-model quota ended before the final language adjustment; with the owner's approval, Codex completed the small English-only chat option and added English/default-language regression assertions. Codex also moved the preview behind a lazy import after its first build pulled Phaser into the account entry bundle.
+
+The company details screen now opens a local preview only while the server-validated detail matches the selected workspace. It renders the real Commons Phaser sample, adapts the existing chat view as empty/disconnected/non-sendable, labels the preview boundary, and returns to company details. Leaving the view destroys its Phaser game. The preview sends no join ticket and opens no Socket.IO, raw `/ws` or LiveKit connection. Its separate production chunk keeps the account entry at 362.96 kB (107.06 kB gzip); the preview chunk is 1,436.85 kB (380.59 kB gzip) because it contains Phaser and the current map/chat surface.
+
+| Batch | Scope | Status | Evidence |
+| --- | --- | --- | --- |
+| CP06 preview slice | Authenticated company-scoped Commons map and disconnected chat test seam | Locally verified; commit/push follows this row | 27 web tests, full `pnpm check`, production build and lazy-chunk review passed. No browser E2E or two-user/realtime behavior is claimed |
+
+The current tests cover company-scope selection, view open/back/reset, explicit offline/empty chat, language isolation and Phaser cleanup. Next, add a repeatable browser E2E for sign-in → authorized company → preview → back and verify mount/teardown in Chrome and Edge. Live two-user map/chat behavior remains CP05/CP06 work after authoritative Socket.IO exists; the preview is not a production office session.

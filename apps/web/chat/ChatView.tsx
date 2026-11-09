@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import type { Channel, ChatMessage, DirectoryUser, Participant } from '../types';
 import { applyFormat, renderMessage } from './markdown';
-import { locale, t } from '../i18n';
+import { locale, t as appTranslate, tEnglish } from '../i18n';
 
 /** A conversation the chat view can show: a company channel, a direct message, or the nearby chat. */
 export type Conversation =
@@ -45,13 +45,21 @@ const sameGroup = (a: ChatMessage, b: ChatMessage) =>
   !a.system &&
   !b.system &&
   new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime() < 5 * 60_000;
-const dayLabel = (date: Date) => {
+const dayLabel = (
+  date: Date,
+  translate: typeof appTranslate = appTranslate,
+  formatLocale: string = locale(),
+) => {
   const today = new Date();
   const yesterday = new Date();
   yesterday.setDate(today.getDate() - 1);
-  if (date.toDateString() === today.toDateString()) return t('Hoy');
-  if (date.toDateString() === yesterday.toDateString()) return t('Ayer');
-  return date.toLocaleDateString(locale(), { weekday: 'long', day: 'numeric', month: 'long' });
+  if (date.toDateString() === today.toDateString()) return translate('Hoy');
+  if (date.toDateString() === yesterday.toDateString()) return translate('Ayer');
+  return date.toLocaleDateString(formatLocale, {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  });
 };
 
 type Props = {
@@ -66,6 +74,8 @@ type Props = {
   onDraft: (text: string) => void;
   onSend: (text: string) => void;
   onTopic: (channelId: string, topic: string) => void;
+  /** Keep this surface in English when embedded in the English-first account application. */
+  englishOnly?: boolean;
 };
 
 /** The reference's chat page: header, conversation introduction, grouped messages and a formatting composer. */
@@ -81,7 +91,10 @@ export default function ChatView({
   onDraft,
   onSend,
   onTopic,
+  englishOnly = false,
 }: Props) {
+  const t = englishOnly ? tEnglish : appTranslate;
+  const formatLocale = englishOnly ? 'en' : locale();
   const box = useRef<HTMLTextAreaElement>(null);
   const end = useRef<HTMLDivElement>(null);
   const [emojiOpen, setEmojiOpen] = useState(false);
@@ -344,7 +357,7 @@ export default function ChatView({
             new Date(previous.createdAt).toDateString() !==
               new Date(message.createdAt).toDateString();
           const grouped = !newDay && previous && sameGroup(previous, message);
-          const time = new Date(message.createdAt).toLocaleTimeString(locale(), {
+          const time = new Date(message.createdAt).toLocaleTimeString(formatLocale, {
             hour: 'numeric',
             minute: '2-digit',
           });
@@ -352,7 +365,7 @@ export default function ChatView({
             <div key={message.id}>
               {newDay && (
                 <div className="chat-day">
-                  <span>{dayLabel(new Date(message.createdAt))}</span>
+                  <span>{dayLabel(new Date(message.createdAt), t, formatLocale)}</span>
                 </div>
               )}
               <article

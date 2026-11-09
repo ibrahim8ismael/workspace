@@ -509,6 +509,12 @@
   font-size: 14px;
   font-weight: 650;
 }
+.company-overview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
 @media (max-width: 720px) {
   .workspace-actions {
     grid-template-columns: 1fr;

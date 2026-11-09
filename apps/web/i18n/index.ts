@@ -43,10 +43,21 @@ export const onLanguageChange = (listener: () => void) => {
 };
 
 /** Translate a Spanish source string; `{name}` placeholders take values from `vars`. */
-export function t(source: string, vars?: Record<string, string | number>): string {
-  const text = DICTIONARIES[current]?.[source] ?? source;
+function translate(
+  dictionary: Record<string, string> | null,
+  source: string,
+  vars?: Record<string, string | number>,
+): string {
+  const text = dictionary?.[source] ?? source;
   return vars
     ? text.replace(/\{(\w+)\}/g, (match, key: string) => (key in vars ? String(vars[key]) : match))
     : text;
+}
+export function t(source: string, vars?: Record<string, string | number>): string {
+  return translate(DICTIONARIES[current], source, vars);
+}
+/** Explicit English copy for paths that must not inherit the current interface language. */
+export function tEnglish(source: string, vars?: Record<string, string | number>): string {
+  return translate(EN, source, vars);
 }
 if (typeof document !== 'undefined') document.documentElement.lang = current;

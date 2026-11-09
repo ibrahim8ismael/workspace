@@ -1,9 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import type { AccountDto } from '@gather/contracts';
 import type { RefObject } from 'react';
 import { ApiClient, ApiError, type OfficeWorkspaceDetail, type SessionDto } from '../../lib/api';
 import { messageForApi } from '../auth/messages';
 import { SessionLifetimeNotice } from '../auth/SessionLifetimeNotice';
+import { canOpenOfficePreview, companyOverviewViewReducer } from './company-overview-view';
+
+const LazyCompanyOfficePreview = lazy(() =>
+  import('./CompanyOfficePreview').then(({ CompanyOfficePreview }) => ({
+    default: CompanyOfficePreview,
+  })),
+);
 
 type DetailSnapshot = {
   workspaceId: string;
@@ -56,6 +63,7 @@ export function CompanyOverview({
   onLostAccess,
 }: Props) {
   const [snapshot, setSnapshot] = useState<DetailSnapshot | null>(null);
+  const [view, dispatchView] = useReducer(companyOverviewViewReducer, 'details');
   const requestGeneration = useRef(0);
   const requestController = useRef<AbortController | null>(null);
   const lastRefreshAt = useRef(0);
@@ -67,10 +75,19 @@ export function CompanyOverview({
   const detail = visibleSnapshot?.detail ?? null;
   const loading = visibleSnapshot?.loading ?? true;
   const error = visibleSnapshot?.error ?? '';
+  const previewOpen = view === 'preview' && canOpenOfficePreview(detail, workspaceId, false, error);
 
   useEffect(() => {
     titleRef.current?.focus();
-  }, []);
+  }, [view]);
+
+  useEffect(() => {
+    dispatchView('reset');
+  }, [workspaceId]);
+
+  useEffect(() => {
+    if (!canOpenOfficePreview(detail, workspaceId, false, error)) dispatchView('back-to-details');
+  }, [detail, error, workspaceId]);
 
   useEffect(() => {
     unauthorizedRef.current = onUnauthorized;
@@ -181,92 +198,121 @@ export function CompanyOverview({
       </header>
 
       <div className="workspace-content company-overview-content">
-        <section className="workspace-heading">
-          <div>
-            <p className="account-eyebrow">COMPANY</p>
-            <h1 ref={titleRef} tabIndex={-1}>
-              {detail?.name ?? (loading ? 'Loading company…' : 'Company details')}
-            </h1>
-            {detail && <p className="workspace-lead">gather/{detail.slug}</p>}
-          </div>
-          <div className="workspace-avatar" aria-hidden="true">
-            {(detail?.name ?? account.displayName).trim().slice(0, 1).toUpperCase()}
-          </div>
-        </section>
-
-        {error && (
-          <p className="account-message is-error" role="alert">
-            {error}
-          </p>
-        )}
-
-        {loading ? (
-          <section className="company-panel company-overview-panel" role="status">
-            Loading company details…
-          </section>
-        ) : error ? (
-          <section className="company-panel company-overview-panel">
-            <button
-              className="account-primary"
-              type="button"
-              disabled={mutationPending}
-              onClick={() => void refresh()}
-            >
-              Refresh company
-            </button>
-          </section>
-        ) : detail ? (
-          <section
-            className="company-panel company-overview-panel"
-            aria-labelledby="company-details-title"
+        {previewOpen && detail ? (
+          <Suspense
+            fallback={
+              <section className="company-panel" role="status">
+                Loading office preview…
+              </section>
+            }
           >
-            <div className="panel-heading">
+            <LazyCompanyOfficePreview
+              detail={detail}
+              onBack={() => dispatchView('back-to-details')}
+            />
+          </Suspense>
+        ) : (
+          <>
+            <section className="workspace-heading">
               <div>
-                <h2 id="company-details-title">Company details</h2>
-                <p>This view is based on your current company membership.</p>
+                <p className="account-eyebrow">COMPANY</p>
+                <h1 ref={titleRef} tabIndex={-1}>
+                  {detail?.name ?? (loading ? 'Loading company…' : 'Company details')}
+                </h1>
+                {detail && <p className="workspace-lead">gather/{detail.slug}</p>}
               </div>
-              <div className="company-overview-tools">
-                <span className={`role-pill role-${detail.role}`}>{formatRole(detail.role)}</span>
+              <div className="workspace-avatar" aria-hidden="true">
+                {(detail?.name ?? account.displayName).trim().slice(0, 1).toUpperCase()}
+              </div>
+            </section>
+
+            {error && (
+              <p className="account-message is-error" role="alert">
+                {error}
+              </p>
+            )}
+
+            {loading ? (
+              <section className="company-panel company-overview-panel" role="status">
+                Loading company details…
+              </section>
+            ) : error ? (
+              <section className="company-panel company-overview-panel">
                 <button
-                  className="account-secondary"
+                  className="account-primary"
                   type="button"
-                  disabled={loading || mutationPending}
+                  disabled={mutationPending}
                   onClick={() => void refresh()}
                 >
                   Refresh company
                 </button>
-              </div>
-            </div>
-            <dl className="company-detail-list">
-              <div>
-                <dt>Company name</dt>
-                <dd>{detail.name}</dd>
-              </div>
-              <div>
-                <dt>Company address</dt>
-                <dd>gather/{detail.slug}</dd>
-              </div>
-              <div>
-                <dt>Your role</dt>
-                <dd>{formatRole(detail.role)}</dd>
-              </div>
-              <div>
-                <dt>Members</dt>
-                <dd>
-                  {detail.memberCount} {detail.memberCount === 1 ? 'member' : 'members'}
-                </dd>
-              </div>
-            </dl>
-            <button
-              className="account-secondary"
-              type="button"
-              disabled={mutationPending}
-              onClick={onBackToCompanies}
-            >
-              Switch company
-            </button>
-          </section>
-        ) : null}
+              </section>
+            ) : detail ? (
+              <section
+                className="company-panel company-overview-panel"
+                aria-labelledby="company-details-title"
+              >
+                <div className="panel-heading">
+                  <div>
+                    <h2 id="company-details-title">Company details</h2>
+                    <p>This view is based on your current company membership.</p>
+                  </div>
+                  <div className="company-overview-tools">
+                    <span className={`role-pill role-${detail.role}`}>
+                      {formatRole(detail.role)}
+                    </span>
+                    <button
+                      className="account-secondary"
+                      type="button"
+                      disabled={loading || mutationPending}
+                      onClick={() => void refresh()}
+                    >
+                      Refresh company
+                    </button>
+                  </div>
+                </div>
+                <dl className="company-detail-list">
+                  <div>
+                    <dt>Company name</dt>
+                    <dd>{detail.name}</dd>
+                  </div>
+                  <div>
+                    <dt>Company address</dt>
+                    <dd>gather/{detail.slug}</dd>
+                  </div>
+                  <div>
+                    <dt>Your role</dt>
+                    <dd>{formatRole(detail.role)}</dd>
+                  </div>
+                  <div>
+                    <dt>Members</dt>
+                    <dd>
+                      {detail.memberCount} {detail.memberCount === 1 ? 'member' : 'members'}
+                    </dd>
+                  </div>
+                </dl>
+                <div className="company-overview-actions">
+                  <button
+                    className="account-primary"
+                    type="button"
+                    disabled={mutationPending}
+                    onClick={() => dispatchView('open-preview')}
+                  >
+                    Open office preview
+                  </button>
+                  <button
+                    className="account-secondary"
+                    type="button"
+                    disabled={mutationPending}
+                    onClick={onBackToCompanies}
+                  >
+                    Switch company
+                  </button>
+                </div>
+              </section>
+            ) : null}
+          </>
+        )}
 
         <SessionLifetimeNotice
           session={currentSession}

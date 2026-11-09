@@ -258,7 +258,9 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await expect(page.getByRole('list', { name: 'People in the office' })).toContainText(
     account.displayName,
   );
-  await page.getByRole('button', { name: 'Available' }).focus();
+  await page
+    .getByRole('group', { name: 'Live Commons office map with server-positioned participants' })
+    .focus();
   await page.keyboard.press('Tab');
   await expect(page.getByRole('button', { name: 'Busy' })).toBeFocused();
   const busyFocusStyle = await page
@@ -282,11 +284,21 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await expect(page.getByRole('button', { name: 'Stand up' })).toBeVisible();
   await page.getByRole('button', { name: 'Stand up' }).click();
   await expect(page.getByRole('button', { name: 'Sit · commons-northwest-table:0' })).toBeVisible();
-  await page.locator('.live-commons-scene canvas').click();
+  const map = page.getByRole('group', {
+    name: 'Live Commons office map with server-positioned participants',
+  });
+  await map.focus();
+  await expect(map).toBeFocused();
   await page.keyboard.down('ArrowRight');
   await expect.poll(() => officeEvents.includes('world:input')).toBe(true);
   await page.keyboard.up('ArrowRight');
   await expect.poll(() => movementInputs.at(-1)).toEqual({ dx: 0, dy: 0 });
+  await page.getByRole('button', { name: 'Busy' }).focus();
+  const inputsBeforeControlKey = movementInputs.length;
+  await page.keyboard.down('ArrowRight');
+  await page.waitForTimeout(250);
+  await page.keyboard.up('ArrowRight');
+  expect(movementInputs).toHaveLength(inputsBeforeControlKey);
   await page.getByRole('button', { name: 'Leave office' }).click();
   await expect(page.getByText('Not connected to the office.')).toBeVisible();
   await expect.poll(() => officeEvents.filter((event) => event === 'disconnect').length).toBe(2);

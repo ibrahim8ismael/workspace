@@ -46,3 +46,8 @@
   outline: 2px solid #36584b;
   outline-offset: 2px;
 }
+
+.live-commons-scene .commons-scene-host:focus-visible {
+  outline: 3px solid #9a4d0a;
+  outline-offset: 3px;
+}

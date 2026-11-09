@@ -220,12 +220,15 @@ function mountScene(
         let lastDx = 0;
         let lastDy = 0;
         this.events.on('update', (time: number) => {
-          const dx =
-            Number(Boolean(keys?.right?.isDown || wasd?.['D']?.isDown)) -
-            Number(Boolean(keys?.left?.isDown || wasd?.['A']?.isDown));
-          const dy =
-            Number(Boolean(keys?.down?.isDown || wasd?.['S']?.isDown)) -
-            Number(Boolean(keys?.up?.isDown || wasd?.['W']?.isDown));
+          const focused = parent.parentElement?.contains(document.activeElement);
+          const dx = !focused
+            ? 0
+            : Number(Boolean(keys?.right?.isDown || wasd?.['D']?.isDown)) -
+              Number(Boolean(keys?.left?.isDown || wasd?.['A']?.isDown));
+          const dy = !focused
+            ? 0
+            : Number(Boolean(keys?.down?.isDown || wasd?.['S']?.isDown)) -
+              Number(Boolean(keys?.up?.isDown || wasd?.['W']?.isDown));
           if (dx === 0 && dy === 0) {
             if (lastDx !== 0 || lastDy !== 0) onMovement(0, 0);
             lastDx = 0;
@@ -312,8 +315,10 @@ export function LiveCommonsScene({ bootstrap, snapshot, localParticipationId, on
       </p>
       <div
         className="commons-scene-host"
-        role="img"
+        role="group"
+        tabIndex={0}
         aria-label="Live Commons office map with server-positioned participants"
+        onPointerDown={(event) => event.currentTarget.focus()}
         ref={host}
       />
     </div>

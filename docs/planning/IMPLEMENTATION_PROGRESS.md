@@ -425,3 +425,9 @@ After review of that concrete design, delivery still requires owner agreement on
 The live two-browser test now discards all frames in both directions on one existing WebSocket, including Engine.IO heartbeat messages. After the real heartbeat deadlines expire, the member sees `Office connection closed.` and the owner sees the participant count fall to one. The member then enters with fresh bootstrap/ticket state and both browsers see two participants again. New WebSocket connections restore normal forwarding. The remaining movement, collision, seat contention, company isolation and renderer teardown checks also pass.
 
 Validation: `pnpm test:e2e:live`: one Chromium test passed against the authorized local Docker stack (approximately 1.5 minutes); targeted ESLint, Prettier and whitespace checks passed. This closes the combined local browser-to-Caddy/API transport-loss scenario. Formal visual anchor/occlusion, screen-reader and Chrome/Edge acceptance, followed by CP07 media enforcement proof, remain open.
+
+## CP06.10d — Focusable map and scoped movement
+
+Accessibility review found that the live map was not keyboard-focusable while Phaser read global cursor/WASD state. The map now exposes a named focusable group with a visible focus outline. Pointer interaction focuses that group. Movement is sent only while focus remains within the map; losing focus stops active intent.
+
+Validation: mocked Chromium Playwright E2E passed, including map focus, Tab traversal to Busy, movement on the map, release-to-stop, and no movement when an action button receives arrow keys. Web typecheck, targeted ESLint and whitespace checks passed. Formal screen-reader and installed Chrome/Edge review remain open; no browser matrix acceptance is claimed. CP07 is the next implementation dependency.

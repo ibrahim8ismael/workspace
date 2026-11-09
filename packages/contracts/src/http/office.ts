@@ -82,7 +82,25 @@ export const officeSocketAuthSchema = z
 export const takeoverReferenceSchema = z
   .object({ participationId: idSchema, officeEpoch: idSchema, reference: secretSchema })
   .strict();
+export const takeoverReferenceRequestSchema = z
+  .object({
+    participationId: idSchema,
+    officeEpoch: idSchema,
+    mapVersion: mapVersionSchema,
+    protocolVersion: protocolVersionSchema,
+  })
+  .strict();
+export const takeoverReferenceResponseSchema = takeoverReferenceSchema
+  .extend({ expiresAt: z.iso.datetime() })
+  .strict();
+export const takeoverTicketRequestSchema = joinTicketRequestSchema
+  .extend({ takeover: takeoverReferenceSchema })
+  .strict();
 
 export type OfficeBootstrapResponse = z.infer<typeof officeBootstrapResponseSchema>;
 export type JoinTicketRequest = z.infer<typeof joinTicketRequestSchema>;
 export type JoinTicketResponse = z.infer<typeof joinTicketResponseSchema>;
+export type TakeoverReference = z.infer<typeof takeoverReferenceSchema>;
+export type TakeoverReferenceRequest = z.infer<typeof takeoverReferenceRequestSchema>;
+export type TakeoverReferenceResponse = z.infer<typeof takeoverReferenceResponseSchema>;
+export type TakeoverTicketRequest = z.infer<typeof takeoverTicketRequestSchema>;

@@ -1,6 +1,6 @@
 # CP05 — Authoritative Socket.IO office implementation plan
 
-Status: CP05.1–CP05.4a implemented and locally verified for one API process; CP05.4b and browser integration remain · Updated: 2026-11-09
+Status: CP05.1–CP05.4b implemented and locally verified for one API process; browser integration and deployment gates remain · Updated: 2026-11-09
 
 CP05 builds the server-owned realtime office on top of completed CP02 map rules and CP03 bootstrap/tickets. The wire contract is in [OFFICE_V1](../contracts/OFFICE_V1.md) and [REALTIME](../contracts/REALTIME.md). The implementation plan in [PROJECT_COMPLETION_PLAN](PROJECT_COMPLETION_PLAN.md#cp05--build-the-authoritative-socketio-office) remains the acceptance baseline. This file orders the work into reviewable, locally testable batches.
 
@@ -44,7 +44,9 @@ The API suite now exercises the three Socket.IO command paths and availability d
 
 ### CP05.4b — Explicit takeover and lifecycle
 
-Implement explicit same-actor/session takeover using a short-lived one-use server reference; retire the old participation before activating the replacement and release its seat. Exercise concurrent takeover, lost acknowledgements, takeover reference replay/expiry, company switches and graceful shutdown. The ordinary CP03 ticket request stays unchanged. This batch, client reconnect wiring and multi-instance fencing remain open.
+**Implemented locally for one API process.** The authenticated `POST .../takeover-reference` endpoint verifies current office membership/session and requires the caller's current participation ID and office epoch. It returns a random reference whose digest is stored in bounded process memory, tied to the same user, session, membership grant, workspace, office, epoch and participation. Its maximum lifetime is 30 seconds and is capped by session expiry. `POST .../join-ticket/takeover` consumes the reference once after current policy checks and stores the exact target in a separate one-use join ticket; the ordinary CP03 `join-ticket` schema and behavior are unchanged.
+
+During socket admission, one synchronous runtime transition removes the exact old participation, clears its seat, adds the new participation and publishes a single versioned delta containing the removal, replacement and seat clear. The old socket receives `office:access-ended` with `taken_over` and is disconnected before the new socket is activated. A normal second ticket still receives `participation_conflict`. Tests cover same-session binding, reference replay rejection, ordinary conflict preservation, socket takeover, replacement snapshot and observer delta. References and authority are process-local; multi-instance takeover/fencing and browser reconnect UX remain open.
 
 ## Completion gate
 
@@ -54,4 +56,4 @@ CP04 SMTP setup and CP04 independent audit delivery remain separate release gate
 
 ## Current execution status
 
-CP05.1–CP05.4a were implemented locally by Codex after OpenCode DeepSeek reported its free quota exhausted. See the code in `apps/api/src/modules/office/{realtime,runtime}/`, the API integration suite and the implementation-progress record. The API is not ready for a production office: real Mongo outage drills, multi-instance coordination, per-workspace budgets, explicit takeover, browser integration and load evidence remain open.
+CP05.1–CP05.4b were implemented locally by Codex after OpenCode DeepSeek reported its free quota exhausted. See the code in `apps/api/src/modules/office/{realtime,runtime}/`, the API integration suite and the implementation-progress record. The API is not ready for a production office: real Mongo outage drills, multi-instance coordination, per-workspace budgets, browser integration, takeover fencing and load evidence remain open.

@@ -4,6 +4,9 @@ import {
   joinTicketRequestSchema,
   joinTicketResponseSchema,
   officeBootstrapResponseSchema,
+  takeoverReferenceRequestSchema,
+  takeoverReferenceResponseSchema,
+  takeoverTicketRequestSchema,
 } from '@gather/contracts';
 import type { AuthRequest } from '../identity/security/guards.js';
 import { actor } from '../identity/sessions/session.service.js';
@@ -12,7 +15,11 @@ import { invariant } from '../../platform/http/errors.js';
 import { TenancyService } from '../tenancy/tenancy.service.js';
 import { trustedOfficeBootstrap } from './commons-registry.js';
 import { OfficeAdmissionService } from './office-admission.service.js';
-import type { JoinTicketRequest } from '@gather/contracts';
+import type {
+  JoinTicketRequest,
+  TakeoverReferenceRequest,
+  TakeoverTicketRequest,
+} from '@gather/contracts';
 
 @Controller('workspaces/:workspaceId/offices/:officeId')
 export class OfficeController {
@@ -41,6 +48,36 @@ export class OfficeController {
     @Req() request: AuthRequest,
   ) {
     const response = await this.admission.issue(
+      actor(request.authContext),
+      { workspaceId, officeId },
+      body,
+    );
+    return joinTicketResponseSchema.parse(response);
+  }
+
+  @Post('takeover-reference')
+  async issueTakeoverReference(
+    @Param('workspaceId', new ValidationPipe(idSchema)) workspaceId: string,
+    @Param('officeId', new ValidationPipe(idSchema)) officeId: string,
+    @Body(new ValidationPipe(takeoverReferenceRequestSchema)) body: TakeoverReferenceRequest,
+    @Req() request: AuthRequest,
+  ) {
+    const response = await this.admission.issueTakeoverReference(
+      actor(request.authContext),
+      { workspaceId, officeId },
+      body,
+    );
+    return takeoverReferenceResponseSchema.parse(response);
+  }
+
+  @Post('join-ticket/takeover')
+  async issueTakeoverTicket(
+    @Param('workspaceId', new ValidationPipe(idSchema)) workspaceId: string,
+    @Param('officeId', new ValidationPipe(idSchema)) officeId: string,
+    @Body(new ValidationPipe(takeoverTicketRequestSchema)) body: TakeoverTicketRequest,
+    @Req() request: AuthRequest,
+  ) {
+    const response = await this.admission.issueTakeoverTicket(
       actor(request.authContext),
       { workspaceId, officeId },
       body,

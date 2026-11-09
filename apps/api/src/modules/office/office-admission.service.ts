@@ -8,7 +8,13 @@ import {
   protocolVersionSchema,
   secretSchema,
 } from '@gather/contracts';
-import type { JoinTicketRequest, JoinTicketResponse } from '@gather/contracts';
+import type {
+  JoinTicketRequest,
+  JoinTicketResponse,
+  TakeoverReferenceRequest,
+  TakeoverReferenceResponse,
+  TakeoverTicketRequest,
+} from '@gather/contracts';
 import { TenancyModels } from '../tenancy/tenancy.models.js';
 import type { MembershipRecord, OfficeRecord } from '../tenancy/tenancy.models.js';
 import { TenancyService } from '../tenancy/tenancy.service.js';
@@ -22,6 +28,8 @@ import { APPROVED_OFFICE_MAP_VERSION } from './commons-registry.js';
 import { OfficeEpochRegistry } from './office-epoch.registry.js';
 import { OfficeJoinTicketModels } from './join-ticket.models.js';
 import type { OfficeJoinTicketRecord } from './join-ticket.models.js';
+import { OfficeRuntimeService } from './runtime/office-runtime.service.js';
+import type { TakeoverReferenceBinding } from './runtime/office-runtime.service.js';
 
 interface AdmissionScope {
   workspaceId: string;
@@ -54,6 +62,7 @@ export class OfficeAdmissionService {
     @Inject(DatabaseService) private readonly db: DatabaseService,
     @Inject(OfficeJoinTicketModels) private readonly ticketModels: OfficeJoinTicketModels,
     @Inject(OfficeEpochRegistry) private readonly epochs: OfficeEpochRegistry,
+    @Inject(OfficeRuntimeService) private readonly runtime: OfficeRuntimeService,
   ) {}
 
   async issue(
@@ -149,6 +158,169 @@ export class OfficeAdmissionService {
     return { ticket: raw, expiresAt: expiresAt.toISOString() };
   }
 
+  async issueTakeoverReference(
+    context: ActorContext,
+    scope: OfficeScope,
+    request: TakeoverReferenceRequest,
+  ): Promise<TakeoverReferenceResponse> {
+    const { binding, expiresAt } = await this.takeoverContext(context, scope, request);
+    await this.consumeTicketIssuanceBudget(context.user._id, scope.workspaceId);
+    const result = this.runtime.issueTakeoverReference(binding, expiresAt.getTime());
+    if (typeof result === 'string') invariant(false, result === 'rate_limited' ? 429 : 409, result);
+    return { ...result, expiresAt: expiresAt.toISOString() };
+  }
+
+  async issueTakeoverTicket(
+    context: ActorContext,
+    scope: OfficeScope,
+    request: TakeoverTicketRequest,
+  ): Promise<JoinTicketResponse> {
+    const { binding } = await this.takeoverContext(context, scope, {
+      ...request.takeover,
+      mapVersion: request.mapVersion,
+      protocolVersion: request.protocolVersion,
+    });
+    await this.consumeTicketIssuanceBudget(context.user._id, scope.workspaceId);
+    const target = this.runtime.consumeTakeoverReference(request.takeover.reference, binding);
+    if (typeof target === 'string') {
+      const status = target === 'unauthorized' || target === 'invalid_token' ? 401 : 409;
+      invariant(false, status, target);
+    }
+
+    const raw = newSecret();
+    const expiresAt = await this.db.transaction(async (tx) => {
+      const { member } = await this.tenancy.lockAccess(context, scope.workspaceId, tx);
+      const office = await this.tenancyModels.offices
+        .findOne({ _id: scope.officeId, workspaceId: scope.workspaceId })
+        .session(tx)
+        .lean();
+      invariant(office, 404, 'not_found');
+      checkOffice(office, request);
+      const now = new Date();
+      const session = await this.identities.sessions
+        .findOne({
+          _id: context.session._id,
+          kind: 'authenticated',
+          userId: context.user._id,
+          authVersion: context.user.authVersion,
+          revokedAt: null,
+          absoluteExpiresAt: { $gt: now },
+          idleExpiresAt: { $gt: now },
+        })
+        .session(tx)
+        .lean();
+      invariant(session, 401, 'unauthorized');
+      const expiry = new Date(
+        Math.min(
+          now.getTime() + OFFICE_LIMITS.maxJoinTicketLifetimeMs,
+          session.absoluteExpiresAt.getTime(),
+          session.idleExpiresAt.getTime(),
+        ),
+      );
+      invariant(expiry.getTime() > now.getTime(), 401, 'unauthorized');
+      const officeEpoch = this.epochs.forOffice(office._id);
+      invariant(officeEpoch === target.officeEpoch, 409, 'stale_epoch');
+      const record: OfficeJoinTicketRecord = {
+        _id: randomUUID(),
+        ticketDigest: digest(raw),
+        userId: context.user._id,
+        sessionId: session._id,
+        workspaceId: scope.workspaceId,
+        officeId: office._id,
+        membershipGrantId: grantId(member),
+        officeEpoch,
+        mapVersion: office.mapVersion,
+        protocolVersion: request.protocolVersion,
+        takeoverParticipationId: target.participationId,
+        takeoverOfficeEpoch: target.officeEpoch,
+        expiresAt: expiry,
+        consumedAt: null,
+        createdAt: now,
+      };
+      await this.ticketModels.tickets.create([record], { session: tx });
+      return expiry;
+    });
+    return { ticket: raw, expiresAt: expiresAt.toISOString() };
+  }
+
+  private async takeoverContext(
+    context: ActorContext,
+    scope: OfficeScope,
+    request: TakeoverReferenceRequest,
+  ): Promise<{ binding: TakeoverReferenceBinding; expiresAt: Date }> {
+    idSchema.parse(scope.workspaceId);
+    idSchema.parse(scope.officeId);
+    idSchema.parse(request.participationId);
+    mapVersionSchema.parse(request.mapVersion);
+    protocolVersionSchema.parse(request.protocolVersion);
+    return this.db.transaction(async (tx) => {
+      const { member } = await this.tenancy.lockAccess(context, scope.workspaceId, tx);
+      const office = await this.tenancyModels.offices
+        .findOne({ _id: scope.officeId, workspaceId: scope.workspaceId })
+        .session(tx)
+        .lean();
+      invariant(office, 404, 'not_found');
+      checkOffice(office, request);
+      const now = new Date();
+      const session = await this.identities.sessions
+        .findOne({
+          _id: context.session._id,
+          kind: 'authenticated',
+          userId: context.user._id,
+          authVersion: context.user.authVersion,
+          revokedAt: null,
+          absoluteExpiresAt: { $gt: now },
+          idleExpiresAt: { $gt: now },
+        })
+        .session(tx)
+        .lean();
+      invariant(session, 401, 'unauthorized');
+      const officeEpoch = this.epochs.current(office._id);
+      invariant(officeEpoch && officeEpoch === request.officeEpoch, 409, 'stale_epoch');
+      const expiresAt = new Date(
+        Math.min(
+          now.getTime() + OFFICE_LIMITS.takeoverReferenceLifetimeMs,
+          session.absoluteExpiresAt.getTime(),
+          session.idleExpiresAt.getTime(),
+        ),
+      );
+      invariant(expiresAt.getTime() > now.getTime(), 401, 'unauthorized');
+      return {
+        binding: {
+          userId: context.user._id,
+          sessionId: session._id,
+          membershipGrantId: grantId(member),
+          workspaceId: scope.workspaceId,
+          officeId: scope.officeId,
+          officeEpoch,
+          participationId: request.participationId,
+        },
+        expiresAt,
+      };
+    });
+  }
+
+  private async consumeTicketIssuanceBudget(userId: string, workspaceId: string) {
+    await this.abuse.consume(
+      'office-ticket-actor',
+      userId,
+      OFFICE_LIMITS.ticketsPerActorPerWindow,
+      OFFICE_LIMITS.ticketWindowMs,
+    );
+    await this.abuse.consume(
+      'office-ticket-workspace',
+      workspaceId,
+      OFFICE_LIMITS.ticketsPerWorkspacePerWindow,
+      OFFICE_LIMITS.ticketWindowMs,
+    );
+    await this.abuse.consume(
+      'office-ticket-global',
+      'global',
+      OFFICE_LIMITS.ticketsGloballyPerWindow,
+      OFFICE_LIMITS.ticketWindowMs,
+    );
+  }
+
   async consume(rawTicket: string, scope: AdmissionScope) {
     invariant(secretSchema.safeParse(rawTicket).success, 401, 'unauthorized');
     idSchema.parse(scope.workspaceId);
@@ -178,6 +350,11 @@ export class OfficeAdmissionService {
         .lean();
       invariant(
         ticket && ticket.consumedAt === null && ticket.expiresAt > now,
+        401,
+        'unauthorized',
+      );
+      invariant(
+        Boolean(ticket.takeoverParticipationId) === Boolean(ticket.takeoverOfficeEpoch),
         401,
         'unauthorized',
       );
@@ -247,6 +424,12 @@ export class OfficeAdmissionService {
         officeEpoch: ticket.officeEpoch,
         mapVersion: ticket.mapVersion,
         protocolVersion: ticket.protocolVersion,
+        ...(ticket.takeoverParticipationId && ticket.takeoverOfficeEpoch
+          ? {
+              takeoverParticipationId: ticket.takeoverParticipationId,
+              takeoverOfficeEpoch: ticket.takeoverOfficeEpoch,
+            }
+          : {}),
       };
     });
 

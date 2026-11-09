@@ -26,6 +26,7 @@ export const OFFICE_LIMITS = Object.freeze({
   replayCacheEntries: 128,
   replayWindowMs: 30000,
   takeoverReferenceLifetimeMs: 30000,
+  maxTrackedTakeoverReferences: 10000,
 });
 
 /** Parsed-value guard; adapters must independently cap raw transport bytes before parsing. */

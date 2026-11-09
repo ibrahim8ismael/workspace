@@ -126,10 +126,10 @@ export class OfficeGateway
         auth.data.protocolVersion,
       );
       const reservation = this.runtime.reserve(ticket, socket.id);
-      if (reservation.retiredOfficeEpoch) {
+      if (reservation.retiredSocketIds.length > 0) {
         const accessEnded = officeAccessEndedSchema.parse({
-          officeEpoch: reservation.retiredOfficeEpoch,
-          reason: 'server_unavailable',
+          officeEpoch: reservation.retiredOfficeEpoch ?? ticket.officeEpoch,
+          reason: reservation.retiredReason ?? 'server_unavailable',
         });
         for (const socketId of reservation.retiredSocketIds) {
           const previous = this.namespace.sockets.get(socketId);

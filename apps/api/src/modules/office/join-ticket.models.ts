@@ -15,6 +15,8 @@ export interface OfficeJoinTicketRecord {
   officeEpoch: string;
   mapVersion: string;
   protocolVersion: number;
+  takeoverParticipationId?: string;
+  takeoverOfficeEpoch?: string;
   expiresAt: Date;
   consumedAt: Date | null;
   createdAt: Date;
@@ -32,6 +34,8 @@ const officeJoinTicketSchema = new Schema<OfficeJoinTicketRecord>(
     officeEpoch: { type: String, required: true },
     mapVersion: { type: String, required: true },
     protocolVersion: { type: Number, required: true },
+    takeoverParticipationId: { type: String, required: false },
+    takeoverOfficeEpoch: { type: String, required: false },
     expiresAt: { type: Date, required: true },
     consumedAt: { type: Date, default: null },
     createdAt: { type: Date, required: true },

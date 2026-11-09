@@ -1,6 +1,6 @@
 # Office bootstrap and join-ticket implementation plan
 
-This implemented checkpoint covers the first backend slice of M2, including B003 and B004 prerequisites and the ticket foundation for B015. Full Socket.IO admission and continuing authorization follow under B015 and B017.
+This plan records the M2 office bootstrap and admission implementation. CP03 delivered the first HTTP slice; CP05 delivered Socket.IO admission, continuing authorization, snapshots and same-session takeover. Deployment evidence and browser integration remain tracked in the project plan and acceptance register.
 
 ## Scope and prerequisites
 
@@ -62,7 +62,7 @@ Use real NestJS HTTP and a temporary MongoDB replica set following `apps/api/tes
 
 ## Follow-on — Open Socket.IO admission
 
-Wire the internal consumer into namespace middleware and enforce exact `APP_ORIGIN` on the transport handshake, including WebSocket upgrades. Accept the ticket and protocol version in the Socket.IO auth payload. Serialize capacity reservation after consumption. Only then join the server-derived office room and emit `office:ready` with a safe initial snapshot. Release reservations on disconnect or failed admission and require a fresh ticket on retry. Disable recovery that can bypass admission. Complete bounded authorization leases and explicit takeover behavior under B017 before accepting live office traffic.
+The implementation is delivered in CP05. It wires the internal consumer into namespace middleware, enforces exact `APP_ORIGIN` on the transport handshake, serializes capacity reservation after consumption, emits `office:ready` with a safe initial snapshot, releases reservations on disconnect, disables recovery that can bypass admission, and implements bounded authorization leases and explicit same-session takeover. Live deployment still requires the acceptance evidence listed below.
 
 Demonstrate rejection of direct or wrong-Origin connections, single admission under concurrent final-slot requests, fresh snapshots after reconnect, and removal from an open socket after access is revoked. These scenarios are required to close A04 and the applicable parts of A11.
 

@@ -32,6 +32,7 @@ import {
   officeCommandAckSchema,
   worldDeltaSchema,
   worldSnapshotSchema,
+  takeoverReferenceResponseSchema,
   OFFICE_LIMITS,
 } from '@gather/contracts';
 import { IdentityModels } from '../dist/modules/identity/identity.models.js';
@@ -41,6 +42,7 @@ import { TenancyService } from '../dist/modules/tenancy/tenancy.service.js';
 import { OfficeAdmissionService } from '../dist/modules/office/office-admission.service.js';
 import { OfficeEpochRegistry } from '../dist/modules/office/office-epoch.registry.js';
 import { OfficeJoinTicketModels } from '../dist/modules/office/join-ticket.models.js';
+import { OfficeRuntimeService } from '../dist/modules/office/runtime/office-runtime.service.js';
 import { OutboxService } from '../dist/modules/identity/delivery/outbox.service.js';
 import { AuditService } from '../dist/modules/audit/audit.service.js';
 import { PasswordService } from '../dist/modules/identity/security/password.service.js';
@@ -1142,6 +1144,7 @@ describe('office join tickets', () => {
       app.get(DatabaseService),
       app.get(OfficeJoinTicketModels),
       new OfficeEpochRegistry(),
+      app.get(OfficeRuntimeService),
     );
     await expect(restartedAdmission.consume(epochTicket, scope)).rejects.toMatchObject({
       status: 409,
@@ -1608,6 +1611,119 @@ describe('office socket admission', () => {
       });
     } finally {
       client.disconnect();
+    }
+  });
+
+  it('requires explicit same-session takeover and retires the old socket atomically', async () => {
+    const owner = await account();
+    const member = await account();
+    const workspaceId = await workspace(owner);
+    await join(owner, workspaceId, member);
+    const { office, ticket: ownerTicket } = await issueTicket(owner, workspaceId);
+    const { ticket: memberTicket } = await issueTicket(member, workspaceId);
+    const ownerSocket = officeSocket({ ticket: ownerTicket, protocolVersion: 1 });
+    const memberSocket = officeSocket({ ticket: memberTicket, protocolVersion: 1 });
+    let conflictSocket: Socket | undefined;
+    let replacementSocket: Socket | undefined;
+    try {
+      const ownerReadyEvent = nextSocketEvent<unknown>(ownerSocket, 'office:ready');
+      await connectSocket(ownerSocket);
+      const ownerReady = officeReadySchema.parse(await ownerReadyEvent);
+      const memberReadyEvent = nextSocketEvent<unknown>(memberSocket, 'office:ready');
+      await connectSocket(memberSocket);
+      await memberReadyEvent;
+
+      const { ticket: conflictTicket } = await issueTicket(owner, workspaceId);
+      conflictSocket = officeSocket({ ticket: conflictTicket, protocolVersion: 1 });
+      const conflict = new Promise<Error>((resolve) => {
+        conflictSocket!.once('connect_error', resolve);
+      });
+      conflictSocket.connect();
+      await expect(conflict).resolves.toMatchObject({ message: 'participation_conflict' });
+      expect(ownerSocket.connected).toBe(true);
+
+      const referenceResponse = await owner.client.send(
+        'post',
+        `/api/workspaces/${workspaceId}/offices/${office._id}/takeover-reference`,
+        {
+          participationId: ownerReady.participationId,
+          officeEpoch: ownerReady.snapshot.officeEpoch,
+          mapVersion: commonsManifest.mapVersion,
+          protocolVersion: 1,
+        },
+      );
+      status(referenceResponse, 201);
+      const reference = takeoverReferenceResponseSchema.parse(referenceResponse.body);
+      expect(new Date(reference.expiresAt).getTime()).toBeLessThanOrEqual(
+        Date.now() + OFFICE_LIMITS.takeoverReferenceLifetimeMs,
+      );
+
+      const replacementTicketResponse = await owner.client.send(
+        'post',
+        `/api/workspaces/${workspaceId}/offices/${office._id}/join-ticket/takeover`,
+        {
+          mapVersion: commonsManifest.mapVersion,
+          protocolVersion: 1,
+          takeover: {
+            participationId: reference.participationId,
+            officeEpoch: reference.officeEpoch,
+            reference: reference.reference,
+          },
+        },
+      );
+      status(replacementTicketResponse, 201);
+      const replacementTicket = joinTicketResponseSchema.parse(
+        replacementTicketResponse.body,
+      ).ticket;
+
+      const replayResponse = await owner.client.send(
+        'post',
+        `/api/workspaces/${workspaceId}/offices/${office._id}/join-ticket/takeover`,
+        {
+          mapVersion: commonsManifest.mapVersion,
+          protocolVersion: 1,
+          takeover: {
+            participationId: reference.participationId,
+            officeEpoch: reference.officeEpoch,
+            reference: reference.reference,
+          },
+        },
+      );
+      status(replayResponse, 401);
+
+      const oldAccessEnded = nextSocketEvent<Record<string, unknown>>(
+        ownerSocket,
+        'office:access-ended',
+      );
+      const oldDisconnected = nextSocketEvent<string>(ownerSocket, 'disconnect');
+      const memberDelta = nextSocketEvent<unknown>(memberSocket, 'world:delta');
+      replacementSocket = officeSocket({ ticket: replacementTicket, protocolVersion: 1 });
+      const replacementReadyEvent = nextSocketEvent<unknown>(replacementSocket, 'office:ready');
+      await connectSocket(replacementSocket);
+      const replacementReady = officeReadySchema.parse(await replacementReadyEvent);
+      expect(replacementReady.participationId).not.toBe(ownerReady.participationId);
+      expect(replacementReady.snapshot.participants.map((p) => p.participationId)).toContain(
+        replacementReady.participationId,
+      );
+      expect(replacementReady.snapshot.participants.map((p) => p.participationId)).not.toContain(
+        ownerReady.participationId,
+      );
+      await expect(oldAccessEnded).resolves.toMatchObject({
+        reason: 'taken_over',
+        officeEpoch: ownerReady.snapshot.officeEpoch,
+      });
+      await expect(oldDisconnected).resolves.toBeTruthy();
+      const takeoverDelta = worldDeltaSchema.parse(await memberDelta);
+      expect(takeoverDelta.removedParticipationIds).toContain(ownerReady.participationId);
+      expect(takeoverDelta.participants.map((p) => p.participationId)).toContain(
+        replacementReady.participationId,
+      );
+      expect(memberSocket.connected).toBe(true);
+    } finally {
+      conflictSocket?.disconnect();
+      ownerSocket.disconnect();
+      memberSocket.disconnect();
+      replacementSocket?.disconnect();
     }
   });
 

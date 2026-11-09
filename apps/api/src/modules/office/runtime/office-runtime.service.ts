@@ -10,6 +10,7 @@ import {
 import type { WorldDelta, WorldSnapshot } from '@gather/contracts';
 import { COMMONS_GEOMETRY, canStep, pixelToTile, validateOfficeGeometry } from '@gather/world';
 import { invariant } from '../../../platform/http/errors.js';
+import { digest, newSecret } from '../../identity/security/secrets.js';
 import { APPROVED_OFFICE_DEFAULT_APPEARANCE } from '../commons-registry.js';
 
 export interface ConsumedOfficeTicket {
@@ -22,12 +23,15 @@ export interface ConsumedOfficeTicket {
   officeEpoch: string;
   mapVersion: string;
   protocolVersion: number;
+  takeoverParticipationId?: string;
+  takeoverOfficeEpoch?: string;
 }
 
 interface RuntimeParticipant {
   readonly socketId: string;
   readonly userId: string;
   readonly sessionId: string;
+  readonly membershipGrantId: string;
   readonly publicState: WorldSnapshot['participants'][number];
   lastAcceptedInputSequence: number;
   hasAcceptedInput: boolean;
@@ -56,6 +60,7 @@ export interface OfficeReservation {
   readonly participationId: string;
   readonly retiredOfficeEpoch: string | null;
   readonly retiredSocketIds: readonly string[];
+  readonly retiredReason: 'taken_over' | 'server_unavailable' | null;
   readonly ready: {
     participationId: string;
     workspaceId: string;
@@ -75,17 +80,105 @@ export interface MovementIntent {
   readonly dy: -1 | 0 | 1;
 }
 
+export interface TakeoverReferenceBinding {
+  readonly userId: string;
+  readonly sessionId: string;
+  readonly membershipGrantId: string;
+  readonly workspaceId: string;
+  readonly officeId: string;
+  readonly officeEpoch: string;
+  readonly participationId: string;
+}
+
+interface StoredTakeoverReference extends TakeoverReferenceBinding {
+  readonly expiresAt: number;
+}
+
 @Injectable()
 export class OfficeRuntimeService {
   private readonly offices = new Map<string, OfficeRuntime>();
+  private readonly takeoverReferences = new Map<string, StoredTakeoverReference>();
+
+  issueTakeoverReference(binding: TakeoverReferenceBinding, expiresAt: number) {
+    const office = this.offices.get(binding.officeId);
+    const activeParticipationId = office?.participationByActor.get(
+      `${binding.workspaceId}:${binding.userId}`,
+    );
+    const participant = activeParticipationId
+      ? office?.participants.get(activeParticipationId)
+      : undefined;
+    if (
+      !office ||
+      office.workspaceId !== binding.workspaceId ||
+      office.officeEpoch !== binding.officeEpoch ||
+      activeParticipationId !== binding.participationId ||
+      !participant ||
+      participant.userId !== binding.userId ||
+      participant.sessionId !== binding.sessionId ||
+      participant.membershipGrantId !== binding.membershipGrantId
+    )
+      return 'invalid_target' as const;
+
+    this.pruneTakeoverReferences();
+    if (this.takeoverReferences.size >= OFFICE_LIMITS.maxTrackedTakeoverReferences)
+      return 'rate_limited' as const;
+
+    const reference = newSecret();
+    this.takeoverReferences.set(digest(reference), {
+      ...binding,
+      expiresAt: performance.now() + Math.max(0, expiresAt - Date.now()),
+    });
+    return {
+      reference,
+      participationId: binding.participationId,
+      officeEpoch: binding.officeEpoch,
+    };
+  }
+
+  consumeTakeoverReference(reference: string, binding: TakeoverReferenceBinding) {
+    this.pruneTakeoverReferences();
+    const key = digest(reference);
+    const stored = this.takeoverReferences.get(key);
+    if (!stored) return 'invalid_token' as const;
+    if (
+      stored.userId !== binding.userId ||
+      stored.sessionId !== binding.sessionId ||
+      stored.membershipGrantId !== binding.membershipGrantId ||
+      stored.workspaceId !== binding.workspaceId ||
+      stored.officeId !== binding.officeId ||
+      stored.officeEpoch !== binding.officeEpoch ||
+      stored.participationId !== binding.participationId
+    )
+      return 'unauthorized' as const;
+    const office = this.offices.get(stored.officeId);
+    const participant = office?.participants.get(stored.participationId);
+    if (
+      !office ||
+      office.officeEpoch !== stored.officeEpoch ||
+      !participant ||
+      participant.userId !== stored.userId ||
+      participant.sessionId !== stored.sessionId ||
+      participant.membershipGrantId !== stored.membershipGrantId
+    ) {
+      this.takeoverReferences.delete(key);
+      return 'invalid_target' as const;
+    }
+    this.takeoverReferences.delete(key);
+    return {
+      participationId: stored.participationId,
+      officeEpoch: stored.officeEpoch,
+    };
+  }
 
   reserve(ticket: ConsumedOfficeTicket, socketId: string): OfficeReservation {
     const current = this.offices.get(ticket.officeId);
     let retiredOfficeEpoch: string | null = null;
     let retiredSocketIds: string[] = [];
+    let retiredReason: OfficeReservation['retiredReason'] = null;
     if (current && current.officeEpoch !== ticket.officeEpoch) {
       // A new process epoch cannot inherit stale in-memory participants.
       retiredOfficeEpoch = current.officeEpoch;
+      retiredReason = 'server_unavailable';
       retiredSocketIds = [...current.participants.values()].map(
         (participant) => participant.socketId,
       );
@@ -108,15 +201,67 @@ export class OfficeRuntimeService {
 
     invariant(office.workspaceId === ticket.workspaceId, 401, 'unauthorized');
     const actorKey = `${ticket.workspaceId}:${ticket.userId}`;
-    invariant(!office.participationByActor.has(actorKey), 409, 'participation_conflict');
-    invariant(office.participants.size < OFFICE_LIMITS.maxParticipants, 409, 'room_full');
+    const activeParticipationId = office.participationByActor.get(actorKey);
+    const removedParticipationIds: string[] = [];
+    const changedSeats: WorldSnapshot['seats'] = [];
+    let retiringParticipant: RuntimeParticipant | undefined;
+    let releasedSeatId: string | null = null;
+    invariant(
+      Boolean(ticket.takeoverParticipationId) === Boolean(ticket.takeoverOfficeEpoch),
+      409,
+      'participation_conflict',
+    );
+    if (ticket.takeoverParticipationId && ticket.takeoverOfficeEpoch) {
+      invariant(
+        activeParticipationId === ticket.takeoverParticipationId &&
+          ticket.takeoverOfficeEpoch === office.officeEpoch,
+        409,
+        'participation_conflict',
+      );
+      const previous = office.participants.get(ticket.takeoverParticipationId);
+      invariant(
+        previous &&
+          previous.userId === ticket.userId &&
+          previous.sessionId === ticket.sessionId &&
+          previous.membershipGrantId === ticket.membershipGrantId,
+        409,
+        'participation_conflict',
+      );
+      retiringParticipant = previous;
+      releasedSeatId = previous.publicState.seatId;
+      if (releasedSeatId) {
+        changedSeats.push({ seatId: releasedSeatId, occupantParticipationId: null });
+      }
+      removedParticipationIds.push(ticket.takeoverParticipationId);
+      retiredSocketIds.push(previous.socketId);
+      retiredReason = 'taken_over';
+    } else {
+      invariant(!activeParticipationId, 409, 'participation_conflict');
+    }
+    const nextParticipants = new Map(office.participants);
+    const nextParticipationByActor = new Map(office.participationByActor);
+    const nextSeats = new Map(office.seats);
+    if (retiringParticipant && ticket.takeoverParticipationId) {
+      nextParticipants.delete(ticket.takeoverParticipationId);
+      nextParticipationByActor.delete(actorKey);
+      if (releasedSeatId) nextSeats.set(releasedSeatId, null);
+    }
+    invariant(nextParticipants.size < OFFICE_LIMITS.maxParticipants, 409, 'room_full');
+    const reservationOffice: OfficeRuntime = retiringParticipant
+      ? {
+          ...office,
+          participants: nextParticipants,
+          participationByActor: nextParticipationByActor,
+          seats: nextSeats,
+        }
+      : office;
 
     const participationId = randomUUID();
     const participant: WorldSnapshot['participants'][number] = {
       participationId,
       displayName: ticket.displayName,
       appearance: APPROVED_OFFICE_DEFAULT_APPEARANCE,
-      position: this.spawnFor(office),
+      position: this.spawnFor(reservationOffice),
       facing: 'south',
       availability: 'available',
       seatId: null,
@@ -124,7 +269,9 @@ export class OfficeRuntimeService {
     };
     const baseVersion = office.stateVersion;
     const nextVersion = baseVersion + 1;
-    const snapshot = worldSnapshotSchema.parse(this.snapshot(office, participant, nextVersion));
+    const snapshot = worldSnapshotSchema.parse(
+      this.snapshot(reservationOffice, participant, nextVersion),
+    );
     const ready = officeReadySchema.parse({
       participationId,
       workspaceId: ticket.workspaceId,
@@ -139,15 +286,23 @@ export class OfficeRuntimeService {
       stateVersion: nextVersion,
       serverTime: Date.now(),
       participants: [participant],
-      removedParticipationIds: [],
-      seats: [],
+      removedParticipationIds,
+      seats: changedSeats,
     });
     const roomId = this.roomId(ticket.workspaceId, ticket.officeId);
+    if (retiringParticipant && ticket.takeoverParticipationId) {
+      office.participants.delete(ticket.takeoverParticipationId);
+      office.participationByActor.delete(actorKey);
+      office.dirtyParticipants.delete(ticket.takeoverParticipationId);
+      if (releasedSeatId) office.seats.set(releasedSeatId, null);
+      this.invalidateTakeoverReferences(ticket.takeoverParticipationId);
+    }
     office.stateVersion = nextVersion;
     office.participants.set(participationId, {
       socketId,
       userId: ticket.userId,
       sessionId: ticket.sessionId,
+      membershipGrantId: ticket.membershipGrantId,
       publicState: participant,
       lastAcceptedInputSequence: 0,
       hasAcceptedInput: false,
@@ -161,6 +316,7 @@ export class OfficeRuntimeService {
       participationId,
       retiredOfficeEpoch,
       retiredSocketIds,
+      retiredReason,
       ready,
       joined,
     };
@@ -187,6 +343,7 @@ export class OfficeRuntimeService {
     const baseVersion = office.stateVersion;
     office.participants.delete(participationId);
     office.participationByActor.delete(`${workspaceId}:${userId}`);
+    this.invalidateTakeoverReferences(participationId);
     const releasedSeatId = participant.publicState.seatId;
     if (releasedSeatId) office.seats.set(releasedSeatId, null);
     office.stateVersion += 1;
@@ -516,6 +673,19 @@ export class OfficeRuntimeService {
 
   private emptySeats() {
     return new Map(commonsSeats.map((seat) => [seat.seatId, null] as const));
+  }
+
+  private pruneTakeoverReferences() {
+    const now = performance.now();
+    for (const [key, reference] of this.takeoverReferences) {
+      if (reference.expiresAt <= now) this.takeoverReferences.delete(key);
+    }
+  }
+
+  private invalidateTakeoverReferences(participationId: string) {
+    for (const [key, reference] of this.takeoverReferences) {
+      if (reference.participationId === participationId) this.takeoverReferences.delete(key);
+    }
   }
 
   private change(

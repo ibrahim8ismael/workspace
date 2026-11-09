@@ -127,7 +127,7 @@ The API now sets a 5-second Socket.IO handshake timeout and allows up to 60 conn
 | CP05.2c | Expire authorization independently of delayed primary-policy responses | Complete locally | API suite: 65/65 passed at this batch; delayed authorization response cannot keep or revive the socket after the five-second lease |
 | CP05.2d | Fail closed on policy-read errors; require a fresh ticket after reconnect | Complete locally | API suite: 67/67 passed; repeated primary-policy read errors expire access, reconnect has a new participation/snapshot, and epoch replacement invalidates old sockets |
 
-The CP05.2 local exit covers one API process and uses polling to observe committed changes within the bounded lease interval; it does not connect mutation transactions to an immediate cross-process notification channel. The attempt limiter and runtime are process-local, so multi-instance deployment needs a shared policy/rate coordination design. A real Mongo outage drill remains an operations proof. Movement, seats, recovery/takeover and browser socket integration remain later CP05/CP06 work.
+The CP05.2 local exit covers one API process and uses polling to observe committed changes within the bounded lease interval; it does not connect mutation transactions to an immediate cross-process notification channel. The attempt limiter and runtime are process-local, so multi-instance deployment needs a shared policy/rate coordination design. A real Mongo outage drill remains an operations proof. Movement, seats and server snapshot recovery/takeover now have local coverage; browser socket integration remains CP06 work.
 
 ### CP05.3a — Authoritative movement intent
 
@@ -138,7 +138,7 @@ The `/office` gateway accepts strict directional intent only from an admitted so
 | CP05.3a | Strict input, sequencing/rate limit, bounded simulation, collision and two-client delta | Complete locally | Full API suite at the batch: 73 tests passed. Includes two-client movement/flood integration and runtime tests for sequence, input rate, server-time speed, diagonal normalization, map bounds and Commons wall collision |
 | CP05.3b | Availability, serialized sit/stand, occupancy/release and scoped command budget | Complete locally for one API process; browser and shared-workspace budgets remain open | Full `pnpm --dir apps/api test`: 75/75 passed. Socket.IO integration verifies presence delta and command acknowledgements; runtime tests move two avatars, reject a seat occupied by a standing avatar, serialize the chair claim, reject the competing claim, select the first valid unoccupied exit and release the seat on stand/disconnect |
 
-CP05.3b uses a 30-command-per-second per-socket rolling window for presence/seat commands. The runtime rejects sit while directional intent is still active, requires the chair tile or a reachable adjacent tile, snaps the avatar to the chair center, blocks other movement onto an occupied chair tile, avoids chair tiles for initial spawn and clears occupancy during participation cleanup. Stand chooses the first manifest-ordered valid exit not occupied by another participant. The runtime and limiters remain process-local; per-workspace/shared limits, duplicate-command outcome cache and real two-client seat competition through Socket.IO remain acceptance work. Browser client integration is CP06. Real Mongo-outage, tick/broadcast load, resync and takeover evidence remain open.
+CP05.3b uses a 30-command-per-second per-socket rolling window for presence/seat commands. The runtime rejects sit while directional intent is still active, requires the chair tile or a reachable adjacent tile, snaps the avatar to the chair center, blocks other movement onto an occupied chair tile, avoids chair tiles for initial spawn and clears occupancy during participation cleanup. Stand chooses the first manifest-ordered valid exit not occupied by another participant. The runtime and limiters remain process-local; per-workspace/shared limits, duplicate-command outcome cache and real two-client seat competition through Socket.IO remain acceptance work. Browser client integration is CP06. Real Mongo-outage and tick/broadcast load evidence remain open.
 
 ### CP05.4a — Snapshot gap recovery
 
@@ -148,7 +148,15 @@ The gateway now accepts strict `world:resync` requests only from the admitted ac
 | --- | --- | --- | --- |
 | CP05.4a | Current snapshot recovery after a missed delta; future-version rejection; bounded resync | Complete locally for one API process | Full `pnpm --dir apps/api test`: 77/77 passed; includes runtime snapshot/version/actor checks and a live Socket.IO test for recovery after a missed availability delta, future-version rejection and 3/sec resync throttling |
 
-Explicit takeover, replay/deduplication for commands, per-workspace/shared rate budgets, multi-instance fencing, Mongo outage drills, browser integration and measured load remain open.
+### CP05.4b — Explicit same-session takeover
+
+The HTTP flow has a separate bounded reference-issuance route and takeover-ticket route. A reference is random, stored by digest in a capped in-memory map, one-use, bound to the current user/session/membership grant/workspace/office/epoch/participation, and expires within 30 seconds or earlier with the authenticated session. The ordinary CP03 join-ticket request remains unchanged. The runtime swaps the exact participation atomically, releases its seat, emits one ordered removal/replacement delta, then the gateway sends `taken_over` and disconnects the old socket. An ordinary second ticket remains a conflict.
+
+| Batch | Scope | Status | Evidence |
+| --- | --- | --- | --- |
+| CP05.4b | Reference issuance/consumption, separate takeover ticket, atomic participation replacement | Complete locally for one API process | Full `pnpm --dir apps/api test`: 79/79 passed; runtime checks one-use reference/session binding/atomic swap; live Socket.IO test verifies ordinary conflict does not evict, replay is rejected, takeover closes the old socket with `taken_over`, new snapshot excludes the old participation and another client sees the replacement delta |
+
+Command replay/deduplication, per-workspace/shared rate budgets, multi-instance fencing, real Mongo outage drills, browser reconnect and measured load remain open.
 
 ## CP04 — browser accounts, companies and delivery (in progress)
 

@@ -436,4 +436,65 @@ describe('office runtime reservations', () => {
       ),
     ).toBe('unauthorized');
   });
+
+  it('consumes takeover references once and atomically replaces the bound participation', () => {
+    const runtime = new OfficeRuntimeService();
+    const active = ticket(1);
+    const oldReservation = runtime.reserve(active, 'socket-old');
+    const binding = {
+      userId: active.userId,
+      sessionId: active.sessionId,
+      membershipGrantId: active.membershipGrantId,
+      workspaceId: active.workspaceId,
+      officeId: active.officeId,
+      officeEpoch: active.officeEpoch,
+      participationId: oldReservation.participationId,
+    };
+    const result = runtime.issueTakeoverReference(binding, Date.now() + 30_000);
+    expect(typeof result).not.toBe('string');
+    if (typeof result === 'string') throw new Error(result);
+    const expired = runtime.issueTakeoverReference(binding, Date.now() - 1);
+    expect(typeof expired).not.toBe('string');
+    if (typeof expired === 'string') throw new Error(expired);
+    expect(runtime.consumeTakeoverReference(expired.reference, binding)).toBe('invalid_token');
+
+    expect(
+      runtime.consumeTakeoverReference(result.reference, {
+        ...binding,
+        sessionId: 'other-session',
+      }),
+    ).toBe('unauthorized');
+    expect(runtime.consumeTakeoverReference(result.reference, binding)).toEqual({
+      participationId: oldReservation.participationId,
+      officeEpoch: active.officeEpoch,
+    });
+    expect(runtime.consumeTakeoverReference(result.reference, binding)).toBe('invalid_token');
+
+    const replacement = runtime.reserve(
+      {
+        ...active,
+        takeoverParticipationId: oldReservation.participationId,
+        takeoverOfficeEpoch: active.officeEpoch,
+      },
+      'socket-new',
+    );
+    expect(replacement.retiredReason).toBe('taken_over');
+    expect(replacement.retiredSocketIds).toEqual(['socket-old']);
+    expect(replacement.joined.removedParticipationIds).toEqual([oldReservation.participationId]);
+    expect(
+      replacement.joined.participants.map((participant) => participant.participationId),
+    ).toEqual([replacement.participationId]);
+    expect(
+      replacement.ready.snapshot.participants.map((participant) => participant.participationId),
+    ).toEqual([replacement.participationId]);
+    expect(
+      runtime.release(
+        active.officeId,
+        active.workspaceId,
+        active.userId,
+        'socket-old',
+        oldReservation.participationId,
+      ),
+    ).toBeNull();
+  });
 });

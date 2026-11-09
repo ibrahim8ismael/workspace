@@ -24,7 +24,7 @@ const image =
 const isolated = process.argv.includes('--isolated');
 const secret = randomBytes(32).toString('hex');
 const config = `port: 7880\nbind_addresses: [${isolated ? '127.0.0.1' : '0.0.0.0'}]\nrtc:\n  tcp_port: 17881\n  node_ip: 127.0.0.1\n  use_external_ip: false\nkeys:\n  fixture: ${secret}\n`;
-let id, browser, watchdog, guard, guardId;
+let id, browser, watchdog, guard, guardId, progressTimer;
 const retirementDirectory = await mkdtemp(join(tmpdir(), 'cp07-guard-'));
 let retirement;
 const server = createServer(async (req, res) => {
@@ -253,14 +253,35 @@ try {
       );
       throw error;
     });
+  let refreshedReceiverToken;
+  if (isolated) {
+    await docker(
+      'exec',
+      guardId,
+      'node',
+      '--input-type=module',
+      '-e',
+      "import {RoomServiceClient} from '/workspace/apps/api/node_modules/livekit-server-sdk/dist/RoomServiceClient.js'; const c=new RoomServiceClient('http://127.0.0.1:7880',process.env.CP07_KEY,process.env.CP07_SECRET); await c.updateParticipant('cutoff-fixture','receiver',{metadata:'refresh-fixture'});",
+    );
+    await receiver.waitForFunction(
+      (original) => window.room.engine?.token && window.room.engine.token !== original,
+      originalReceiverToken,
+      { timeout: 10000 },
+    );
+    refreshedReceiverToken = await receiver.evaluate(() => window.room.engine.token);
+    const claims = await new TokenVerifier('fixture', secret).verify(refreshedReceiverToken, 0);
+    if (claims.sub !== 'receiver' || claims.video?.room !== 'cutoff-fixture')
+      throw new Error('Invalid refreshed fixture token');
+  }
   if (isolated) retirement = new RetirementStore(retirementDirectory);
-  retirement.retire('cutoff-fixture');
+  const progressStall = process.argv.includes('--progress-stall');
+  if (!progressStall) retirement.retire('cutoff-fixture');
   const freezeGuard = process.argv.includes('--freeze-guard');
-  if (freezeGuard) {
+  if (freezeGuard && !progressStall) {
     if (!guardId) throw new Error('--freeze-guard requires --isolated');
     await docker('pause', guardId);
   }
-  const startedAt = Date.now();
+  let startedAt = Date.now();
   watchdog = spawn(
     process.execPath,
     ['spikes/media-enforcement/supervisor-process.mjs', context, id, 'media-fixture'],
@@ -270,6 +291,36 @@ try {
   watchdog.stdout.on('data', (chunk) => {
     result += chunk;
   });
+  if (progressStall) {
+    const before = await receiver.evaluate(() => ({
+      frames: window.framesReceived,
+      audio: window.audioSamples,
+    }));
+    let sequence = 0;
+    const progress = () => {
+      const nonce = randomBytes(16).toString('hex');
+      const version = ++sequence;
+      watchdog.stdin.write(JSON.stringify({ kind: 'expect', nonce, version }) + '\n');
+      watchdog.stdin.write(
+        JSON.stringify({ kind: 'ack', epoch: 'media-fixture', nonce, version, sequence }) + '\n',
+      );
+    };
+    watchdog.stdin.on('error', () => {});
+    progress();
+    progressTimer = setInterval(progress, 500);
+    await new Promise((resolve) => setTimeout(resolve, 4000));
+    clearInterval(progressTimer);
+    if (watchdog.exitCode !== null) throw new Error('Supervisor stopped during valid progress');
+    const healthy = await receiver.evaluate(() => ({
+      frames: window.framesReceived,
+      audio: window.audioSamples,
+    }));
+    if (healthy.frames <= before.frames || healthy.audio <= before.audio)
+      throw new Error('Media did not continue during healthy progress');
+    retirement.retire('cutoff-fixture');
+    if (freezeGuard) await docker('pause', guardId);
+    startedAt = Date.now();
+  }
   const code = await new Promise((resolve, reject) => {
     watchdog.on('exit', resolve);
     watchdog.on('error', reject);
@@ -305,12 +356,28 @@ try {
     }
   }, originalReceiverToken);
   if (staleTokenAcceptedAfterRestart) throw new Error('Retired token accepted by restarted guard');
+  let refreshedTokenAcceptedAfterRestart = null;
+  if (refreshedReceiverToken) {
+    refreshedTokenAcceptedAfterRestart = await receiver.evaluate(async (token) => {
+      await window.room.disconnect();
+      window.room = new window.LivekitClient.Room();
+      try {
+        await window.room.connect(window.fixtureSocket, token);
+        return true;
+      } catch {
+        return false;
+      }
+    }, refreshedReceiverToken);
+    if (refreshedTokenAcceptedAfterRestart) throw new Error('Refreshed retired token accepted');
+  }
+
   console.log(
     JSON.stringify({
-      scenario: 'missing-guard-progress',
+      scenario: progressStall ? 'fixture-install-progress-then-stall' : 'missing-guard-progress',
       isolated,
       freezeGuard,
       staleTokenAcceptedAfterRestart,
+      refreshedTokenAcceptedAfterRestart,
       framesReceived: final.frames,
       audioSamples: final.audioSamples,
       lastAudibleSampleAfterStartMs: final.lastAudioAt - startedAt,
@@ -320,6 +387,7 @@ try {
     }),
   );
 } finally {
+  clearInterval(progressTimer);
   guard?.close();
   if (guardId) await docker('rm', '-f', guardId);
   watchdog?.kill();

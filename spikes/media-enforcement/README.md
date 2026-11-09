@@ -174,3 +174,30 @@ shutdown, not a fully wired authenticated policy/install-ACK loop. Refreshed JWT
 source restrictions, controller loss, Docker-control failure, supervisor failure,
 shared-tenant impact and deployment privilege isolation remain open acceptance
 requirements. CP07 is not complete from these successful experiments alone.
+
+## CP07.9 fixture progress stall and refreshed-token replay
+
+Add `--progress-stall` to keep the independent supervisor alive for four seconds
+with exact nonce/version/epoch/sequence installation ACK pairs over its private
+parent pipe. The fixture asserts audio and video advance during that interval,
+then stops ACKs, retires the generation and optionally pauses the guard. These
+ACKs are fixture-generated; they do not prove authenticated controller policy
+pulls or real guard installation acknowledgements.
+
+In isolated mode the harness invokes LiveKit's participant update API from the
+private guard namespace to induce a token refresh. It captures the pinned SDK's
+current internal engine token, asserts it differs from the original, verifies its
+signature/identity/room and retains it only in memory. After guard/SFU restart,
+both original and refreshed-token reconnects must fail. The internal SDK access
+is test instrumentation pinned to client 2.23.0, not a production interface.
+
+2026-11-10 combined isolated/progress-stall/guard-freeze run: 159 video frames,
+425 active audio samples; last video at 2576ms and audio at 2938ms after ACKs stop
+and guard pause completes. Supervisor confirmed stopped at 6764.645ms from its
+own initial startup (which includes the healthy phase). Both original and SFU-
+refreshed tokens were rejected after restart. A preceding progress-stall run
+without refreshed-token instrumentation measured audio cutoff at 2952ms.
+
+Remaining CP07 gates include authentic policy-to-guard-to-supervisor progress,
+controller-loss handling, real control/supervisor failure paths, per-source grants,
+shared-tenant interruption, and alternate ingress/TURN topology review.

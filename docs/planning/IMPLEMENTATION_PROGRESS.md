@@ -487,3 +487,13 @@ Added fixture `guard-process.mjs` and `--isolated` media mode: pinned restricted
 Two real audio/video experiments passed. Isolated run: 87 decoded frames, 239 active waveform samples, last video 3356ms/audio 3725ms. Guard-freeze run pauses the guard container while media flows: 87 frames/248 samples, last video 3254ms/audio 3632ms; the independent host supervisor confirmed SFU stopped at 3298.051ms relative to its own start. Original-token replay after guard/SFU restart was rejected in both experiments. Resources were removed after each run.
 
 Remaining: real authenticated policy/install-ACK progress wiring, SFU-refreshed token replay, strict source permissions, controller loss, Docker control and supervisor failures, TURN/alternate ingress and shared-node tenant-impact evidence. This fixture deliberately starts the supervisor without progress; it does not yet prove healthy progress followed by a stall. CP07 remains gated.
+
+## CP07.9 — Progress then stall and real refreshed-token rejection (2026-11-10)
+
+The media harness now supports `--progress-stall`: exact fixture installation ACKs keep the separate supervisor running for four seconds, while assertions confirm advancing real audio/video. ACKs then stop, generation retirement is persisted and the guard container can be paused. This is private-pipe fixture progress, not authenticated policy/guard wiring.
+
+The isolated fixture also updates receiver metadata through LiveKit's private room API to induce token refresh. It captures a changed current SDK engine token and independently verifies signature/identity/room without printing or persisting the token. After guard/SFU restart, both original and refreshed-token attempts must fail.
+
+Actual combined run `--run-local --isolated --progress-stall --freeze-guard` passed: 159 frames/425 active waveform samples; last video 2576ms and audio 2938ms after progress stops and pause completes. Supervisor stop reported 6764.645ms from its own earlier startup, including the healthy phase. Original and refreshed replay flags were both false. Cleanup removed both fixture containers. An earlier progress-stall run passed with last audio at 2952ms.
+
+CP07 remains incomplete: controller-authenticated pulls and actual guard installation ACKs, controller loss, real shutdown-control/supervisor failure, source restrictions, shared-tenant effects and ingress/TURN audit remain open. No full eight-second production revocation guarantee is inferred from these local fixtures.

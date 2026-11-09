@@ -135,9 +135,10 @@ The `/office` gateway accepts strict directional intent only from an admitted so
 
 | Batch | Scope | Status | Evidence |
 | --- | --- | --- | --- |
-| CP05.3a | Strict input, sequencing/rate limit, bounded simulation, collision and two-client delta | Complete locally; seats/presence not implemented | Full `pnpm --filter @gather/api test`: 73/73 passed. Includes two-client movement/flood integration and six runtime tests for sequence, input rate, server-time speed, diagonal normalization, map bounds and Commons wall collision |
+| CP05.3a | Strict input, sequencing/rate limit, bounded simulation, collision and two-client delta | Complete locally | Full API suite at the batch: 73 tests passed. Includes two-client movement/flood integration and runtime tests for sequence, input rate, server-time speed, diagonal normalization, map bounds and Commons wall collision |
+| CP05.3b | Availability, serialized sit/stand, occupancy/release and scoped command budget | Complete locally for one API process; browser and shared-workspace budgets remain open | Full `pnpm --dir apps/api test`: 75/75 passed. Socket.IO integration verifies presence delta and command acknowledgements; runtime tests move two avatars, reject a seat occupied by a standing avatar, serialize the chair claim, reject the competing claim, select the first valid unoccupied exit and release the seat on stand/disconnect |
 
-Seat/presence commands, server-side occupancy and browser client integration remain CP05.3b/CP06. Real wall/map fixtures beyond the Commons sample and measured tick/broadcast load remain acceptance work.
+CP05.3b uses a 30-command-per-second per-socket rolling window for presence/seat commands. The runtime rejects sit while directional intent is still active, requires the chair tile or a reachable adjacent tile, snaps the avatar to the chair center, blocks other movement onto an occupied chair tile, avoids chair tiles for initial spawn and clears occupancy during participation cleanup. Stand chooses the first manifest-ordered valid exit not occupied by another participant. The runtime and limiters remain process-local; per-workspace/shared limits, duplicate-command outcome cache and real two-client seat competition through Socket.IO remain acceptance work. Browser client integration is CP06. Real Mongo-outage, tick/broadcast load, resync and takeover evidence remain open.
 
 ## CP04 — browser accounts, companies and delivery (in progress)
 

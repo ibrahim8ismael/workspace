@@ -214,4 +214,171 @@ describe('office runtime reservations', () => {
     expect(finalTile.tx).toBe(5);
     expect(finalTile.ty).toBe(6);
   });
+
+  it('serializes seat claims, applies availability, stands through a valid exit and frees seats', () => {
+    const runtime = new OfficeRuntimeService();
+    const firstTicket = ticket(1);
+    const secondTicket = ticket(2);
+    const first = runtime.reserve(firstTicket, 'socket-1');
+    const second = runtime.reserve(secondTicket, 'socket-2');
+    let now = performance.now() + 1;
+    let sequence = 0;
+    const walkNearSeat = (
+      active: ConsumedOfficeTicket,
+      reservation: typeof first,
+      socket: string,
+    ) => {
+      const run = (dx: -1 | 0 | 1, dy: -1 | 0 | 1, ticks: number) => {
+        for (let index = 0; index < ticks; index += 1) {
+          sequence += 1;
+          expect(
+            runtime.setMovementIntent(
+              active.officeId,
+              active.workspaceId,
+              active.userId,
+              socket,
+              reservation.participationId,
+              { eventId: randomUUID(), officeEpoch: active.officeEpoch, sequence, dx, dy },
+              now,
+            ),
+          ).toBeNull();
+          runtime.tick(active.officeId, now + 50);
+          now += 50;
+        }
+      };
+      run(1, 0, active.userId === firstTicket.userId ? 24 : 20);
+      run(0, 1, 7);
+      run(-1, 0, 4);
+      sequence += 1;
+      runtime.setMovementIntent(
+        active.officeId,
+        active.workspaceId,
+        active.userId,
+        socket,
+        reservation.participationId,
+        {
+          eventId: randomUUID(),
+          officeEpoch: active.officeEpoch,
+          sequence,
+          dx: 0,
+          dy: 0,
+        },
+        now,
+      );
+      runtime.tick(active.officeId, now + 50);
+      now += 50;
+    };
+    walkNearSeat(firstTicket, first, 'socket-1');
+    walkNearSeat(secondTicket, second, 'socket-2');
+
+    const seatId = 'commons-southeast-table:0';
+    const moveSecond = (dx: -1 | 0 | 1, dy: -1 | 0 | 1, ticks: number) => {
+      for (let index = 0; index < ticks; index += 1) {
+        sequence += 1;
+        runtime.setMovementIntent(
+          secondTicket.officeId,
+          secondTicket.workspaceId,
+          secondTicket.userId,
+          'socket-2',
+          second.participationId,
+          { eventId: randomUUID(), officeEpoch: secondTicket.officeEpoch, sequence, dx, dy },
+          now,
+        );
+        runtime.tick(secondTicket.officeId, now + 50);
+        now += 50;
+      }
+    };
+    // Enter the southeast room through its north doorway at column 18, then reach the chair.
+    moveSecond(1, 0, 6);
+    moveSecond(0, 1, 2);
+    moveSecond(-1, 0, 3);
+    moveSecond(0, 1, 4);
+    expect(
+      runtime.sit(
+        firstTicket.officeId,
+        firstTicket.workspaceId,
+        firstTicket.userId,
+        'socket-1',
+        first.participationId,
+        firstTicket.officeEpoch,
+        seatId,
+        now,
+      ),
+    ).toBe('seat_unavailable');
+    moveSecond(0, -1, 4);
+
+    const claim = runtime.sit(
+      firstTicket.officeId,
+      firstTicket.workspaceId,
+      firstTicket.userId,
+      'socket-1',
+      first.participationId,
+      firstTicket.officeEpoch,
+      seatId,
+      now,
+    );
+    expect(typeof claim).not.toBe('string');
+    if (typeof claim === 'string') throw new Error(claim);
+    expect(claim.delta.seats).toEqual([{ seatId, occupantParticipationId: first.participationId }]);
+    expect(claim.delta.participants[0]?.seatId).toBe(seatId);
+    expect(
+      runtime.sit(
+        secondTicket.officeId,
+        secondTicket.workspaceId,
+        secondTicket.userId,
+        'socket-2',
+        second.participationId,
+        secondTicket.officeEpoch,
+        seatId,
+        now,
+      ),
+    ).toBe('seat_unavailable');
+
+    const availability = runtime.setAvailability(
+      firstTicket.officeId,
+      firstTicket.workspaceId,
+      firstTicket.userId,
+      'socket-1',
+      first.participationId,
+      firstTicket.officeEpoch,
+      'away',
+    );
+    expect(
+      availability &&
+        typeof availability !== 'string' &&
+        availability.delta.participants[0]?.availability,
+    ).toBe('away');
+    const stand = runtime.stand(
+      firstTicket.officeId,
+      firstTicket.workspaceId,
+      firstTicket.userId,
+      'socket-1',
+      first.participationId,
+      firstTicket.officeEpoch,
+    );
+    expect(typeof stand).not.toBe('string');
+    if (typeof stand === 'string') throw new Error(stand);
+    expect(stand.delta.seats).toEqual([{ seatId, occupantParticipationId: null }]);
+    expect(stand.delta.participants[0]?.position).toEqual({ x: 528, y: 368 });
+
+    const sitAgain = runtime.sit(
+      firstTicket.officeId,
+      firstTicket.workspaceId,
+      firstTicket.userId,
+      'socket-1',
+      first.participationId,
+      firstTicket.officeEpoch,
+      seatId,
+      now,
+    );
+    expect(typeof sitAgain).not.toBe('string');
+    const released = runtime.release(
+      firstTicket.officeId,
+      firstTicket.workspaceId,
+      firstTicket.userId,
+      'socket-1',
+      first.participationId,
+    );
+    expect(released?.delta.seats).toEqual([{ seatId, occupantParticipationId: null }]);
+  });
 });

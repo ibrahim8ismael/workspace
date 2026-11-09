@@ -12,6 +12,9 @@ import {
   officeAccessEndedSchema,
   officeReadySchema,
   officeSocketAuthSchema,
+  presenceUpdateEventSchema,
+  seatSitEventSchema,
+  seatStandEventSchema,
   worldInputEventSchema,
   worldDeltaSchema,
 } from '@gather/contracts';
@@ -27,6 +30,7 @@ interface OfficeSocketData {
   officeLeaseExpiryTimer?: ReturnType<typeof setTimeout>;
   officeLeaseDeadline?: number;
   officeMovementAttemptTimestamps?: number[];
+  officeCommandAttemptTimestamps?: number[];
 }
 type OfficeSocket = Socket & { data: Socket['data'] & OfficeSocketData };
 
@@ -283,6 +287,92 @@ export class OfficeGateway
       );
       this.reply(acknowledge, parsed.data.eventId, error);
     });
+    socket.on('presence:update', (raw: unknown, acknowledge?: unknown) => {
+      if (!this.allowOfficeCommand(socket)) {
+        this.reply(acknowledge, this.eventId(raw), 'rate_limited');
+        return;
+      }
+      const parsed = presenceUpdateEventSchema.safeParse(raw);
+      if (!parsed.success) {
+        this.reply(acknowledge, this.eventId(raw), 'validation_failed');
+        return;
+      }
+      const ticket = socket.data.officeAdmission;
+      const reservation = socket.data.officeReservation;
+      if (!ticket || !reservation) return;
+      const result = this.runtime.setAvailability(
+        ticket.officeId,
+        ticket.workspaceId,
+        ticket.userId,
+        socket.id,
+        reservation.participationId,
+        parsed.data.officeEpoch,
+        parsed.data.payload.availability,
+      );
+      if (typeof result === 'string') {
+        this.reply(acknowledge, parsed.data.eventId, result);
+        return;
+      }
+      if (result) this.namespace.to(result.roomId).emit('world:delta', result.delta);
+      this.reply(acknowledge, parsed.data.eventId, null);
+    });
+    socket.on('seat:sit', (raw: unknown, acknowledge?: unknown) => {
+      if (!this.allowOfficeCommand(socket)) {
+        this.reply(acknowledge, this.eventId(raw), 'rate_limited');
+        return;
+      }
+      const parsed = seatSitEventSchema.safeParse(raw);
+      if (!parsed.success) {
+        this.reply(acknowledge, this.eventId(raw), 'validation_failed');
+        return;
+      }
+      const ticket = socket.data.officeAdmission;
+      const reservation = socket.data.officeReservation;
+      if (!ticket || !reservation) return;
+      const result = this.runtime.sit(
+        ticket.officeId,
+        ticket.workspaceId,
+        ticket.userId,
+        socket.id,
+        reservation.participationId,
+        parsed.data.officeEpoch,
+        parsed.data.payload.seatId,
+      );
+      if (typeof result === 'string') {
+        this.reply(acknowledge, parsed.data.eventId, result);
+        return;
+      }
+      this.namespace.to(result.roomId).emit('world:delta', result.delta);
+      this.reply(acknowledge, parsed.data.eventId, null);
+    });
+    socket.on('seat:stand', (raw: unknown, acknowledge?: unknown) => {
+      if (!this.allowOfficeCommand(socket)) {
+        this.reply(acknowledge, this.eventId(raw), 'rate_limited');
+        return;
+      }
+      const parsed = seatStandEventSchema.safeParse(raw);
+      if (!parsed.success) {
+        this.reply(acknowledge, this.eventId(raw), 'validation_failed');
+        return;
+      }
+      const ticket = socket.data.officeAdmission;
+      const reservation = socket.data.officeReservation;
+      if (!ticket || !reservation) return;
+      const result = this.runtime.stand(
+        ticket.officeId,
+        ticket.workspaceId,
+        ticket.userId,
+        socket.id,
+        reservation.participationId,
+        parsed.data.officeEpoch,
+      );
+      if (typeof result === 'string') {
+        this.reply(acknowledge, parsed.data.eventId, result);
+        return;
+      }
+      this.namespace.to(result.roomId).emit('world:delta', result.delta);
+      this.reply(acknowledge, parsed.data.eventId, null);
+    });
   }
 
   private reply(
@@ -294,6 +384,9 @@ export class OfficeGateway
       | 'rate_limited'
       | 'unauthorized'
       | 'validation_failed'
+      | 'seat_unavailable'
+      | 'seat_exit_blocked'
+      | 'conflict'
       | null,
   ) {
     if (typeof acknowledge !== 'function' || !idSchema.safeParse(eventId).success) return;
@@ -302,6 +395,24 @@ export class OfficeGateway
         error ? { eventId, ok: false, error: { code: error } } : { eventId, ok: true },
       ),
     );
+  }
+
+  private eventId(raw: unknown) {
+    return typeof raw === 'object' && raw !== null && 'eventId' in raw ? raw.eventId : undefined;
+  }
+
+  private allowOfficeCommand(socket: OfficeSocket) {
+    const now = performance.now();
+    const attempts = (socket.data.officeCommandAttemptTimestamps ?? []).filter(
+      (at: number) => now - at < 1000,
+    );
+    if (attempts.length >= OFFICE_LIMITS.officeCommandsPerSecond) {
+      socket.data.officeCommandAttemptTimestamps = attempts;
+      return false;
+    }
+    attempts.push(now);
+    socket.data.officeCommandAttemptTimestamps = attempts;
+    return true;
   }
 
   private startSimulation(officeId: string) {

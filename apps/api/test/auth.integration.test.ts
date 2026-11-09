@@ -1477,6 +1477,66 @@ describe('office socket admission', () => {
     }
   });
 
+  it('applies presence and seat commands through the live socket protocol', async () => {
+    const owner = await account();
+    const workspaceId = await workspace(owner);
+    const { ticket } = await issueTicket(owner, workspaceId);
+    const client = officeSocket({ ticket, protocolVersion: 1 });
+    try {
+      const readyEvent = nextSocketEvent<unknown>(client, 'office:ready');
+      await connectSocket(client);
+      const ready = officeReadySchema.parse(await readyEvent);
+
+      const presenceDeltaEvent = nextSocketEvent<unknown>(client, 'world:delta');
+      const presence = {
+        eventId: randomUUID(),
+        officeEpoch: ready.snapshot.officeEpoch,
+        payload: { availability: 'away' },
+      };
+      const presenceAck = await new Promise<unknown>((resolve) => {
+        client.emit('presence:update', presence, resolve);
+      });
+      expect(officeCommandAckSchema.parse(presenceAck)).toEqual({
+        eventId: presence.eventId,
+        ok: true,
+      });
+      expect(worldDeltaSchema.parse(await presenceDeltaEvent)).toMatchObject({
+        baseVersion: ready.snapshot.stateVersion,
+        participants: [{ participationId: ready.participationId, availability: 'away' }],
+      });
+
+      const invalidSeat = {
+        eventId: randomUUID(),
+        officeEpoch: ready.snapshot.officeEpoch,
+        payload: { seatId: 'commons-seat-that-does-not-exist' },
+      };
+      const sitAck = await new Promise<unknown>((resolve) => {
+        client.emit('seat:sit', invalidSeat, resolve);
+      });
+      expect(officeCommandAckSchema.parse(sitAck)).toMatchObject({
+        eventId: invalidSeat.eventId,
+        ok: false,
+        error: { code: 'seat_unavailable' },
+      });
+
+      const stand = {
+        eventId: randomUUID(),
+        officeEpoch: ready.snapshot.officeEpoch,
+        payload: {},
+      };
+      const standAck = await new Promise<unknown>((resolve) => {
+        client.emit('seat:stand', stand, resolve);
+      });
+      expect(officeCommandAckSchema.parse(standAck)).toMatchObject({
+        eventId: stand.eventId,
+        ok: false,
+        error: { code: 'seat_unavailable' },
+      });
+    } finally {
+      client.disconnect();
+    }
+  });
+
   it('ends an idle socket after its authenticated session is revoked', async () => {
     const owner = await account();
     const workspaceId = await workspace(owner);

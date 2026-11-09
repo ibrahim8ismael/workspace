@@ -1,6 +1,6 @@
 # CP05 — Authoritative Socket.IO office implementation plan
 
-Status: CP05.1 and CP05.2 complete locally for one API process; CP05.3a movement complete locally; CP05.3b and CP05.4 remain · Updated: 2026-11-09
+Status: CP05.1–CP05.3b implemented and locally verified for one API process; CP05.4 and browser integration remain · Updated: 2026-11-09
 
 CP05 builds the server-owned realtime office on top of completed CP02 map rules and CP03 bootstrap/tickets. The wire contract is in [OFFICE_V1](../contracts/OFFICE_V1.md) and [REALTIME](../contracts/REALTIME.md). The implementation plan in [PROJECT_COMPLETION_PLAN](PROJECT_COMPLETION_PLAN.md#cp05--build-the-authoritative-socketio-office) remains the acceptance baseline. This file orders the work into reviewable, locally testable batches.
 
@@ -34,7 +34,9 @@ Actual Socket.IO clients and the transaction-capable Mongo fixture cover valid a
 
 ### CP05.3b — Availability and seats
 
-Add availability updates and serialized sit/stand, seat exits and occupancy. Enforce separate per-event, per-participation and per-workspace budgets. Test last-seat/capacity races, spoofing, floods, stale epochs/sequences and two-client visibility.
+**Implemented locally for one API process.** `presence:update`, `seat:sit` and `seat:stand` are strict, ticket-scoped commands with a shared 30-command-per-second per-socket budget. The runtime serializes availability changes, seat claims and releases, publishes occupancy in the same versioned delta as the participant projection, rejects competing claims and a claim while another avatar occupies the chair tile, excludes chair tiles from spawn selection, blocks walking onto an occupied chair, and clears occupancy on disconnect/revocation. Sitting requires a stopped avatar on the chair tile or a reachable adjacent tile and snaps to its center. Standing picks the first unoccupied valid exit in the map manifest order.
+
+The API suite now exercises the three Socket.IO command paths and availability delta; runtime coverage moves two avatars, confirms a seat-tile conflict, grants one seat claim, rejects the competing claim, checks the ordered exit and verifies release on stand/disconnect. This remains process-local. Per-workspace command budgets, event replay/deduplication, client UI, multi-process seat authority and measured load are open. The broader A05 gate still needs real two-client seat competition through the Socket.IO surface and recovery integration.
 
 ### CP05.4 — Snapshot/delta recovery and explicit takeover
 
@@ -48,4 +50,4 @@ CP04 SMTP setup and CP04 independent audit delivery remain separate release gate
 
 ## Current execution status
 
-CP05.1 and the CP05.2 lease foundation were implemented locally by Codex after the owner selected Codex when OpenCode DeepSeek reported its free quota exhausted. See the code in `apps/api/src/modules/office/{realtime,runtime}/`, the API integration suite and the implementation-progress record. The API is not ready for a production office: CP05.2 still needs further revocation/failure evidence before CP05.3 begins.
+CP05.1–CP05.3b were implemented locally by Codex after OpenCode DeepSeek reported its free quota exhausted. See the code in `apps/api/src/modules/office/{realtime,runtime}/`, the API integration suite and the implementation-progress record. The API is not ready for a production office: real Mongo outage drills, multi-instance coordination, per-workspace budgets, gap recovery/takeover, browser integration and load evidence remain open.

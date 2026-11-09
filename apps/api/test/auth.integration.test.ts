@@ -1562,6 +1562,60 @@ describe('office socket admission', () => {
     }
   });
 
+  it('expires a socket lease after primary-policy reads keep failing', async () => {
+    const owner = await account();
+    const workspaceId = await workspace(owner);
+    const { ticket } = await issueTicket(owner, workspaceId);
+    const client = officeSocket({ ticket, protocolVersion: 1 });
+    const admission = app.get(OfficeAdmissionService);
+    try {
+      const ready = nextSocketEvent<unknown>(client, 'office:ready');
+      await connectSocket(client);
+      await ready;
+      const authorization = vi
+        .spyOn(admission, 'isSocketAuthorized')
+        .mockRejectedValue(new Error('primary unavailable'));
+      try {
+        const accessEnded = nextSocketEvent<Record<string, unknown>>(client, 'office:access-ended');
+        const disconnected = nextSocketEvent<string>(client, 'disconnect');
+        await expect(accessEnded).resolves.toMatchObject({ reason: 'server_unavailable' });
+        await expect(disconnected).resolves.toBeTruthy();
+      } finally {
+        authorization.mockRestore();
+      }
+    } finally {
+      client.disconnect();
+    }
+  });
+
+  it('reconnects only with a fresh one-use ticket and snapshot', async () => {
+    const owner = await account();
+    const workspaceId = await workspace(owner);
+    const { ticket: firstTicket } = await issueTicket(owner, workspaceId);
+    const first = officeSocket({ ticket: firstTicket, protocolVersion: 1 });
+    let replacement: Socket | undefined;
+    try {
+      const firstReadyEvent = nextSocketEvent<unknown>(first, 'office:ready');
+      await connectSocket(first);
+      const firstReady = officeReadySchema.parse(await firstReadyEvent);
+      const firstDisconnected = nextSocketEvent<string>(first, 'disconnect');
+      first.disconnect();
+      await firstDisconnected;
+
+      const { ticket: replacementTicket } = await issueTicket(owner, workspaceId);
+      replacement = officeSocket({ ticket: replacementTicket, protocolVersion: 1 });
+      const replacementReadyEvent = nextSocketEvent<unknown>(replacement, 'office:ready');
+      await connectSocket(replacement);
+      const replacementReady = officeReadySchema.parse(await replacementReadyEvent);
+      expect(replacementReady.snapshot.officeEpoch).toBe(firstReady.snapshot.officeEpoch);
+      expect(replacementReady.participationId).not.toBe(firstReady.participationId);
+      expect(replacementReady.snapshot.participants).toHaveLength(1);
+    } finally {
+      first.disconnect();
+      replacement?.disconnect();
+    }
+  });
+
   it('rejects missing and foreign Origins before consuming the ticket', async () => {
     const owner = await account();
     const workspaceId = await workspace(owner);

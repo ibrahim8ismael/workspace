@@ -1,6 +1,6 @@
 # CP05 — Authoritative Socket.IO office implementation plan
 
-Status: CP05.1 complete locally; CP05.2 authorization-lease foundation implemented locally; CP05.2 revocation integrations and CP05.3–CP05.4 remain · Updated: 2026-11-09
+Status: CP05.1 and CP05.2 complete locally for a single API process; CP05.3–CP05.4 remain · Updated: 2026-11-09
 
 CP05 builds the server-owned realtime office on top of completed CP02 map rules and CP03 bootstrap/tickets. The wire contract is in [OFFICE_V1](../contracts/OFFICE_V1.md) and [REALTIME](../contracts/REALTIME.md). The implementation plan in [PROJECT_COMPLETION_PLAN](PROJECT_COMPLETION_PLAN.md#cp05--build-the-authoritative-socketio-office) remains the acceptance baseline. This file orders the work into reviewable, locally testable batches.
 
@@ -24,9 +24,9 @@ Actual Socket.IO clients and the transaction-capable Mongo fixture cover valid a
 
 ### CP05.2 — Continuing authorization and revocation
 
-**Implemented locally (lease foundation, revocation coverage and expiry):** WebSocket handshakes have a 5-second timeout and a fixed-window limit of 60 attempts per minute per direct TCP peer address; the limiter never reads client-supplied forwarded-IP headers and caps tracked addresses at 10,000. Each participation performs a strict primary-policy check immediately before ready, then checks every second. Each successful authorization lease is bounded to five seconds from request start, with an independent expiry timer so a delayed policy response cannot extend an expired lease. Logout, session rotation, password change/reset, account suspension, workspace suspension and membership revocation are detected for idle sockets and remove them from the runtime. When primary policy cannot be confirmed, access ends when the current lease expires. The API suite passes 65 tests, including delayed-policy-response expiry.
+**Implemented locally (lease foundation, revocation coverage and expiry):** WebSocket handshakes have a 5-second timeout and a fixed-window limit of 60 attempts per minute per direct TCP peer address; the limiter never reads client-supplied forwarded-IP headers and caps tracked addresses at 10,000. Each participation performs a strict primary-policy check immediately before ready, then checks every second. Each successful authorization lease is bounded to five seconds from request start, with an independent expiry timer so a delayed policy response cannot extend an expired lease. Logout, session rotation, password change/reset, account suspension, workspace suspension and membership revocation are detected for idle sockets and remove them from the runtime. When primary policy cannot be confirmed, access ends when the current lease expires. Reconnect uses a fresh ticket/snapshot, and epoch replacement retires old sockets. The API suite passes 67 tests.
 
-**Still required in CP05.2:** Add deterministic Mongo-loss, reconnect and process-restart/epoch-rotation tests. The current poller observes committed policy changes within a bounded interval; it is process-local and does not provide cross-instance immediate notifications. Revisit shared rate limiting and policy notification before multi-instance deployment. Do not claim production authorization readiness yet.
+**Single-process local exit is complete.** Tests also cover repeated primary-policy read failures, fresh-ticket reconnect and epoch replacement. The current poller observes committed policy changes within a bounded interval; it is process-local and does not provide cross-instance immediate notifications. Revisit shared rate limiting and policy notification before multi-instance deployment or any production topology that runs multiple API processes. These results are not deployment or production authorization acceptance.
 
 ### CP05.3 — Serialized world commands and seats
 

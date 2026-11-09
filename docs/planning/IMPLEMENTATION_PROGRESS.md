@@ -124,9 +124,10 @@ The API now sets a 5-second Socket.IO handshake timeout and allows up to 60 conn
 | --- | --- | --- | --- |
 | CP05.2a | Handshake/attempt budgets, periodic policy leases, idle logout and membership revocation | Complete locally; not a full CP05.2 exit | `pnpm --filter @gather/api test`: 59/59 passed at this batch; idle session-logout and membership-removal socket tests |
 | CP05.2b | Verify idle socket revocation after committed session/account/workspace changes | Complete locally; not a full CP05.2 exit | API suite: 64/64 passed, including logout, reauthentication/session rotation, password change/reset, account suspension, workspace suspension and membership removal |
-| CP05.2c | Expire authorization independently of delayed primary-policy responses | Complete locally; not a full CP05.2 exit | API suite: 65/65 passed; delayed authorization response cannot keep or revive the socket after the five-second lease |
+| CP05.2c | Expire authorization independently of delayed primary-policy responses | Complete locally | API suite: 65/65 passed at this batch; delayed authorization response cannot keep or revive the socket after the five-second lease |
+| CP05.2d | Fail closed on policy-read errors; require a fresh ticket after reconnect | Complete locally | API suite: 67/67 passed; repeated primary-policy read errors expire access, reconnect has a new participation/snapshot, and epoch replacement invalidates old sockets |
 
-The poller observes committed changes within the bounded lease interval; it does not yet connect mutation transactions to an immediate cross-process notification channel. The attempt limiter and runtime are process-local, so multi-instance deployment needs a shared policy/rate coordination design. Mongo-loss, reconnect and restart-epoch evidence remain open. Movement, seats, recovery/takeover and browser socket integration remain later CP05/CP06 work.
+The CP05.2 local exit covers one API process and uses polling to observe committed changes within the bounded lease interval; it does not connect mutation transactions to an immediate cross-process notification channel. The attempt limiter and runtime are process-local, so multi-instance deployment needs a shared policy/rate coordination design. A real Mongo outage drill remains an operations proof. Movement, seats, recovery/takeover and browser socket integration remain later CP05/CP06 work.
 
 ## CP04 — browser accounts, companies and delivery (in progress)
 

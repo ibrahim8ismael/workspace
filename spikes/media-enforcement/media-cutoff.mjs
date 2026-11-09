@@ -23,13 +23,15 @@ const image =
   'livekit/livekit-server@sha256:25cd902de7cacbd5f1f779f6a6ac1eae20ba8f56b0935934ce6b0ab80d1e3d20';
 const isolated = process.argv.includes('--isolated');
 const policyLoss = process.argv.includes('--policy-loss');
+const companies = process.argv.includes('--company-isolation');
+if (companies && !policyLoss) throw new Error('--company-isolation requires --policy-loss');
 if (policyLoss && !isolated) throw new Error('--policy-loss requires --isolated');
 const policyKey = randomBytes(32).toString('hex');
 const secret = randomBytes(32).toString('hex');
 const config = `port: 7880\nbind_addresses: [${isolated ? '127.0.0.1' : '0.0.0.0'}]\nrtc:\n  tcp_port: 17881\n  node_ip: 127.0.0.1\n  use_external_ip: false\nkeys:\n  fixture: ${secret}\n`;
 let id, browser, watchdog, guard, guardId, progressTimer, policyId, progressLogs;
 const retirementDirectory = await mkdtemp(join(tmpdir(), 'cp07-guard-'));
-let retirement;
+let retirement, secondReceiver, companyIsolationResult;
 const server = createServer(async (req, res) => {
   if (req.url === '/sdk.js') {
     res.setHeader('Content-Type', 'text/javascript');
@@ -99,6 +101,7 @@ try {
           `${root}/spikes:/workspace/spikes:ro`,
           '-e',
           `CP07_POLICY_KEY=${policyKey}`,
+          ...(companies ? ['-e', 'CP07_COMPANIES=1'] : []),
           'node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d',
           'node',
           '/workspace/spikes/media-enforcement/policy-process.mjs',
@@ -129,12 +132,14 @@ try {
         `CP07_ORIGIN=${origin}`,
         '-e',
         'CP07_RETIREMENTS=/retirements',
+        ...(companies ? ['-e', 'CP07_COMPANIES=1'] : []),
         ...(policyLoss
           ? [
               '-e',
               'CP07_POLICY_ENDPOINT=http://127.0.0.1:7886/policy',
               '-e',
               `CP07_POLICY_KEY=${policyKey}`,
+              ...(companies ? ['-e', 'CP07_COMPANIES=1'] : []),
             ]
           : []),
         'node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d',
@@ -377,6 +382,87 @@ try {
       );
       throw error;
     });
+  if (companies) {
+    secondReceiver = await browser.newPage();
+    const secondPublisher = await browser.newPage();
+    await Promise.all([secondReceiver.goto(origin), secondPublisher.goto(origin)]);
+    const secondToken = async (identity) => {
+      const grant = new AccessToken('fixture', secret, { identity, ttl: '2m' });
+      grant.addGrant({
+        roomJoin: true,
+        room: 'company-b-fixture',
+        canPublish: identity === 'publisher-b',
+        canSubscribe: identity === 'receiver-b',
+      });
+      return grant.toJwt();
+    };
+    await secondReceiver.evaluate(
+      async ({ jwt, url }) => {
+        window.companyFrames = 0;
+        window.companyLastFrameAt = 0;
+        window.companyTrackOwners = [];
+        window.room = new window.LivekitClient.Room();
+        window.room.on(
+          window.LivekitClient.RoomEvent.TrackSubscribed,
+          (track, _publication, participant) => {
+            window.companyTrackOwners.push(participant.identity);
+            const video = track.attach();
+            video.muted = true;
+            video.autoplay = true;
+            document.body.append(video);
+            const sample = () => {
+              window.companyFrames++;
+              window.companyLastFrameAt = Date.now();
+              video.requestVideoFrameCallback(sample);
+            };
+            video.requestVideoFrameCallback(sample);
+          },
+        );
+        await window.room.connect(url, jwt);
+      },
+      { jwt: await secondToken('receiver-b'), url: signaling },
+    );
+    await secondPublisher.evaluate(
+      async ({ jwt, url }) => {
+        window.room = new window.LivekitClient.Room();
+        await window.room.connect(url, jwt);
+        const canvas = document.createElement('canvas');
+        canvas.width = 160;
+        canvas.height = 120;
+        const ctx = canvas.getContext('2d');
+        let frame = 0;
+        window.paint = setInterval(() => {
+          ctx.fillStyle = `hsl(${frame++ % 360},90%,50%)`;
+          ctx.fillRect(0, 0, 160, 120);
+        }, 50);
+        await window.room.localParticipant.publishTrack(
+          canvas.captureStream(20).getVideoTracks()[0],
+        );
+      },
+      { jwt: await secondToken('publisher-b'), url: signaling },
+    );
+    await secondReceiver.waitForFunction(() => window.companyFrames >= 20, null, {
+      timeout: 30000,
+    });
+    const firstPeers = await receiver.evaluate(() =>
+      Array.from(window.room.remoteParticipants.values())
+        .map((p) => p.identity)
+        .sort(),
+    );
+    const secondPeers = await secondReceiver.evaluate(() =>
+      Array.from(window.room.remoteParticipants.values())
+        .map((p) => p.identity)
+        .sort(),
+    );
+    const owners = await secondReceiver.evaluate(() => window.companyTrackOwners);
+    if (
+      JSON.stringify(firstPeers) !== JSON.stringify(['publisher']) ||
+      JSON.stringify(secondPeers) !== JSON.stringify(['publisher-b']) ||
+      owners.some((owner) => owner !== 'publisher-b')
+    )
+      throw new Error('Cross-company participant or track leak');
+    companyIsolationResult = { firstPeers, secondPeers, secondTrackOwners: owners };
+  }
   let refreshedReceiverToken;
   if (isolated) {
     await docker(
@@ -544,6 +630,18 @@ try {
   if (after !== final.frames) throw new Error('Media still advancing after shutdown');
   if ((await receiver.evaluate(() => window.audioSamples)) !== final.audioSamples)
     throw new Error('Audio still advancing after shutdown');
+  if (secondReceiver) {
+    const first = await secondReceiver.evaluate(() => ({
+      frames: window.companyFrames,
+      lastFrameAt: window.companyLastFrameAt,
+    }));
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    if ((await secondReceiver.evaluate(() => window.companyFrames)) !== first.frames)
+      throw new Error('Second company still forwarding after shared-node shutdown');
+    companyIsolationResult.frames = first.frames;
+    companyIsolationResult.lastFrameAfterFaultMs = first.lastFrameAt - startedAt;
+    companyIsolationResult.sharedNodeShutdownInterruptedSecondCompany = true;
+  }
   guard?.close();
   await docker('start', id);
   signaling = await startGuard();
@@ -587,6 +685,7 @@ try {
       isolated,
       guardedSupervisor,
       sourcePermissionResult,
+      companyIsolationResult,
       freezeGuard,
       staleTokenAcceptedAfterRestart,
       refreshedTokenAcceptedAfterRestart,

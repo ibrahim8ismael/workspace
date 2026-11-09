@@ -533,3 +533,9 @@ Added `--source-permissions`. A microphone-only signed token joins the real SFU;
 Actual combined experiment passed all four assertions: cameraRejected, screenShareRejected, microphonePublished and foreignRoomRejected. Controller-loss plus child-watchdog SIGKILL also passed with the independent guardian: audio cutoff 467ms/video 133ms; original/refreshed restart replay false. Guardian stop confirmation 280.186ms after child death. Cleanup removed resources. The earlier guardian-only success was committed/pushed separately as CP07.13.
 
 Remaining tenant gate: two concurrently authorized rooms/companies, absence of cross-room received tracks and measured impact of shared SFU shutdown. These source/scope checks do not close that broader requirement. Docker-control and simultaneous enforcement-process failures, production privilege/epoch lifecycle and screen-share-audio/post-join source updates remain open.
+
+## CP07.15 — Concurrent authorized room isolation and shared-SFU impact (2026-11-10)
+
+Added `--company-isolation`: separate policy/guard mappings authorize four real Chromium participants across two fixture rooms. Exclusive receiver rosters and second-room subscribed track owners are asserted while both rooms actually receive media. This is media room isolation; application tenant identity/role integration is still separate.
+
+Actual combined source/room/controller-loss/watchdog-crash run passed. First receiver sees only publisher; second sees/subscribes only publisher-b. Guardian stopping the shared SFU interrupts both rooms: second-room last video at 165ms after fault, 121 frames; first-room video/audio cutoff 129ms/512ms. Original and refreshed replay remain denied. This demonstrates confidentiality isolation and measures node-wide availability impact, not fault-independent company availability. Next: shutdown-control failure evidence and supported deployment failure boundary.

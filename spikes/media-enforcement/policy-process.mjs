@@ -40,10 +40,14 @@ http
       const response = JSON.stringify({
         ...request,
         sequence: ++sequence,
-        permits: ['publisher', 'receiver'].map((identity) => ({
-          generation: 'cutoff-fixture',
+        permits: [
+          'publisher',
+          'receiver',
+          ...(process.env.CP07_COMPANIES === '1' ? ['publisher-b', 'receiver-b'] : []),
+        ].map((identity) => ({
+          generation: identity.endsWith('-b') ? 'company-b-fixture' : 'cutoff-fixture',
           identity,
-          room: 'cutoff-fixture',
+          room: identity.endsWith('-b') ? 'company-b-fixture' : 'cutoff-fixture',
           version: 1,
           sources: ['microphone', 'camera'],
         })),

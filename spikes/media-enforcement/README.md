@@ -305,3 +305,20 @@ This is source-grant and negative room-scope evidence, not yet two concurrently
 authorized companies with isolated media and measured shared-node interruption.
 Screen-share audio, post-join source-permission changes and application-issued
 source grant binding remain separate acceptance requirements.
+
+## CP07.15 two authorized rooms and shared-node impact
+
+Add `--company-isolation` with isolated policy mode. Four real Chromium participants
+join two explicitly configured fixture rooms. Policy and guard bind the second
+room only to publisher-b/receiver-b. Both rooms publish/receive simultaneously;
+receiver rosters must contain only their own publisher and second-room track-owner
+callbacks must identify publisher-b exclusively. This is room-level media evidence,
+not application membership/company API acceptance.
+
+Actual combined run on 2026-11-10 passed source checks and both room-isolation
+assertions. First roster: publisher; second roster/track owner: publisher-b. After
+controller loss and primary-watchdog SIGKILL, guardian shutdown also interrupted
+the unrelated authorized second room: its last video frame was 165ms after fault
+initiation (121 frames received). First-room video/audio cutoff: 129ms/512ms.
+Original/refreshed replay after restart remained denied. This records deliberate
+node-wide collateral interruption; it does not claim per-tenant availability.

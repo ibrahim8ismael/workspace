@@ -53,8 +53,11 @@ const guard = createSignalingGuard({
     const retired = new RetirementStore(CP07_RETIREMENTS);
     return (
       claims.video?.roomJoin === true &&
-      claims.video?.room === 'cutoff-fixture' &&
-      ['publisher', 'receiver'].includes(claims.sub) &&
+      ((claims.video?.room === 'cutoff-fixture' &&
+        ['publisher', 'receiver'].includes(claims.sub)) ||
+        (process.env.CP07_COMPANIES === '1' &&
+          claims.video?.room === 'company-b-fixture' &&
+          ['publisher-b', 'receiver-b'].includes(claims.sub))) &&
       !retired.has(claims.video.room) &&
       (!policyEnabled ||
         permits.allows({

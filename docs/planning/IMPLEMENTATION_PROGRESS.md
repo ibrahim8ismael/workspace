@@ -551,3 +551,9 @@ Actual combined two-company/source/controller-loss run passed: first stop unconf
 Source review found guard admission checked microphone alone despite broader signed JWT publication grants. Added `source-grants.mjs` requiring explicit nonempty unique publisher sources and checking every source against the installed permit; broad/unknown/screen-share-audio grants are denied. Test fixtures now issue minimal sources and explicitly label captured tracks as microphone/camera. Initial strict-source runs correctly rejected unlabeled synthetic publications; those labels were fixed before recording success.
 
 Twenty regression tests passed. Full real two-room/source/controller-loss/primary-stop-denial experiment passed: audio cutoff 3137ms/video 2747ms, second-room video 2744ms; original/refreshed replay false. This closes the discovered source-subset gap at admission. Application source-grant issuance and post-join permission changes remain separate integration work; shared Docker/host failure remains an infrastructure limitation.
+
+## CP07.18 — Fresh boot epoch through actual policy and supervisor wiring (2026-11-10)
+
+Removed the fixed experimental guard epoch. Each guard boot now receives fresh random 32-byte state, and startup validates it. Authenticated policy responses echo the challenge epoch; guard installation ACKs and the independent supervisor bind the same value. Cold restart changes the epoch while reloading deny-only tombstones, without restoring persisted allows.
+
+Full real regression passed with guardEpochChanged=true; original/refreshed replay false; audio/video cutoff 3096ms/2689ms and second-room video 2723ms under controller loss and denied primary actuator. Source/room checks remained successful. Shared Docker-control failure and production privilege topology remain open infrastructure requirements.

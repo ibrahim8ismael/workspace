@@ -11,7 +11,8 @@ if (!CP07_KEY || !CP07_SECRET || !CP07_ORIGIN || !CP07_RETIREMENTS)
   throw new Error('missing fixture configuration');
 const verifier = new TokenVerifier(CP07_KEY, CP07_SECRET);
 const policyEnabled = Boolean(process.env.CP07_POLICY_ENDPOINT);
-const epoch = 'media-fixture';
+const epoch = process.env.CP07_GUARD_EPOCH;
+if (!/^[a-f0-9]{64}$/.test(epoch ?? '')) throw new Error('missing unique guard boot epoch');
 const permits = new PermitState(
   epoch,
   () => performance.now(),

@@ -30,7 +30,7 @@ http
       const request = JSON.parse(body);
       if (
         Object.keys(request).sort().join(',') !== 'epoch,nonce' ||
-        request.epoch !== 'media-fixture' ||
+        !/^[a-f0-9]{64}$/.test(request.epoch) ||
         !/^[a-f0-9]{64}$/.test(request.nonce)
       ) {
         res.writeHead(400);

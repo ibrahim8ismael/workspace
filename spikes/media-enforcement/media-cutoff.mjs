@@ -32,6 +32,7 @@ const config = `port: 7880\nbind_addresses: [${isolated ? '127.0.0.1' : '0.0.0.0
 let id, browser, watchdog, guard, guardId, progressTimer, policyId, progressLogs;
 const retirementDirectory = await mkdtemp(join(tmpdir(), 'cp07-guard-'));
 let retirement, secondReceiver, companyIsolationResult;
+let guardEpoch;
 const server = createServer(async (req, res) => {
   if (req.url === '/sdk.js') {
     res.setHeader('Content-Type', 'text/javascript');
@@ -82,6 +83,7 @@ try {
   const receiver = await browser.newPage();
   const origin = `http://127.0.0.1:${server.address().port}`;
   const startGuard = async () => {
+    guardEpoch = randomBytes(32).toString('hex');
     if (isolated) {
       if (guardId) {
         await docker('rm', '-f', guardId);
@@ -126,6 +128,8 @@ try {
         `${retirementDirectory}:/retirements:ro`,
         '-e',
         'CP07_KEY=fixture',
+        '-e',
+        `CP07_GUARD_EPOCH=${guardEpoch}`,
         '-e',
         `CP07_SECRET=${secret}`,
         '-e',
@@ -510,7 +514,7 @@ try {
         : 'spikes/media-enforcement/supervisor-process.mjs',
       context,
       id,
-      'media-fixture',
+      guardEpoch,
       ...(process.argv.includes('--deny-primary-stop') ? ['--deny-primary-stop'] : []),
     ],
     { stdio: ['pipe', 'pipe', 'inherit'] },
@@ -544,7 +548,7 @@ try {
       const version = ++sequence;
       watchdog.stdin.write(JSON.stringify({ kind: 'expect', nonce, version }) + '\n');
       watchdog.stdin.write(
-        JSON.stringify({ kind: 'ack', epoch: 'media-fixture', nonce, version, sequence }) + '\n',
+        JSON.stringify({ kind: 'ack', epoch: guardEpoch, nonce, version, sequence }) + '\n',
       );
     };
     watchdog.stdin.on('error', () => {});
@@ -653,7 +657,9 @@ try {
   }
   guard?.close();
   await docker('start', id);
+  const previousGuardEpoch = guardEpoch;
   signaling = await startGuard();
+  if (previousGuardEpoch === guardEpoch) throw new Error('Guard reused its boot epoch');
   await receiver.evaluate((url) => {
     window.fixtureSocket = url;
   }, signaling);
@@ -693,6 +699,7 @@ try {
           : 'missing-guard-progress',
       isolated,
       guardedSupervisor,
+      guardEpochChanged: previousGuardEpoch !== guardEpoch,
       sourcePermissionResult,
       companyIsolationResult,
       freezeGuard,

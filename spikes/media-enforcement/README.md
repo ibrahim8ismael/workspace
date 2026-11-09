@@ -352,3 +352,16 @@ on unrestricted unknown-source defaults. Fixture publishers receive only the
 needed signed sources. Twenty regression tests pass. The combined real two-room,
 source, policy-loss and denied-primary-stop run passed again: first-room last
 video/audio 2747ms/3137ms; second-room video 2744ms. Replay remained denied.
+
+## CP07.18 fresh guard boot epochs
+
+Each fixture guard start now receives a new random 32-byte boot epoch. The policy
+fixture authenticates and echoes that challenge epoch; the guard's PermitState,
+installation ACKs and host supervisor use that exact epoch. Missing/invalid epochs
+prevent the guard from starting. Restart changes the epoch and still reloads deny-
+only retirement state; no allow snapshot is restored from disk.
+
+The full two-room/source/controller-loss/denied-primary-stop experiment passed:
+guardEpochChanged=true, original/refreshed replay false, first-room audio/video
+cutoff 3096ms/2689ms and second-room video 2723ms. The broader shared-Docker-control
+failure boundary is still distinct from the tested per-process actuator failures.

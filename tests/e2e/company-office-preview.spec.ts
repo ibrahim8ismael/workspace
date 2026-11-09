@@ -239,9 +239,20 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await expect(page.getByText('1 person in the office')).toBeVisible();
   await expect(page.getByText('Live office map. Use arrow keys or WASD to move.')).toBeVisible();
   await expect(page.locator('.live-commons-scene canvas')).toHaveCount(1);
+  await expect(page.getByRole('group', { name: 'Office connection controls' })).toBeVisible();
+  await expect(page.getByRole('group', { name: 'Office controls' })).toBeVisible();
+  await expect(page.getByRole('group', { name: 'Your availability' })).toBeVisible();
+  await expect(page.getByRole('group', { name: 'Seats' })).toBeVisible();
   await expect(page.getByRole('list', { name: 'People in the office' })).toContainText(
     account.displayName,
   );
+  await page.getByRole('button', { name: 'Available' }).focus();
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: 'Busy' })).toBeFocused();
+  const busyFocusStyle = await page
+    .getByRole('button', { name: 'Busy' })
+    .evaluate((button) => getComputedStyle(button).outlineStyle);
+  expect(busyFocusStyle).toBe('solid');
   await page.getByRole('button', { name: 'Busy' }).click();
   await expect(page.getByRole('button', { name: 'Busy' })).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: 'Sit · commons-northwest-table:0' }).click();

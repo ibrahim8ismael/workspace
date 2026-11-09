@@ -72,7 +72,7 @@ export function CompanyOfficePreview({ api, detail, onBack }: Props) {
         </button>
       </header>
 
-      <div className="office-session-controls" aria-label="Office connection controls">
+      <div className="office-session-controls" role="group" aria-label="Office connection controls">
         <p className="office-session-status" role="status" aria-live="polite">
           <span className={`status-dot ${connected ? 'available' : 'away'}`} aria-hidden="true" />
           {state.status === 'connected'
@@ -130,9 +130,9 @@ export function CompanyOfficePreview({ api, detail, onBack }: Props) {
             <CommonsScene />
           )}
           {connected && state.snapshot && self && (
-            <div className="office-world-controls" aria-label="Office controls">
-              <div>
-                <h3>Your availability</h3>
+            <div className="office-world-controls" role="group" aria-label="Office controls">
+              <div role="group" aria-labelledby="office-availability-title">
+                <h3 id="office-availability-title">Your availability</h3>
                 <div className="office-world-control-row">
                   {(['available', 'busy', 'away'] as const).map((availability) => (
                     <button
@@ -151,8 +151,8 @@ export function CompanyOfficePreview({ api, detail, onBack }: Props) {
                   ))}
                 </div>
               </div>
-              <div>
-                <h3>Seats</h3>
+              <div role="group" aria-labelledby="office-seats-title">
+                <h3 id="office-seats-title">Seats</h3>
                 <div className="office-world-control-row">
                   {self.seatId ? (
                     <button

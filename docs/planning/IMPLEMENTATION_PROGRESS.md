@@ -372,6 +372,16 @@ The failed transport simulation was not retained in the passing test. Its failur
 
 A later extra rerun stopped at the initial anonymous CSRF bootstrap with HTTP 429 because repeated local E2E runs had exhausted the existing per-IP CSRF allowance (30 requests per 15-minute window). The earlier CP06.9 full live run passed. The limit and its Mongo rate-limit records were left intact; rerun after that window expires rather than weakening or clearing the guard.
 
+## CP06.10a — Accessible office control groups and keyboard focus
+
+The office connection controls and world controls now expose named `group` semantics. Availability and seat controls are individually labelled groups. Focus-visible styling is explicit for the office action buttons. The mocked-API Chromium browser test checks those accessible names, tabs from Available to Busy, confirms Busy receives visible focus, and verifies the selected availability state is announced with `aria-pressed`.
+
+| Batch | Scope | Status | Evidence |
+| --- | --- | --- | --- |
+| CP06.10a | Add screen-reader names for office control groups and verify keyboard traversal/focus-visible styling | Locally verified in mocked-API Chromium E2E | `pnpm exec playwright test tests/e2e/company-office-preview.spec.ts`: 1 Chromium test passed; ESLint and Prettier passed for changed source/test files |
+
+This is a focused essential-control check, not a full screen-reader audit or Chrome/Edge support signoff. Visual map anchor/occlusion review and server-observed recovery after abrupt transport loss remain in CP06.10b.
+
 ## CP04.5a — security and operations boundary review
 
 Codex reviewed the current HTTP configuration, password service, audit model, local proxy and existing evidence. The review found the local implementation controls and the outstanding deployment gaps; it made no runtime/security-policy changes. See the [CP04.5a findings](CP04_BROWSER_AND_DELIVERY.md#cp045a--security-and-operations-boundary-review).

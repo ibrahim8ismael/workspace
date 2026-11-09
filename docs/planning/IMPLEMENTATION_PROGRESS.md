@@ -443,3 +443,11 @@ Validation: five Node tests passed covering binding substitution, delayed/expire
 Added `spikes/media-enforcement/supervisor-state.mjs`: three-second cold-start/progress deadlines, exact outstanding nonce/version installation acknowledgements, guard epoch and increasing sequence checks, latched shutdown and retry after failed/unconfirmed fixed-target stop calls. Guard input cannot select the shutdown target. This is an injectable policy model; no running independent supervisor or Docker adapter is claimed.
 
 Validation: nine Node tests passed across permit and supervisor state. Supervisor scenarios cover cold-start expiry, incorrect/replayed ACKs, late progress and failed/unconfirmed shutdown retries. Actual process independence, adapter timeouts, pinned SFU, signaling enforcement, retirement durability and measured forwarding cutoff remain open before CP08 integration.
+
+## CP07.3 — Separate supervisor process with isolated LiveKit (2026-11-10)
+
+Added `spikes/media-enforcement/supervisor-process.mjs`, a host-side process with a fixed full container ID, required fixture label, disabled-restart check, bounded Docker calls and independent stopped-state inspection. The guard-facing fixture pipe cannot choose commands or targets. The host operator retains Docker privilege, so this is an experimental adapter rather than the production privilege boundary.
+
+Actual OrbStack experiment: official LiveKit v1.13.11 pinned to `sha256:25cd902de7cacbd5f1f779f6a6ac1eae20ba8f56b0935934ce6b0ab80d1e3d20` ran in a network-none container without published ports. The separate supervisor received no installation progress and confirmed container stop at **3185.989ms**. The container was removed afterward. Syntax checks passed; permit/supervisor state tests remain the algorithm evidence.
+
+No audio/video flowed in this fixture: this is confirmed SFU-container shutdown evidence, not a measured media cutoff. CP07 still requires real publisher/subscriber traffic, last-received media timestamps, guard freeze/control failure, replay/bypass and restart scenarios, plus the production supervisor isolation design. CP08 remains gated.

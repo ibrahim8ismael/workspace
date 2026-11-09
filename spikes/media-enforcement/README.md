@@ -37,3 +37,25 @@ and bound its own call duration. A frozen supervisor, hanging adapter, process
 scheduling delay, host failure and actual forwarding cutoff are not covered by
 these policy tests. No Docker socket, HTTP endpoint, SFU process or production
 media authorization is created by this module.
+
+## CP07.3 separate-process shutdown adapter
+
+`supervisor-process.mjs` runs outside the SFU and guard process. Invoke with a Docker
+context, full immutable container ID and guard epoch. It refuses targets without
+`gather.cp07.fixture=true` or with automatic restart enabled. The private parent
+stdin pipe accepts fixture installation expectations/ACKs only; guard messages
+cannot choose a target or Docker command. Docker calls have 1500ms timeouts. The
+process checks every 50ms and independently inspects the fixed container state.
+This host process has the operator's Docker privilege; it is not yet a production
+least-privilege supervision boundary. No Docker socket is mounted into LiveKit.
+
+Experiment pin: `livekit/livekit-server:v1.13.11` resolved by Docker to
+`sha256:25cd902de7cacbd5f1f779f6a6ac1eae20ba8f56b0935934ce6b0ab80d1e3d20`.
+The local fixture used `--network none --restart no`, the fixture label above and
+`--dev --bind 127.0.0.1 --node-ip 127.0.0.1`, with no published ports. After verifying
+LiveKit stayed running, a separate Node supervisor process received no installation
+progress. It reported confirmed stop at 3185.989ms. The fixture was then removed.
+
+This result measures container shutdown, not last protected media forwarding.
+Two browser media receivers, RTP/audio evidence, frozen guard injection, failed
+Docker control and replay/bypass tests remain required for CP07 acceptance.

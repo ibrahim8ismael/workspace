@@ -122,9 +122,10 @@ The API now sets a 5-second Socket.IO handshake timeout and allows up to 60 conn
 
 | Batch | Scope | Status | Evidence |
 | --- | --- | --- | --- |
-| CP05.2a | Handshake/attempt budgets, periodic policy leases, idle logout and membership revocation | Complete locally; not a full CP05.2 exit | `pnpm --filter @gather/api test`: 59/59 passed, including idle session-logout and membership-removal socket tests; contracts/API builds pass. Lint/format/whitespace checks recorded after final source formatting |
+| CP05.2a | Handshake/attempt budgets, periodic policy leases, idle logout and membership revocation | Complete locally; not a full CP05.2 exit | `pnpm --filter @gather/api test`: 59/59 passed at this batch; idle session-logout and membership-removal socket tests |
+| CP05.2b | Verify idle socket revocation after committed session/account/workspace changes | Complete locally; not a full CP05.2 exit | API suite: 64/64 passed, including logout, reauthentication/session rotation, password change/reset, account suspension, workspace suspension and membership removal |
 
-The poller observes committed changes within the bounded lease interval; it does not yet connect mutation transactions to an immediate cross-process notification channel. The attempt limiter and runtime are process-local, so multi-instance deployment needs a shared policy/rate coordination design. Password-reset/session-rotation and account/workspace suspension revocation, Mongo-loss/delayed-response/lease-expiry tests, reconnect and restart epoch evidence remain open. Movement, seats, recovery/takeover and browser socket integration remain later CP05/CP06 work.
+The poller observes committed changes within the bounded lease interval; it does not yet connect mutation transactions to an immediate cross-process notification channel. The attempt limiter and runtime are process-local, so multi-instance deployment needs a shared policy/rate coordination design. Mongo-loss/delayed-response/lease-expiry tests, reconnect and restart epoch evidence remain open. Movement, seats, recovery/takeover and browser socket integration remain later CP05/CP06 work.
 
 ## CP04 — browser accounts, companies and delivery (in progress)
 

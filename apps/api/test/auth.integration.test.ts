@@ -1417,6 +1417,118 @@ describe('office socket admission', () => {
     }
   });
 
+  it('ends an idle socket after authenticated session rotation', async () => {
+    const owner = await account();
+    const workspaceId = await workspace(owner);
+    const { ticket } = await issueTicket(owner, workspaceId);
+    const client = officeSocket({ ticket, protocolVersion: 1 });
+    try {
+      const ready = nextSocketEvent<unknown>(client, 'office:ready');
+      await connectSocket(client);
+      await ready;
+      const accessEnded = nextSocketEvent<Record<string, unknown>>(client, 'office:access-ended');
+      const disconnected = nextSocketEvent<string>(client, 'disconnect');
+      status(await owner.client.send('post', '/api/auth/reauthenticate', { password }), 200);
+      await expect(accessEnded).resolves.toMatchObject({ reason: 'authorization_ended' });
+      await expect(disconnected).resolves.toBeTruthy();
+    } finally {
+      client.disconnect();
+    }
+  });
+
+  it('ends an idle socket after password change revokes current sessions', async () => {
+    const owner = await account();
+    status(await owner.client.send('post', '/api/auth/reauthenticate', { password }), 200);
+    const workspaceId = await workspace(owner);
+    const { ticket } = await issueTicket(owner, workspaceId);
+    const client = officeSocket({ ticket, protocolVersion: 1 });
+    try {
+      const ready = nextSocketEvent<unknown>(client, 'office:ready');
+      await connectSocket(client);
+      await ready;
+      const accessEnded = nextSocketEvent<Record<string, unknown>>(client, 'office:access-ended');
+      const disconnected = nextSocketEvent<string>(client, 'disconnect');
+      status(
+        await owner.client.send('post', '/api/auth/change-password', {
+          currentPassword: password,
+          newPassword,
+        }),
+        200,
+      );
+      await expect(accessEnded).resolves.toMatchObject({ reason: 'authorization_ended' });
+      await expect(disconnected).resolves.toBeTruthy();
+    } finally {
+      client.disconnect();
+    }
+  });
+
+  it('ends an idle socket after password reset revokes all sessions', async () => {
+    const owner = await account();
+    const workspaceId = await workspace(owner);
+    const { ticket } = await issueTicket(owner, workspaceId);
+    const client = officeSocket({ ticket, protocolVersion: 1 });
+    try {
+      const ready = nextSocketEvent<unknown>(client, 'office:ready');
+      await connectSocket(client);
+      await ready;
+      const accessEnded = nextSocketEvent<Record<string, unknown>>(client, 'office:access-ended');
+      const disconnected = nextSocketEvent<string>(client, 'disconnect');
+      const resetBrowser = new Client();
+      await resetBrowser.bootstrap();
+      status(
+        await resetBrowser.send('post', '/api/auth/forgot-password', { email: owner.email }),
+        202,
+      );
+      const token = await mailCode(owner.email, 'reset-password');
+      status(
+        await resetBrowser.send('post', '/api/auth/reset-password', { token, newPassword }),
+        200,
+      );
+      await expect(accessEnded).resolves.toMatchObject({ reason: 'authorization_ended' });
+      await expect(disconnected).resolves.toBeTruthy();
+    } finally {
+      client.disconnect();
+    }
+  });
+
+  it('ends an idle socket after the account is suspended', async () => {
+    const owner = await account();
+    const workspaceId = await workspace(owner);
+    const { ticket } = await issueTicket(owner, workspaceId);
+    const client = officeSocket({ ticket, protocolVersion: 1 });
+    try {
+      const ready = nextSocketEvent<unknown>(client, 'office:ready');
+      await connectSocket(client);
+      await ready;
+      const accessEnded = nextSocketEvent<Record<string, unknown>>(client, 'office:access-ended');
+      const disconnected = nextSocketEvent<string>(client, 'disconnect');
+      await identities.users.updateOne({ _id: owner.id }, { $set: { status: 'suspended' } });
+      await expect(accessEnded).resolves.toMatchObject({ reason: 'authorization_ended' });
+      await expect(disconnected).resolves.toBeTruthy();
+    } finally {
+      client.disconnect();
+    }
+  });
+
+  it('ends an idle socket after its workspace is suspended', async () => {
+    const owner = await account();
+    const workspaceId = await workspace(owner);
+    const { ticket } = await issueTicket(owner, workspaceId);
+    const client = officeSocket({ ticket, protocolVersion: 1 });
+    try {
+      const ready = nextSocketEvent<unknown>(client, 'office:ready');
+      await connectSocket(client);
+      await ready;
+      const accessEnded = nextSocketEvent<Record<string, unknown>>(client, 'office:access-ended');
+      const disconnected = nextSocketEvent<string>(client, 'disconnect');
+      await tenancy.workspaces.updateOne({ _id: workspaceId }, { $set: { status: 'suspended' } });
+      await expect(accessEnded).resolves.toMatchObject({ reason: 'authorization_ended' });
+      await expect(disconnected).resolves.toBeTruthy();
+    } finally {
+      client.disconnect();
+    }
+  });
+
   it('rejects missing and foreign Origins before consuming the ticket', async () => {
     const owner = await account();
     const workspaceId = await workspace(owner);

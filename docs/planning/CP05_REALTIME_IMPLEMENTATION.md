@@ -42,4 +42,4 @@ CP04 SMTP setup and CP04 independent audit delivery remain separate release gate
 
 ## Current execution status
 
-The plans/contracts are ready for CP05.1. No runtime code has been added for CP05 yet. The attempted OpenCode delegation for this batch was blocked by automatic review because it would send repository material to an external coding service. No code was transmitted or changed by that attempt; author selection is awaiting the owner.
+The plans/contracts are ready for CP05.1. No runtime code has been added for CP05 yet. After the owner explicitly approved sending the relevant CP05.1 files to OpenCode DeepSeek, the model reported that its free usage limit was exhausted before reading or changing project files. The batch is waiting for an author/model decision.

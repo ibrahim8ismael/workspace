@@ -106,7 +106,7 @@ CP03 closed on 2026-11-09. CP04 browser/company integration and CP05 authoritati
 
 ## CP05 — authoritative Socket.IO office
 
-Codex split the existing CP05 contract into reviewable batches in the [CP05 implementation plan](CP05_REALTIME_IMPLEMENTATION.md): ticket admission and ready snapshot; continuing authorization/revocation; serialized movement/seats; versioned recovery/takeover. No CP05 runtime code has been changed. The requested OpenCode DeepSeek handoff for CP05.1 was blocked by automatic review because it would send repository material to an external coding service. The request did not transmit code or alter the working tree; implementation author selection awaits the owner.
+Codex split the existing CP05 contract into reviewable batches in the [CP05 implementation plan](CP05_REALTIME_IMPLEMENTATION.md): ticket admission and ready snapshot; continuing authorization/revocation; serialized movement/seats; versioned recovery/takeover. No CP05 runtime code has been changed. After the owner explicitly approved sending the relevant CP05.1 files to OpenCode DeepSeek, OpenCode reported that its free usage limit was exhausted before it read or changed project files. Implementation author/model selection awaits the owner.
 
 ## CP04 — browser accounts, companies and delivery (in progress)
 

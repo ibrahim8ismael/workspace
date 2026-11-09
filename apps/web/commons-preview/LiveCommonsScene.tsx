@@ -217,16 +217,26 @@ function mountScene(
         const wasd = this.input.keyboard?.addKeys('W,A,S,D') as
           Record<string, Phaser.Input.Keyboard.Key> | undefined;
         let lastInputAt = 0;
+        let lastDx = 0;
+        let lastDy = 0;
         this.events.on('update', (time: number) => {
-          if (time - lastInputAt < 100) return;
-          lastInputAt = time;
           const dx =
             Number(Boolean(keys?.right?.isDown || wasd?.['D']?.isDown)) -
             Number(Boolean(keys?.left?.isDown || wasd?.['A']?.isDown));
           const dy =
             Number(Boolean(keys?.down?.isDown || wasd?.['S']?.isDown)) -
             Number(Boolean(keys?.up?.isDown || wasd?.['W']?.isDown));
-          if (dx !== 0 || dy !== 0) onMovement(dx as -1 | 0 | 1, dy as -1 | 0 | 1);
+          if (dx === 0 && dy === 0) {
+            if (lastDx !== 0 || lastDy !== 0) onMovement(0, 0);
+            lastDx = 0;
+            lastDy = 0;
+            return;
+          }
+          if (time - lastInputAt < 100) return;
+          lastInputAt = time;
+          lastDx = dx;
+          lastDy = dy;
+          onMovement(dx as -1 | 0 | 1, dy as -1 | 0 | 1);
         });
       },
     },

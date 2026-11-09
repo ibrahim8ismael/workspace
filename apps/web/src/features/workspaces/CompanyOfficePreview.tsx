@@ -112,10 +112,10 @@ export function CompanyOfficePreview({ api, detail, onBack }: Props) {
         >
           <div className="office-preview-panel-heading">
             <p className="account-eyebrow">APPROVED COMMONS MAP</p>
-            <h2 id="preview-map-title">{connected ? 'Map renderer sample' : 'Office map'}</h2>
+            <h2 id="preview-map-title">{connected ? 'Live office map' : 'Office map'}</h2>
             <p>
               {connected
-                ? 'The office connection is live; this room image is still a static rendering sample.'
+                ? 'Move with arrow keys or WASD. The office server validates each movement.'
                 : 'Read-only local renderer using the approved Commons geometry and art.'}
             </p>
           </div>

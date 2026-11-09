@@ -21,7 +21,10 @@ const snapshot: WorldSnapshot = {
   stateVersion: 0,
   serverTime: 100,
   participants: [alice],
-  seats: [],
+  seats: [
+    { seatId: 'commons-northwest-table:0', occupantParticipationId: null },
+    { seatId: 'commons-southeast-table:0', occupantParticipationId: null },
+  ],
 };
 
 describe('applyWorldDelta', () => {
@@ -40,6 +43,28 @@ describe('applyWorldDelta', () => {
     if (result.kind === 'applied') {
       expect(result.snapshot.stateVersion).toBe(1);
       expect(result.snapshot.participants[0]?.position.x).toBe(128);
+      expect(result.snapshot.seats).toEqual(snapshot.seats);
+    }
+  });
+
+  it('merges changed seat occupancy without dropping unchanged seats', () => {
+    const seatedAlice = { ...alice, seatId: 'commons-southeast-table:0' };
+    const result = applyWorldDelta(snapshot, {
+      officeEpoch: epoch,
+      baseVersion: 0,
+      stateVersion: 1,
+      serverTime: 120,
+      participants: [seatedAlice],
+      removedParticipationIds: [],
+      seats: [{ seatId: 'commons-southeast-table:0', occupantParticipationId: aliceId }],
+    });
+
+    expect(result.kind).toBe('applied');
+    if (result.kind === 'applied') {
+      expect(result.snapshot.seats).toEqual([
+        { seatId: 'commons-northwest-table:0', occupantParticipationId: null },
+        { seatId: 'commons-southeast-table:0', occupantParticipationId: aliceId },
+      ]);
     }
   });
 

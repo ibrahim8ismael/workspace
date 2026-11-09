@@ -46,6 +46,7 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   let authenticated = false;
   const unexpectedApiCalls: string[] = [];
   const officeEvents: string[] = [];
+  const movementInputs: Array<{ dx: number; dy: number }> = [];
 
   await page.route('**/api/**', async (route) => {
     const request = route.request();
@@ -176,9 +177,19 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
           const ackId = message.slice('42/office,'.length, packetStart);
           const packet = JSON.parse(message.slice(packetStart)) as [
             string,
-            { eventId?: string; payload?: { availability?: string; seatId?: string } },
+            {
+              eventId?: string;
+              payload?: { availability?: string; seatId?: string; dx?: number; dy?: number };
+            },
           ];
           officeEvents.push(packet[0]);
+          if (
+            packet[0] === 'world:input' &&
+            packet[1].payload?.dx !== undefined &&
+            packet[1].payload.dy !== undefined
+          ) {
+            movementInputs.push({ dx: packet[1].payload.dx, dy: packet[1].payload.dy });
+          }
           if (ackId) {
             socket.send(
               `43/office,${ackId}[${JSON.stringify({ eventId: packet[1].eventId, ok: true })}]`,
@@ -241,6 +252,7 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await page.keyboard.down('ArrowRight');
   await expect.poll(() => officeEvents.includes('world:input')).toBe(true);
   await page.keyboard.up('ArrowRight');
+  await expect.poll(() => movementInputs.at(-1)).toEqual({ dx: 0, dy: 0 });
   await page.getByRole('button', { name: 'Leave office' }).click();
   await expect(page.getByText('Not connected to the office.')).toBeVisible();
   await expect.poll(() => officeEvents.includes('disconnect')).toBe(true);

@@ -100,6 +100,53 @@ async function postJson(
   });
 }
 
+async function holdKey(page: import('@playwright/test').Page, key: string, durationMs: number) {
+  await page.keyboard.down(key);
+  await new Promise((resolve) => setTimeout(resolve, durationMs));
+  await page.keyboard.up(key);
+  await new Promise((resolve) => setTimeout(resolve, 200));
+}
+
+async function participantPosition(page: import('@playwright/test').Page, displayName: string) {
+  return page
+    .locator('.office-live-participants li')
+    .filter({ hasText: displayName })
+    .evaluate((element) => ({
+      x: Number(element.getAttribute('data-position-x')),
+      y: Number(element.getAttribute('data-position-y')),
+    }));
+}
+
+async function moveToTile(
+  page: import('@playwright/test').Page,
+  displayName: string,
+  target: { tx: number; ty: number },
+) {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const position = await participantPosition(page, displayName);
+    const tx = Math.floor(position.x / 32);
+    const ty = Math.floor(position.y / 32);
+    const dx = target.tx * 32 + 16 - position.x;
+    const dy = target.ty * 32 + 16 - position.y;
+    if (tx === target.tx && ty === target.ty) return;
+    const useHorizontal = Math.abs(dx) >= Math.abs(dy);
+    const distance = useHorizontal ? dx : dy;
+    const key = useHorizontal
+      ? distance < 0
+        ? 'ArrowLeft'
+        : 'ArrowRight'
+      : distance < 0
+        ? 'ArrowUp'
+        : 'ArrowDown';
+    const durationMs = Math.min(400, Math.max(100, (Math.abs(distance) / 192) * 1000 + 30));
+    await holdKey(page, key, durationMs);
+  }
+  const position = await participantPosition(page, displayName);
+  throw new Error(
+    `Could not move ${displayName} beside the seat; stopped in tile (${Math.floor(position.x / 32)}, ${Math.floor(position.y / 32)}).`,
+  );
+}
+
 async function companyPage(browser: Browser, client: APIRequestContext, workspaceId: string) {
   const context = await browser.newContext({
     storageState: await client.storageState(),
@@ -119,7 +166,9 @@ async function companyPage(browser: Browser, client: APIRequestContext, workspac
   return { context, page };
 }
 
-test('live two-browser office admission, shared state, and movement', async ({ browser }) => {
+test('live two-browser admission, movement, collision, and seat contention', async ({
+  browser,
+}) => {
   test.skip(!enabled, 'Set LIVE_OFFICE_E2E=1 to use the owner-authorized local Docker stack.');
   test.setTimeout(180_000);
 
@@ -197,6 +246,78 @@ test('live two-browser office admission, shared state, and movement', async ({ b
     await expect(memberPage.locator('[data-availability="busy"]')).toContainText(
       `E2E ${ownerEmail.split('@')[0]}`,
     );
+
+    const contestedSeat = 'Sit · commons-northwest-table:1';
+    await ownerPage.locator('.live-commons-scene canvas').click();
+    const ownerName = `E2E ${ownerEmail.split('@')[0]}`;
+    const memberName = `E2E ${memberEmail.split('@')[0]}`;
+    await moveToTile(ownerPage, ownerName, { tx: 4, ty: 5 });
+    await moveToTile(ownerPage, ownerName, { tx: 4, ty: 4 });
+    await moveToTile(ownerPage, ownerName, { tx: 5, ty: 3 });
+    await memberPage.locator('.live-commons-scene canvas').click();
+    await moveToTile(memberPage, memberName, { tx: 4, ty: 5 });
+    await moveToTile(memberPage, memberName, { tx: 4, ty: 4 });
+    await moveToTile(memberPage, memberName, { tx: 6, ty: 2 });
+    await expect
+      .poll(async () => {
+        const position = await participantPosition(ownerPage, ownerName);
+        return [Math.floor(position.x / 32), Math.floor(position.y / 32)];
+      })
+      .toEqual([5, 3]);
+    await expect
+      .poll(async () => {
+        const position = await participantPosition(memberPage, memberName);
+        return [Math.floor(position.x / 32), Math.floor(position.y / 32)];
+      })
+      .toEqual([6, 2]);
+    const ownerSeatButton = ownerPage
+      .locator('.office-world-controls button')
+      .filter({ hasText: 'commons-northwest-table:1' });
+    const memberSeatButton = memberPage
+      .locator('.office-world-controls button')
+      .filter({ hasText: 'commons-northwest-table:1' });
+    await expect(ownerSeatButton).toHaveCount(1, { timeout: 5000 });
+    await expect(memberSeatButton).toHaveCount(1, { timeout: 5000 });
+    const ownerSeatElement = await ownerSeatButton.elementHandle();
+    const memberSeatElement = await memberSeatButton.elementHandle();
+    expect(ownerSeatElement).not.toBeNull();
+    expect(memberSeatElement).not.toBeNull();
+    await Promise.all([
+      ownerSeatElement!.evaluate((button) => (button as HTMLButtonElement).click()),
+      memberSeatElement!.evaluate((button) => (button as HTMLButtonElement).click()),
+    ]);
+    const ownerStand = ownerPage.getByRole('button', { name: 'Stand up' });
+    const memberStand = memberPage.getByRole('button', { name: 'Stand up' });
+    await expect
+      .poll(async () => (await ownerStand.count()) + (await memberStand.count()), {
+        timeout: 5000,
+      })
+      .toBe(1);
+    await expect(ownerPage.getByRole('button', { name: contestedSeat })).toHaveCount(0);
+    await expect(memberPage.getByRole('button', { name: contestedSeat })).toHaveCount(0);
+    const winnerPage = (await ownerStand.count()) === 1 ? ownerPage : memberPage;
+    const winnerName = winnerPage === ownerPage ? ownerName : memberName;
+    const seatedRosterEntry =
+      '.office-live-participants li[data-seat-id="commons-northwest-table:1"]';
+    await expect(ownerPage.locator(seatedRosterEntry)).toContainText(winnerName);
+    await expect(memberPage.locator(seatedRosterEntry)).toContainText(winnerName);
+    await winnerPage.getByRole('button', { name: 'Stand up' }).click();
+    await expect(ownerPage.getByRole('button', { name: contestedSeat })).toBeVisible();
+    await expect(memberPage.getByRole('button', { name: contestedSeat })).toBeVisible();
+
+    const winnerCanvas = winnerPage.locator('.live-commons-scene canvas');
+    let beforeBoundary = await participantPosition(winnerPage, winnerName);
+    let boundaryX = Math.floor(beforeBoundary.x / 32);
+    let boundaryY = Math.floor(beforeBoundary.y / 32);
+    await moveToTile(winnerPage, winnerName, { tx: boundaryX, ty: 1 });
+    beforeBoundary = await participantPosition(winnerPage, winnerName);
+    boundaryX = Math.floor(beforeBoundary.x / 32);
+    boundaryY = Math.floor(beforeBoundary.y / 32);
+    await winnerCanvas.click();
+    await holdKey(winnerPage, 'ArrowUp', 800);
+    const atWall = await participantPosition(winnerPage, winnerName);
+    expect(Math.floor(atWall.x / 32)).toBe(boundaryX);
+    expect(Math.floor(atWall.y / 32)).toBe(boundaryY);
 
     await ownerPage.getByRole('button', { name: 'Leave office' }).click();
     await expect(ownerPage.getByText('Not connected to the office.')).toBeVisible();

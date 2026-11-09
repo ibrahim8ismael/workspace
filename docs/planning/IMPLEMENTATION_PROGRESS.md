@@ -324,6 +324,18 @@ The first real connection attempt exposed a delivery gap: Caddy routed `/api` an
 
 The live test intentionally creates uniquely prefixed accounts/workspaces and Mailpit messages in the persistent local development stack. These records remain there; do not run this opt-in test against shared or production data. Real browser seat contention/collision, recovery after network gaps, Edge and deployment evidence remain open.
 
+## CP06.6 — Live collision and seat contention
+
+The real-browser run surfaced two client-state issues. First, each world delta replaced the snapshot's full seat list with only the delta's changed seats, so movement/presence deltas with no seat changes removed every Sit control. The typed reducer now merges changed seat occupancies into the current list and retains unchanged seats. Second, the Phaser input loop never sent a zero vector when keys were released, leaving motion active until the server's intent timeout; the browser now sends an immediate stop and the mocked Socket.IO E2E checks it.
+
+The live E2E now follows the original Commons northwest room entrance, positions one browser beside the other at the same seat, and issues both sit actions concurrently. It verifies exactly one participant occupies the seat, both clients see that seat removed from the available controls, and both see it become available again after the winner stands. The winner then walks to the meeting-room wall and the test confirms the server-reported tile stays on the safe side while the blocked direction is held. The roster's data attributes mirror public participant position/seat state to let E2E assert the server-owned state without inferring coordinates from pixels. The map panel copy now describes it as a live server-validated map.
+
+| Batch | Scope | Status | Evidence |
+| --- | --- | --- | --- |
+| CP06.6 | Preserve shared seat state through deltas, stop movement on key release, verify wall collision and race two browsers for one seat | Locally verified against OrbStack app services | `pnpm test:e2e:live`: 1 Chromium test passed through real Caddy/API/Socket.IO; `pnpm test:web`: 32 tests passed; `pnpm test:e2e`: 1 mocked browser test passed, live test skipped as intended; web typecheck, production build and ESLint passed |
+
+The test adds persistent local accounts, workspaces and Mailpit messages; do not point it at shared or production data. Browser reconnect/version recovery, second-company isolation, route/renderer teardown, accessibility/visual review, shared command budgets and load remain. Next: CP06.7 closes the browser recovery and isolation gaps, or records each as a separate acceptance gate.
+
 ## CP04.5a — security and operations boundary review
 
 Codex reviewed the current HTTP configuration, password service, audit model, local proxy and existing evidence. The review found the local implementation controls and the outstanding deployment gaps; it made no runtime/security-policy changes. See the [CP04.5a findings](CP04_BROWSER_AND_DELIVERY.md#cp045a--security-and-operations-boundary-review).

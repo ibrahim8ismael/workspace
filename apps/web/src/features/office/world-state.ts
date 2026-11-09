@@ -20,12 +20,14 @@ export function applyWorldDelta(current: WorldSnapshot, raw: unknown): WorldAppl
   );
   for (const participant of delta.participants)
     participants.set(participant.participationId, participant);
+  const seats = new Map(current.seats.map((seat) => [seat.seatId, seat]));
+  for (const seat of delta.seats) seats.set(seat.seatId, seat);
   const candidate = {
     officeEpoch: delta.officeEpoch,
     stateVersion: delta.stateVersion,
     serverTime: delta.serverTime,
     participants: [...participants.values()],
-    seats: delta.seats,
+    seats: [...seats.values()],
   };
   const checked = worldSnapshotSchema.safeParse(candidate);
   return checked.success

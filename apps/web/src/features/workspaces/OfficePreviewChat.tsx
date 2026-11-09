@@ -21,6 +21,8 @@ type Props = {
     participationId: string;
     displayName: string;
     availability: 'available' | 'busy' | 'away';
+    position: { x: number; y: number };
+    seatId: string | null;
   }>;
 };
 
@@ -41,7 +43,13 @@ export function OfficePreviewChat({ companyName, connected = false, participants
           {connected && (
             <ul className="office-live-participants" aria-label="People in the office">
               {participants.map((participant) => (
-                <li key={participant.participationId} data-availability={participant.availability}>
+                <li
+                  key={participant.participationId}
+                  data-availability={participant.availability}
+                  data-position-x={participant.position.x}
+                  data-position-y={participant.position.y}
+                  data-seat-id={participant.seatId ?? ''}
+                >
                   <span>{participant.displayName}</span>
                   <small>{participant.availability}</small>
                 </li>

@@ -497,3 +497,9 @@ The isolated fixture also updates receiver metadata through LiveKit's private ro
 Actual combined run `--run-local --isolated --progress-stall --freeze-guard` passed: 159 frames/425 active waveform samples; last video 2576ms and audio 2938ms after progress stops and pause completes. Supervisor stop reported 6764.645ms from its own earlier startup, including the healthy phase. Original and refreshed replay flags were both false. Cleanup removed both fixture containers. An earlier progress-stall run passed with last audio at 2952ms.
 
 CP07 remains incomplete: controller-authenticated pulls and actual guard installation ACKs, controller loss, real shutdown-control/supervisor failure, source restrictions, shared-tenant effects and ingress/TURN audit remain open. No full eight-second production revocation guarantee is inferred from these local fixtures.
+
+## CP07.10 — Authenticated policy-pull transport foundation (2026-11-10)
+
+Added experimental `policy-pull.mjs`: HMAC-SHA256 machine request/response authentication, fresh 32-byte challenge nonce, exact signed DTO field checks, bounded one-second request and 64KiB/256-permit response, redirect denial and installation through request-start PermitState deadlines. Response integrity is verified before parsing. Remote transport requires authenticated TLS and protected independent policy keys.
+
+Validation: seventeen spike tests passed. New policy scenarios cover signed successful installation, incorrect signature, substituted epoch/nonce, signed unknown fields, oversized responses and expiry after controller unavailability. These transport tests inject Response objects; they do not prove controller outage handling with real media. Runtime integration into guard installation and supervisor ACKs remains unfinished, and CP07 is not accepted. Next is a private controller fixture plus real guard installation progress feeding the supervisor before fault/cutoff tests.

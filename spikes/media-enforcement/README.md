@@ -201,3 +201,19 @@ without refreshed-token instrumentation measured audio cutoff at 2952ms.
 Remaining CP07 gates include authentic policy-to-guard-to-supervisor progress,
 controller-loss handling, real control/supervisor failure paths, per-source grants,
 shared-tenant interruption, and alternate ingress/TURN topology review.
+
+## CP07.10 authenticated policy transport foundation
+
+`policy-pull.mjs` signs request bytes with a separate machine HMAC-SHA256 key and
+verifies response bytes before parsing/installing policy. It generates a fresh
+32-byte nonce, binds responses to the PermitState epoch/sequence/request-start
+deadline, rejects redirects, caps response bodies at 64KiB and 256 permits, rejects
+unknown top-level/permit fields, and aborts transport after one second. A remote
+endpoint must use authenticated TLS; HMAC provides integrity, not confidentiality.
+Key provisioning/rotation, endpoint scoping and controller implementation remain.
+
+Seventeen spike tests pass, including response signature failure, wrong epoch or
+nonce, signed extra fields, oversized responses and permit expiry after controller
+loss. Policy tests use injected Response objects and are not a deployed controller
+or real media outage experiment. This transport is not yet connected to the
+running guard/supervisor; the earlier media progress ACKs remain fixture-generated.

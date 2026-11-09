@@ -346,7 +346,7 @@ The test returns the second browser from the office to company details, verifies
 | --- | --- | --- | --- |
 | CP06.7 | Two-company office roster isolation and live scene route teardown/reopen | Locally verified against OrbStack app services | `pnpm test:e2e:live`: 1 Chromium test passed, including separate company offices, exclusive rosters and one canvas after remount. ESLint passed for the expanded live test |
 
-These checks create additional local test workspaces and Mailpit messages that persist in the local development volumes. Do not run against shared or production data. Remaining CP06 work is deliberate socket reconnect recovery and keyboard/accessibility/visual review; next packet: CP06.9.
+These checks create additional local test workspaces and Mailpit messages that persist in the local development volumes. Do not run against shared or production data. CP06.7 closes company roster isolation and scene teardown/reopen; CP06.8 closes dropped-delta snapshot recovery. CP06.9 next verifies a fresh-ticket leave/re-entry and focused semantic control state. Abrupt transport-loss recovery and broader visual/accessibility review remain open.
 
 ## CP06.8 — Browser snapshot recovery after a dropped delta
 
@@ -356,7 +356,21 @@ The live test now proxies one browser's real Socket.IO frames while leaving the 
 | --- | --- | --- | --- |
 | CP06.8 | Prove browser-side version-gap detection and full-snapshot recovery over the actual Socket.IO path | Locally verified against OrbStack app services | `pnpm test:e2e:live`: 1 Chromium test passed with one server delta deliberately withheld; the test observed the subsequent resync request, full snapshot and recovered Away state |
 
-This closes version-gap recovery for a dropped delta. Unexpected socket disconnect/fresh-ticket reconnect and broader accessibility/visual signoff remain; next packet: CP06.9.
+This closes version-gap recovery for a dropped delta. Unexpected socket disconnect recovery and broader accessibility/visual signoff remain; next packet: CP06.9.
+
+## CP06.9 — Fresh-ticket re-entry and semantic availability state
+
+The live two-browser path now checks the user-facing, deliberate exit/re-entry path after the dropped-delta recovery. The member leaves, the owner observes the roster return to one participant, and the member re-enters; both browsers return to the shared two-person office state. This exercises new bootstrap and join-ticket issuance after a completed session rather than reusing the consumed ticket. The same test verifies the selected Away button exposes its selected state with `aria-pressed="true"`.
+
+An abrupt transport interruption was also attempted through Playwright's WebSocket route. Playwright reports the browser-side socket close, but the local API runtime does not release the server participation through that routed-close simulation; a new ticket is then correctly rejected as a duplicate participation. This is not recorded as a product reconnect pass. A transport-level test that can prove server-side disconnect cleanup and user recovery remains open, along with visual anchor/occlusion and wider keyboard/accessibility review.
+
+| Batch | Scope | Status | Evidence |
+| --- | --- | --- | --- |
+| CP06.9 | Verify deliberate leave, server-side participation release, fresh-ticket re-entry, and semantic availability state in the live two-browser office | Locally verified against OrbStack app services | `pnpm test:e2e:live`: 1 Chromium test passed; live test ESLint passed. It observed one-person roster after leave, successful re-entry to two participants, and Away `aria-pressed=true`. Abrupt transport-loss simulation did not prove server cleanup and is explicitly excluded |
+
+The failed transport simulation was not retained in the passing test. Its failure is tracked as a remaining test/design gap rather than waived. Keep the test on the owner-authorized local stack only because accounts, workspaces and Mailpit messages persist in its development volumes.
+
+A later extra rerun stopped at the initial anonymous CSRF bootstrap with HTTP 429 because repeated local E2E runs had exhausted the existing per-IP CSRF allowance (30 requests per 15-minute window). The earlier CP06.9 full live run passed. The limit and its Mongo rate-limit records were left intact; rerun after that window expires rather than weakening or clearing the guard.
 
 ## CP04.5a — security and operations boundary review
 

@@ -172,7 +172,12 @@ async function interceptWorldVersionGap(page: import('@playwright/test').Page) {
       webSocket.send(message);
     });
   });
-  return probe;
+  return {
+    arm: () => {
+      probe.armed = true;
+    },
+    state: probe,
+  };
 }
 
 async function companyPage(browser: Browser, client: APIRequestContext, workspaceId: string) {
@@ -273,14 +278,25 @@ test('live two-browser admission, movement, collision, and seat contention', asy
       .toBe(true);
 
     const ownerName = `E2E ${ownerEmail.split('@')[0]}`;
-    gapProbe.armed = true;
+    gapProbe.arm();
     await ownerPage.getByRole('button', { name: 'Busy' }).click();
-    await expect.poll(() => gapProbe.droppedDelta).toBe(true);
+    await expect.poll(() => gapProbe.state.droppedDelta).toBe(true);
     await expect(memberPage.locator('[data-availability="busy"]')).toHaveCount(0);
     await ownerPage.getByRole('button', { name: 'Away' }).click();
-    await expect.poll(() => gapProbe.resyncRequested).toBe(true);
-    await expect.poll(() => gapProbe.snapshotReceived).toBe(true);
+    await expect(ownerPage.getByRole('button', { name: 'Away' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect.poll(() => gapProbe.state.resyncRequested).toBe(true);
+    await expect.poll(() => gapProbe.state.snapshotReceived).toBe(true);
     await expect(memberPage.locator('[data-availability="away"]')).toContainText(ownerName);
+
+    await memberPage.getByRole('button', { name: 'Leave office' }).click();
+    await expect(memberPage.getByText('Not connected to the office.')).toBeVisible();
+    await expect(ownerPage.getByText('1 person in the office')).toBeVisible();
+    await memberPage.getByRole('button', { name: 'Enter office' }).click();
+    await expect(memberPage.getByText('2 people in the office')).toBeVisible();
+    await expect(ownerPage.locator('[data-availability="away"]')).toContainText(ownerName);
 
     const contestedSeat = 'Sit · commons-northwest-table:1';
     await ownerPage.locator('.live-commons-scene canvas').click();

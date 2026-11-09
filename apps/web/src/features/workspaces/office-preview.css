@@ -219,12 +219,20 @@
 }
 
 .office-live-participants li {
+  display: grid;
+  gap: 2px;
   padding: 4px 8px;
   border: 1px solid #e4dfd1;
   border-radius: 999px;
   color: #514c3e;
   background: #fffdf7;
   font-size: 11px;
+}
+
+.office-live-participants small {
+  color: var(--muted);
+  font-size: 9px;
+  text-transform: capitalize;
 }
 
 .office-preview-chat-status h2 {

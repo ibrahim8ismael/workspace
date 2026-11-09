@@ -31,6 +31,7 @@ export function CompanyOfficePreview({ api, detail, onBack }: Props) {
   useEffect(() => () => client.close(), [client]);
 
   const connected = state.status === 'connected';
+  const participantCount = state.snapshot?.participants.length ?? 0;
   const self = state.snapshot?.participants.find(
     (participant) => participant.participationId === state.ready?.participationId,
   );
@@ -75,7 +76,9 @@ export function CompanyOfficePreview({ api, detail, onBack }: Props) {
         <p className="office-session-status" role="status" aria-live="polite">
           <span className={`status-dot ${connected ? 'available' : 'away'}`} aria-hidden="true" />
           {state.status === 'connected'
-            ? `${state.snapshot?.participants.length ?? 0} people in the office`
+            ? participantCount === 1
+              ? '1 person in the office'
+              : `${participantCount} people in the office`
             : state.status === 'connecting'
               ? 'Connecting to the office…'
               : state.status === 'ended'

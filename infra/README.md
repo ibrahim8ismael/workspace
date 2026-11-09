@@ -6,7 +6,7 @@ CP04.3a configuration is complete. The owner explicitly authorized local Docker 
 
 | Service     | Purpose                                    | Host access               |
 | ----------- | ------------------------------------------ | ------------------------- |
-| Caddy       | Built web files and HTTPS `/api` proxy     | `https://localhost:8443`  |
+| Caddy       | Built web files and same-origin HTTPS `/api` plus `/socket.io` proxy | `https://localhost:8443` |
 | API         | Existing account/company API               | Private container network |
 | MongoDB     | Single-node `rs0` replica set              | Private container network |
 | Queue Redis | Durable mail queue, AOF and `noeviction`   | Private container network |

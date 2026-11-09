@@ -312,6 +312,18 @@ The mocked browser transport does not prove two real clients competing for the s
 
 After CP06.4, the owner-authorized OrbStack `app` profile was rebuilt from the pushed source. Both API and Caddy containers returned healthy; HTTPS `/` and `/api/health/live` each returned HTTP 200. Existing MongoDB, Redis, Mailpit and worker containers remained running with their retained local volumes. This verifies the rebuilt local delivery stack only; no real account was created and no authenticated browser-to-API/socket session or two-browser test was performed in this runtime check.
 
+## CP06.5 — Real two-browser office path
+
+Codex added an opt-in live Playwright test, `pnpm test:e2e:live`, that uses the running local API, MongoDB, worker, Mailpit, Caddy and Chromium. It creates two uniquely prefixed verified accounts through the actual registration and Mailpit code flow, creates a workspace, invites and activates the second member, then opens two authenticated browser contexts. Both enter the same office through real HTTPS bootstrap/ticket requests and Socket.IO. The test verifies both receive the shared two-person state, the observer's rendered canvas changes when the other browser moves, an availability change reaches the observer's roster, and voluntarily leaving reduces the remaining participant count.
+
+The first real connection attempt exposed a delivery gap: Caddy routed `/api` and static files but sent `/socket.io` to the SPA fallback. CP06.5 adds a same-origin Socket.IO reverse proxy and the real-browser test passes against it. Caddy and API were rebuilt on OrbStack after the change.
+
+| Batch | Scope | Status | Evidence |
+| --- | --- | --- | --- |
+| CP06.5 | Two verified members, same-office live admission/state, visible remote movement, availability propagation and leave | Locally verified against actual OrbStack services | `pnpm test:e2e:live`: 1 Chromium test passed through real Caddy, API, MongoDB, Mailpit and Socket.IO. Standard mocked-browser tests remain separate |
+
+The live test intentionally creates uniquely prefixed accounts/workspaces and Mailpit messages in the persistent local development stack. These records remain there; do not run this opt-in test against shared or production data. Real browser seat contention/collision, recovery after network gaps, Edge and deployment evidence remain open.
+
 ## CP04.5a — security and operations boundary review
 
 Codex reviewed the current HTTP configuration, password service, audit model, local proxy and existing evidence. The review found the local implementation controls and the outstanding deployment gaps; it made no runtime/security-policy changes. See the [CP04.5a findings](CP04_BROWSER_AND_DELIVERY.md#cp045a--security-and-operations-boundary-review).

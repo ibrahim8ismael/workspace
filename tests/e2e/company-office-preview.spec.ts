@@ -225,7 +225,7 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await expect(page.getByText('Avatar sitting.')).toBeVisible();
 
   await page.getByRole('button', { name: 'Enter office' }).click();
-  await expect(page.getByText('1 people in the office')).toBeVisible();
+  await expect(page.getByText('1 person in the office')).toBeVisible();
   await expect(page.getByText('Live office map. Use arrow keys or WASD to move.')).toBeVisible();
   await expect(page.locator('.live-commons-scene canvas')).toHaveCount(1);
   await expect(page.getByRole('list', { name: 'People in the office' })).toContainText(

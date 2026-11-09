@@ -195,7 +195,7 @@ Exit: two real Socket.IO test clients move/collide/sit; final seat/capacity race
 
 ### CP06 — Replace the legacy office path with Phaser and typed client adapters
 
-Status: CP06.1 client core, CP06.2 authenticated office entry/live roster, CP06.3 Phaser world rendering/movement input and CP06.4 availability/seat controls are implemented and locally verified with a mocked browser transport. Real API/two-browser, smooth reconciliation/accessibility and text messaging remain. See [implementation progress](IMPLEMENTATION_PROGRESS.md#cp061-typed-office-client-core).
+Status: CP06.1 client core, CP06.2 authenticated office entry/live roster, CP06.3 Phaser world rendering/movement input, CP06.4 availability/seat controls and CP06.5 real local two-browser connection are implemented and locally verified. Collision/seat races through real browsers, smooth reconciliation/accessibility and text messaging remain. See [implementation progress](IMPLEMENTATION_PROGRESS.md#cp061-typed-office-client-core).
 
 Depends on: CP02 sample, CP04 account/company path and CP05 protocol. Deliverable: the browser-based two-user office.
 

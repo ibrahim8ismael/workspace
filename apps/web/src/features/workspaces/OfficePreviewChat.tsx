@@ -17,7 +17,11 @@ const ignoreChange = () => undefined;
 type Props = {
   companyName: string;
   connected?: boolean;
-  participants?: Array<{ participationId: string; displayName: string }>;
+  participants?: Array<{
+    participationId: string;
+    displayName: string;
+    availability: 'available' | 'busy' | 'away';
+  }>;
 };
 
 /** The existing office chat surface, pinned to an explicitly disconnected, empty state. */
@@ -37,7 +41,10 @@ export function OfficePreviewChat({ companyName, connected = false, participants
           {connected && (
             <ul className="office-live-participants" aria-label="People in the office">
               {participants.map((participant) => (
-                <li key={participant.participationId}>{participant.displayName}</li>
+                <li key={participant.participationId} data-availability={participant.availability}>
+                  <span>{participant.displayName}</span>
+                  <small>{participant.availability}</small>
+                </li>
               ))}
             </ul>
           )}

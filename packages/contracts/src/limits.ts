@@ -1,4 +1,4 @@
-/** Initial engineering budgets. Runtime enforcement/measurement lands in CP03–CP06. */
+/** Initial engineering budgets; realtime admission and leases are enforced by the API. */
 export const OFFICE_LIMITS = Object.freeze({
   maxParticipants: 20,
   maxMeetingParticipants: 6,
@@ -11,6 +11,9 @@ export const OFFICE_LIMITS = Object.freeze({
   broadcastHz: 10,
   policyCheckIntervalMs: 1000,
   maxAuthorizationLeaseMs: 5000,
+  socketPolicyCheckIntervalMs: 1000,
+  socketHandshakeTimeoutMs: 5000,
+  socketConnectionsPerIpPerMinute: 60,
   maxJoinTicketLifetimeMs: 30000,
   ticketWindowMs: 60000,
   ticketsPerActorPerWindow: 10,

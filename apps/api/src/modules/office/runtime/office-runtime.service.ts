@@ -15,6 +15,7 @@ export interface ConsumedOfficeTicket {
   userId: string;
   displayName: string;
   sessionId: string;
+  membershipGrantId: string;
   workspaceId: string;
   officeId: string;
   officeEpoch: string;

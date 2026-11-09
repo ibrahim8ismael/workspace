@@ -114,7 +114,17 @@ Codex added a Nest Socket.IO adapter and `/office` gateway with exact `APP_ORIGI
 
 | Batch | Scope | Status | Evidence |
 | --- | --- | --- | --- |
-| CP05.1 | Engine.IO Origin/size gate, one-use ticket admission, runtime reservation and ready snapshot | Complete locally; production runtime incomplete | `pnpm --filter @gather/api test`: 57/57 pass, including real Socket.IO clients for valid/invalid Origin, oversized packet, malformed auth, replay, duplicate participation, epoch replacement, two-user snapshot, disconnect cleanup and capacity. Formatting, lint and API build pass |
+| CP05.1 | Engine.IO Origin/size gate, one-use ticket admission, runtime reservation and ready snapshot | Complete locally; production runtime incomplete | `pnpm --filter @gather/api test`: 57/57 passed at CP05.1, including real Socket.IO clients for valid/invalid Origin, oversized packet, malformed auth, replay, duplicate participation, epoch replacement, two-user snapshot, disconnect cleanup and capacity |
+
+### CP05.2 — Authorization lease foundation
+
+The API now sets a 5-second Socket.IO handshake timeout and allows up to 60 connection attempts per minute per direct TCP peer address, with bounded in-process limiter storage. It does not trust forwarded-IP headers. Before `office:ready`, the gateway rechecks the session, account, workspace, membership activation grant, office map and epoch against primary Mongo reads. Active sockets are checked each second; successful checks renew a maximum five-second lease measured from the policy request start. A revoked session or membership ends an idle socket and removes its public participation; uncertain policy ends access when the current lease expires. The gateway also checks that the initial lease has not expired after joining its room and before announcing readiness.
+
+| Batch | Scope | Status | Evidence |
+| --- | --- | --- | --- |
+| CP05.2a | Handshake/attempt budgets, periodic policy leases, idle logout and membership revocation | Complete locally; not a full CP05.2 exit | `pnpm --filter @gather/api test`: 59/59 passed, including idle session-logout and membership-removal socket tests; contracts/API builds pass. Lint/format/whitespace checks recorded after final source formatting |
+
+The poller observes committed changes within the bounded lease interval; it does not yet connect mutation transactions to an immediate cross-process notification channel. The attempt limiter and runtime are process-local, so multi-instance deployment needs a shared policy/rate coordination design. Password-reset/session-rotation and account/workspace suspension revocation, Mongo-loss/delayed-response/lease-expiry tests, reconnect and restart epoch evidence remain open. Movement, seats, recovery/takeover and browser socket integration remain later CP05/CP06 work.
 
 ## CP04 — browser accounts, companies and delivery (in progress)
 

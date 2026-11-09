@@ -1374,6 +1374,49 @@ describe('office socket admission', () => {
     }
   });
 
+  it('ends an idle socket after its authenticated session is revoked', async () => {
+    const owner = await account();
+    const workspaceId = await workspace(owner);
+    const { ticket } = await issueTicket(owner, workspaceId);
+    const client = officeSocket({ ticket, protocolVersion: 1 });
+    try {
+      const ready = nextSocketEvent<unknown>(client, 'office:ready');
+      await connectSocket(client);
+      await ready;
+      const accessEnded = nextSocketEvent<Record<string, unknown>>(client, 'office:access-ended');
+      const disconnected = nextSocketEvent<string>(client, 'disconnect');
+      status(await owner.client.send('post', '/api/auth/logout'), 200);
+      await expect(accessEnded).resolves.toMatchObject({ reason: 'authorization_ended' });
+      await expect(disconnected).resolves.toBeTruthy();
+    } finally {
+      client.disconnect();
+    }
+  });
+
+  it('removes an idle socket after its workspace membership is revoked', async () => {
+    const owner = await account();
+    const member = await account();
+    const workspaceId = await workspace(owner);
+    await join(owner, workspaceId, member);
+    const { ticket } = await issueTicket(member, workspaceId);
+    const client = officeSocket({ ticket, protocolVersion: 1 });
+    try {
+      const ready = nextSocketEvent<unknown>(client, 'office:ready');
+      await connectSocket(client);
+      await ready;
+      const accessEnded = nextSocketEvent<Record<string, unknown>>(client, 'office:access-ended');
+      const disconnected = nextSocketEvent<string>(client, 'disconnect');
+      status(
+        await owner.client.send('delete', `/api/workspaces/${workspaceId}/members/${member.id}`),
+        200,
+      );
+      await expect(accessEnded).resolves.toMatchObject({ reason: 'authorization_ended' });
+      await expect(disconnected).resolves.toBeTruthy();
+    } finally {
+      client.disconnect();
+    }
+  });
+
   it('rejects missing and foreign Origins before consuming the ticket', async () => {
     const owner = await account();
     const workspaceId = await workspace(owner);

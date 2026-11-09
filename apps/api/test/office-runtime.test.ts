@@ -8,6 +8,7 @@ function ticket(userNumber: number): ConsumedOfficeTicket {
     userId: `user-${userNumber}`,
     displayName: `User ${userNumber}`,
     sessionId: `session-${userNumber}`,
+    membershipGrantId: `grant-${userNumber}`,
     workspaceId: '10000000-0000-4000-8000-000000000001',
     officeId: '20000000-0000-4000-8000-000000000001',
     officeEpoch: '5fc87e60-62b8-4cf9-8edc-dcaa2a1d8249',

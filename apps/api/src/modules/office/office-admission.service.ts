@@ -241,6 +241,7 @@ export class OfficeAdmissionService {
         userId: ticket.userId,
         displayName: user.displayName,
         sessionId: ticket.sessionId,
+        membershipGrantId: ticket.membershipGrantId,
         workspaceId: ticket.workspaceId,
         officeId: ticket.officeId,
         officeEpoch: ticket.officeEpoch,
@@ -269,4 +270,77 @@ export class OfficeAdmissionService {
       protocolVersion,
     });
   }
+
+  async isSocketAuthorized(ticket: ConsumedOfficeTicketShape): Promise<boolean> {
+    if (this.epochs.current(ticket.officeId) !== ticket.officeEpoch) return false;
+    const now = new Date();
+    const [session, user, member, workspace, office] = await Promise.all([
+      this.identities.sessions
+        .findOne({
+          _id: ticket.sessionId,
+          userId: ticket.userId,
+          kind: 'authenticated',
+          revokedAt: null,
+          absoluteExpiresAt: { $gt: now },
+          idleExpiresAt: { $gt: now },
+        })
+        .read('primary')
+        .readConcern('linearizable')
+        .maxTimeMS(2000)
+        .lean(),
+      this.identities.users
+        .findOne({ _id: ticket.userId, status: 'active', verifiedAt: { $ne: null } })
+        .read('primary')
+        .readConcern('linearizable')
+        .maxTimeMS(2000)
+        .lean(),
+      this.tenancyModels.memberships
+        .findOne({
+          workspaceId: ticket.workspaceId,
+          userId: ticket.userId,
+          status: 'active',
+        })
+        .read('primary')
+        .readConcern('linearizable')
+        .maxTimeMS(2000)
+        .lean(),
+      this.tenancyModels.workspaces
+        .findOne({ _id: ticket.workspaceId, status: 'active' })
+        .read('primary')
+        .readConcern('linearizable')
+        .maxTimeMS(2000)
+        .lean(),
+      this.tenancyModels.offices
+        .findOne({
+          _id: ticket.officeId,
+          workspaceId: ticket.workspaceId,
+          mapVersion: ticket.mapVersion,
+        })
+        .read('primary')
+        .readConcern('linearizable')
+        .maxTimeMS(2000)
+        .lean(),
+    ]);
+    return Boolean(
+      session &&
+      user &&
+      user.authVersion === session.authVersion &&
+      member &&
+      grantId(member) === ticket.membershipGrantId &&
+      workspace &&
+      office &&
+      office.mapVersion === APPROVED_OFFICE_MAP_VERSION &&
+      this.epochs.current(ticket.officeId) === ticket.officeEpoch,
+    );
+  }
+}
+
+interface ConsumedOfficeTicketShape {
+  userId: string;
+  sessionId: string;
+  workspaceId: string;
+  officeId: string;
+  officeEpoch: string;
+  mapVersion: string;
+  membershipGrantId: string;
 }

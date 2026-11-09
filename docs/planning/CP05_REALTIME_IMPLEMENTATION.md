@@ -1,6 +1,6 @@
 # CP05 — Authoritative Socket.IO office implementation plan
 
-Status: CP05.1 implemented and verified locally; CP05.2–CP05.4 remain · Updated: 2026-11-09
+Status: CP05.1 complete locally; CP05.2 authorization-lease foundation implemented locally; CP05.2 revocation integrations and CP05.3–CP05.4 remain · Updated: 2026-11-09
 
 CP05 builds the server-owned realtime office on top of completed CP02 map rules and CP03 bootstrap/tickets. The wire contract is in [OFFICE_V1](../contracts/OFFICE_V1.md) and [REALTIME](../contracts/REALTIME.md). The implementation plan in [PROJECT_COMPLETION_PLAN](PROJECT_COMPLETION_PLAN.md#cp05--build-the-authoritative-socketio-office) remains the acceptance baseline. This file orders the work into reviewable, locally testable batches.
 
@@ -20,11 +20,13 @@ CP05 builds the server-owned realtime office on top of completed CP02 map rules 
 
 **Complete locally.** The Nest Socket.IO adapter and `/office` gateway enforce exact `APP_ORIGIN`, WebSocket-only transport, a 4 KiB Engine.IO message limit and disabled connection-state recovery. The gateway validates `officeSocketAuthSchema`, consumes the one-use CP03 ticket, reserves a maximum of 20 participants with one active participation per user/workspace, creates unique reachable spawn positions and emits a contract-validated safe `office:ready` snapshot. It publishes join/removal deltas, releases provisional reservations on disconnect/failure and disconnects old-epoch sockets before admitting into a new runtime epoch.
 
-Actual Socket.IO clients and the transaction-capable Mongo fixture cover valid admission, foreign/missing Origin, oversized raw packets, malformed auth, ticket replay, duplicate participation, capacity, epoch replacement, safe two-user snapshots and disconnect cleanup. The full API suite passes 57 tests. The handshake has no independent rate budget yet; CP05.2 must choose/enforce attempt and timeout budgets before deployment. CP05.1 is development evidence only; continuing authorization, movement and seat commands are still absent.
+Actual Socket.IO clients and the transaction-capable Mongo fixture cover valid admission, foreign/missing Origin, oversized raw packets, malformed auth, ticket replay, duplicate participation, capacity, epoch replacement, safe two-user snapshots and disconnect cleanup. The API suite passed 57 tests at this batch. CP05.1 is development evidence only; continuing authorization, movement and seat commands were not included in that batch.
 
 ### CP05.2 — Continuing authorization and revocation
 
-Choose/enforce connection-attempt and namespace-handshake timeout budgets without trusting client-supplied forwarded IP headers. Add per-participation bounded policy leases with request-start monotonic deadlines and ordered replies. Recheck session, account, workspace and membership using the current primary policy. Connect committed logout/session rotation, password reset, suspension and membership removal to runtime revocation. Verify delayed replies, Mongo loss, idle unauthorized sockets, reconnect and restart epoch rotation. Expired or uncertain authority releases capacity and removes the participant from later broadcasts.
+**Implemented locally (lease foundation):** WebSocket handshakes have a 5-second timeout and a fixed-window limit of 60 attempts per minute per direct TCP peer address; the limiter never reads client-supplied forwarded-IP headers and caps tracked addresses at 10,000. Each participation performs a strict primary-policy check immediately before ready, then checks every second. Each successful authorization lease is bounded to five seconds from request start. Logout and membership revocation are detected for idle sockets and remove them from the runtime. When primary policy cannot be confirmed, access ends when the current lease expires. Tests cover idle logout and membership removal; the API suite passes 59 tests.
+
+**Still required in CP05.2:** Connect password reset/session rotation and account/workspace suspension to the same observed revocation behavior; add deterministic tests for delayed replies, Mongo loss, lease expiry, reconnect and epoch rotation. The current poller observes committed policy changes within a bounded interval; it is process-local and does not provide cross-instance immediate notifications. Revisit shared rate limiting and policy notification before multi-instance deployment. Do not claim production authorization readiness yet.
 
 ### CP05.3 — Serialized world commands and seats
 
@@ -42,4 +44,4 @@ CP04 SMTP setup and CP04 independent audit delivery remain separate release gate
 
 ## Current execution status
 
-CP05.1 was implemented locally by Codex after the owner selected Codex when OpenCode DeepSeek reported its free quota exhausted. See the code in `apps/api/src/modules/office/{realtime,runtime}/`, the API integration suite and the implementation-progress record. The API is not ready for a production office: the next batch must add continuing authorization and committed-change revocation before a participation can rely on a live socket.
+CP05.1 and the CP05.2 lease foundation were implemented locally by Codex after the owner selected Codex when OpenCode DeepSeek reported its free quota exhausted. See the code in `apps/api/src/modules/office/{realtime,runtime}/`, the API integration suite and the implementation-progress record. The API is not ready for a production office: CP05.2 still needs further revocation/failure evidence before CP05.3 begins.

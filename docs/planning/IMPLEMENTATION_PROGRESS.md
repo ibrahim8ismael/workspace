@@ -171,7 +171,7 @@ The next local batch CP04.4a2 exercises Redis/BullMQ outage, duplicates and expi
 
 ### CP04.4a2 — actual Redis outage and recovery
 
-With Docker authorized, Codex stopped only local queue Redis and registered a new fixture account through HTTPS. The actual Mongo outbox stayed pending, encrypted and at zero attempts during the outage. Restarting Redis and the worker delivered the message; Mongo recorded one attempt and delivered status. No external SMTP was configured. This runtime drill is recorded separately from the delegated deterministic tests. Actual BullMQ duplicate/replay and expiry cleanup remain CP04.4a3.
+With Docker authorized, Codex stopped only local queue Redis and registered a new fixture account through HTTPS. The actual Mongo outbox stayed pending, encrypted and at zero attempts during the outage. Restarting Redis and the worker delivered the message; Mongo recorded one attempt and delivered status. No external SMTP was configured. This runtime drill is recorded separately from the delegated deterministic tests. Dispatcher duplicate/replay is covered by deterministic integration tests; CP04.4a3 adds expiry cleanup before queueing.
 
 | Batch | Scope | Status | Evidence |
 | --- | --- | --- | --- |
@@ -186,4 +186,12 @@ OpenCode DeepSeek V4.1 Flash Free at max effort added a test for dispatcher expi
 | --- | --- | --- | --- |
 | CP04.4a3 | Expire outbox before queueing and clear encrypted payload | Complete in this commit | Focused Mongo integration case passed; target ID absent from both queue lookup and add |
 
-CP04.4b remains: accepted SMTP send with lost acknowledgement and key lifecycle outcomes. CP04.4c still needs owner-supplied D06 provider/domain/recipient choices before any external send.
+Real provider acknowledgement and key lifecycle outcomes remain after the CP04.4b1 sender-boundary simulation. CP04.4c still needs owner-supplied D06 provider/domain/recipient choices before any external send.
+
+### CP04.4b1 — ambiguous SMTP acknowledgement
+
+OpenCode DeepSeek V4.1 Flash Free at max effort added a test simulating the sender accepting a message and then losing its acknowledgement. The retry may deliver the same one-use token again; the record transitions to delivered only after a successful acknowledgement and later worker replay does not send again. This demonstrates at-least-once semantics and does not claim exactly-once delivery. Existing cryptographic primitives test wrong-key/tampered-ciphertext rejection; real SMTP and key-loss/rotation drills remain future owner-configured work.
+
+| Batch | Scope | Status | Evidence |
+| --- | --- | --- | --- |
+| CP04.4b1 | Mongo-backed lost-ack retry and duplicate possibility | Complete in this test commit | Focused integration test passed; it asserts identical token twice, retained encrypted payload after first failure, final payload cleanup and no later replay |

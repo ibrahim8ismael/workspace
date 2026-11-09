@@ -10,7 +10,7 @@ import request from 'supertest';
 import type { Response as HttpResponse } from 'supertest';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
-import { decryptMail } from '@gather/delivery';
+import { decryptMail, type MailPayload } from '@gather/delivery';
 import commonsManifest from '@gather/assets/manifests/commons-map.json' with { type: 'json' };
 import {
   accountResponseSchema,
@@ -1583,6 +1583,67 @@ describe('credential concurrency and durable mail', () => {
 
     await deliverOutbox(record._id, outbox.model, encryption, send);
     expect(send).toHaveBeenCalledTimes(2);
+    const replay = await outbox.model.findById(record._id).select('+payload').lean();
+    expect(replay?.state).toBe('delivered');
+    expect(replay?.attempts).toBe(2);
+    expect(replay?.payload).toBeNull();
+  });
+  it('retries an acknowledgement-lost SMTP send with at-least-once delivery, not exactly-once', async () => {
+    const browser = new Client();
+    await browser.bootstrap();
+    const email = `ack-loss-${randomUUID()}@example.com`;
+    status(
+      await browser.send('post', '/api/auth/register', {
+        email,
+        password,
+        displayName: 'Acknowledgement Loss Test',
+      }),
+      202,
+    );
+    const user = await identities.users.findOne({ normalizedEmail: email }).lean();
+    if (!user) throw new Error('Account missing');
+    const record = await outbox.model
+      .findOne({ subjectId: user._id, kind: 'verify-email', state: 'pending' })
+      .select('+payload')
+      .lean();
+    if (!record?.payload) throw new Error('Outbox missing encrypted payload');
+    const encrypted = record.payload;
+    const original = decryptMail(record._id, encrypted, encryption);
+    expect(original.recipient).toBe(email);
+
+    // The provider accepts and records the first message, but its
+    // acknowledgement is lost. This test proves at-least-once delivery only;
+    // it does not claim exactly-once delivery from the provider.
+    const delivered: MailPayload[] = [];
+    const send = vi.fn(async (payload: MailPayload) => {
+      delivered.push(payload);
+      if (delivered.length === 1) throw new Error('injected-acknowledgement-lost');
+    });
+    await expect(deliverOutbox(record._id, outbox.model, encryption, send)).rejects.toThrow(
+      'mail_delivery_failed',
+    );
+    expect(send).toHaveBeenCalledTimes(1);
+    const retryable = await outbox.model.findById(record._id).select('+payload').lean();
+    expect(retryable?.state).toBe('pending');
+    expect(retryable?.attempts).toBe(1);
+    expect(retryable?.deliveredAt).toBeNull();
+    expect(retryable?.payload).toEqual(encrypted);
+    if (!retryable?.payload) throw new Error('Outbox payload missing after acknowledgement loss');
+    expect(decryptMail(record._id, retryable.payload, encryption).recipient).toBe(email);
+
+    await deliverOutbox(record._id, outbox.model, encryption, send);
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(delivered.map((message) => message.token)).toEqual([original.token, original.token]);
+    expect(delivered.map((message) => message.recipient)).toEqual([email, email]);
+    const deliveredRecord = await outbox.model.findById(record._id).select('+payload').lean();
+    expect(deliveredRecord?.state).toBe('delivered');
+    expect(deliveredRecord?.attempts).toBe(2);
+    expect(deliveredRecord?.payload).toBeNull();
+    expect(deliveredRecord?.deliveredAt).toBeInstanceOf(Date);
+
+    await deliverOutbox(record._id, outbox.model, encryption, send);
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(delivered).toHaveLength(2);
     const replay = await outbox.model.findById(record._id).select('+payload').lean();
     expect(replay?.state).toBe('delivered');
     expect(replay?.attempts).toBe(2);

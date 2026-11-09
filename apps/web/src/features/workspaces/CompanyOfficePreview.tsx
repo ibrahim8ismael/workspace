@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { OfficeWorkspaceDetail } from '../../lib/api';
 import { ApiClient } from '../../lib/api';
 import { CommonsScene } from '../../../commons-preview/CommonsScene';
@@ -21,6 +21,8 @@ export function CompanyOfficePreview({ api, detail, onBack }: Props) {
     [api, detail.id, detail.officeId],
   );
   const state = useSyncExternalStore(client.subscribe, client.getSnapshot, client.getSnapshot);
+  const [officeActionError, setOfficeActionError] = useState('');
+  const [officeActionPending, setOfficeActionPending] = useState(false);
 
   useEffect(() => {
     titleRef.current?.focus();
@@ -29,6 +31,25 @@ export function CompanyOfficePreview({ api, detail, onBack }: Props) {
   useEffect(() => () => client.close(), [client]);
 
   const connected = state.status === 'connected';
+  const self = state.snapshot?.participants.find(
+    (participant) => participant.participationId === state.ready?.participationId,
+  );
+
+  async function runOfficeAction(action: () => Promise<void>) {
+    setOfficeActionError('');
+    setOfficeActionPending(true);
+    try {
+      await action();
+    } catch (error) {
+      setOfficeActionError(
+        error instanceof Error
+          ? `Office action failed (${error.message}).`
+          : 'Office action failed.',
+      );
+    } finally {
+      setOfficeActionPending(false);
+    }
+  }
 
   return (
     <section className="company-office-preview" aria-labelledby="company-office-preview-title">
@@ -104,6 +125,64 @@ export function CompanyOfficePreview({ api, detail, onBack }: Props) {
             />
           ) : (
             <CommonsScene />
+          )}
+          {connected && state.snapshot && self && (
+            <div className="office-world-controls" aria-label="Office controls">
+              <div>
+                <h3>Your availability</h3>
+                <div className="office-world-control-row">
+                  {(['available', 'busy', 'away'] as const).map((availability) => (
+                    <button
+                      key={availability}
+                      className="account-secondary"
+                      type="button"
+                      aria-pressed={self.availability === availability}
+                      disabled={officeActionPending || self.availability === availability}
+                      onClick={() =>
+                        void runOfficeAction(() => client.setAvailability(availability))
+                      }
+                    >
+                      {availability[0]?.toUpperCase()}
+                      {availability.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <h3>Seats</h3>
+                <div className="office-world-control-row">
+                  {self.seatId ? (
+                    <button
+                      className="account-secondary"
+                      type="button"
+                      disabled={officeActionPending}
+                      onClick={() => void runOfficeAction(() => client.stand())}
+                    >
+                      Stand up
+                    </button>
+                  ) : (
+                    state.snapshot.seats
+                      .filter((seat) => seat.occupantParticipationId === null)
+                      .map((seat) => (
+                        <button
+                          className="account-secondary"
+                          type="button"
+                          key={seat.seatId}
+                          disabled={officeActionPending}
+                          onClick={() => void runOfficeAction(() => client.sit(seat.seatId))}
+                        >
+                          Sit · {seat.seatId}
+                        </button>
+                      ))
+                  )}
+                </div>
+              </div>
+              {officeActionError && (
+                <p className="office-action-error" role="alert">
+                  {officeActionError}
+                </p>
+              )}
+            </div>
           )}
         </section>
 

@@ -195,14 +195,14 @@ Exit: two real Socket.IO test clients move/collide/sit; final seat/capacity race
 
 ### CP06 — Replace the legacy office path with Phaser and typed client adapters
 
-Status: CP06.1 client core, CP06.2 authenticated office entry/live roster and CP06.3 Phaser world rendering/movement input are implemented and locally verified with a mocked browser transport. Real API/two-browser, smooth reconciliation/accessibility and text messaging remain. See [implementation progress](IMPLEMENTATION_PROGRESS.md#cp061-typed-office-client-core).
+Status: CP06.1 client core, CP06.2 authenticated office entry/live roster, CP06.3 Phaser world rendering/movement input and CP06.4 availability/seat controls are implemented and locally verified with a mocked browser transport. Real API/two-browser, smooth reconciliation/accessibility and text messaging remain. See [implementation progress](IMPLEMENTATION_PROGRESS.md#cp061-typed-office-client-core).
 
 Depends on: CP02 sample, CP04 account/company path and CP05 protocol. Deliverable: the browser-based two-user office.
 
 1. Mount one Phaser instance with a typed React bridge. Phaser owns drawing, input, camera, animations, local prediction/reconciliation and remote interpolation; React owns forms, panels and essential accessible controls.
 2. Load the approved manifest/assets and render the fixed map, walls/furniture, labels, approved avatars and seat animations with consistent origins/depth. Client geometry improves feel but never grants authority.
 3. Replace raw `/ws` with a Socket.IO client that obtains memory-only tickets, waits for `office:ready`, applies only matching-version/epoch deltas and requests a full snapshot after gaps. Drop offline inputs; rejoin from fresh bootstrap on relevant conflicts.
-4. Add visible connecting/offline/full/access-ended/takeover/version-mismatch/session-expiry states. Clear participants and private state on leave, tenant switch, logout and teardown.
+4. Add visible connecting/offline/full/access-ended/takeover/version-mismatch/session-expiry states. Clear participants and private state on leave, tenant switch, logout and teardown. CP06.2/06.4 implement basic connection/access states, explicit leave, availability and seat controls; richer reconnect and gap UI remain.
 5. Add allowlisted display-name/appearance persistence through the proposed profile API and publish safe changes to authorized office state. Reject arbitrary texture URLs and unsupported catalog IDs.
 6. Remove or hide unsupported chat/calendar/recording/editor/desk-ownership/reactive legacy focus controls from the MVP routes and bundles where practical. Keep useful artwork and licensed helpers; delete obsolete transport/auth adapters after callers move.
 7. Verify keyboard/focus/dialog behavior, zoom/essential controls, resize and reduced-motion behavior where applicable. Product language/RTL expansion follows CP01's explicit scope, not chat language.

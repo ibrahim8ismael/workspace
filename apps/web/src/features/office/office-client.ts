@@ -3,6 +3,9 @@ import {
   officeReadySchema,
   officeSocketAuthSchema,
   officeCommandAckSchema,
+  presenceUpdateEventSchema,
+  seatSitEventSchema,
+  seatStandEventSchema,
   worldInputEventSchema,
   worldSnapshotSchema,
   type OfficeBootstrapResponse,
@@ -222,6 +225,48 @@ export class OfficeClient {
       payload: { sequence: this.inputSequence, dx, dy },
     });
     socket.emit('world:input', event);
+  }
+
+  setAvailability(availability: 'available' | 'busy' | 'away') {
+    return this.sendCommand('presence:update', presenceUpdateEventSchema, {
+      availability,
+    });
+  }
+
+  sit(seatId: string) {
+    return this.sendCommand('seat:sit', seatSitEventSchema, { seatId });
+  }
+
+  stand() {
+    return this.sendCommand('seat:stand', seatStandEventSchema, {});
+  }
+
+  private sendCommand<T extends { eventId: string; officeEpoch: string }>(
+    eventName: string,
+    schema: { safeParse: (value: unknown) => { success: boolean; data?: T } },
+    payload: unknown,
+  ) {
+    const socket = this.socket;
+    const snapshot = this.state.snapshot;
+    if (!socket?.connected || this.state.status !== 'connected' || !snapshot)
+      return Promise.reject(new Error('office_disconnected'));
+    const eventId = crypto.randomUUID();
+    const parsed = schema.safeParse({ eventId, officeEpoch: snapshot.officeEpoch, payload });
+    if (!parsed.success || !parsed.data) return Promise.reject(new Error('invalid_command'));
+    return new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('command_timeout')), 3000);
+      socket.emit(eventName, parsed.data, (raw: unknown) => {
+        clearTimeout(timer);
+        const ack = officeCommandAckSchema.safeParse(raw);
+        if (!ack.success || ack.data.eventId !== eventId) {
+          reject(new Error('invalid_acknowledgement'));
+        } else if (!ack.data.ok) {
+          reject(new Error(ack.data.error.code));
+        } else {
+          resolve();
+        }
+      });
+    });
   }
 
   private fail(message: string) {

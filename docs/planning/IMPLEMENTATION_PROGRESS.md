@@ -300,6 +300,16 @@ Codex extended the approved Commons catalog loader to expose all versioned avata
 
 The browser test uses a protocol-shaped mock socket and does not replace the API's actual Socket.IO integration tests. Real browser-to-API sessions, two-browser collision/seat tests, visual anchor/occlusion review, camera/zoom/accessibility checks and prediction/interpolation remain. The event validates and sends input; no client-side collision authority was added. Text chat still has no backend contract.
 
+## CP06.4 — Availability and seat controls
+
+Codex connected the map controls to `presence:update`, `seat:sit` and `seat:stand`. Each command uses a fresh event ID and current office epoch, validates the server acknowledgement and surfaces bounded failures. The UI uses the last server snapshot to show current availability, occupied seats and sitting state; it does not optimistically change presence/seat state before the server delta arrives. Available seat buttons are derived from the runtime seat list.
+
+| Batch | Scope | Status | Evidence |
+| --- | --- | --- | --- |
+| CP06.4 | Server-acknowledged availability, sit and stand controls | Locally verified with mocked office transport | Web typecheck and 31 unit tests pass; Playwright Chromium E2E passes through availability update, seat claim/release, movement, and socket cleanup. Backend runtime/API suites separately cover command authorization and serialization |
+
+The mocked browser transport does not prove two real clients competing for the same chair. Full Socket.IO seat-race, denial UX, reconnect resync and browser access-loss behavior remain acceptance work.
+
 ## CP04.5a — security and operations boundary review
 
 Codex reviewed the current HTTP configuration, password service, audit model, local proxy and existing evidence. The review found the local implementation controls and the outstanding deployment gaps; it made no runtime/security-policy changes. See the [CP04.5a findings](CP04_BROWSER_AND_DELIVERY.md#cp045a--security-and-operations-boundary-review).

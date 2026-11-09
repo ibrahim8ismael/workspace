@@ -145,6 +145,39 @@
   image-rendering: pixelated;
 }
 
+.office-world-controls {
+  display: grid;
+  gap: 16px;
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fbfbf7;
+}
+
+.office-world-controls h3 {
+  margin: 0 0 8px;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.office-world-control-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.office-world-control-row button[aria-pressed='true'] {
+  border-color: #8da6b9;
+  background: #edf3f7;
+}
+
+.office-action-error {
+  margin: 0;
+  color: #8b322c;
+  font-size: 12px;
+}
+
 .office-preview-map .commons-scene-status {
   color: var(--muted);
   font-size: 12px;

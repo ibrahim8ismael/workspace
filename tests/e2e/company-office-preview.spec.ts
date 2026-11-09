@@ -99,6 +99,43 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
     socket.send(
       '0{"sid":"e2e-engine","upgrades":[],"pingInterval":25000,"pingTimeout":20000,"maxPayload":100000}',
     );
+    let stateVersion = 0;
+    let availability = 'available';
+    let sittingAt: string | null = null;
+    const seatIds = [
+      'commons-northwest-table:0',
+      'commons-northwest-table:1',
+      'commons-southeast-table:0',
+      'commons-southeast-table:1',
+    ];
+    const emitWorldDelta = () => {
+      const firstSeat = sittingAt === seatIds[0];
+      socket.send(
+        `42/office,["world:delta",${JSON.stringify({
+          officeEpoch,
+          baseVersion: stateVersion,
+          stateVersion: ++stateVersion,
+          serverTime: Date.now(),
+          participants: [
+            {
+              participationId,
+              displayName: account.displayName,
+              appearance: { bodyId: 'commons-worker', paletteId: 'teal' },
+              position: firstSeat ? { x: 80, y: 80 } : { x: 368, y: 272 },
+              facing: 'south',
+              availability,
+              seatId: sittingAt,
+              lastProcessedInputSequence: 0,
+            },
+          ],
+          removedParticipationIds: [],
+          seats: seatIds.map((seatId) => ({
+            seatId,
+            occupantParticipationId: seatId === sittingAt ? participationId : null,
+          })),
+        })}]`,
+      );
+    };
     socket.onMessage((message) => {
       if (typeof message !== 'string') return;
       if (message.startsWith('40/office,')) {
@@ -127,12 +164,7 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
                   lastProcessedInputSequence: 0,
                 },
               ],
-              seats: [
-                'commons-northwest-table:0',
-                'commons-northwest-table:1',
-                'commons-southeast-table:0',
-                'commons-southeast-table:1',
-              ].map((seatId) => ({ seatId, occupantParticipationId: null })),
+              seats: seatIds.map((seatId) => ({ seatId, occupantParticipationId: null })),
             },
           })}]`,
         );
@@ -140,8 +172,28 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
       }
       if (message.startsWith('42/office,')) {
         try {
-          const packet = JSON.parse(message.slice('42/office,'.length)) as [string, unknown];
+          const packetStart = message.indexOf('[');
+          const ackId = message.slice('42/office,'.length, packetStart);
+          const packet = JSON.parse(message.slice(packetStart)) as [
+            string,
+            { eventId?: string; payload?: { availability?: string; seatId?: string } },
+          ];
           officeEvents.push(packet[0]);
+          if (ackId) {
+            socket.send(
+              `43/office,${ackId}[${JSON.stringify({ eventId: packet[1].eventId, ok: true })}]`,
+            );
+          }
+          if (packet[0] === 'presence:update' && packet[1].payload?.availability) {
+            availability = packet[1].payload.availability;
+            emitWorldDelta();
+          } else if (packet[0] === 'seat:sit' && packet[1].payload?.seatId) {
+            sittingAt = packet[1].payload.seatId;
+            emitWorldDelta();
+          } else if (packet[0] === 'seat:stand') {
+            sittingAt = null;
+            emitWorldDelta();
+          }
         } catch {
           officeEvents.push('invalid-packet');
         }
@@ -179,6 +231,12 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await expect(page.getByRole('list', { name: 'People in the office' })).toContainText(
     account.displayName,
   );
+  await page.getByRole('button', { name: 'Busy' }).click();
+  await expect(page.getByRole('button', { name: 'Busy' })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'Sit · commons-northwest-table:0' }).click();
+  await expect(page.getByRole('button', { name: 'Stand up' })).toBeVisible();
+  await page.getByRole('button', { name: 'Stand up' }).click();
+  await expect(page.getByRole('button', { name: 'Sit · commons-northwest-table:0' })).toBeVisible();
   await page.locator('.live-commons-scene canvas').click();
   await page.keyboard.down('ArrowRight');
   await expect.poll(() => officeEvents.includes('world:input')).toBe(true);
@@ -192,5 +250,8 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await expect(page.locator('.commons-scene canvas')).toHaveCount(0);
   expect(unexpectedApiCalls).toEqual([]);
   expect(officeEvents).toContain('connect');
+  expect(officeEvents).toContain('presence:update');
+  expect(officeEvents).toContain('seat:sit');
+  expect(officeEvents).toContain('seat:stand');
   expect(officeEvents).toContain('world:input');
 });

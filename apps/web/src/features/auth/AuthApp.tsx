@@ -4,13 +4,14 @@ import { ApiClient, ApiError } from '../../lib/api';
 import { clearLegacyAuthStorage } from '../../lib/legacy-storage';
 import { messageForApi } from './messages';
 import { WorkspaceHome } from '../workspaces/WorkspaceHome';
+import { CompanyOverview } from '../workspaces/CompanyOverview';
 import { AccountSecurity } from './AccountSecurity';
 import { useSessionGuard } from './use-session-guard';
 import './account.css';
 
 type AuthView = 'login' | 'register' | 'verify' | 'resend' | 'forgot' | 'reset';
 type AccountState = 'loading' | 'signed-out' | 'signed-in';
-type AppScreen = 'companies' | 'security';
+type AppScreen = 'companies' | 'company' | 'security';
 
 function Shell({ children }: { children: ReactNode }) {
   return (
@@ -336,6 +337,7 @@ export default function AuthApp() {
   const [canRetryBoot, setCanRetryBoot] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [screen, setScreen] = useState<AppScreen>('companies');
+  const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
   const [mutationPending, setMutationPending] = useState(false);
   const [sessionActionStatus, setSessionActionStatus] = useState('');
   const [sessionActionError, setSessionActionError] = useState('');
@@ -361,7 +363,7 @@ export default function AuthApp() {
   useEffect(() => {
     document.title =
       state === 'signed-in'
-        ? `${screen === 'security' ? 'Account security' : 'Companies'} · Gather Lite`
+        ? `${screen === 'security' ? 'Account security' : screen === 'company' ? 'Company' : 'Companies'} · Gather Lite`
         : 'Gather Lite';
   }, [screen, state]);
 
@@ -417,6 +419,7 @@ export default function AuthApp() {
     setWorkspaces([]);
     setState('signed-in');
     setScreen('companies');
+    setSelectedCompanyId(null);
     setLoadingWorkspaces(true);
     setStatus('');
     setWorkspaceError('');
@@ -460,6 +463,7 @@ export default function AuthApp() {
     setSessionActionStatus('');
     setSessionActionError('');
     setScreen('companies');
+    setSelectedCompanyId(null);
     setState('signed-out');
   }
 
@@ -499,6 +503,7 @@ export default function AuthApp() {
         return null;
       }
       setAccount(verified);
+      setSelectedCompanyId(null);
       const accepted = await sessionGuard.acceptReauthenticatedSession();
       if (current !== generation.current || !accepted) return null;
       return verified;
@@ -586,6 +591,38 @@ export default function AuthApp() {
     }
   }
 
+  function openCompany(workspaceId: string) {
+    if (mutationLock.current) return;
+    setSelectedCompanyId(workspaceId);
+    setScreen('company');
+    setStatus('');
+    setWorkspaceError('');
+  }
+
+  function backToCompanies() {
+    if (mutationLock.current) return;
+    setSelectedCompanyId(null);
+    setScreen('companies');
+  }
+
+  function openSecurity() {
+    if (mutationLock.current) return;
+    setSelectedCompanyId(null);
+    setScreen('security');
+  }
+
+  function lostCompanyAccess(workspaceId: string) {
+    setSelectedCompanyId(null);
+    setScreen('companies');
+    setWorkspaces((rows) => rows.filter((workspace) => workspace.id !== workspaceId));
+    setWorkspaceError('');
+    setWorkspaceLoadError('');
+    setStatus(
+      'This company is no longer available to your account. Your company list will be checked again.',
+    );
+    void retryWorkspaces();
+  }
+
   function retryBoot() {
     generation.current += 1;
     setStatus('');
@@ -612,6 +649,32 @@ export default function AuthApp() {
     );
   if (!account) return null;
 
+  if (screen === 'company' && selectedCompanyId)
+    return (
+      <CompanyOverview
+        key={selectedCompanyId}
+        account={account}
+        api={api}
+        workspaceId={selectedCompanyId}
+        mutationPending={mutationPending}
+        mutationLock={mutationLock}
+        currentSession={sessionGuard.currentSession}
+        sessionsLoading={sessionGuard.loading}
+        sessionsError={sessionGuard.error}
+        sessionActionStatus={sessionActionStatus}
+        sessionActionError={sessionActionError}
+        onRefreshSessions={() => void sessionGuard.refresh()}
+        onKeepWorking={() => void keepWorking()}
+        onSessionExpire={() =>
+          signedOut('Your session has reached its estimated expiry. Sign in again to continue.')
+        }
+        onBackToCompanies={backToCompanies}
+        onOpenSecurity={openSecurity}
+        onUnauthorized={signedOut}
+        onLostAccess={lostCompanyAccess}
+      />
+    );
+
   if (screen === 'security')
     return (
       <AccountSecurity
@@ -630,7 +693,7 @@ export default function AuthApp() {
         onExpire={() =>
           signedOut('Your session has reached its estimated expiry. Sign in again to continue.')
         }
-        onBack={() => setScreen('companies')}
+        onBack={backToCompanies}
         onReauthenticate={reauthenticate}
         onSignedOut={signedOut}
         onUnauthorized={() => signedOut('Your session changed. Sign in again to continue.')}
@@ -653,7 +716,8 @@ export default function AuthApp() {
       loggingOut={loggingOut}
       onRetryWorkspaces={() => void retryWorkspaces()}
       onUnauthorized={signedOut}
-      onOpenSecurity={() => setScreen('security')}
+      onOpenSecurity={openSecurity}
+      onViewCompany={openCompany}
       mutationPending={mutationPending}
       runMutation={runMutation}
       currentSession={sessionGuard.currentSession}

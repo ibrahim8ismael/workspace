@@ -91,3 +91,13 @@ Verification on 2026-11-09:
 - No browser secret storage or runtime exceptions were observed. The test-only file controls shortened fixture deadlines/aged recent proof; they are outside the repository and expose no HTTP endpoint. No Docker, Redis or actual mail provider was run.
 
 The remaining CP04.2 deliverable is explicit current-company selection and isolated company context in CP04.2c. Edge and public provider/ingress acceptance remain outside this local Chrome evidence.
+
+### CP04.2c — current-company verification
+
+Luna implemented `CompanyOverview` and Codex reviewed the selection lifecycle and independently tested it. Opening a company checks the existing authorized detail route. The browser validates the response schema and matches the returned company ID to the requested ID. The view displays the company name, address, role and member count. Selection stays in memory. Leaving the company view aborts its request and discards its result. Refresh can run explicitly or on a throttled return to the tab. If the server denies company access, the app clears the context and refreshes the company list while keeping the user signed in.
+
+Headless Chrome 152.0.7977.42 on macOS 26.6.1 arm64 exercised the production build through loopback HTTPS with the actual API and disposable MongoDB. The scenario covered switching between two companies with a held response, rejecting a valid response for the wrong company, clearing selection on reload and through security/reauthentication, owner/member role isolation, actual membership removal through the API, expiry and a subsequent signin under another account. The browser created no office connection and stored no selection or credentials. Edge and deployed ingress checks remain pending.
+
+The final `pnpm check` passed 121 tests, including 19 browser adapter/session tests and 43 backend tests. Formatting, lint, workspace typechecks and production builds passed.
+
+CP04.2 is complete. CP04.3 covers the reproducible private delivery environment.

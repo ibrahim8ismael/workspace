@@ -1,6 +1,6 @@
 # Authentication and company role APIs
 
-Status: backend auth/company API with CP03 office admission · Updated: 2026-11-09. CP04.1/CP04.2b connect browser onboarding and session/security controls; current-company context is the next slice. Local/hosted verification results are recorded separately; this document is not production signoff.
+Status: backend auth/company API with CP03 office admission · Updated: 2026-11-09. CP04.1 and CP04.2 connect browser onboarding, session security and current-company selection. Local/hosted verification results are recorded separately; this document is not production signoff.
 
 ## Runtime contract coverage (CP01, 2026-11-08)
 

@@ -21,6 +21,7 @@ type Props = {
   onRetryWorkspaces: () => void;
   onUnauthorized: () => void;
   onOpenSecurity: () => void;
+  onViewCompany: (workspaceId: string) => void;
   mutationPending: boolean;
   runMutation: <T>(action: () => Promise<T>, refreshMetadata?: boolean) => Promise<T>;
   currentSession: SessionDto | null;
@@ -63,6 +64,7 @@ export function WorkspaceHome({
   onRetryWorkspaces,
   onUnauthorized,
   onOpenSecurity,
+  onViewCompany,
   mutationPending,
   runMutation,
   currentSession,
@@ -289,7 +291,7 @@ export function WorkspaceHome({
           ) : (
             <ul className="company-list">
               {workspaces.map((workspace) => (
-                <li className="company-row" key={workspace.id}>
+                <li className="company-row" data-workspace-id={workspace.id} key={workspace.id}>
                   <span className="company-avatar" aria-hidden="true">
                     {workspace.name.slice(0, 1).toUpperCase()}
                   </span>
@@ -300,6 +302,14 @@ export function WorkspaceHome({
                     </span>
                   </div>
                   <span className={`role-pill role-${workspace.role}`}>{workspace.role}</span>
+                  <button
+                    className="account-secondary workspace-row-view"
+                    type="button"
+                    disabled={mutationPending}
+                    onClick={() => onViewCompany(workspace.id)}
+                  >
+                    View company
+                  </button>
                 </li>
               ))}
             </ul>

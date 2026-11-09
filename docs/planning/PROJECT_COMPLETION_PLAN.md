@@ -322,7 +322,7 @@ No Docker execution, infrastructure provisioning, real email, publishing or sour
 
 ## 8. Next implementation handoff
 
-CP00–CP03 are complete. CP04 connects the browser account/company path and delivery environment. CP05 connects the verified ticket consumer to authoritative Socket.IO admission and world state. Carry CP01 decisions/contracts forward; do not repeat or reopen accepted choices without a specific change. Account UI/provider setup and the isolated media proof are the next independent work streams when their decisions/access are ready.
+CP00–CP03 are complete. CP04.1 and CP04.2 complete the browser account, security and company context slices. CP04.3 starts the private delivery environment. CP05 connects the verified ticket consumer to authoritative Socket.IO admission and world state. Carry CP01 decisions/contracts forward; do not repeat or reopen accepted choices without a specific change. Account UI/provider setup and the isolated media proof are the next independent work streams when their decisions/access are ready.
 
 Before CP03 starts, its implementer reads the project brief, drift report, existing auth API/evidence, accepted CP01 decisions/office-v1 contract and approved CP02 map/catalog evidence. Name the implementer, preserve the recorded issuance budgets, then commit a concrete implementation scope. Do not start movement, media grants or broad frontend rewrites inside the ticket checkpoint.
 

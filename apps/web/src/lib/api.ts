@@ -195,13 +195,15 @@ export class ApiClient {
   async workspaceDetail(id: string, signal?: AbortSignal): Promise<OfficeWorkspaceDetail> {
     const parsedId = idSchema.safeParse(id);
     if (!parsedId.success) throw new ApiError('validation_failed', 400);
-    return (
+    const workspace = (
       await this.get(
         `/workspaces/${encodeURIComponent(parsedId.data)}`,
         officeWorkspaceDetailResponseSchema,
         signal,
       )
     ).workspace;
+    if (workspace.id !== parsedId.data) throw new ApiError('invalid_response', 200);
+    return workspace;
   }
 
   async sessions(signal?: AbortSignal): Promise<SessionDto[]> {

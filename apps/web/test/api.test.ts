@@ -311,6 +311,20 @@ describe('same-origin API client', () => {
     ).rejects.toMatchObject({
       code: 'invalid_response',
     });
+
+    const mismatchedIdClient = new ApiClient(async () =>
+      json({
+        workspace: {
+          ...company.workspace,
+          id: '0572e96c-f236-4bb1-8d8c-08b8bfda8937',
+          officeId: session.id,
+        },
+      }),
+    );
+    await expect(mismatchedIdClient.workspaceDetail(company.workspace.id)).rejects.toMatchObject({
+      code: 'invalid_response',
+      status: 200,
+    });
   });
 
   it('clears CSRF after current-session revocation, but keeps it after another session is revoked', async () => {

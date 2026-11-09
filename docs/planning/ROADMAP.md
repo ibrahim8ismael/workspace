@@ -20,11 +20,11 @@ The [completion plan](PROJECT_COMPLETION_PLAN.md) provides the cross-stack packe
 | Milestone | Code/local evidence already available | Still open |
 | --- | --- | --- |
 | M0 | Pinned import/toolchain, strict contracts, original Commons map/catalog and verified React/Phaser sample; local transaction/HTTP and loopback HTTPS browser checks | Deployed same-origin environment and media supervisor/cutoff proof |
-| M1 | Backend accounts/sessions/company roles, invitations/transfer/counters, encrypted outbox/worker and safe app audit; 43 backend tests plus CP04.1 account/company onboarding, CP04.2b session/security browser flows and strict response compatibility | Current-company UI, real SMTP/Redis faults, wider password screening, keys/proxy/mirror/recovery evidence |
+| M1 | Backend accounts/sessions/company roles, invitations/transfer/counters, encrypted outbox/worker and safe app audit; 43 backend tests plus CP04.1 account/company onboarding, CP04.2 session security and current-company browser flows and strict response compatibility | Real SMTP/Redis faults, wider password screening, keys/proxy/mirror/recovery evidence |
 | M2 | Approved Commons assignment/bootstrap, map backfill and one-use ticket issue/consume verified in CP03 | Authoritative sockets/world/seats/leases/takeover and integrated Phaser office |
 | M3–M5 | Plans/module boundaries only | Conversations/media/meetings, deployment and measured pilot/recovery |
 
-CP00–CP03 are complete. CP04.1 connects browser onboarding; remaining CP04 work covers session/current-company UI, delivery and infrastructure. CP05 adds authoritative realtime office state. These local results do not close A01–A11.
+CP00–CP03 are complete. CP04.1 and CP04.2 cover browser onboarding, session security and current-company context. CP04.3 starts the private delivery environment. CP05 adds authoritative realtime office state. These local results do not close A01–A11.
 
 ## B2B SaaS scope gate
 

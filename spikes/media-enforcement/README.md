@@ -148,3 +148,29 @@ signaling remains reachable on host loopback. Refreshed-token tests, source-gran
 binding, authenticated policy pulls, independent guard process/freeze scenarios,
 controller loss, control failure, protected retirement storage and production
 supervisor privilege separation remain CP07 gates. No production integration.
+
+## CP07.8 isolated guard process and guard-freeze experiment
+
+Run the media fixture with `--run-local --isolated`, optionally adding
+`--freeze-guard`. The SFU binds signaling to its own loopback; port 7880 is not
+published. A separate pinned Node 24.18.0 container shares that network namespace,
+serves guarded signaling on published loopback port 17885, and accesses the SFU
+through namespace loopback. Only ICE/TCP 17881 is otherwise published. The fixture
+asserts no Docker publication for 7880 and failed host HTTP access to 17880.
+The guard container has a read-only root, dropped capabilities, read-only source
+and dependency mounts, read-only retirement storage, and no Docker socket. Its
+process verifies JWTs and reloads persisted retirement before each admission.
+
+Observed 2026-11-10 isolated run: 87 frames / 239 active audio samples; last video
+3356ms and audio 3725ms after starting the supervisor. Guard-freeze run uses Docker
+pause on only the disposable guard while audio/video are already flowing: 87
+frames / 248 samples, last video 3254ms, audio 3632ms; independent supervisor
+confirmed SFU stopped at 3298.051ms on its own relative clock. Both runs rejected
+the original token after restarting guard and SFU. Both cleaned up their containers.
+This is one local TCP topology, not an exhaustive alternate-ingress/TURN audit.
+
+The supervisor still receives no progress in this fixture: it exercises timeout
+shutdown, not a fully wired authenticated policy/install-ACK loop. Refreshed JWTs,
+source restrictions, controller loss, Docker-control failure, supervisor failure,
+shared-tenant impact and deployment privilege isolation remain open acceptance
+requirements. CP07 is not complete from these successful experiments alone.

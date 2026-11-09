@@ -21,9 +21,10 @@ const docker = async (...args) =>
   (await exec('docker', ['--context', context, ...args], { timeout: 30000 })).stdout.trim();
 const image =
   'livekit/livekit-server@sha256:25cd902de7cacbd5f1f779f6a6ac1eae20ba8f56b0935934ce6b0ab80d1e3d20';
+const isolated = process.argv.includes('--isolated');
 const secret = randomBytes(32).toString('hex');
-const config = `port: 7880\nbind_addresses: [0.0.0.0]\nrtc:\n  tcp_port: 17881\n  node_ip: 127.0.0.1\n  use_external_ip: false\nkeys:\n  fixture: ${secret}\n`;
-let id, browser, watchdog, guard;
+const config = `port: 7880\nbind_addresses: [${isolated ? '127.0.0.1' : '0.0.0.0'}]\nrtc:\n  tcp_port: 17881\n  node_ip: 127.0.0.1\n  use_external_ip: false\nkeys:\n  fixture: ${secret}\n`;
+let id, browser, watchdog, guard, guardId;
 const retirementDirectory = await mkdtemp(join(tmpdir(), 'cp07-guard-'));
 let retirement;
 const server = createServer(async (req, res) => {
@@ -48,7 +49,7 @@ try {
     '--label',
     'gather.cp07.fixture=true',
     '-p',
-    '127.0.0.1:17880:7880',
+    isolated ? '127.0.0.1:17885:7885' : '127.0.0.1:17880:7880',
     '-p',
     '127.0.0.1:17881:17881',
     '-e',
@@ -58,6 +59,10 @@ try {
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   for (let i = 0; i < 40; i++) {
     try {
+      if (isolated) {
+        await new Promise((r) => setTimeout(r, 1000));
+        break;
+      }
       await fetch('http://127.0.0.1:17880');
       break;
     } catch {
@@ -72,6 +77,50 @@ try {
   const receiver = await browser.newPage();
   const origin = `http://127.0.0.1:${server.address().port}`;
   const startGuard = async () => {
+    if (isolated) {
+      if (guardId) {
+        await docker('rm', '-f', guardId);
+        guardId = undefined;
+      }
+      const root = process.cwd();
+      guardId = await docker(
+        'run',
+        '-d',
+        '--network',
+        `container:${id}`,
+        '--read-only',
+        '--cap-drop',
+        'ALL',
+        '-v',
+        `${root}/spikes:/workspace/spikes:ro`,
+        '-v',
+        `${root}/node_modules:/workspace/node_modules:ro`,
+        '-v',
+        `${root}/apps/api/node_modules:/workspace/apps/api/node_modules:ro`,
+        '-v',
+        `${retirementDirectory}:/retirements:ro`,
+        '-e',
+        'CP07_KEY=fixture',
+        '-e',
+        `CP07_SECRET=${secret}`,
+        '-e',
+        `CP07_ORIGIN=${origin}`,
+        '-e',
+        'CP07_RETIREMENTS=/retirements',
+        'node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d',
+        'node',
+        '/workspace/spikes/media-enforcement/guard-process.mjs',
+      );
+      for (let i = 0; i < 40; i++) {
+        try {
+          await fetch('http://127.0.0.1:17885');
+          return 'ws://127.0.0.1:17885';
+        } catch {
+          await new Promise((r) => setTimeout(r, 100));
+        }
+      }
+      throw new Error('isolated guard did not start');
+    }
     retirement = new RetirementStore(retirementDirectory);
     const verifier = new TokenVerifier('fixture', secret);
     guard = createSignalingGuard({
@@ -91,6 +140,16 @@ try {
     return `ws://127.0.0.1:${guard.server.address().port}`;
   };
   let signaling = await startGuard();
+  if (isolated) {
+    let bypassReachable = false;
+    try {
+      await fetch('http://127.0.0.1:17880', { signal: AbortSignal.timeout(1000) });
+      bypassReachable = true;
+    } catch {}
+    if (bypassReachable) throw new Error('Direct signaling bypass is reachable');
+    const ports = JSON.parse(await docker('inspect', id))[0].NetworkSettings.Ports;
+    if (ports['7880/tcp']?.length) throw new Error('SFU signaling port published');
+  }
   await Promise.all([publisher.goto(origin), receiver.goto(origin)]);
   await Promise.all(
     [publisher, receiver].map((page) =>
@@ -194,7 +253,13 @@ try {
       );
       throw error;
     });
+  if (isolated) retirement = new RetirementStore(retirementDirectory);
   retirement.retire('cutoff-fixture');
+  const freezeGuard = process.argv.includes('--freeze-guard');
+  if (freezeGuard) {
+    if (!guardId) throw new Error('--freeze-guard requires --isolated');
+    await docker('pause', guardId);
+  }
   const startedAt = Date.now();
   watchdog = spawn(
     process.execPath,
@@ -222,7 +287,7 @@ try {
   if (after !== final.frames) throw new Error('Media still advancing after shutdown');
   if ((await receiver.evaluate(() => window.audioSamples)) !== final.audioSamples)
     throw new Error('Audio still advancing after shutdown');
-  guard.close();
+  guard?.close();
   await docker('start', id);
   signaling = await startGuard();
   await receiver.evaluate((url) => {
@@ -243,6 +308,8 @@ try {
   console.log(
     JSON.stringify({
       scenario: 'missing-guard-progress',
+      isolated,
+      freezeGuard,
       staleTokenAcceptedAfterRestart,
       framesReceived: final.frames,
       audioSamples: final.audioSamples,
@@ -254,6 +321,7 @@ try {
   );
 } finally {
   guard?.close();
+  if (guardId) await docker('rm', '-f', guardId);
   watchdog?.kill();
   await browser?.close();
   server.close();

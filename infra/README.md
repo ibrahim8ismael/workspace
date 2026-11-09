@@ -1,6 +1,6 @@
 # Local delivery environment
 
-CP04.3a prepares the local Compose configuration. Runtime validation is the next checkpoint. The existing setup authorization says “Do not run Docker”; see [setup progress](../docs/planning/SETUP_PROGRESS.md). Starting this environment requires an explicit owner instruction.
+CP04.3a configuration is complete. The owner explicitly authorized local Docker runtime testing for CP04.3b on 2026-11-09, superseding the earlier “Do not run Docker” setup restriction in [setup progress](../docs/planning/SETUP_PROGRESS.md). Local runtime validation is complete; see the [evidence](../docs/planning/CP04_BROWSER_AND_DELIVERY.md#cp043b--runtime-evidence). This authorization covers local containers and Mailpit; it does not install certificate trust or configure an external mail provider.
 
 ## Service layout
 
@@ -14,7 +14,7 @@ CP04.3a prepares the local Compose configuration. Runtime validation is the next
 | Worker      | Outbox dispatch and SMTP delivery          | Explicit `worker` profile |
 | Mailpit     | Local message capture and persistent inbox | `http://localhost:8025`   |
 
-The `edge` and `data` networks are internal. Published ports bind to host loopback. The API uses `API_HOST=0.0.0.0` inside its container, with `APP_ORIGIN=https://localhost:8443`. Caddy routes API requests before its static-file fallback and removes forwarding headers before proxying. The API retains its existing proxy policy.
+The `edge` and `data` networks are internal. Only Caddy and Mailpit also join the standard `host-access` bridge so their published ports work on the host. That bridge permits outbound connectivity for those two services; the API, worker, MongoDB and Redis remain on internal networks. Published ports bind to host loopback. The API uses `API_HOST=0.0.0.0` inside its container, with `APP_ORIGIN=https://localhost:8443`. Caddy routes API requests before its static-file fallback and removes forwarding headers before proxying. The API retains its existing proxy policy.
 
 MongoDB, queue Redis, the inbox and Caddy certificates use named volumes. The cache profile is optional and disposable. The local worker delivers to Mailpit. SMTP TLS is disabled in that development profile. The application’s production SMTP validation requires TLS.
 
@@ -30,7 +30,7 @@ The helper creates `infra/.env.local` with mode `0600` and a random 32-byte outb
 
 ## Explicit startup sequence
 
-These commands are for the runtime checkpoint after the owner authorizes Docker execution. Docker Compose v2 is required.
+The owner authorized these local runtime commands on 2026-11-09. Docker Compose v2 or later is required.
 
 First build and run the setup job. It starts MongoDB, initializes the expected single-node replica set and provisions the existing API indexes.
 
@@ -68,7 +68,7 @@ docker compose --env-file infra/.env.local -f infra/compose.yaml --profile app c
 curl --cacert /private/tmp/gather-local-root.crt https://localhost:8443/api/health/live
 ```
 
-Certificate trust installation is a separate explicit action. The health route checks API liveness. Runtime acceptance also covers cookie/Origin behavior, MongoDB transactions, persistence, worker delivery and restart recovery.
+Certificate trust installation is a separate explicit action. The health route checks API liveness. Local acceptance covered cookie/Origin behavior, MongoDB commit/abort, persistence, worker delivery and restart recovery. The isolated Chrome test process bypassed certificate warnings; a separate HTTPS client validated the exported CA, including after recreation. OS certificate trust was not changed.
 
 Open `https://localhost:8443` and the local inbox at `http://localhost:8025`. Register a fixture account and use its captured verification code in the application. Verify company creation, invitation acceptance and password recovery through the same origin. The local inbox contains sensitive one-time codes.
 
@@ -85,3 +85,9 @@ Named volumes and `infra/.env.local` retain the local database, queue, inbox, ce
 The Dockerfile and Compose file pin image digests for Node 24.18.0, MongoDB 8.2.6, Redis 8.2.3, Caddy 2.11.9 and Mailpit 1.33.1. Linux amd64 and arm64 manifest entries were verified against the official registry on 2026-11-09. Application dependencies use the frozen pnpm lockfile.
 
 Configuration references are the [Compose specification](https://compose-spec.github.io/compose-spec/), [Caddy proxy documentation](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy), [Caddy local TLS settings](https://caddyserver.com/docs/caddyfile/options), [Mailpit Docker image](https://mailpit.axllent.org/docs/install/docker/) and [Mailpit runtime options](https://mailpit.axllent.org/docs/configuration/runtime-options/). Review and runtime evidence belong in the [CP04 delivery plan](../docs/planning/CP04_BROWSER_AND_DELIVERY.md).
+
+## Verified local boundary
+
+CP04.3b passed on 2026-11-09 using Docker Engine 29.8.2, Compose 5.5.0, OrbStack, Linux arm64 containers and Headless Chrome 152.0.7977.42 on macOS 26.6.1. All three application image targets built. Actual verification, invitation and recovery mail reached Mailpit. A paused BullMQ job survived full environment recreation and was delivered after resume; the queue, database, inbox and encryption key were retained, while optional cache data was discarded.
+
+After verification the project containers were stopped with the documented `down` command. Named volumes and the ignored private settings file were retained. Run setup before first use of new data; a normal restart uses the app/worker profiles without the setup profile. Include the optional cache profile only if needed. External SMTP/provider delivery, public ingress, Edge and production acceptance remain later checkpoints.

@@ -111,7 +111,7 @@ The owner selected OpenCode with `opencode/deepseek-v4.1-flash-free#max` for the
 | CP04.3a | Private local Compose files, pinned build images, replica-set/index setup, persistent queue, optional cache, explicit worker and local inbox | Official Compose schema, configuration review, key creation and initialization failure checks, repository gates |
 | CP04.3b | Authorized environment startup and end-to-end local delivery | Actual image builds, internal networking, HTTPS/cookies/Origin, replica-set transactions, queue/inbox persistence, captured verification/recovery/invitations and worker restart |
 
-The [local runbook](../../infra/README.md) contains the concrete startup sequence and private settings. It uses `https://localhost:8443`, a loopback inbox on port 8025 and internal container networks. The existing setup constraint is “Do not run Docker”, recorded in [setup progress](SETUP_PROGRESS.md). Runtime startup requires an explicit owner instruction after configuration review.
+The [local runbook](../../infra/README.md) contains the concrete startup sequence and private settings. It uses `https://localhost:8443`, a loopback inbox on port 8025 and internal container networks. The existing setup constraint is “Do not run Docker”, recorded in [setup progress](SETUP_PROGRESS.md). After configuration review and the CP04.3a push, the owner explicitly authorized local Docker testing on 2026-11-09. This supersedes that setup restriction for CP04.3b; certificate trust installation and external SMTP remain outside this authorization.
 
 CP04.2c was pushed as `0f087b0` and [hosted CI passed](https://github.com/ibrahim8ismael/workspace/actions/runs/42545164151).
 
@@ -126,3 +126,32 @@ The key helper was verified in disposable directories for exclusive creation, mo
 Accepted configuration choices: setup jobs are explicit and the existing API startup index validator remains authoritative; the local worker uses development mode for plaintext SMTP to Mailpit; the cache is optional; runtime images retain the workspace dependency tree; mongosh globals are declared only for `infra/mongodb/**/*.js` without disabling lint rules. These are local configurations, not a production deployment.
 
 CP04.3b remains open: actual image builds, setup/restart, HTTPS/cookies/Origin, transactional writes, real queue-to-inbox delivery and persistence. CP04.4 provider delivery and later operational acceptance are not completed by this checkpoint.
+
+### CP04.3b — runtime evidence
+
+Completed on 2026-11-09 after explicit owner authorization to run local Docker. CP04.3a was pushed as `b1cb776`; [hosted CI passed](https://github.com/ibrahim8ismael/workspace/actions/runs/42613839075). Codex executed the runtime checks. OpenCode `opencode/deepseek-v4.1-flash-free#max` implemented the one required configuration correction; its completed session and model/variant were verified independently.
+
+The first runtime exposed an issue missed by static checks: published ports were absent from actual `NetworkSettings.Ports` when Caddy and Mailpit joined only internal bridges. The correction adds `host-access`, a standard bridge used only by those two services, while retaining their internal service links. API/worker/Mongo/Redis remain internal; the two host bindings remain exactly `127.0.0.1:8443` and `127.0.0.1:8025`. This intentionally permits egress for Caddy/Mailpit. No external mail provider or relay is configured. See the [Docker network specification](https://docs.docker.com/compose/how-tos/networking/).
+
+Independent actual evidence:
+
+- Docker Engine **29.8.2**, Compose **5.5.0**, OrbStack; Linux **arm64** images; macOS **26.6.1**, Headless Chrome **152.0.7977.42**. All API, worker and web image targets built successfully from the pinned bases and frozen dependency lockfile. This does not constitute an amd64 runtime test.
+- Fresh Mongo initialization and reuse succeeded. The API exited before index setup, then became healthy after the explicit index job. Actual Mongo transactions committed and aborted correctly in an isolated validation collection.
+- Runtime inspection verified only the two loopback publishers, exact `host-access` membership, internal backend networks, nonroot API/worker processes, read-only/drop-all API/worker/Caddy and queue AOF/noeviction. All configured service healthchecks passed; worker delivery provides its functional evidence.
+- A client explicitly trusting the exported public local CA verified HTTPS before and after full recreation. SPA deep links and API route separation passed. Same-origin CSRF bootstrap succeeded, cross-site bootstrap was rejected and forged forwarding headers did not bypass an invalid Origin. Browser tests used an isolated temporary profile with certificate warnings bypassed; no OS trust installation occurred.
+- Through actual Caddy/API/Mongo/Redis/worker/Mailpit, Chrome passed registration, captured verification-code entry, signin, company creation, explicit retry after a corrupted committed response without duplicate company creation, cookie reload, invitation acceptance and password recovery. The cookie was Secure/HttpOnly/SameSite=Lax at `/`; no browser secret storage or runtime exceptions were observed.
+- A separate fixture paused the actual BullMQ queue, requested recovery, verified the queued job contained only `outboxEventId`, then performed full `down`/`up` without volume deletion. The waiting job, queue marker and inbox persisted; the optional cache marker disappeared. After queue resume, the restarted worker delivered the message, its code reset the password, and company membership and subsequent session reload worked. The retained encryption key successfully decrypted the queued payload.
+- The verification harness was corrected for BullMQ 6's paused metadata/wait-list representation, excluding one-shot setup jobs from persistent-service `--wait`, and waiting for UI mutation completion. Independent accounts avoided the unchanged recovery/login budgets. Failed harness attempts are not counted as passing product evidence.
+- The revised Compose file passed the official schema, boundary assertions, formatting and `git diff --check`. Application code/dependencies were unchanged from the **121-test** passing CP04.3a baseline. Current service logs contained neither the retained key nor any of nine captured one-time codes; runtime image checks confirmed private settings and Git metadata were excluded. These are bounded local checks, not a general redaction audit.
+
+After final checks the project containers were stopped, with named volumes and the private key retained. CP04.3 is complete for the reproducible local environment. External provider acceptance, duplicate/ambiguous acknowledgement and outage/expiry drills remain CP04.4; production security/operations, public ingress and Edge remain later acceptance work.
+
+## CP04.4 execution plan
+
+| Step | Deliverable | Evidence / dependency |
+| --- | --- | --- |
+| CP04.4a | Repeatable local delivery fault scenarios against the real queue and capture sink | Commit-before-enqueue, queue unavailable/recovery, duplicate jobs and expired payload handling; preserve existing limits and avoid external mail |
+| CP04.4b | Acknowledgement/crash and secret-lifecycle drills | Model accepted SMTP delivery followed by lost acknowledgement; record duplicate possibility, restart behavior, cleanup and lost/wrong-key outcomes without claiming exactly-once mail |
+| CP04.4c | Authorized staging SMTP provider setup and delivery | Owner decision D06: sending domain/provider, DNS control, designated recipient inboxes and protected key storage; actual external sends require an agreed concrete setup |
+
+Codex continues planning/review/independent verification and documentation. Product-code changes remain delegated to the owner-selected OpenCode DeepSeek free model at max effort. The local fault steps can progress before provider access is available.

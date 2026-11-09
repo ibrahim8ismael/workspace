@@ -80,8 +80,9 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   ).toBeVisible();
 
   await page.getByRole('button', { name: 'Open office preview' }).click();
-  await expect(page.getByText('This is a local UI preview.')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Chat is disconnected' })).toBeVisible();
+  await expect(page.getByText('Not connected to the office.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Enter office' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Text chat is unavailable' })).toBeVisible();
   await expect(page.getByLabel('Message office-preview')).toBeDisabled();
   await expect(page.locator('.commons-scene canvas')).toHaveCount(1);
   await expect(page.getByText('Avatar standing.')).toBeVisible();

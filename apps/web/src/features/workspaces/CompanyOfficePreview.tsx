@@ -1,21 +1,33 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import type { OfficeWorkspaceDetail } from '../../lib/api';
+import { ApiClient } from '../../lib/api';
 import { CommonsScene } from '../../../commons-preview/CommonsScene';
 import { OfficePreviewChat } from './OfficePreviewChat';
+import { OfficeClient } from '../office/office-client';
 import './office-preview.css';
 
 type Props = {
+  api: ApiClient;
   detail: OfficeWorkspaceDetail;
   onBack: () => void;
 };
 
-export function CompanyOfficePreview({ detail, onBack }: Props) {
+export function CompanyOfficePreview({ api, detail, onBack }: Props) {
   const titleRef = useRef<HTMLHeadingElement>(null);
   const emptyState = detail.memberCount === 1 ? 'member' : 'members';
+  const client = useMemo(
+    () => new OfficeClient(api, detail.id, detail.officeId),
+    [api, detail.id, detail.officeId],
+  );
+  const state = useSyncExternalStore(client.subscribe, client.getSnapshot, client.getSnapshot);
 
   useEffect(() => {
     titleRef.current?.focus();
   }, []);
+
+  useEffect(() => () => client.close(), [client]);
+
+  const connected = state.status === 'connected';
 
   return (
     <section className="company-office-preview" aria-labelledby="company-office-preview-title">
@@ -26,7 +38,9 @@ export function CompanyOfficePreview({ detail, onBack }: Props) {
             <h1 id="company-office-preview-title" ref={titleRef} tabIndex={-1}>
               {detail.name}
             </h1>
-            <span className="office-preview-badge">Offline preview</span>
+            <span className="office-preview-badge">
+              {connected ? 'Office connected' : 'Company-scoped office'}
+            </span>
           </div>
           <p className="workspace-lead">gather/{detail.slug}</p>
         </div>
@@ -35,11 +49,36 @@ export function CompanyOfficePreview({ detail, onBack }: Props) {
         </button>
       </header>
 
-      <p className="office-preview-notice" role="note">
-        <strong>This is a local UI preview.</strong> It does not request an office join ticket,
-        connect Socket.IO or LiveKit, or load live participants and messages. It is not office
-        entry, and no chat can be sent from this page.
-      </p>
+      <div className="office-session-controls" aria-label="Office connection controls">
+        <p className="office-session-status" role="status" aria-live="polite">
+          <span className={`status-dot ${connected ? 'available' : 'away'}`} aria-hidden="true" />
+          {state.status === 'connected'
+            ? `${state.snapshot?.participants.length ?? 0} people in the office`
+            : state.status === 'connecting'
+              ? 'Connecting to the office…'
+              : state.status === 'ended'
+                ? state.message
+                : state.status === 'error'
+                  ? state.message
+                  : state.status === 'disconnected'
+                    ? state.message
+                    : 'Not connected to the office.'}
+        </p>
+        {connected ? (
+          <button className="account-secondary" type="button" onClick={() => client.close()}>
+            Leave office
+          </button>
+        ) : (
+          <button
+            className="account-primary"
+            type="button"
+            disabled={state.status === 'connecting'}
+            onClick={() => void client.connect()}
+          >
+            {state.status === 'connecting' ? 'Connecting…' : 'Enter office'}
+          </button>
+        )}
+      </div>
 
       <div className="company-office-preview-layout">
         <section
@@ -48,13 +87,21 @@ export function CompanyOfficePreview({ detail, onBack }: Props) {
         >
           <div className="office-preview-panel-heading">
             <p className="account-eyebrow">APPROVED COMMONS MAP</p>
-            <h2 id="preview-map-title">Office map</h2>
-            <p>Read-only local renderer using the approved Commons geometry and art.</p>
+            <h2 id="preview-map-title">{connected ? 'Map renderer sample' : 'Office map'}</h2>
+            <p>
+              {connected
+                ? 'The office connection is live; this room image is still a static rendering sample.'
+                : 'Read-only local renderer using the approved Commons geometry and art.'}
+            </p>
           </div>
           <CommonsScene />
         </section>
 
-        <OfficePreviewChat companyName={detail.name} />
+        <OfficePreviewChat
+          companyName={detail.name}
+          connected={connected}
+          participants={state.snapshot?.participants ?? []}
+        />
       </div>
 
       <p className="office-preview-company-meta">

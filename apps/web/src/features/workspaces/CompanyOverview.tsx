@@ -207,6 +207,7 @@ export function CompanyOverview({
             }
           >
             <LazyCompanyOfficePreview
+              api={api}
               detail={detail}
               onBack={() => dispatchView('back-to-details')}
             />

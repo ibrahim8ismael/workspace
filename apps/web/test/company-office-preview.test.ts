@@ -9,6 +9,7 @@ import {
 } from '../src/features/workspaces/company-overview-view';
 import { OfficePreviewChat } from '../src/features/workspaces/OfficePreviewChat';
 import { CompanyOfficePreview } from '../src/features/workspaces/CompanyOfficePreview';
+import { ApiClient } from '../src/lib/api';
 import ChatView from '../chat/ChatView';
 import { language, setLanguage } from '../i18n';
 
@@ -25,6 +26,7 @@ const detail: OfficeWorkspaceDetail = {
   role: 'member',
   memberCount: 3,
 };
+const api = new ApiClient(async () => new Response('{}', { status: 500 }));
 
 describe('company office preview selection', () => {
   it('opens only for the loaded, authorized company detail', () => {
@@ -47,15 +49,15 @@ describe('company office preview selection', () => {
 
   it('renders the authenticated company identity and explicit local-preview boundary', () => {
     const html = renderToStaticMarkup(
-      createElement(CompanyOfficePreview, { detail, onBack: () => undefined }),
+      createElement(CompanyOfficePreview, { api, detail, onBack: () => undefined }),
     );
     expect(html).toContain('Example Company');
     expect(html).toContain('gather/example-company');
-    expect(html).toContain('Offline preview');
+    expect(html).toContain('Company-scoped office');
     expect(html).toContain('Back to company details');
-    expect(html).toContain('This is a local UI preview.');
-    expect(html).toContain('It is not office entry');
-    expect(html).toContain('Chat is disconnected');
+    expect(html).toContain('Not connected to the office.');
+    expect(html).toContain('Enter office');
+    expect(html).toContain('Text chat is unavailable');
   });
 });
 
@@ -64,10 +66,10 @@ describe('disconnected preview chat', () => {
     const html = renderToStaticMarkup(
       createElement(OfficePreviewChat, { companyName: 'Example Company' }),
     );
-    expect(html).toContain('Chat is disconnected');
+    expect(html).toContain('Text chat is unavailable');
     expect(html).toContain('No participants or messages are loaded for Example Company.');
     expect(html).toContain('Sending is disabled');
-    expect(html).toContain('Disconnected office chat preview');
+    expect(html).toContain('Text chat unavailable');
     expect(html).toMatch(/<fieldset[^>]*disabled/);
     expect(html).toMatch(/<textarea[^>]*disabled/);
     expect(html).toMatch(/<button[^>]*class="chat-send"[^>]*disabled/);

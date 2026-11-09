@@ -54,6 +54,41 @@
   line-height: 1.55;
 }
 
+.office-session-controls {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.office-session-status {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.office-session-status .status-dot {
+  position: static;
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border: 0;
+}
+
+.office-session-controls .account-primary,
+.office-session-controls .account-secondary {
+  flex: 0 0 auto;
+}
+
 .company-office-preview-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
@@ -128,6 +163,24 @@
   margin-top: 5px;
   border-width: 0;
   background: #b08a42;
+}
+
+.office-live-participants {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 9px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.office-live-participants li {
+  padding: 4px 8px;
+  border: 1px solid #e4dfd1;
+  border-radius: 999px;
+  color: #514c3e;
+  background: #fffdf7;
+  font-size: 11px;
 }
 
 .office-preview-chat-status h2 {

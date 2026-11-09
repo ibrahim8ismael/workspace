@@ -16,27 +16,34 @@ const ignoreChange = () => undefined;
 
 type Props = {
   companyName: string;
+  connected?: boolean;
+  participants?: Array<{ participationId: string; displayName: string }>;
 };
 
 /** The existing office chat surface, pinned to an explicitly disconnected, empty state. */
-export function OfficePreviewChat({ companyName }: Props) {
+export function OfficePreviewChat({ companyName, connected = false, participants = [] }: Props) {
   return (
     <section className="office-preview-chat" aria-labelledby="office-preview-chat-title">
       <div className="office-preview-chat-status" role="status">
-        <span className="status-dot away" aria-hidden="true" />
+        <span className={`status-dot ${connected ? 'available' : 'away'}`} aria-hidden="true" />
         <div>
-          <h2 id="office-preview-chat-title">Chat is disconnected</h2>
+          <h2 id="office-preview-chat-title">Text chat is unavailable</h2>
           <p>
-            No participants or messages are loaded for {companyName}. Sending is disabled until live
-            office chat is available.
+            {connected
+              ? `The office connection is live for ${companyName}, but this release has no text-message service.`
+              : `No participants or messages are loaded for ${companyName}.`}{' '}
+            Sending is disabled.
           </p>
+          {connected && (
+            <ul className="office-live-participants" aria-label="People in the office">
+              {participants.map((participant) => (
+                <li key={participant.participationId}>{participant.displayName}</li>
+              ))}
+            </ul>
+          )}
         </div>
       </div>
-      <fieldset
-        className="office-preview-chat-frame"
-        disabled
-        aria-label="Disconnected office chat preview"
-      >
+      <fieldset className="office-preview-chat-frame" disabled aria-label="Text chat unavailable">
         <ChatView
           conversation={PREVIEW_CONVERSATION}
           channels={PREVIEW_CHANNELS}

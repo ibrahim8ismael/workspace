@@ -280,7 +280,17 @@ Codex added the browser-side typed HTTP and realtime foundation for live office 
 | --- | --- | --- | --- |
 | CP06.1 | Typed office bootstrap/ticket client, socket lifecycle and pure snapshot/delta reducer | Locally verified; not a release gate | Web TypeScript typecheck passed; focused world-state tests passed 3/3 for contiguous update, gap recovery and stale epoch rejection |
 
-The existing `ChatView` has no message persistence or server event contract. The office roster and movement can be connected to CP05, while text sending remains explicitly disabled pending an agreed chat scope and backend implementation. CP06.2 will mount the client from the authenticated company context and show live connection/access states; subsequent batches will connect the renderer and test a two-user journey.
+The existing `ChatView` has no message persistence or server event contract. The office roster and movement can be connected to CP05, while text sending remains explicitly disabled pending an agreed chat scope and backend implementation.
+
+## CP06.2 — Authenticated live office entry and roster
+
+Codex mounted `OfficeClient` in the company-scoped office screen. A person enters only after an explicit button press; successful admission displays the server-authoritative participant count and names. Leave and route teardown close the socket so the API releases the runtime participation. HTTP, socket errors, access-ended/takeover and disconnected states are visible. The Commons image remains a labeled static renderer sample, not a projection of live coordinates. The existing chat surface stays disabled and identifies the missing text-message service.
+
+| Batch | Scope | Status | Evidence |
+| --- | --- | --- | --- |
+| CP06.2 | Authenticated office entry, live connection status/roster, explicit leave and teardown | Locally verified; real service integration remains | Web typecheck passed; `pnpm test:web`: 30/30; `pnpm test:e2e`: 1 Chromium test passed. E2E verifies that preview rendering does not admit a socket before the user chooses Enter. The browser test still mocks auth/company APIs and does not exercise a live API/socket or a second browser |
+
+The next renderer batch must load the approved map geometry and art, draw current server positions/seats, send bounded movement intent from keyboard input and reconcile the local participant to authoritative snapshots/deltas. A real two-browser entry/move/leave test follows. No text-chat route exists in the accepted MVP contracts; adding message storage/transient delivery requires a product and backend scope decision.
 
 ## CP04.5a — security and operations boundary review
 

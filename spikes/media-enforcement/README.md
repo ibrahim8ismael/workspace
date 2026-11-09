@@ -263,3 +263,24 @@ A deployment enforcing an eight-second bound for this fault model needs a separa
 surviving stop path or an independently enforced SFU lease. A restart policy alone
 is not proof. CP07 cannot claim this resilience until that path is implemented and
 measured. Docker-control failure remains a separate untested infrastructure case.
+
+## CP07.13 independent watchdog crash guardian
+
+`supervisor-guardian.mjs` runs as a separate host process, launches the existing
+watchdog, forwards its private progress pipe and independently inspects/kills the
+same fixed labelled no-restart SFU when that watchdog exits. Input cannot select
+another target or command. Run the media fixture with
+`--run-local --isolated --policy-loss --supervisor-crash --guarded-supervisor`.
+The harness SIGKILLs the identified child watchdog, not its surviving guardian.
+The original unguarded negative crash test remains available for comparison.
+
+Observed 2026-11-10: controller loss plus watchdog SIGKILL now stops real audio at
+455ms and video at 124ms after fault initiation. Guardian confirmed SFU stopped
+306.926ms after detecting child death. Original and refreshed-token restart
+replays were denied. Processes and fixture containers were cleaned up. The guard-
+controller healthy phase still asserts continuing real media before injecting faults.
+
+This is process-crash redundancy, not independent infrastructure: both host
+processes use the same Docker control channel. Simultaneous guardian/watchdog
+failure, host/VM failure, Docker API unavailability and production service lifecycle
+are not covered by this result. No restart-policy-only guarantee is asserted.

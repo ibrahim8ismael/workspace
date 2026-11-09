@@ -312,14 +312,37 @@ try {
     await docker('pause', guardId);
   }
   let startedAt = Date.now();
+  const guardedSupervisor = process.argv.includes('--guarded-supervisor');
+  let workerPid;
   watchdog = spawn(
     process.execPath,
-    ['spikes/media-enforcement/supervisor-process.mjs', context, id, 'media-fixture'],
+    [
+      guardedSupervisor
+        ? 'spikes/media-enforcement/supervisor-guardian.mjs'
+        : 'spikes/media-enforcement/supervisor-process.mjs',
+      context,
+      id,
+      'media-fixture',
+    ],
     { stdio: ['pipe', 'pipe', 'inherit'] },
   );
   let result = '';
+  let statusLines = '';
+  const watchdogExited = new Promise((resolve, reject) => {
+    watchdog.on('exit', resolve);
+    watchdog.on('error', reject);
+  });
   watchdog.stdout.on('data', (chunk) => {
     result += chunk;
+    statusLines += chunk.toString();
+    const lines = statusLines.split('\n');
+    statusLines = lines.pop();
+    for (const line of lines) {
+      try {
+        const event = JSON.parse(line);
+        if (event.kind === 'worker-started') workerPid = event.pid;
+      } catch {}
+    }
   });
   if (progressStall) {
     const before = await receiver.evaluate(() => ({
@@ -376,7 +399,11 @@ try {
     if (freezeGuard) await docker('pause', guardId);
     startedAt = Date.now();
   }
-  if (process.argv.includes('--supervisor-crash')) {
+  if (process.argv.includes('--supervisor-crash') && guardedSupervisor) {
+    if (!workerPid) throw new Error('Guardian did not identify its child');
+    process.kill(workerPid, 'SIGKILL');
+  }
+  if (process.argv.includes('--supervisor-crash') && !guardedSupervisor) {
     if (!policyLoss) throw new Error('--supervisor-crash requires --policy-loss');
     const beforeCrash = await receiver.evaluate(() => ({
       frames: window.framesReceived,
@@ -409,10 +436,7 @@ try {
       'Unexpected media cessation: investigate before claiming supervisor-crash enforcement',
     );
   }
-  const code = await new Promise((resolve, reject) => {
-    watchdog.on('exit', resolve);
-    watchdog.on('error', reject);
-  });
+  const code = await watchdogExited;
   if (code !== 0) throw new Error('Supervisor failed');
   await new Promise((r) => setTimeout(r, 2000));
   const final = await receiver.evaluate(() => ({
@@ -467,6 +491,7 @@ try {
           ? 'fixture-install-progress-then-stall'
           : 'missing-guard-progress',
       isolated,
+      guardedSupervisor,
       freezeGuard,
       staleTokenAcceptedAfterRestart,
       refreshedTokenAcceptedAfterRestart,

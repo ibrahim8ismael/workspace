@@ -519,3 +519,9 @@ Added reproducible `--supervisor-crash` mode requiring the isolated authenticate
 Actual result: **failed cutoff**, 170 additional video frames and 426 active waveform samples over the 8500ms observation. The failure is joint controller loss plus supervisor crash. Controller loss with the supervisor alive passed CP07.11. Current admission checks do not revoke an already-forwarding transport when the only effective shutdown process dies.
 
 Next engineering requirement: establish and measure a surviving independent shutdown path or SFU-enforced lease for this fault model. Docker-control failure, source restrictions and shared-tenant effects remain open too. CP07 and dependent CP08 acceptance remain open; no production cutoff guarantee is claimed.
+
+## CP07.13 — Surviving watchdog-crash enforcement path (2026-11-10)
+
+Implemented a separate fixed-target guardian process around the existing watchdog. It validates the full SFU container identity/fixture label/no-restart policy, forwards progress and independently confirms SFU shutdown when the child watchdog dies. The harness identifies and SIGKILLs the child specifically; the guardian survives and enforces shutdown. The CP07.12 failing experiment remains available without this new mode.
+
+Actual `--run-local --isolated --policy-loss --supervisor-crash --guarded-supervisor` run passed: last decoded video **124ms**, last active waveform **455ms** after fault initiation; guardian stop confirmation **306.926ms** from child exit. Both original and refreshed-token restart attempts were rejected. Resources cleaned up. Both enforcement processes still share Docker infrastructure; control-channel, simultaneous-process and host failures remain distinct open limits. Source and tenant-isolation experiments follow separately.

@@ -1418,6 +1418,134 @@ describe('credential concurrency and durable mail', () => {
     expect(send).not.toHaveBeenCalled();
     expect((await outbox.model.findById(record._id).select('+payload').lean())?.payload).toBeNull();
   });
+  it('keeps an outbox pending through a queue outage and enqueues the same job once on recovery', async () => {
+    const browser = new Client();
+    await browser.bootstrap();
+    const email = `queue-outage-${randomUUID()}@example.com`;
+    status(
+      await browser.send('post', '/api/auth/register', {
+        email,
+        password,
+        displayName: 'Queue Outage Test',
+      }),
+      202,
+    );
+    const user = await identities.users.findOne({ normalizedEmail: email }).lean();
+    if (!user) throw new Error('Account missing');
+    const record = await outbox.model
+      .findOne({ subjectId: user._id, kind: 'verify-email', state: 'pending' })
+      .select('+payload')
+      .lean();
+    if (!record?.payload) throw new Error('Outbox missing encrypted payload');
+    const encrypted = record.payload;
+    expect(decryptMail(record._id, encrypted, encryption).recipient).toBe(email);
+
+    const outageAdd = vi.fn(async (name: string, payload: { outboxEventId: string }) => {
+      if (payload.outboxEventId === record._id) throw new Error('injected-queue-outage');
+      return { name, payload };
+    });
+    const outageQueue = {
+      getJob: vi.fn(async () => undefined),
+      add: outageAdd,
+    } as unknown as Queue;
+    await expect(dispatchOutbox(outbox.model, outageQueue)).rejects.toThrow(
+      'injected-queue-outage',
+    );
+    const pending = await outbox.model.findById(record._id).select('+payload').lean();
+    expect(pending?.state).toBe('pending');
+    expect(pending?.payload).toEqual(encrypted);
+    if (!pending?.payload) throw new Error('Outbox payload missing after queue outage');
+    expect(decryptMail(record._id, pending.payload, encryption).recipient).toBe(email);
+
+    const add = vi.fn(async (name: string, payload: { outboxEventId: string }) => ({
+      name,
+      payload,
+    }));
+    const recoveredQueue = {
+      getJob: vi.fn(async () => undefined),
+      add,
+    } as unknown as Queue;
+    await dispatchOutbox(outbox.model, recoveredQueue);
+    const targetAdds = add.mock.calls.filter((args) => args[1]?.outboxEventId === record._id);
+    expect(targetAdds).toHaveLength(1);
+    expect(add).toHaveBeenCalledWith(
+      'transactional-email',
+      { outboxEventId: record._id },
+      expect.objectContaining({ jobId: record._id }),
+    );
+    const queued = await outbox.model.findById(record._id).select('+payload').lean();
+    expect(queued?.state).toBe('queued');
+    expect(queued?.payload).toEqual(encrypted);
+
+    const duplicateAdd = vi.fn(async (name: string, payload: { outboxEventId: string }) => ({
+      name,
+      payload,
+    }));
+    const existingGetJob = vi.fn(async (id: string) => ({ id }));
+    const existingQueue = {
+      getJob: existingGetJob,
+      add: duplicateAdd,
+    } as unknown as Queue;
+    await dispatchOutbox(outbox.model, existingQueue);
+    expect(existingGetJob).toHaveBeenCalledWith(record._id);
+    expect(duplicateAdd).not.toHaveBeenCalled();
+    expect((await outbox.model.findById(record._id).select('+payload').lean())?.state).toBe(
+      'queued',
+    );
+  });
+  it('keeps mail retryable after a provider failure, then delivers it and ignores replay', async () => {
+    const browser = new Client();
+    await browser.bootstrap();
+    const email = `provider-failure-${randomUUID()}@example.com`;
+    status(
+      await browser.send('post', '/api/auth/register', {
+        email,
+        password,
+        displayName: 'Provider Failure Test',
+      }),
+      202,
+    );
+    const user = await identities.users.findOne({ normalizedEmail: email }).lean();
+    if (!user) throw new Error('Account missing');
+    const record = await outbox.model
+      .findOne({ subjectId: user._id, kind: 'verify-email', state: 'pending' })
+      .select('+payload')
+      .lean();
+    if (!record?.payload) throw new Error('Outbox missing encrypted payload');
+    const encrypted = record.payload;
+    expect(decryptMail(record._id, encrypted, encryption).recipient).toBe(email);
+
+    const send = vi
+      .fn(async () => {})
+      .mockRejectedValueOnce(new Error('injected-provider-failure'));
+    await expect(deliverOutbox(record._id, outbox.model, encryption, send)).rejects.toThrow(
+      'mail_delivery_failed',
+    );
+    expect(send).toHaveBeenCalledTimes(1);
+    const retryable = await outbox.model.findById(record._id).select('+payload').lean();
+    expect(retryable?.state).toBe('pending');
+    expect(retryable?.attempts).toBe(1);
+    expect(retryable?.deliveredAt).toBeNull();
+    expect(retryable?.payload).toEqual(encrypted);
+    if (!retryable?.payload) throw new Error('Outbox payload missing after provider failure');
+    expect(decryptMail(record._id, retryable.payload, encryption).recipient).toBe(email);
+
+    send.mockResolvedValueOnce(undefined);
+    await deliverOutbox(record._id, outbox.model, encryption, send);
+    expect(send).toHaveBeenCalledTimes(2);
+    const delivered = await outbox.model.findById(record._id).select('+payload').lean();
+    expect(delivered?.state).toBe('delivered');
+    expect(delivered?.attempts).toBe(2);
+    expect(delivered?.payload).toBeNull();
+    expect(delivered?.deliveredAt).toBeInstanceOf(Date);
+
+    await deliverOutbox(record._id, outbox.model, encryption, send);
+    expect(send).toHaveBeenCalledTimes(2);
+    const replay = await outbox.model.findById(record._id).select('+payload').lean();
+    expect(replay?.state).toBe('delivered');
+    expect(replay?.attempts).toBe(2);
+    expect(replay?.payload).toBeNull();
+  });
 });
 
 describe('additional session isolation', () => {

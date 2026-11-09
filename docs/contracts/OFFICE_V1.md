@@ -87,7 +87,7 @@ These values are exported in `packages/contracts/src/limits.ts`; they are engine
 | Raw inbound app event / parsed-value JSON | 4 KiB | CP05 transport byte cap before parsing plus strict schema/UTF-8 guard |
 | Snapshot/delta JSON | 64 KiB; at most 512 seat rows | CP05 outbound construction; CP02 map seat bound and CP06 receiver checks |
 | Geometry dimension | At most 32768 pixels/axis | CP02 importer/manifest validation; not a map size recommendation |
-| Movement input | 30/sec/participation; server simulation 20 Hz, broadcast at most 10 Hz | CP05 runtime budgets/coalescing; CP11 latency/noisy-neighbor proof |
+| Movement input | 30/sec/participation; server simulation 20 Hz, broadcast at most 10 Hz; 192 px/sec normalized speed; held intent expires after 250 ms | CP05.3a per-participation budget, monotonic simulation and validated Commons collision; CP11 latency/noisy-neighbor proof |
 | Policy check / maximum lease | 1 second / 5 seconds, capped by remaining session validity | CP05 monotonic bounded checks; measured under failure/load |
 | Ticket lifetime | At most 30 seconds, capped by session validity | CP03 transaction-time issuance/consume |
 | Ticket issuance | Actor 10/min; authorized company 120/min; service 1000/min | CP03 dedicated scoped budgets; 429 when exceeded, no extra capability; recheck before pilot tuning |

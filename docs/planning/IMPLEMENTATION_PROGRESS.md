@@ -129,6 +129,16 @@ The API now sets a 5-second Socket.IO handshake timeout and allows up to 60 conn
 
 The CP05.2 local exit covers one API process and uses polling to observe committed changes within the bounded lease interval; it does not connect mutation transactions to an immediate cross-process notification channel. The attempt limiter and runtime are process-local, so multi-instance deployment needs a shared policy/rate coordination design. A real Mongo outage drill remains an operations proof. Movement, seats, recovery/takeover and browser socket integration remain later CP05/CP06 work.
 
+### CP05.3a — Authoritative movement intent
+
+The `/office` gateway accepts strict directional intent only from an admitted socket and binds it to the ticket-derived participation, current epoch and monotonic input sequence. A 30-per-second per-socket attempt budget runs before parsing, with a separate 30 accepted intents-per-second runtime budget per participation. A process-local 20 Hz simulation normalizes diagonal input, advances by monotonic elapsed time at 192 px/sec (six 32-pixel tiles per second, matching the legacy UI's reference pace), expires held intent after 250 ms without a refresh and checks every tile/edge transition against validated Commons geometry. Changed participant states are versioned and broadcast in batches at no more than 10 Hz.
+
+| Batch | Scope | Status | Evidence |
+| --- | --- | --- | --- |
+| CP05.3a | Strict input, sequencing/rate limit, bounded simulation, collision and two-client delta | Complete locally; seats/presence not implemented | Full `pnpm --filter @gather/api test`: 73/73 passed. Includes two-client movement/flood integration and six runtime tests for sequence, input rate, server-time speed, diagonal normalization, map bounds and Commons wall collision |
+
+Seat/presence commands, server-side occupancy and browser client integration remain CP05.3b/CP06. Real wall/map fixtures beyond the Commons sample and measured tick/broadcast load remain acceptance work.
+
 ## CP04 — browser accounts, companies and delivery (in progress)
 
 The [CP04 delivery batches](CP04_BROWSER_AND_DELIVERY.md) separate browser onboarding, session settings, the private environment, real delivery and operational handoff. Luna implemented CP04.1/CP04.2. The owner selected OpenCode DeepSeek V4.1 Flash Free at max effort for CP04.3; Codex plans, reviews and independently verifies before each push.

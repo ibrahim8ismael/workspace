@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 import {
   OFFICE_LIMITS,
   officeReadySchema,
@@ -7,7 +8,7 @@ import {
   worldSnapshotSchema,
 } from '@gather/contracts';
 import type { WorldDelta, WorldSnapshot } from '@gather/contracts';
-import { COMMONS_GEOMETRY, validateOfficeGeometry } from '@gather/world';
+import { COMMONS_GEOMETRY, canStep, pixelToTile, validateOfficeGeometry } from '@gather/world';
 import { invariant } from '../../../platform/http/errors.js';
 import { APPROVED_OFFICE_DEFAULT_APPEARANCE } from '../commons-registry.js';
 
@@ -28,6 +29,10 @@ interface RuntimeParticipant {
   readonly userId: string;
   readonly sessionId: string;
   readonly publicState: WorldSnapshot['participants'][number];
+  lastAcceptedInputSequence: number;
+  hasAcceptedInput: boolean;
+  inputTimestamps: number[];
+  inputIntent: { dx: number; dy: number; expiresAt: number };
 }
 
 interface OfficeRuntime {
@@ -37,6 +42,9 @@ interface OfficeRuntime {
   stateVersion: number;
   readonly participants: Map<string, RuntimeParticipant>;
   readonly participationByActor: Map<string, string>;
+  lastSimulationAt: number;
+  lastBroadcastAt: number;
+  readonly dirtyParticipants: Set<string>;
 }
 
 const validatedCommons = validateOfficeGeometry(COMMONS_GEOMETRY);
@@ -55,6 +63,14 @@ export interface OfficeReservation {
     snapshot: WorldSnapshot;
   };
   readonly joined: WorldDelta;
+}
+
+export interface MovementIntent {
+  readonly eventId: string;
+  readonly officeEpoch: string;
+  readonly sequence: number;
+  readonly dx: -1 | 0 | 1;
+  readonly dy: -1 | 0 | 1;
 }
 
 @Injectable()
@@ -82,6 +98,9 @@ export class OfficeRuntimeService {
             stateVersion: 0,
             participants: new Map(),
             participationByActor: new Map(),
+            lastSimulationAt: performance.now(),
+            lastBroadcastAt: performance.now(),
+            dirtyParticipants: new Set(),
           };
 
     invariant(office.workspaceId === ticket.workspaceId, 401, 'unauthorized');
@@ -127,6 +146,10 @@ export class OfficeRuntimeService {
       userId: ticket.userId,
       sessionId: ticket.sessionId,
       publicState: participant,
+      lastAcceptedInputSequence: 0,
+      hasAcceptedInput: false,
+      inputTimestamps: [],
+      inputIntent: { dx: 0, dy: 0, expiresAt: 0 },
     });
     office.participationByActor.set(actorKey, participationId);
     this.offices.set(ticket.officeId, office);
@@ -173,6 +196,151 @@ export class OfficeRuntimeService {
     });
     if (office.participants.size === 0) this.offices.delete(officeId);
     return { roomId: this.roomId(workspaceId, officeId), delta };
+  }
+
+  setMovementIntent(
+    officeId: string,
+    workspaceId: string,
+    userId: string,
+    socketId: string,
+    participationId: string,
+    input: MovementIntent,
+    now = performance.now(),
+  ): 'stale_epoch' | 'stale_version' | 'rate_limited' | 'unauthorized' | null {
+    const office = this.offices.get(officeId);
+    const participant = office?.participants.get(participationId);
+    if (!office || office.workspaceId !== workspaceId || office.officeEpoch !== input.officeEpoch)
+      return 'stale_epoch';
+    if (!participant || participant.userId !== userId || participant.socketId !== socketId)
+      return 'unauthorized';
+    if (participant.hasAcceptedInput && input.sequence <= participant.lastAcceptedInputSequence)
+      return 'stale_version';
+
+    participant.inputTimestamps = participant.inputTimestamps.filter((at) => now - at < 1000);
+    if (participant.inputTimestamps.length >= OFFICE_LIMITS.movementInputsPerSecond)
+      return 'rate_limited';
+    participant.inputTimestamps.push(now);
+    participant.lastAcceptedInputSequence = input.sequence;
+    participant.hasAcceptedInput = true;
+    participant.inputIntent = {
+      dx: input.dx,
+      dy: input.dy,
+      expiresAt: now + OFFICE_LIMITS.movementIntentTimeoutMs,
+    };
+    return null;
+  }
+
+  hasOffice(officeId: string) {
+    return this.offices.has(officeId);
+  }
+
+  tick(
+    officeId: string,
+    now = performance.now(),
+    serverTime = Date.now(),
+  ): { roomId: string; delta: WorldDelta } | null {
+    const office = this.offices.get(officeId);
+    if (!office) return null;
+    const elapsedMs = Math.max(
+      0,
+      Math.min(1000 / OFFICE_LIMITS.simulationHz, now - office.lastSimulationAt),
+    );
+    office.lastSimulationAt = now;
+    const seconds = elapsedMs / 1000;
+    const pixels = OFFICE_LIMITS.movementSpeedPixelsPerSecond * seconds;
+    for (const [participationId, participant] of office.participants) {
+      const previous = participant.publicState.position;
+      const nextSequence = Math.max(
+        participant.publicState.lastProcessedInputSequence,
+        participant.lastAcceptedInputSequence,
+      );
+      let nextPosition = previous;
+      let dx = participant.inputIntent.dx;
+      let dy = participant.inputIntent.dy;
+      if (participant.inputIntent.expiresAt <= now) {
+        dx = 0;
+        dy = 0;
+        participant.inputIntent = { dx: 0, dy: 0, expiresAt: 0 };
+      }
+      if (seconds > 0 && (dx !== 0 || dy !== 0)) {
+        const magnitude = Math.hypot(dx, dy);
+        const stepX = (dx / magnitude) * pixels;
+        const stepY = (dy / magnitude) * pixels;
+        let x = previous.x;
+        let y = previous.y;
+        const steps = Math.max(1, Math.ceil(Math.max(Math.abs(stepX), Math.abs(stepY)) / 8));
+        for (let step = 0; step < steps; step += 1) {
+          const candidateX = x + stepX / steps;
+          if (this.canMoveBetween({ x, y }, { x: candidateX, y })) x = candidateX;
+          const candidateY = y + stepY / steps;
+          if (this.canMoveBetween({ x, y }, { x, y: candidateY })) y = candidateY;
+        }
+        nextPosition = { x, y };
+      }
+
+      const facing = this.facingFor(dx, dy, participant.publicState.facing);
+      if (
+        nextSequence !== participant.publicState.lastProcessedInputSequence ||
+        nextPosition.x !== previous.x ||
+        nextPosition.y !== previous.y ||
+        facing !== participant.publicState.facing
+      ) {
+        participant.publicState.position = nextPosition;
+        participant.publicState.facing = facing;
+        participant.publicState.lastProcessedInputSequence = nextSequence;
+        office.dirtyParticipants.add(participationId);
+      }
+    }
+    if (
+      office.dirtyParticipants.size === 0 ||
+      now - office.lastBroadcastAt < 1000 / OFFICE_LIMITS.broadcastHz
+    )
+      return null;
+
+    const baseVersion = office.stateVersion;
+    office.stateVersion += 1;
+    office.lastBroadcastAt = now;
+    const changed = [...office.dirtyParticipants]
+      .map((id) => office.participants.get(id)?.publicState)
+      .filter((participant): participant is WorldSnapshot['participants'][number] => !!participant);
+    office.dirtyParticipants.clear();
+    return {
+      roomId: this.roomId(office.workspaceId, office.officeId),
+      delta: worldDeltaSchema.parse({
+        officeEpoch: office.officeEpoch,
+        baseVersion,
+        stateVersion: office.stateVersion,
+        serverTime,
+        participants: changed,
+        removedParticipationIds: [],
+        seats: [],
+      }),
+    };
+  }
+
+  private canMoveBetween(from: { x: number; y: number }, to: { x: number; y: number }) {
+    const fromTile = pixelToTile(from);
+    const toTile = pixelToTile(to);
+    if (fromTile.tx === toTile.tx && fromTile.ty === toTile.ty) return true;
+    return canStep(
+      fromTile,
+      toTile,
+      {
+        width: COMMONS_GEOMETRY.widthTiles * COMMONS_GEOMETRY.tileSize,
+        height: COMMONS_GEOMETRY.heightTiles * COMMONS_GEOMETRY.tileSize,
+      },
+      validatedCommons.collision,
+    );
+  }
+
+  private facingFor(
+    dx: number,
+    dy: number,
+    fallback: WorldSnapshot['participants'][number]['facing'],
+  ): WorldSnapshot['participants'][number]['facing'] {
+    if (dx === 0 && dy === 0) return fallback;
+    if (Math.abs(dx) >= Math.abs(dy)) return dx < 0 ? 'west' : 'east';
+    return dy < 0 ? 'north' : 'south';
   }
 
   private snapshot(

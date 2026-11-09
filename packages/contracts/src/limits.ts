@@ -7,6 +7,8 @@ export const OFFICE_LIMITS = Object.freeze({
   maxWorldDimension: 32768,
   maxSeatStateEntries: 512,
   movementInputsPerSecond: 30,
+  movementSpeedPixelsPerSecond: 192,
+  movementIntentTimeoutMs: 250,
   simulationHz: 20,
   broadcastHz: 10,
   policyCheckIntervalMs: 1000,

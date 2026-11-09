@@ -29,6 +29,8 @@ import {
   officeBootstrapResponseSchema,
   joinTicketResponseSchema,
   officeReadySchema,
+  officeCommandAckSchema,
+  worldDeltaSchema,
   OFFICE_LIMITS,
 } from '@gather/contracts';
 import { IdentityModels } from '../dist/modules/identity/identity.models.js';
@@ -1371,6 +1373,107 @@ describe('office socket admission', () => {
       expect(Object.keys(ready.snapshot.participants[0]!)).not.toContain('sessionId');
     } finally {
       client.disconnect();
+    }
+  });
+
+  it('moves only by server intent and broadcasts ordered state to another client', async () => {
+    const owner = await account();
+    const member = await account();
+    const workspaceId = await workspace(owner);
+    await join(owner, workspaceId, member);
+    const { ticket: ownerTicket } = await issueTicket(owner, workspaceId);
+    const { ticket: memberTicket } = await issueTicket(member, workspaceId);
+    const ownerSocket = officeSocket({ ticket: ownerTicket, protocolVersion: 1 });
+    const memberSocket = officeSocket({ ticket: memberTicket, protocolVersion: 1 });
+    try {
+      const ownerReadyEvent = nextSocketEvent<unknown>(ownerSocket, 'office:ready');
+      await connectSocket(ownerSocket);
+      const ownerReady = officeReadySchema.parse(await ownerReadyEvent);
+      const memberReadyEvent = nextSocketEvent<unknown>(memberSocket, 'office:ready');
+      await connectSocket(memberSocket);
+      const memberReady = officeReadySchema.parse(await memberReadyEvent);
+      const ownerStart = ownerReady.snapshot.participants.find(
+        (participant) => participant.participationId === ownerReady.participationId,
+      )!.position;
+      const movementDeltaEvent = nextSocketEvent<Record<string, unknown>>(
+        memberSocket,
+        'world:delta',
+      );
+      const input = {
+        eventId: randomUUID(),
+        officeEpoch: ownerReady.snapshot.officeEpoch,
+        payload: { sequence: 1, dx: 1, dy: 0 },
+      };
+      const ack = await new Promise<unknown>((resolve) => {
+        ownerSocket.emit('world:input', input, resolve);
+      });
+      expect(officeCommandAckSchema.parse(ack)).toEqual({ eventId: input.eventId, ok: true });
+      const delta = await movementDeltaEvent;
+      const moved = worldDeltaSchema
+        .parse(delta)
+        .participants.find(
+          (participant) => participant.participationId === ownerReady.participationId,
+        );
+      expect(moved?.position.x).toBeGreaterThan(ownerStart.x);
+      expect(moved?.position.y).toBe(ownerStart.y);
+      expect(moved?.lastProcessedInputSequence).toBe(1);
+      expect(memberReady.snapshot.participants).toHaveLength(2);
+
+      const staleSequence = { ...input, eventId: randomUUID() };
+      const staleAck = await new Promise<unknown>((resolve) => {
+        ownerSocket.emit('world:input', staleSequence, resolve);
+      });
+      expect(officeCommandAckSchema.parse(staleAck)).toMatchObject({
+        eventId: staleSequence.eventId,
+        ok: false,
+        error: { code: 'stale_version' },
+      });
+
+      const staleEpoch = {
+        ...input,
+        eventId: randomUUID(),
+        officeEpoch: randomUUID(),
+        payload: { sequence: 2, dx: 1, dy: 0 },
+      };
+      const epochAck = await new Promise<unknown>((resolve) => {
+        ownerSocket.emit('world:input', staleEpoch, resolve);
+      });
+      expect(officeCommandAckSchema.parse(epochAck)).toMatchObject({
+        eventId: staleEpoch.eventId,
+        ok: false,
+        error: { code: 'stale_epoch' },
+      });
+
+      for (let sequence = 2; sequence <= 28; sequence += 1) {
+        const repeatedInput = {
+          eventId: randomUUID(),
+          officeEpoch: ownerReady.snapshot.officeEpoch,
+          payload: { sequence, dx: 1, dy: 0 },
+        };
+        const repeatedAck = await new Promise<unknown>((resolve) => {
+          ownerSocket.emit('world:input', repeatedInput, resolve);
+        });
+        expect(officeCommandAckSchema.parse(repeatedAck)).toMatchObject({
+          eventId: repeatedInput.eventId,
+          ok: true,
+        });
+      }
+      const floodedInput = {
+        eventId: randomUUID(),
+        officeEpoch: ownerReady.snapshot.officeEpoch,
+        payload: { sequence: 29, dx: 1, dy: 0 },
+      };
+      const floodedAck = await new Promise<unknown>((resolve) => {
+        ownerSocket.emit('world:input', floodedInput, resolve);
+      });
+      expect(officeCommandAckSchema.parse(floodedAck)).toMatchObject({
+        eventId: floodedInput.eventId,
+        ok: false,
+        error: { code: 'rate_limited' },
+      });
+    } finally {
+      ownerSocket.disconnect();
+      memberSocket.disconnect();
     }
   });
 

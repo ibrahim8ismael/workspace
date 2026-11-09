@@ -7,9 +7,12 @@ import { performance } from 'node:perf_hooks';
 import {
   OFFICE_LIMITS,
   apiErrorCodeSchema,
+  idSchema,
+  officeCommandAckSchema,
   officeAccessEndedSchema,
   officeReadySchema,
   officeSocketAuthSchema,
+  worldInputEventSchema,
   worldDeltaSchema,
 } from '@gather/contracts';
 import { OfficeAdmissionService } from '../office-admission.service.js';
@@ -23,6 +26,7 @@ interface OfficeSocketData {
   officeLeaseTimer?: ReturnType<typeof setTimeout>;
   officeLeaseExpiryTimer?: ReturnType<typeof setTimeout>;
   officeLeaseDeadline?: number;
+  officeMovementAttemptTimestamps?: number[];
 }
 type OfficeSocket = Socket & { data: Socket['data'] & OfficeSocketData };
 
@@ -44,6 +48,8 @@ export class OfficeGateway
     OnGatewayConnection<OfficeSocket>,
     OnGatewayDisconnect<OfficeSocket>
 {
+  private readonly simulationTimers = new Map<string, ReturnType<typeof setInterval>>();
+
   @WebSocketServer()
   private namespace!: Namespace;
 
@@ -88,6 +94,8 @@ export class OfficeGateway
         .to(reservation.roomId)
         .except(socket.id)
         .emit('world:delta', worldDeltaSchema.parse(reservation.joined));
+      this.registerCommands(socket);
+      this.startSimulation(ticket.officeId);
       this.scheduleAuthorizationCheck(socket, ticket, leaseDeadline);
     } catch {
       this.cleanup(socket);
@@ -153,6 +161,7 @@ export class OfficeGateway
       this.namespace
         .to(released.roomId)
         .emit('world:delta', worldDeltaSchema.parse(released.delta));
+      if (!this.runtime.hasOffice(ticket.officeId)) this.stopSimulation(ticket.officeId);
     }
   }
 
@@ -239,5 +248,78 @@ export class OfficeGateway
     }
     this.cleanup(socket);
     socket.disconnect(true);
+  }
+
+  private registerCommands(socket: OfficeSocket) {
+    socket.on('world:input', (raw: unknown, acknowledge?: unknown) => {
+      const now = performance.now();
+      const attempts = (socket.data.officeMovementAttemptTimestamps ?? []).filter(
+        (at: number) => now - at < 1000,
+      );
+      const eventId =
+        typeof raw === 'object' && raw !== null && 'eventId' in raw ? raw.eventId : undefined;
+      if (attempts.length >= OFFICE_LIMITS.movementInputsPerSecond) {
+        socket.data.officeMovementAttemptTimestamps = attempts;
+        this.reply(acknowledge, eventId, 'rate_limited');
+        return;
+      }
+      attempts.push(now);
+      socket.data.officeMovementAttemptTimestamps = attempts;
+      const parsed = worldInputEventSchema.safeParse(raw);
+      if (!parsed.success) {
+        this.reply(acknowledge, eventId, 'validation_failed');
+        return;
+      }
+      const ticket = socket.data.officeAdmission;
+      const reservation = socket.data.officeReservation;
+      if (!ticket || !reservation) return;
+      const error = this.runtime.setMovementIntent(
+        ticket.officeId,
+        ticket.workspaceId,
+        ticket.userId,
+        socket.id,
+        reservation.participationId,
+        { ...parsed.data, ...parsed.data.payload },
+      );
+      this.reply(acknowledge, parsed.data.eventId, error);
+    });
+  }
+
+  private reply(
+    acknowledge: unknown,
+    eventId: unknown,
+    error:
+      | 'stale_epoch'
+      | 'stale_version'
+      | 'rate_limited'
+      | 'unauthorized'
+      | 'validation_failed'
+      | null,
+  ) {
+    if (typeof acknowledge !== 'function' || !idSchema.safeParse(eventId).success) return;
+    acknowledge(
+      officeCommandAckSchema.parse(
+        error ? { eventId, ok: false, error: { code: error } } : { eventId, ok: true },
+      ),
+    );
+  }
+
+  private startSimulation(officeId: string) {
+    if (this.simulationTimers.has(officeId)) return;
+    const timer = setInterval(() => {
+      const update = this.runtime.tick(officeId);
+      if (update) {
+        this.namespace.to(update.roomId).emit('world:delta', worldDeltaSchema.parse(update.delta));
+      }
+      if (!this.runtime.hasOffice(officeId)) this.stopSimulation(officeId);
+    }, 1000 / OFFICE_LIMITS.simulationHz);
+    this.simulationTimers.set(officeId, timer);
+  }
+
+  private stopSimulation(officeId: string) {
+    const timer = this.simulationTimers.get(officeId);
+    if (!timer) return;
+    clearInterval(timer);
+    this.simulationTimers.delete(officeId);
   }
 }

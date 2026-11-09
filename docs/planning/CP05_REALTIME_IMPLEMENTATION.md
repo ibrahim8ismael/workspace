@@ -1,6 +1,6 @@
 # CP05 — Authoritative Socket.IO office implementation plan
 
-Status: CP05.1 and CP05.2 complete locally for a single API process; CP05.3–CP05.4 remain · Updated: 2026-11-09
+Status: CP05.1 and CP05.2 complete locally for one API process; CP05.3a movement complete locally; CP05.3b and CP05.4 remain · Updated: 2026-11-09
 
 CP05 builds the server-owned realtime office on top of completed CP02 map rules and CP03 bootstrap/tickets. The wire contract is in [OFFICE_V1](../contracts/OFFICE_V1.md) and [REALTIME](../contracts/REALTIME.md). The implementation plan in [PROJECT_COMPLETION_PLAN](PROJECT_COMPLETION_PLAN.md#cp05--build-the-authoritative-socketio-office) remains the acceptance baseline. This file orders the work into reviewable, locally testable batches.
 
@@ -28,9 +28,13 @@ Actual Socket.IO clients and the transaction-capable Mongo fixture cover valid a
 
 **Single-process local exit is complete.** Tests also cover repeated primary-policy read failures, fresh-ticket reconnect and epoch replacement. The current poller observes committed policy changes within a bounded interval; it is process-local and does not provide cross-instance immediate notifications. Revisit shared rate limiting and policy notification before multi-instance deployment or any production topology that runs multiple API processes. These results are not deployment or production authorization acceptance.
 
-### CP05.3 — Serialized world commands and seats
+### CP05.3a — Authoritative movement intent
 
-Implement input validation, sequence/replay rules, server-time movement, shared CP02 collision and world bounds. Add availability updates and serialized sit/stand, seat exits and occupancy. Enforce separate per-event, per-participation and per-workspace budgets. Test last-seat/capacity races, spoofing, floods, stale epochs/sequences and two-client visibility.
+**Implemented locally.** The gateway accepts only strict `{ eventId, officeEpoch, payload: { sequence, dx, dy } }` input and resolves actor/participation from the admitted socket. Stale epoch/sequence, malformed input and per-participation floods receive bounded acknowledgements. A 30-per-second per-socket attempt budget applies before payload parsing; the runtime independently limits accepted movement intents to 30 per participation per second. A 20 Hz process-local simulation normalizes diagonal input, uses monotonic elapsed time at the current UI pace of 192 px/sec, expires held intent after 250 ms without a refresh, and applies shared Commons tile/edge collision. Versioned world deltas are batched at no more than 10 Hz. Tests cover two-client visibility, sequence/epoch rejection, input floods, cardinal/diagonal speed parity and map bounds.
+
+### CP05.3b — Availability and seats
+
+Add availability updates and serialized sit/stand, seat exits and occupancy. Enforce separate per-event, per-participation and per-workspace budgets. Test last-seat/capacity races, spoofing, floods, stale epochs/sequences and two-client visibility.
 
 ### CP05.4 — Snapshot/delta recovery and explicit takeover
 

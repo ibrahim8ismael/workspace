@@ -243,3 +243,23 @@ Eighteen tests pass, including ACK suppression for invalid signed policy. Remain
 control and supervisor failure injection, source-specific grant enforcement,
 shared-node impact, deployment authority/key isolation and application-policy
 integration. This mode does not make the entire CP07 release gate accepted.
+
+## CP07.12 negative supervisor-crash acceptance experiment
+
+Run `--run-local --isolated --policy-loss --supervisor-crash` to exercise a joint
+fault: after four seconds of healthy authenticated policy/install progress, remove
+the controller, persist retirement and SIGKILL only the independent supervisor.
+Observe the existing real media flow for 8500ms. The harness reports advancing
+frame/waveform counters and deliberately exits nonzero if forwarding continues;
+finally cleanup is operator/test cleanup and is not counted as media enforcement.
+
+Observed 2026-11-10: forwarding continued, with 170 additional decoded frames and
+426 additional active waveform samples over 8500ms. Security gate failed. Current
+signals admission stops new retired joins but does not terminate already-forwarded
+media without the supervisor. This is a combined controller-loss/supervisor-crash
+failure, not evidence that controller loss alone fails (CP07.11 passed that case).
+
+A deployment enforcing an eight-second bound for this fault model needs a separate
+surviving stop path or an independently enforced SFU lease. A restart policy alone
+is not proof. CP07 cannot claim this resilience until that path is implemented and
+measured. Docker-control failure remains a separate untested infrastructure case.

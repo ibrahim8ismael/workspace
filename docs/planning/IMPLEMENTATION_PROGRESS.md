@@ -511,3 +511,11 @@ Added a separate private synthetic policy authority (`policy-process.mjs`) and `
 Actual audio/video experiment passed after four seconds of healthy authenticated progress: policy container removed, generation retired, last video at **2877ms** and audio at **3238ms** after the fault operation completed. Received 168 frames/446 active waveform samples. Supervisor stop at 7086.772ms on its earlier startup clock. Original and SFU-refreshed replay flags were false after guard/SFU restart. Cleanup removed experiment resources.
 
 Eighteen state/transport tests passed, including no installation ACK for an invalid signed reply. Production boot epochs, controller application-policy scoping, source-specific authorization, shutdown/supervisor control failures, shared-node effects and deployment privilege/key isolation remain open. Docker-log-to-stdin relay is experimental process plumbing and is not claimed as a production supervisor channel.
+
+## CP07.12 — Supervisor-crash negative acceptance evidence (2026-11-10)
+
+Added reproducible `--supervisor-crash` mode requiring the isolated authenticated policy-loss experiment. After healthy real media and policy/install progress, it removes the controller, persists retirement and SIGKILLs the host watchdog. It observes existing decoded video/audio for 8500ms and intentionally fails when forwarding continues. All test resources are cleaned up afterward; cleanup is not enforcement evidence.
+
+Actual result: **failed cutoff**, 170 additional video frames and 426 active waveform samples over the 8500ms observation. The failure is joint controller loss plus supervisor crash. Controller loss with the supervisor alive passed CP07.11. Current admission checks do not revoke an already-forwarding transport when the only effective shutdown process dies.
+
+Next engineering requirement: establish and measure a surviving independent shutdown path or SFU-enforced lease for this fault model. Docker-control failure, source restrictions and shared-tenant effects remain open too. CP07 and dependent CP08 acceptance remain open; no production cutoff guarantee is claimed.

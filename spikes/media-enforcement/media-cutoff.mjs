@@ -376,6 +376,39 @@ try {
     if (freezeGuard) await docker('pause', guardId);
     startedAt = Date.now();
   }
+  if (process.argv.includes('--supervisor-crash')) {
+    if (!policyLoss) throw new Error('--supervisor-crash requires --policy-loss');
+    const beforeCrash = await receiver.evaluate(() => ({
+      frames: window.framesReceived,
+      audio: window.audioSamples,
+    }));
+    watchdog.kill('SIGKILL');
+    await new Promise((resolve) => setTimeout(resolve, 8500));
+    const afterCrash = await receiver.evaluate(() => ({
+      frames: window.framesReceived,
+      audio: window.audioSamples,
+    }));
+    const forwardingContinued =
+      afterCrash.frames > beforeCrash.frames && afterCrash.audio > beforeCrash.audio;
+    console.log(
+      JSON.stringify({
+        scenario: 'supervisor-crash-after-controller-loss',
+        observationMs: 8500,
+        forwardingContinued,
+        additionalFrames: afterCrash.frames - beforeCrash.frames,
+        additionalAudioSamples: afterCrash.audio - beforeCrash.audio,
+        securityGatePassed: !forwardingContinued,
+      }),
+    );
+    // This is a negative acceptance experiment; cleanup does not count as automatic enforcement.
+    if (forwardingContinued)
+      throw new Error(
+        'CP07 cutoff failed: supervisor crash leaves media forwarding beyond eight seconds',
+      );
+    throw new Error(
+      'Unexpected media cessation: investigate before claiming supervisor-crash enforcement',
+    );
+  }
   const code = await new Promise((resolve, reject) => {
     watchdog.on('exit', resolve);
     watchdog.on('error', reject);

@@ -451,3 +451,11 @@ Added `spikes/media-enforcement/supervisor-process.mjs`, a host-side process wit
 Actual OrbStack experiment: official LiveKit v1.13.11 pinned to `sha256:25cd902de7cacbd5f1f779f6a6ac1eae20ba8f56b0935934ce6b0ab80d1e3d20` ran in a network-none container without published ports. The separate supervisor received no installation progress and confirmed container stop at **3185.989ms**. The container was removed afterward. Syntax checks passed; permit/supervisor state tests remain the algorithm evidence.
 
 No audio/video flowed in this fixture: this is confirmed SFU-container shutdown evidence, not a measured media cutoff. CP07 still requires real publisher/subscriber traffic, last-received media timestamps, guard freeze/control failure, replay/bypass and restart scenarios, plus the production supervisor isolation design. CP08 remains gated.
+
+## CP07.4 — Real video cutoff and restart replay (2026-11-10)
+
+Added runnable local `spikes/media-enforcement/media-cutoff.mjs`: pinned disposable LiveKit SFU, random fixture secret, loopback-only signaling/ICE-TCP, two real Chromium WebRTC clients, canvas video publication, decoded-frame measurement and independent supervisor shutdown. Resources are cleaned up after each experiment.
+
+Two actual runs completed. Run one: 89 frames, last decoded video frame at 3498ms after the harness starts the supervisor. Run two: 85 frames, last frame at 3299ms; supervisor reported confirmed SFU stop at 3347.595ms on its own relative clock. After a two-second settling interval the receiver's frame counter remained unchanged over a further one second. This measures video display delivery, not audio or packet-level forwarding; the provisional full revocation budget is not accepted from these two samples.
+
+The second run explicitly restarted the stopped SFU and retried the exact original receiver token: **accepted**. This is a failed cold-restart/replay gate, retained as evidence. The fixture bypasses signaling enforcement by design; durable generation retirement, authenticated guarded signaling, bypass isolation, guard-freeze/controller-loss/control-failure and refreshed-token tests remain. CP08 stays gated on CP07. Syntax/format/whitespace checks passed; the two local media experiments completed and removed their containers.

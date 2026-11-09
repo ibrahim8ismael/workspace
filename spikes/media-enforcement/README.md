@@ -59,3 +59,31 @@ progress. It reported confirmed stop at 3185.989ms. The fixture was then removed
 This result measures container shutdown, not last protected media forwarding.
 Two browser media receivers, RTP/audio evidence, frozen guard injection, failed
 Docker control and replay/bypass tests remain required for CP07 acceptance.
+
+## CP07.4 real video cutoff and restart replay
+
+Run `node spikes/media-enforcement/media-cutoff.mjs --run-local` after authorizing
+local Docker experiments. It uses the pinned SFU image above, LiveKit browser SDK
+2.23.0 and server SDK 2.19.2 already installed in this repository. It creates a
+random fixture secret, publishes signaling and ICE/TCP only on loopback ports
+17880/17881, serves the installed browser SDK on an ephemeral loopback HTTP port,
+and uses two headless Chromium pages. A changing canvas publishes a real WebRTC
+video track; the receiver counts decoded frames via requestVideoFrameCallback.
+After at least 20 frames, a separate supervisor starts without guard progress.
+The experiment records last decoded frame time, verifies the frame counter stays
+stable, explicitly restarts the SFU and attempts the exact old receiver token.
+Finally it closes browsers and removes its own disposable SFU container.
+
+Observed 2026-11-10: first run 89 decoded frames, last frame 3498ms after experiment
+start; repeated run 85 frames, last frame 3299ms, confirmed container stop at
+3347.595ms relative to the supervisor's own start clock. The two clocks have
+different start instants; these values must not be directly subtracted. Counter
+stability was checked after two seconds settling, then over one further second.
+This is decoded video evidence, not an RTP packet capture or audio cutoff test.
+
+**Failed security gate:** the original receiver token was accepted after explicit
+SFU restart. Direct signaling in this fixture intentionally bypasses a guard;
+there is no production signaling enforcement, durable retirement or cold-start
+reconciliation yet. The process exits successfully when the experiment completes,
+including when it observes this security failure; read the reported replay flag.
+CP07 is not accepted and CP08 must not integrate this unguarded fixture.

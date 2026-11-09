@@ -156,6 +156,10 @@ After final checks the project containers were stopped, with named volumes and t
 | CP04.4b | Acknowledgement/crash and secret-lifecycle drills | CP04.4b1 models SMTP accepted with acknowledgement lost and verifies at-least-once retry/duplicate possibility; actual provider acknowledgement and key-loss drills remain later |
 | CP04.4c | Authorized staging SMTP provider setup and delivery | Owner decision D06: sending domain/provider, DNS control, designated recipient inboxes and protected key storage; actual external sends require an agreed concrete setup |
 
+#### Owner direction — external SMTP deferred
+
+On 2026-11-09, the owner directed the team to continue CP04 while ignoring the external email provider for now. CP04.4c is therefore explicitly deferred; no provider, domain, DNS, recipient or production key setup is authorized by this direction, and no external email was sent. The local delivery sink, queue/outbox fault coverage and simulated lost-ack behavior above remain useful, but they do not satisfy real-provider delivery acceptance. Continue with CP04.5 security and operational handoff while keeping the real-provider release gate open.
+
 ### CP04.4a1 — outbox fault contract tests
 
 OpenCode `opencode/deepseek-v4.1-flash-free#max` added two tests to the existing Mongo integration suite. Codex reviewed the diff and independently ran the focused and full-file gates. Queue-add failure leaves the transactionally created outbox row pending with its authenticated-encrypted payload intact; retry enqueues the same ID-only payload, changes state to queued and skips an already-present job. Mail-provider failure raises only the worker's sanitized error, increments attempts and leaves payload retryable; a successful retry clears payload, marks delivery and makes later replay a no-op. Existing transactional rollback and expiry tests remain in place. These scenarios use the existing real Mongo replica-set fixture with a deterministic queue/sender boundary; CP04.4a2 still needs actual Redis/Mailpit runtime faults.

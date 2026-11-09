@@ -380,7 +380,17 @@ The office connection controls and world controls now expose named `group` seman
 | --- | --- | --- | --- |
 | CP06.10a | Add screen-reader names for office control groups and verify keyboard traversal/focus-visible styling | Locally verified in mocked-API Chromium E2E | `pnpm exec playwright test tests/e2e/company-office-preview.spec.ts`: 1 Chromium test passed; ESLint and Prettier passed for changed source/test files |
 
-This is a focused essential-control check, not a full screen-reader audit or Chrome/Edge support signoff. Visual map anchor/occlusion review and server-observed recovery after abrupt transport loss remain in CP06.10b.
+This is a focused essential-control check, not a full screen-reader audit or Chrome/Edge support signoff. Cross-layer recovery after abrupt transport loss and visual map anchor/occlusion review remain in CP06.10b.
+
+## CP06.10b — Unexpected close state and fresh client ticket flow
+
+The mocked-API browser flow now closes the first office WebSocket without using the Leave button. It verifies that the UI reports `Office connection closed.`, removes the live canvas, and allows the user to enter again. The second attempt is observed issuing a second office bootstrap and join ticket and opening a second WebSocket before rendering the connected office again. A separate API integration test exercises a real Socket.IO client disconnecting and verifies that the server broadcasts removal of that participation to the remaining office member.
+
+| Batch | Scope | Status | Evidence |
+| --- | --- | --- | --- |
+| CP06.10b | Verify browser response and fresh bootstrap/ticket on unexpected socket close, alongside API-side participant removal | Locally verified in separate client and API integration tests | Mocked Chromium Playwright E2E: 1 test passed; focused API integration: 1 test passed / 65 skipped. Abrupt close through Playwright's proxy in the live stack still did not prove the combined browser-to-gateway cleanup path |
+
+An exploratory 1280px Chromium capture showed the approved map, wall outlines, furniture/avatar, and disabled chat panel rendered together without overlap in the desktop office layout. This is a visual spot-check only; the actual anchor/occlusion review, Chrome and Edge comparison, and assistive-technology audit remain open for CP06.10c. The screenshot was kept in a temporary directory and is not a committed acceptance artifact.
 
 ## CP04.5a — security and operations boundary review
 

@@ -47,6 +47,10 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   const unexpectedApiCalls: string[] = [];
   const officeEvents: string[] = [];
   const movementInputs: Array<{ dx: number; dy: number }> = [];
+  let officeBootstrapRequests = 0;
+  let officeTicketRequests = 0;
+  let officeConnections = 0;
+  let interruptOfficeConnection: (() => Promise<void>) | undefined;
 
   await page.route('**/api/**', async (route) => {
     const request = route.request();
@@ -74,7 +78,8 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
       return authenticated ? json({ workspaces: [workspace] }) : json({}, 401);
     if (method === 'GET' && path === `/api/workspaces/${workspace.id}`)
       return authenticated ? json({ workspace: { ...workspace, officeId } }) : json({}, 401);
-    if (method === 'GET' && path === `/api/workspaces/${workspace.id}/offices/${officeId}`)
+    if (method === 'GET' && path === `/api/workspaces/${workspace.id}/offices/${officeId}`) {
+      officeBootstrapRequests += 1;
       return json({
         officeId,
         workspaceId: workspace.id,
@@ -82,20 +87,27 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
         protocolVersion: 1,
         manifest: officeManifest,
       });
+    }
     if (
       method === 'POST' &&
       path === `/api/workspaces/${workspace.id}/offices/${officeId}/join-ticket`
-    )
+    ) {
+      officeTicketRequests += 1;
       return json(
         { ticket: 'T'.repeat(43), expiresAt: new Date(Date.now() + 20_000).toISOString() },
         201,
       );
+    }
 
     unexpectedApiCalls.push(`${method} ${path}`);
     return json({ error: { code: 'not_found', message: 'not_found', requestId } }, 404);
   });
 
   await page.routeWebSocket(/\/socket\.io\//, (socket) => {
+    officeConnections += 1;
+    if (officeConnections === 1)
+      interruptOfficeConnection = () =>
+        socket.close({ code: 1011, reason: 'simulated office transport interruption' });
     socket.onClose(() => officeEvents.push('disconnect'));
     socket.send(
       '0{"sid":"e2e-engine","upgrades":[],"pingInterval":25000,"pingTimeout":20000,"maxPayload":100000}',
@@ -255,6 +267,17 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   expect(busyFocusStyle).toBe('solid');
   await page.getByRole('button', { name: 'Busy' }).click();
   await expect(page.getByRole('button', { name: 'Busy' })).toHaveAttribute('aria-pressed', 'true');
+  expect(interruptOfficeConnection).toBeDefined();
+  await interruptOfficeConnection!();
+  await expect(page.getByText('Office connection closed.')).toBeVisible();
+  await expect(page.locator('.live-commons-scene canvas')).toHaveCount(0);
+  await expect.poll(() => officeEvents.filter((event) => event === 'disconnect').length).toBe(1);
+  await page.getByRole('button', { name: 'Enter office' }).click();
+  await expect(page.getByText('1 person in the office')).toBeVisible();
+  await expect(page.locator('.live-commons-scene canvas')).toHaveCount(1);
+  expect(officeBootstrapRequests).toBe(2);
+  expect(officeTicketRequests).toBe(2);
+  expect(officeConnections).toBe(2);
   await page.getByRole('button', { name: 'Sit · commons-northwest-table:0' }).click();
   await expect(page.getByRole('button', { name: 'Stand up' })).toBeVisible();
   await page.getByRole('button', { name: 'Stand up' }).click();
@@ -266,7 +289,7 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await expect.poll(() => movementInputs.at(-1)).toEqual({ dx: 0, dy: 0 });
   await page.getByRole('button', { name: 'Leave office' }).click();
   await expect(page.getByText('Not connected to the office.')).toBeVisible();
-  await expect.poll(() => officeEvents.includes('disconnect')).toBe(true);
+  await expect.poll(() => officeEvents.filter((event) => event === 'disconnect').length).toBe(2);
 
   await page.getByRole('button', { name: 'Back to company details' }).click();
   await expect(page.getByRole('heading', { name: 'Company details' })).toBeVisible();

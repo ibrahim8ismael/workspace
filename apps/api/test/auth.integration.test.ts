@@ -1418,6 +1418,48 @@ describe('credential concurrency and durable mail', () => {
     expect(send).not.toHaveBeenCalled();
     expect((await outbox.model.findById(record._id).select('+payload').lean())?.payload).toBeNull();
   });
+  it('expires a due outbox record during dispatch without queueing it', async () => {
+    const browser = new Client();
+    await browser.bootstrap();
+    const email = `dispatch-expired-${randomUUID()}@example.com`;
+    status(
+      await browser.send('post', '/api/auth/register', {
+        email,
+        password,
+        displayName: 'Dispatch Expiry Test',
+      }),
+      202,
+    );
+    const user = await identities.users.findOne({ normalizedEmail: email }).lean();
+    if (!user) throw new Error('Account missing');
+    const record = await outbox.model
+      .findOne({ subjectId: user._id, kind: 'verify-email', state: 'pending' })
+      .select('+payload')
+      .lean();
+    if (!record?.payload) throw new Error('Outbox missing encrypted payload');
+    expect(decryptMail(record._id, record.payload, encryption).recipient).toBe(email);
+    await outbox.model.updateOne(
+      { _id: record._id },
+      { $set: { expiresAt: new Date(Date.now() - 1000) } },
+    );
+    const getJobIds = new Set<string>();
+    const getJob = vi.fn(async (id: string) => {
+      getJobIds.add(id);
+      return undefined;
+    });
+    const addIds = new Set<string>();
+    const add = vi.fn(async (name: string, payload: { outboxEventId: string }) => {
+      addIds.add(payload.outboxEventId);
+      return { name, payload };
+    });
+    const queue = { getJob, add } as unknown as Queue;
+    await dispatchOutbox(outbox.model, queue);
+    const expired = await outbox.model.findById(record._id).select('+payload').lean();
+    expect(expired?.state).toBe('expired');
+    expect(expired?.payload).toBeNull();
+    expect(getJobIds.has(record._id)).toBe(false);
+    expect(addIds.has(record._id)).toBe(false);
+  });
   it('keeps an outbox pending through a queue outage and enqueues the same job once on recovery', async () => {
     const browser = new Client();
     await browser.bootstrap();

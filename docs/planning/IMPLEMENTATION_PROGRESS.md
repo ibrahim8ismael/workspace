@@ -176,3 +176,14 @@ With Docker authorized, Codex stopped only local queue Redis and registered a ne
 | Batch | Scope | Status | Evidence |
 | --- | --- | --- | --- |
 | CP04.4a2 | Queue Redis unavailable during registration, then worker recovery | Complete | Actual local Compose Redis stop/start; pending encrypted outbox recovered to delivered with one attempt; no message contents exposed |
+
+
+### CP04.4a3 — expiry cleanup before dispatch
+
+OpenCode DeepSeek V4.1 Flash Free at max effort added a test for dispatcher expiration cleanup in the Mongo integration suite. Codex reviewed the test to ensure it only mutates its own fixture. The expired payload is cleared and its outbox ID is not queried or added to the queue. Existing tests cover expired-at-delivery and replay after successful delivery.
+
+| Batch | Scope | Status | Evidence |
+| --- | --- | --- | --- |
+| CP04.4a3 | Expire outbox before queueing and clear encrypted payload | Complete in this commit | Focused Mongo integration case passed; target ID absent from both queue lookup and add |
+
+CP04.4b remains: accepted SMTP send with lost acknowledgement and key lifecycle outcomes. CP04.4c still needs owner-supplied D06 provider/domain/recipient choices before any external send.

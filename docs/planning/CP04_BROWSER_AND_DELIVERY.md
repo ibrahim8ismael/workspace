@@ -152,7 +152,7 @@ After final checks the project containers were stopped, with named volumes and t
 | --- | --- | --- |
 | CP04.4a1 | Mongo integration coverage for queue-add outage and provider failure/retry | Outbox remains encrypted and retryable, recovery reuses one ID-only job, successful replay is a no-op; completed in this test commit |
 | CP04.4a2 | Runtime Redis outage and outbox recovery | Actual Redis stop during registration, encrypted pending outbox, restart and Mailpit delivery; completed in this runtime evidence batch |
-| CP04.4a3 | Expiry cleanup and actual BullMQ duplicate/replay behavior | Expired records are discarded without mail; duplicate job replay leaves one effective delivery |
+| CP04.4a3 | Expiry cleanup and actual BullMQ duplicate/replay behavior | Expired payloads are purged during dispatch without queue contact or mail; duplicate job replay leaves one effective delivery; completed in this test commit |
 | CP04.4b | Acknowledgement/crash and secret-lifecycle drills | Model accepted SMTP delivery followed by lost acknowledgement; record duplicate possibility, restart behavior, cleanup and lost/wrong-key outcomes without claiming exactly-once mail |
 | CP04.4c | Authorized staging SMTP provider setup and delivery | Owner decision D06: sending domain/provider, DNS control, designated recipient inboxes and protected key storage; actual external sends require an agreed concrete setup |
 
@@ -160,7 +160,11 @@ After final checks the project containers were stopped, with named volumes and t
 
 OpenCode `opencode/deepseek-v4.1-flash-free#max` added two tests to the existing Mongo integration suite. Codex reviewed the diff and independently ran the focused and full-file gates. Queue-add failure leaves the transactionally created outbox row pending with its authenticated-encrypted payload intact; retry enqueues the same ID-only payload, changes state to queued and skips an already-present job. Mail-provider failure raises only the worker's sanitized error, increments attempts and leaves payload retryable; a successful retry clears payload, marks delivery and makes later replay a no-op. Existing transactional rollback and expiry tests remain in place. These scenarios use the existing real Mongo replica-set fixture with a deterministic queue/sender boundary; CP04.4a2 still needs actual Redis/Mailpit runtime faults.
 
-The full `pnpm check` and [hosted CI](https://github.com/ibrahim8ismael/workspace/actions/runs/42620649150) passed this test-only change.
+The full `pnpm check` and [hosted CI](https://github.com/ibrahim8ismael/workspace/actions/runs/42620649150) passed the preceding test-only change.
+
+#### CP04.4a3 — expiry before queue dispatch
+
+OpenCode `opencode/deepseek-v4.1-flash-free#max` added a Mongo integration case to age one fresh outbox record, call the existing dispatcher, and verify it becomes expired, its encrypted payload is cleared, and that record ID is never sent to `getJob` or `add`. The test leaves every unrelated fixture untouched. Existing delivery-level expiry and successful replay tests cover the adjacent boundaries. No worker implementation changed.
 
 #### CP04.4a2 — real Redis outage and recovery
 

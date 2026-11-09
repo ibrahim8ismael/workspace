@@ -104,6 +104,10 @@ CP03.3/CP03.4 was pushed as `b352177` and [hosted CI passed](https://github.com/
 
 CP03 closed on 2026-11-09. CP04 browser/company integration and CP05 authoritative office runtime are the next implementation packets.
 
+## CP05 — authoritative Socket.IO office
+
+Codex split the existing CP05 contract into reviewable batches in the [CP05 implementation plan](CP05_REALTIME_IMPLEMENTATION.md): ticket admission and ready snapshot; continuing authorization/revocation; serialized movement/seats; versioned recovery/takeover. No CP05 runtime code has been changed. The requested OpenCode DeepSeek handoff for CP05.1 was blocked by automatic review because it would send repository material to an external coding service. The request did not transmit code or alter the working tree; implementation author selection awaits the owner.
+
 ## CP04 — browser accounts, companies and delivery (in progress)
 
 The [CP04 delivery batches](CP04_BROWSER_AND_DELIVERY.md) separate browser onboarding, session settings, the private environment, real delivery and operational handoff. Luna implemented CP04.1/CP04.2. The owner selected OpenCode DeepSeek V4.1 Flash Free at max effort for CP04.3; Codex plans, reviews and independently verifies before each push.

@@ -179,7 +179,7 @@ Exit: a real browser completes registration → mail → verification → login 
 
 ### CP05 — Build the authoritative Socket.IO office
 
-Depends on: CP03 and CP02. Deliverable: two real socket clients with server-owned state, initially independent of the renderer.
+Depends on: CP03 and CP02. Deliverable: two real socket clients with server-owned state, initially independent of the renderer. Batches and local exit evidence are tracked in the [CP05 implementation plan](CP05_REALTIME_IMPLEMENTATION.md).
 
 1. Add exact-Origin checks at Engine.IO upgrade admission and strict namespace middleware at `/office`. Consume ticket, reserve capacity, capture snapshot and activate participation in that order. Clean abandoned reservations and keep connection-state recovery disabled.
 2. Implement a single serialized office command owner, safe participants and state versions. One active participation per user/workspace; an ordinary second tab gets a conflict. Explicit takeover targets only the same user's current server-issued participation reference.

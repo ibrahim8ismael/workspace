@@ -209,3 +209,13 @@ The company details screen now opens a local preview only while the server-valid
 | CP06 preview slice | Authenticated company-scoped Commons map and disconnected chat test seam | Locally verified; commit/push follows this row | 27 web tests, full `pnpm check`, production build and lazy-chunk review passed. No browser E2E or two-user/realtime behavior is claimed |
 
 The current tests cover company-scope selection, view open/back/reset, explicit offline/empty chat, language isolation and Phaser cleanup. Next, add a repeatable browser E2E for sign-in → authorized company → preview → back and verify mount/teardown in Chrome and Edge. Live two-user map/chat behavior remains CP05/CP06 work after authoritative Socket.IO exists; the preview is not a production office session.
+
+## CP04.5a — security and operations boundary review
+
+Codex reviewed the current HTTP configuration, password service, audit model, local proxy and existing evidence. The review found the local implementation controls and the outstanding deployment gaps; it made no runtime/security-policy changes. See the [CP04.5a findings](CP04_BROWSER_AND_DELIVERY.md#cp045a--security-and-operations-boundary-review).
+
+| Batch | Scope | Status | Evidence |
+| --- | --- | --- | --- |
+| CP04.5a | Source/evidence review of proxy, password workload, audit and delivery limits | Review complete; operational work remains | Strict Origin and local cookie tests exist; proxy trust is disabled; Argon2id concurrency is capped at four; audit is a transaction-local Mongo record with a 30-day TTL. Target-host benchmark, public ingress, independent audit mirror and real provider remain open |
+
+The owner deferred staging SMTP, so CP04.5 and non-provider local work can continue without external sending. Do not mark the production acceptance rows passed on the strength of source review. Next CP04.5 work requires an independently durable audit-mirror choice/policy and target-host measurements when a deployment target exists.

@@ -160,6 +160,24 @@ After final checks the project containers were stopped, with named volumes and t
 
 On 2026-11-09, the owner directed the team to continue CP04 while ignoring the external email provider for now. CP04.4c is therefore explicitly deferred; no provider, domain, DNS, recipient or production key setup is authorized by this direction, and no external email was sent. The local delivery sink, queue/outbox fault coverage and simulated lost-ack behavior above remain useful, but they do not satisfy real-provider delivery acceptance. Continue with CP04.5 security and operational handoff while keeping the real-provider release gate open.
 
+### CP04.5a — security and operations boundary review
+
+Source and existing evidence were reviewed on 2026-11-09 without changing runtime policy. The API disables Express proxy trust, uses Helmet, sets request IDs and `Cache-Control: no-store`, and keeps API JSON bodies to 4 KB. `APP_ORIGIN` must be an exact origin and production requires HTTPS; the local proxy removes forwarding headers, while real public-ingress behavior remains unverified. Existing integration/browser evidence checks Secure, HttpOnly, host-only, SameSite=Lax cookies and same/cross-Origin behavior in the local environment. These findings are bounded to the local implementation and do not replace a deployed proxy review.
+
+Passwords use Argon2id with 19,456 KiB memory, two iterations and one lane. The service admits at most four concurrent operations (about 76 MiB of configured Argon2 memory at that bound, before process/runtime overhead). This is a source-derived estimate, not a target-host benchmark or safe production capacity declaration. The current short weak-password set is not a comprehensive compromised-password screen.
+
+Security mutations write to the Mongo `audit_events` collection in the same transaction, with a 30-day TTL. There is no independent audit mirror or defined mirror-failure policy yet. A backup/restore process must not treat restored sessions, credentials or memberships as proof of current authority. These controls and gaps are not evidence of production readiness.
+
+| CP04.5 review item | Current evidence | Remaining acceptance |
+| --- | --- | --- |
+| Cookie, Origin and local proxy controls | Existing HTTPS browser/API checks; strict Origin tests; proxy trust disabled; local Caddy strips forwarding headers | Public ingress/proxy configuration and Edge browser not verified |
+| Password workload | Argon2id parameters and concurrency cap reviewed in source | Benchmark and concurrency/load budget on the actual target host |
+| Compromised-password protection | Small source-level common-password list and length/size checks | Choose and verify a maintained, privacy-preserving screening source and behavior |
+| Audit evidence | Transactional Mongo records with 30-day TTL | Independent mirror, retention, access, redaction and mirror-failure policy |
+| Mail and delivery | Local Mailpit, Redis outage/recovery, expiry and duplicate/lost-ack tests | External provider explicitly deferred by owner; staging SMTP gate remains open |
+
+CP04.5 is still in progress. Continue with a target-independent audit-mirror design and a security/operations checklist; do not claim capacity, public ingress, provider delivery or pilot readiness until the target environment and required evidence exist.
+
 ### CP04.4a1 — outbox fault contract tests
 
 OpenCode `opencode/deepseek-v4.1-flash-free#max` added two tests to the existing Mongo integration suite. Codex reviewed the diff and independently ran the focused and full-file gates. Queue-add failure leaves the transactionally created outbox row pending with its authenticated-encrypted payload intact; retry enqueues the same ID-only payload, changes state to queued and skips an already-present job. Mail-provider failure raises only the worker's sanitized error, increments attempts and leaves payload retryable; a successful retry clears payload, marks delivery and makes later replay a no-op. Existing transactional rollback and expiry tests remain in place. These scenarios use the existing real Mongo replica-set fixture with a deterministic queue/sender boundary; CP04.4a2 still needs actual Redis/Mailpit runtime faults.

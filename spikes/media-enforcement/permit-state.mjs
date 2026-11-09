@@ -5,10 +5,12 @@ export class PermitState {
   #sequence = -1;
   #pending = null;
   #permits = new Map();
-  #retired = new Set();
-  constructor(epoch, clock) {
+  #retired;
+  #denied = new Set();
+  constructor(epoch, clock, retirementStore = new Set()) {
     if (typeof epoch !== 'string' || !epoch || typeof clock !== 'function')
       throw new Error('invalid guard configuration');
+    this.#retired = retirementStore;
     this.#epoch = epoch;
     this.#clock = clock;
   }
@@ -49,6 +51,7 @@ export class PermitState {
         permit.sources.some(
           (source) => !['microphone', 'camera', 'screen_share'].includes(source),
         ) ||
+        this.#denied.has(permit.generation) ||
         this.#retired.has(permit.generation)
       )
         return false;
@@ -65,7 +68,9 @@ export class PermitState {
     return true;
   }
   retire(generation) {
-    this.#retired.add(generation);
+    this.#denied.add(generation);
+    if (typeof this.#retired.retire === 'function') this.#retired.retire(generation);
+    else this.#retired.add(generation);
     for (const [key, permit] of this.#permits)
       if (permit.generation === generation) this.#permits.delete(key);
   }
@@ -73,6 +78,7 @@ export class PermitState {
     const permit = this.#permits.get(JSON.stringify([generation, identity]));
     return Boolean(
       permit &&
+      !this.#denied.has(generation) &&
       !this.#retired.has(generation) &&
       this.#clock() < permit.deadline &&
       permit.room === room &&

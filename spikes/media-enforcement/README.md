@@ -87,3 +87,18 @@ there is no production signaling enforcement, durable retirement or cold-start
 reconciliation yet. The process exits successfully when the experiment completes,
 including when it observes this security failure; read the reported replay flag.
 CP07 is not accepted and CP08 must not integrate this unguarded fixture.
+
+## CP07.5 durable retirement foundation
+
+`retirement-store.mjs` persists deny-only generation tombstones with exclusive
+creation, file fsync and directory fsync before reporting success. Unknown,
+incomplete or mismatched entries prevent startup. Supply the store as the third
+`PermitState` constructor argument to preserve generation denial across guard
+process epochs. In-process denial happens before persistence, so an I/O failure
+cannot restore a current permission. The caller must treat persistence failure as
+a reason to stop forwarding and must protect this directory from rollback/deletion.
+This is single-writer experimental storage, with no compaction or multi-process
+coordination. Missing/lost storage is an operational failure requiring isolation
+and reconciliation; constructing an empty store does not prove reconciliation.
+The LiveKit direct-signaling replay failure remains open until a guard uses this
+state and all SFU signaling bypass routes are isolated.

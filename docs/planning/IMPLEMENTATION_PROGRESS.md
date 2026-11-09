@@ -206,9 +206,17 @@ The company details screen now opens a local preview only while the server-valid
 
 | Batch | Scope | Status | Evidence |
 | --- | --- | --- | --- |
-| CP06 preview slice | Authenticated company-scoped Commons map and disconnected chat test seam | Locally verified; commit/push follows this row | 27 web tests, full `pnpm check`, production build and lazy-chunk review passed. No browser E2E or two-user/realtime behavior is claimed |
+| CP06 preview slice | Authenticated company-scoped Commons map and disconnected chat test seam | Locally verified, committed/pushed in `3a9456a` | 27 web tests, full `pnpm check`, production build and lazy-chunk review passed. The E2E follow-up below adds one browser journey |
 
-The current tests cover company-scope selection, view open/back/reset, explicit offline/empty chat, language isolation and Phaser cleanup. Next, add a repeatable browser E2E for sign-in → authorized company → preview → back and verify mount/teardown in Chrome and Edge. Live two-user map/chat behavior remains CP05/CP06 work after authoritative Socket.IO exists; the preview is not a production office session.
+The unit tests cover company-scope selection, view open/back/reset, explicit offline/empty chat, language isolation and Phaser cleanup. A Playwright test now runs sign-in → company → preview → back in headless Chromium and checks that the canvas is removed and no office WebSocket opens. It uses mocked API responses, so it verifies browser UI integration only; actual API authorization/session behavior is covered by separate existing checks. The local E2E passed with Playwright Chromium 158.0.8127.18. CI installs Chromium and runs `pnpm test:e2e`; Edge remains to be tested. Live two-user map/chat behavior remains CP05/CP06 work after authoritative Socket.IO exists; the preview is not a production office session.
+
+## CP06 preview E2E — browser UI path
+
+Codex authored a repeatable Playwright UI E2E after the owner explicitly selected Codex as the fallback implementer when DeepSeek's free quota was exhausted. It intercepts only the account/company API responses with schema-shaped test fixtures; the page itself runs in headless Chrome/Chromium, mounts the actual Commons Phaser renderer, toggles the local sit/stand control, enters the disconnected existing chat view, and returns to details. It asserts that the preview canvas is torn down and no `/ws` or Socket.IO office connection opens.
+
+| Batch | Scope | Status | Evidence |
+| --- | --- | --- | --- |
+| CP06 preview E2E | Browser journey through mocked sign-in, company scope, map/chat preview and return | Locally verified; commit/push follows this row | `pnpm test:e2e`: 1 Chromium test passed after the full `pnpm check`. Local setup: `pnpm exec playwright install chromium`; CI installs Chromium automatically. This does not test live API authorization, SMTP, Edge, or realtime presence |
 
 ## CP04.5a — security and operations boundary review
 

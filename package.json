@@ -26,20 +26,22 @@
     "clean": "node scripts/clean.mjs",
     "test:shared": "pnpm --filter @gather/legacy-shared test",
     "test:web": "pnpm exec vitest run --config apps/web/vitest.config.ts",
+    "test:e2e": "pnpm exec playwright test",
     "test:api": "pnpm build:packages && pnpm --filter @gather/worker build && pnpm --filter @gather/api test",
     "db:indexes": "pnpm build:packages && pnpm --filter @gather/api db:indexes",
     "test:contracts": "pnpm --filter @gather/contracts test",
     "test:world": "pnpm --filter @gather/world test"
   },
   "devDependencies": {
-    "typescript": "6.0.3",
-    "@types/node": "24.19.2",
     "@eslint/js": "10.0.1",
+    "@playwright/test": "1.65.0",
+    "@types/node": "24.19.2",
     "eslint": "10.14.0",
-    "typescript-eslint": "8.72.1",
     "eslint-plugin-react-hooks": "7.1.1",
     "eslint-plugin-react-refresh": "0.5.7",
     "prettier": "3.9.10",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1",
     "vitest": "5.1.0"
   }
 }

@@ -284,3 +284,24 @@ This is process-crash redundancy, not independent infrastructure: both host
 processes use the same Docker control channel. Simultaneous guardian/watchdog
 failure, host/VM failure, Docker API unavailability and production service lifecycle
 are not covered by this result. No restart-policy-only guarantee is asserted.
+
+## CP07.14 SFU source enforcement and foreign-room denial
+
+Add `--source-permissions` to the isolated fixture. Before the normal media run,
+a publisher connects with a signed microphone-only JWT (`canPublishSources` =
+MICROPHONE). Test instrumentation deliberately changes the SDK's local permission
+object to allow all sources while leaving the signed token unchanged. Camera and
+screen-share publication must be rejected, and microphone publication with the
+same token must succeed while the room remains connected. This distinguishes
+SFU source enforcement from merely trusting the client UI permission check.
+A correctly signed token scoped to another room is also rejected by the guard.
+
+Actual 2026-11-10 combined source/controller-loss/watchdog-crash/guardian run:
+cameraRejected=true, screenShareRejected=true, microphonePublished=true and
+foreignRoomRejected=true; last audio 467ms and video 133ms after fault injection.
+Original and refreshed replay were both rejected after restart. Guardian stop
+confirmation was 280.186ms after observing child death. All fixtures cleaned up.
+This is source-grant and negative room-scope evidence, not yet two concurrently
+authorized companies with isolated media and measured shared-node interruption.
+Screen-share audio, post-join source-permission changes and application-issued
+source grant binding remain separate acceptance requirements.

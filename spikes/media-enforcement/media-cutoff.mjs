@@ -198,6 +198,100 @@ try {
     });
     return grant.toJwt();
   };
+  let sourcePermissionResult = null;
+  if (process.argv.includes('--source-permissions')) {
+    if (!isolated) throw new Error('--source-permissions requires --isolated');
+    const limited = new AccessToken('fixture', secret, { identity: 'publisher', ttl: '2m' });
+    limited.addGrant({
+      roomJoin: true,
+      room: 'cutoff-fixture',
+      canPublish: true,
+      canSubscribe: false,
+      canPublishSources: [2],
+    });
+    sourcePermissionResult = await publisher.evaluate(
+      async (jwt) => {
+        const room = new window.LivekitClient.Room();
+        await room.connect(window.fixtureSocket, jwt);
+        // Bypass the SDK permission check deliberately: the server JWT remains microphone-only.
+        room.localParticipant.permissions.canPublish = true;
+        room.localParticipant.permissions.canPublishSources = [];
+        const rejected = [];
+        let microphonePublished = false;
+        try {
+          for (const source of [
+            window.LivekitClient.Track.Source.Camera,
+            window.LivekitClient.Track.Source.ScreenShare,
+          ]) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 64;
+            canvas.height = 64;
+            const stream = canvas.captureStream(5);
+            try {
+              await room.localParticipant.publishTrack(stream.getVideoTracks()[0], { source });
+              rejected.push(false);
+            } catch {
+              rejected.push(true);
+            } finally {
+              stream.getTracks().forEach((track) => track.stop());
+            }
+          }
+          const audio = new AudioContext();
+          try {
+            const destination = audio.createMediaStreamDestination();
+            const oscillator = audio.createOscillator();
+            oscillator.connect(destination);
+            oscillator.start();
+            await audio.resume();
+            const publication = await room.localParticipant.publishTrack(
+              destination.stream.getAudioTracks()[0],
+              { source: window.LivekitClient.Track.Source.Microphone },
+            );
+            microphonePublished = Boolean(publication.trackSid) && room.state === 'connected';
+          } finally {
+            await audio.close();
+          }
+        } finally {
+          await room.disconnect();
+        }
+        return {
+          cameraRejected: rejected[0],
+          screenShareRejected: rejected[1],
+          microphonePublished,
+        };
+      },
+      await limited.toJwt(),
+    );
+    if (
+      !sourcePermissionResult.cameraRejected ||
+      !sourcePermissionResult.screenShareRejected ||
+      !sourcePermissionResult.microphonePublished
+    )
+      throw new Error('SFU source permission bypass');
+    const foreign = new AccessToken('fixture', secret, { identity: 'receiver', ttl: '2m' });
+    foreign.addGrant({
+      roomJoin: true,
+      room: 'another-company-room',
+      canPublish: false,
+      canSubscribe: true,
+    });
+    const foreignAccepted = await publisher.evaluate(
+      async (jwt) => {
+        const room = new window.LivekitClient.Room();
+        try {
+          await room.connect(window.fixtureSocket, jwt);
+          return true;
+        } catch {
+          return false;
+        } finally {
+          await room.disconnect();
+        }
+      },
+      await foreign.toJwt(),
+    );
+    if (foreignAccepted) throw new Error('Cross-room guard scope bypass');
+    sourcePermissionResult.foreignRoomRejected = true;
+  }
   const originalReceiverToken = await token('receiver');
   await receiver.evaluate(async (token) => {
     const { Room, RoomEvent } = window.LivekitClient;
@@ -492,6 +586,7 @@ try {
           : 'missing-guard-progress',
       isolated,
       guardedSupervisor,
+      sourcePermissionResult,
       freezeGuard,
       staleTokenAcceptedAfterRestart,
       refreshedTokenAcceptedAfterRestart,

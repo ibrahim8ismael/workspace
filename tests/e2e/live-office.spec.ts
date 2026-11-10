@@ -175,7 +175,7 @@ async function companyPage(
     .locator(`[data-workspace-id="${workspaceId}"]`)
     .getByRole('button', { name: 'Open office' })
     .click();
-  await expect(page.getByRole('button', { name: 'Enter office' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Join' })).toBeVisible();
   await expect(page.getByText('SIGN-IN STATUS', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Company details' })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Employee invitations' })).toHaveCount(0);
@@ -238,9 +238,9 @@ test('live two-browser Vivo admission, movement, seats, recovery, and company is
     const gapProbe = memberOffice.gapProbe;
     if (!gapProbe) throw new Error('The member WebSocket probe was not installed.');
 
-    await ownerPage.getByRole('button', { name: 'Enter office' }).click();
+    await ownerPage.getByRole('button', { name: 'Join' }).click();
     await expect(ownerPage.getByText('1 person in the office')).toBeVisible();
-    await memberPage.getByRole('button', { name: 'Enter office' }).click();
+    await memberPage.getByRole('button', { name: 'Join' }).click();
     await expect(ownerPage.getByText('2 people in the office')).toBeVisible();
     await expect(memberPage.getByText('2 people in the office')).toBeVisible();
     await expect(ownerPage.getByRole('list', { name: 'People in the office' })).toContainText(
@@ -301,15 +301,15 @@ test('live two-browser Vivo admission, movement, seats, recovery, and company is
       timeout: 65_000,
     });
     await expect(ownerPage.getByText('1 person in the office')).toBeVisible({ timeout: 65_000 });
-    await memberPage.getByRole('button', { name: 'Enter office' }).click();
+    await memberPage.getByRole('button', { name: 'Join' }).click();
     await expect(memberPage.getByText('2 people in the office')).toBeVisible();
     await expect(ownerPage.locator('[data-availability="away"]')).toContainText(ownerName);
 
     await ownerPage.getByRole('button', { name: 'Leave office' }).click();
-    await expect(ownerPage.getByText('Not connected to the office.')).toBeVisible();
+    await expect(ownerPage.getByRole('button', { name: 'Join' })).toBeVisible();
     await expect(memberPage.getByText('1 person in the office')).toBeVisible();
     await memberPage.getByRole('button', { name: 'Leave office' }).click();
-    await expect(memberPage.getByText('Not connected to the office.')).toBeVisible();
+    await expect(memberPage.getByRole('button', { name: 'Join' })).toBeVisible();
 
     const secondWorkspaceResponse = await postJson(
       owner.client,
@@ -329,8 +329,8 @@ test('live two-browser Vivo admission, movement, seats, recovery, and company is
     );
     ownerSecondContext = ownerSecondOffice.context;
     const ownerSecondPage = ownerSecondOffice.page;
-    await memberPage.getByRole('button', { name: 'Enter office' }).click();
-    await ownerSecondPage.getByRole('button', { name: 'Enter office' }).click();
+    await memberPage.getByRole('button', { name: 'Join' }).click();
+    await ownerSecondPage.getByRole('button', { name: 'Join' }).click();
     await expect(memberPage.getByText('1 person in the office')).toBeVisible();
     await expect(ownerSecondPage.getByText('1 person in the office')).toBeVisible();
     const memberRoster = memberPage.getByRole('list', { name: 'People in the office' });
@@ -347,7 +347,7 @@ test('live two-browser Vivo admission, movement, seats, recovery, and company is
       .locator(`[data-workspace-id="${secondWorkspaceBody.workspace.id}"]`)
       .getByRole('button', { name: 'Open office' })
       .click();
-    await ownerSecondPage.getByRole('button', { name: 'Enter office' }).click();
+    await ownerSecondPage.getByRole('button', { name: 'Join' }).click();
     await expect(ownerSecondPage.getByText('1 person in the office')).toBeVisible();
     await expect(ownerSecondPage.locator('.office-scene svg.office-map')).toHaveCount(1);
     await ownerSecondPage.getByRole('button', { name: 'Leave office' }).click();

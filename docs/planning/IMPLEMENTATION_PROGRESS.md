@@ -713,3 +713,23 @@ Commons map still has earlier collision/seat-race browser evidence; that evidenc
 to Vivo. Formal visual anchor/occlusion, screen-reader and Chrome/Edge acceptance remain open. The
 legacy monolithic upstream `App.tsx` is still unmounted; the current authenticated shell retains the
 supplied OpenOfficeForAll styles and Vivo map with this project's APIs and Socket.IO.
+
+## CP02.6d — OpenOfficeForAll-style pre-join lobby (2026-11-10)
+
+Replaced the disconnected read-only map preview with the owner-provided pre-join layout: workspace
+and signed-in account header, camera-off preview, authenticated display name, disabled media controls
+and a Join action. No office map or map bootstrap is loaded before Join. Joining requests the current
+workspace-scoped bootstrap and one-use ticket, then enters through the existing Socket.IO client;
+the map renderer appears only after a valid `office:ready` event. Leave, disconnect and re-entry
+return through the lobby. The company header also remains the keyboard-accessible Back action.
+
+The name is read-only because the existing ticket API takes its display identity from the authenticated
+account; media controls remain disabled until the product media flow is connected. After admission,
+map selection still follows the server's immutable office version, so a pre-existing Commons office
+continues to render Commons and newly created offices use Vivo.
+
+Verification: `pnpm typecheck`, `pnpm lint`, `pnpm test:web` (32 tests), and the mocked Chromium
+office E2E passed. The local Caddy frontend was rebuilt and restarted in OrbStack; `/api/health/live`
+returned 200. `pnpm test:e2e:live` then passed against the real local API and Socket.IO, including
+two-browser movement, seat/status synchronization, snapshot recovery, reconnect and company
+isolation. Browser launch required the previously authorized local Chromium process permission.

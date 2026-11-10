@@ -7,6 +7,7 @@ import { canOpenOfficePreview } from '../src/features/workspaces/company-overvie
 import { OfficePreviewChat } from '../src/features/workspaces/OfficePreviewChat';
 import { CompanyOfficePreview } from '../src/features/workspaces/CompanyOfficePreview';
 import { ApiClient } from '../src/lib/api';
+import type { AccountDto } from '@gather/contracts';
 import ChatView from '../chat/ChatView';
 import { language, setLanguage } from '../i18n';
 
@@ -22,6 +23,12 @@ const detail: OfficeWorkspaceDetail = {
   slug: 'example-company',
   role: 'member',
   memberCount: 3,
+};
+const account: AccountDto = {
+  id: 'cfd1f021-46b8-45f2-b6c8-a60e88d648f8',
+  email: 'person@example.test',
+  displayName: 'Office Person',
+  verifiedAt: '2026-11-09T00:00:00.000Z',
 };
 const api = new ApiClient(async () => new Response('{}', { status: 500 }));
 
@@ -39,6 +46,7 @@ describe('company office preview selection', () => {
   it('renders the authenticated company in the supplied office shell', () => {
     const html = renderToStaticMarkup(
       createElement(CompanyOfficePreview, {
+        account,
         api,
         detail,
         onBack: () => undefined,
@@ -49,13 +57,15 @@ describe('company office preview selection', () => {
     expect(html).not.toContain('Company slug:');
     expect(html).not.toContain('SIGN-IN STATUS');
     expect(html).not.toContain('Employee invitations');
-    expect(html).toContain('Vivo office');
-    expect(html).toContain('data-testid="openoffice-vivo-scene"');
+    expect(html).toContain('Welcome to Example Company');
+    expect(html).toContain('person@example.test');
+    expect(html).toContain('Your camera is off');
+    expect(html).toContain('Display name');
+    expect(html).not.toContain('data-testid="openoffice-vivo-scene"');
     expect(html).not.toContain('Commons office');
-    expect(html).toContain('Back to companies');
-    expect(html).toContain('Not connected to the office.');
-    expect(html).toContain('Enter office');
-    expect(html).toContain('Text chat is unavailable');
+    expect(html).toContain('>Join</button>');
+    expect(html).not.toContain('office-map');
+    expect(html).not.toContain('Text chat is unavailable');
   });
 });
 

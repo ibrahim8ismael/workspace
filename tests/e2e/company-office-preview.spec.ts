@@ -245,18 +245,18 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await expect(page.getByRole('heading', { name: 'Company details' })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Employee invitations' })).toHaveCount(0);
   await expect(page.getByText('SIGN-IN STATUS', { exact: true })).toHaveCount(0);
-  await expect(page.getByText('Not connected to the office.')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Enter office' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Text chat is unavailable' })).toBeVisible();
-  await expect(page.getByLabel('Message office-preview')).toBeDisabled();
-  await expect(page.locator('.office-scene .office-map')).toHaveCount(1);
-  await expect(page.locator('.office-map-heading strong')).toHaveText('Vivo office');
-  await expect.poll(() => officeBootstrapRequests).toBe(1);
+  await expect(page.getByRole('heading', { name: 'Welcome to E2E Company' })).toBeVisible();
+  await expect(page.getByText('Your camera is off')).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Display name' })).toHaveValue('E2E Person');
+  await expect(page.getByRole('button', { name: 'Join' })).toBeVisible();
+  await expect(page.locator('.office-scene, .office-map-heading')).toHaveCount(0);
+  expect(officeBootstrapRequests).toBe(0);
 
-  await page.getByRole('button', { name: 'Enter office' }).click();
+  await page.getByRole('button', { name: 'Join' }).click();
   await expect(page.getByText('1 person in the office')).toBeVisible();
   await expect(page.getByText('Live Vivo office', { exact: true })).toBeVisible();
   await expect(page.locator('.office-scene .office-map')).toHaveCount(1);
+  await expect.poll(() => officeBootstrapRequests).toBe(1);
   await expect(page.getByRole('group', { name: 'Office connection controls' })).toBeVisible();
   const officeSkipLink = page.getByRole('link', { name: 'Skip to office map' });
   await officeSkipLink.focus();
@@ -284,12 +284,12 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   expect(interruptOfficeConnection).toBeDefined();
   await interruptOfficeConnection!();
   await expect(page.getByText('Office connection closed.')).toBeVisible();
-  await expect(page.locator('.office-scene .office-map')).toHaveCount(1);
+  await expect(page.locator('.office-scene .office-map')).toHaveCount(0);
   await expect.poll(() => officeEvents.filter((event) => event === 'disconnect').length).toBe(1);
-  await page.getByRole('button', { name: 'Enter office' }).click();
+  await page.getByRole('button', { name: 'Join' }).click();
   await expect(page.getByText('1 person in the office')).toBeVisible();
   await expect(page.locator('.office-scene .office-map')).toHaveCount(1);
-  expect(officeBootstrapRequests).toBe(3);
+  expect(officeBootstrapRequests).toBe(2);
   expect(officeTicketRequests).toBe(2);
   expect(officeConnections).toBe(2);
   const seatTarget = page.locator('.office-scene [data-seat-id="24c48737:0"]');
@@ -320,7 +320,8 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
     movementInputs.slice(inputsBeforeControlKey).every(({ dx, dy }) => dx === 0 && dy === 0),
   ).toBe(true);
   await page.getByRole('button', { name: 'Leave office' }).click();
-  await expect(page.getByText('Not connected to the office.')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Welcome to E2E Company' })).toBeVisible();
+  await expect(page.locator('.office-scene .office-map')).toHaveCount(0);
   await expect.poll(() => officeEvents.filter((event) => event === 'disconnect').length).toBe(2);
 
   await page.getByRole('button', { name: 'Back to companies' }).click();

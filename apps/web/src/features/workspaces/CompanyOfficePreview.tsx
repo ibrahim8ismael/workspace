@@ -3,11 +3,15 @@ import {
   ArrowLeft,
   Bell,
   CalendarDays,
+  ChevronDown,
   LayoutGrid,
   Map,
+  MicOff,
   MessageCircle,
   Settings2,
+  VideoOff,
 } from 'lucide-react';
+import type { AccountDto } from '@gather/contracts';
 import type { OfficeWorkspaceDetail } from '../../lib/api';
 import { ApiClient } from '../../lib/api';
 import VivoScene from '../../../VivoScene';
@@ -29,45 +33,32 @@ const LiveCommonsScene = lazy(() =>
 );
 
 type Props = {
+  account: AccountDto;
   api: ApiClient;
   detail: OfficeWorkspaceDetail;
   onBack: () => void;
   onOpenSecurity: () => void;
 };
 
-export function CompanyOfficePreview({ api, detail, onBack, onOpenSecurity }: Props) {
+export function CompanyOfficePreview({ account, api, detail, onBack, onOpenSecurity }: Props) {
   const titleRef = useRef<HTMLHeadingElement>(null);
   const client = useMemo(
     () => new OfficeClient(api, detail.id, detail.officeId),
     [api, detail.id, detail.officeId],
   );
   const state = useSyncExternalStore(client.subscribe, client.getSnapshot, client.getSnapshot);
+  const connected = state.status === 'connected';
   const [officeActionError, setOfficeActionError] = useState('');
   const [officeActionPending, setOfficeActionPending] = useState(false);
   const [zoom, setZoom] = useState(1.35);
-  const [loadedMapId, setLoadedMapId] = useState<'commons' | 'vivo'>('vivo');
 
   useEffect(() => {
     titleRef.current?.focus();
-  }, []);
+  }, [connected]);
 
   useEffect(() => () => client.close(), [client]);
 
-  useEffect(() => {
-    let active = true;
-    void api
-      .officeBootstrap(detail.id, detail.officeId)
-      .then((bootstrap) => {
-        if (active) setLoadedMapId(bootstrap.manifest.mapId);
-      })
-      .catch(() => {});
-    return () => {
-      active = false;
-    };
-  }, [api, detail.id, detail.officeId]);
-
-  const connected = state.status === 'connected';
-  const mapId = state.bootstrap?.manifest.mapId ?? loadedMapId;
+  const mapId = state.bootstrap?.manifest.mapId ?? 'vivo';
   const participantCount = state.snapshot?.participants.length ?? 0;
   const self = state.snapshot?.participants.find(
     (participant) => participant.participationId === state.ready?.participationId,
@@ -115,6 +106,96 @@ export function CompanyOfficePreview({ api, detail, onBack, onOpenSecurity }: Pr
         : state.status === 'ended' || state.status === 'error' || state.status === 'disconnected'
           ? state.message
           : 'Not connected to the office.';
+
+  if (!connected) {
+    return (
+      <main className="office-prejoin" data-workspace-id={detail.id}>
+        <a className="skip-link" href="#join-office-form">
+          Skip to office entry
+        </a>
+        <header className="office-prejoin-header">
+          <button
+            className="office-prejoin-brand"
+            type="button"
+            aria-label="Back to companies"
+            onClick={onBack}
+          >
+            <span className="office-prejoin-logo" aria-hidden="true">
+              <LayoutGrid size={19} />
+            </span>
+            <strong>{detail.name}</strong>
+          </button>
+          <div className="office-prejoin-account" title={account.email}>
+            <span aria-hidden="true">{account.displayName.slice(0, 1).toUpperCase()}</span>
+            <span>{account.email}</span>
+          </div>
+        </header>
+
+        <section className="office-prejoin-content" aria-label="Join the office">
+          <div className="office-prejoin-camera" aria-label="Camera preview">
+            <p>Your camera is off</p>
+            <div className="office-prejoin-device-controls" aria-label="Media controls">
+              <button
+                type="button"
+                aria-label="Microphone unavailable in this release"
+                title="Microphone unavailable in this release"
+                disabled
+              >
+                <MicOff size={17} />
+                <ChevronDown size={12} />
+              </button>
+              <button
+                type="button"
+                aria-label="Camera unavailable in this release"
+                title="Camera unavailable in this release"
+                disabled
+              >
+                <VideoOff size={17} />
+                <ChevronDown size={12} />
+              </button>
+            </div>
+          </div>
+
+          <div className="office-prejoin-form-wrap">
+            <h1 id="company-office-preview-title" ref={titleRef} tabIndex={-1}>
+              Welcome to {detail.name}
+            </h1>
+            <form
+              id="join-office-form"
+              className="office-prejoin-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void client.connect();
+              }}
+            >
+              <input
+                id="office-display-name"
+                type="text"
+                value={account.displayName}
+                readOnly
+                aria-label="Display name"
+                aria-readonly="true"
+                autoComplete="name"
+              />
+              {state.message && state.status !== 'connecting' && (
+                <p className="office-prejoin-error" role="alert">
+                  {state.message}
+                </p>
+              )}
+              {state.status === 'connecting' && (
+                <p className="office-prejoin-connecting" role="status" aria-live="polite">
+                  Connecting to the office…
+                </p>
+              )}
+              <button className="primary" type="submit" disabled={state.status === 'connecting'}>
+                {state.status === 'connecting' ? 'Joining…' : 'Join'}
+              </button>
+            </form>
+          </div>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <div className="app-shell office-shell" data-workspace-id={detail.id}>

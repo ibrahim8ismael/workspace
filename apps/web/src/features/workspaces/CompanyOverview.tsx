@@ -145,6 +145,7 @@ export function CompanyOverview({
         }
       >
         <LazyCompanyOfficePreview
+          account={account}
           api={api}
           detail={detail}
           onBack={onBackToCompanies}

@@ -62,6 +62,11 @@ export function validateOfficeGeometry(geometry: OfficeGeometry): ValidatedOffic
     }
   }
 
+  for (const [tileIndex, tile] of (geometry.blockedTiles ?? []).entries()) {
+    assertTile(tile, `blockedTiles[${tileIndex}]`, bounds);
+    blockedTiles.push(tile);
+  }
+
   validateBlockedEdges(geometry.blockedEdges, bounds);
   const collision = createTileCollision({
     blockedTiles,

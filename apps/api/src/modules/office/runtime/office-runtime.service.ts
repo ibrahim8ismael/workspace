@@ -8,10 +8,11 @@ import {
   worldSnapshotSchema,
 } from '@gather/contracts';
 import type { WorldDelta, WorldSnapshot } from '@gather/contracts';
-import { COMMONS_GEOMETRY, canStep, pixelToTile, validateOfficeGeometry } from '@gather/world';
+import { canStep, pixelToTile } from '@gather/world';
 import { invariant } from '../../../platform/http/errors.js';
 import { digest, newSecret } from '../../identity/security/secrets.js';
-import { APPROVED_OFFICE_DEFAULT_APPEARANCE } from '../commons-registry.js';
+import { trustedOfficeMap } from '../office-map-registry.js';
+import type { TrustedOfficeMap } from '../office-map-registry.js';
 
 export interface ConsumedOfficeTicket {
   userId: string;
@@ -43,6 +44,8 @@ interface OfficeRuntime {
   readonly officeId: string;
   readonly workspaceId: string;
   readonly officeEpoch: string;
+  readonly mapVersion: string;
+  readonly map: TrustedOfficeMap;
   stateVersion: number;
   readonly participants: Map<string, RuntimeParticipant>;
   readonly participationByActor: Map<string, string>;
@@ -51,9 +54,6 @@ interface OfficeRuntime {
   lastBroadcastAt: number;
   readonly dirtyParticipants: Set<string>;
 }
-
-const validatedCommons = validateOfficeGeometry(COMMONS_GEOMETRY);
-const commonsSeats = COMMONS_GEOMETRY.objects.flatMap((object) => object.seats);
 
 export interface OfficeReservation {
   readonly roomId: string;
@@ -171,6 +171,8 @@ export class OfficeRuntimeService {
   }
 
   reserve(ticket: ConsumedOfficeTicket, socketId: string): OfficeReservation {
+    const map = trustedOfficeMap(ticket.mapVersion);
+    invariant(map, 409, 'office_not_ready');
     const current = this.offices.get(ticket.officeId);
     let retiredOfficeEpoch: string | null = null;
     let retiredSocketIds: string[] = [];
@@ -190,16 +192,19 @@ export class OfficeRuntimeService {
             officeId: ticket.officeId,
             workspaceId: ticket.workspaceId,
             officeEpoch: ticket.officeEpoch,
+            mapVersion: ticket.mapVersion,
+            map,
             stateVersion: 0,
             participants: new Map(),
             participationByActor: new Map(),
-            seats: this.emptySeats(),
+            seats: this.emptySeats(map),
             lastSimulationAt: performance.now(),
             lastBroadcastAt: performance.now(),
             dirtyParticipants: new Set(),
           };
 
     invariant(office.workspaceId === ticket.workspaceId, 401, 'unauthorized');
+    invariant(office.mapVersion === ticket.mapVersion, 409, 'map_version_mismatch');
     const actorKey = `${ticket.workspaceId}:${ticket.userId}`;
     const activeParticipationId = office.participationByActor.get(actorKey);
     const removedParticipationIds: string[] = [];
@@ -260,7 +265,7 @@ export class OfficeRuntimeService {
     const participant: WorldSnapshot['participants'][number] = {
       participationId,
       displayName: ticket.displayName,
-      appearance: APPROVED_OFFICE_DEFAULT_APPEARANCE,
+      appearance: map.defaultAppearance,
       position: this.spawnFor(reservationOffice),
       facing: 'south',
       availability: 'available',
@@ -457,7 +462,7 @@ export class OfficeRuntimeService {
       return 'stale_epoch';
     if (!participant || participant.userId !== userId || participant.socketId !== socketId)
       return 'unauthorized';
-    const seat = commonsSeats.find((row) => row.seatId === seatId);
+    const seat = office.map.seats.find((row) => row.seatId === seatId);
     if (!seat || office.seats.get(seatId) !== null || participant.publicState.seatId !== null)
       return 'seat_unavailable';
     if (
@@ -469,7 +474,7 @@ export class OfficeRuntimeService {
     const onSeatTile = positionTile.tx === seat.tile.tx && positionTile.ty === seat.tile.ty;
     if (
       !onSeatTile &&
-      !canStep(positionTile, seat.tile, validatedCommons.bounds, validatedCommons.collision)
+      !canStep(positionTile, seat.tile, office.map.validated.bounds, office.map.validated.collision)
     )
       return 'seat_unavailable';
     if (
@@ -484,8 +489,8 @@ export class OfficeRuntimeService {
     participant.inputIntent = { dx: 0, dy: 0, expiresAt: 0 };
     participant.publicState.seatId = seatId;
     participant.publicState.position = {
-      x: seat.tile.tx * COMMONS_GEOMETRY.tileSize + COMMONS_GEOMETRY.tileSize / 2,
-      y: seat.tile.ty * COMMONS_GEOMETRY.tileSize + COMMONS_GEOMETRY.tileSize / 2,
+      x: seat.tile.tx * office.map.geometry.tileSize + office.map.geometry.tileSize / 2,
+      y: seat.tile.ty * office.map.geometry.tileSize + office.map.geometry.tileSize / 2,
     };
     office.seats.set(seatId, participationId);
     return this.change(
@@ -516,10 +521,12 @@ export class OfficeRuntimeService {
       return 'unauthorized';
     const seatId = participant.publicState.seatId;
     if (!seatId) return 'seat_unavailable';
-    const seat = commonsSeats.find((row) => row.seatId === seatId);
+    const seat = office.map.seats.find((row) => row.seatId === seatId);
     if (!seat) return 'seat_unavailable';
     const exit = seat.exits.find((candidate) => {
-      if (!canStep(seat.tile, candidate, validatedCommons.bounds, validatedCommons.collision))
+      if (
+        !canStep(seat.tile, candidate, office.map.validated.bounds, office.map.validated.collision)
+      )
         return false;
       return ![...office.participants.entries()].some(([otherId, other]) => {
         if (otherId === participationId) return false;
@@ -530,8 +537,8 @@ export class OfficeRuntimeService {
     if (!exit) return 'seat_exit_blocked';
 
     participant.publicState.position = {
-      x: exit.tx * COMMONS_GEOMETRY.tileSize + COMMONS_GEOMETRY.tileSize / 2,
-      y: exit.ty * COMMONS_GEOMETRY.tileSize + COMMONS_GEOMETRY.tileSize / 2,
+      x: exit.tx * office.map.geometry.tileSize + office.map.geometry.tileSize / 2,
+      y: exit.ty * office.map.geometry.tileSize + office.map.geometry.tileSize / 2,
     };
     participant.publicState.seatId = null;
     participant.inputIntent = { dx: 0, dy: 0, expiresAt: 0 };
@@ -642,7 +649,7 @@ export class OfficeRuntimeService {
     const fromTile = pixelToTile(from);
     const toTile = pixelToTile(to);
     if (fromTile.tx === toTile.tx && fromTile.ty === toTile.ty) return true;
-    const occupiedSeat = commonsSeats.find(
+    const occupiedSeat = office.map.seats.find(
       (seat) =>
         seat.tile.tx === toTile.tx &&
         seat.tile.ty === toTile.ty &&
@@ -654,10 +661,10 @@ export class OfficeRuntimeService {
       fromTile,
       toTile,
       {
-        width: COMMONS_GEOMETRY.widthTiles * COMMONS_GEOMETRY.tileSize,
-        height: COMMONS_GEOMETRY.heightTiles * COMMONS_GEOMETRY.tileSize,
+        width: office.map.geometry.widthTiles * office.map.geometry.tileSize,
+        height: office.map.geometry.heightTiles * office.map.geometry.tileSize,
       },
-      validatedCommons.collision,
+      office.map.validated.collision,
     );
   }
 
@@ -671,8 +678,8 @@ export class OfficeRuntimeService {
     return dy < 0 ? 'north' : 'south';
   }
 
-  private emptySeats() {
-    return new Map(commonsSeats.map((seat) => [seat.seatId, null] as const));
+  private emptySeats(map: TrustedOfficeMap) {
+    return new Map(map.seats.map((seat) => [seat.seatId, null] as const));
   }
 
   private pruneTakeoverReferences() {
@@ -747,21 +754,22 @@ export class OfficeRuntimeService {
   }
 
   private spawnFor(office: OfficeRuntime) {
+    const { geometry, validated, seats } = office.map;
     const occupiedTiles = new Set(
       [...office.participants.values()].map(
         ({ publicState }) =>
-          `${Math.floor(publicState.position.x / COMMONS_GEOMETRY.tileSize)}:${Math.floor(publicState.position.y / COMMONS_GEOMETRY.tileSize)}`,
+          `${Math.floor(publicState.position.x / geometry.tileSize)}:${Math.floor(publicState.position.y / geometry.tileSize)}`,
       ),
     );
     const spawnTile = {
-      tx: Math.floor(COMMONS_GEOMETRY.spawn.x / COMMONS_GEOMETRY.tileSize),
-      ty: Math.floor(COMMONS_GEOMETRY.spawn.y / COMMONS_GEOMETRY.tileSize),
+      tx: Math.floor(geometry.spawn.x / geometry.tileSize),
+      ty: Math.floor(geometry.spawn.y / geometry.tileSize),
     };
     const candidates: Array<{ tx: number; ty: number }> = [];
-    for (let ty = 0; ty < COMMONS_GEOMETRY.heightTiles; ty += 1) {
-      for (let tx = 0; tx < COMMONS_GEOMETRY.widthTiles; tx += 1) {
-        const isSeatTile = commonsSeats.some((seat) => seat.tile.tx === tx && seat.tile.ty === ty);
-        if (validatedCommons.isReachable({ tx, ty }) && !isSeatTile) candidates.push({ tx, ty });
+    for (let ty = 0; ty < geometry.heightTiles; ty += 1) {
+      for (let tx = 0; tx < geometry.widthTiles; tx += 1) {
+        const isSeatTile = seats.some((seat) => seat.tile.tx === tx && seat.tile.ty === ty);
+        if (validated.isReachable({ tx, ty }) && !isSeatTile) candidates.push({ tx, ty });
       }
     }
     candidates.sort(
@@ -775,8 +783,8 @@ export class OfficeRuntimeService {
     const free = candidates.find((tile) => !occupiedTiles.has(`${tile.tx}:${tile.ty}`));
     invariant(free, 409, 'room_full');
     return {
-      x: free.tx * COMMONS_GEOMETRY.tileSize + COMMONS_GEOMETRY.tileSize / 2,
-      y: free.ty * COMMONS_GEOMETRY.tileSize + COMMONS_GEOMETRY.tileSize / 2,
+      x: free.tx * geometry.tileSize + geometry.tileSize / 2,
+      y: free.ty * geometry.tileSize + geometry.tileSize / 2,
     };
   }
 

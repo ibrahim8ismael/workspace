@@ -7,16 +7,16 @@ import {
   protocolVersionSchema,
   MAP_FORMAT_VERSION,
   MAP_TILE_SIZE,
-  MVP_MAP_ID,
+  officeMapIdSchema,
 } from '../versions.js';
 import { OFFICE_LIMITS } from '../limits.js';
 
 export const worldPointSchema = z.object({ x: z.number().min(0), y: z.number().min(0) }).strict();
-const mapGeometryPathPattern = new RegExp(`^/maps/${MVP_MAP_ID}-v1-[a-f0-9]{64}\\.json$`);
+const mapGeometryPathPattern = /^\/maps\/(?:commons|vivo)-v1-[a-f0-9]{64}\.json$/;
 export const mapManifestSchema = z
   .object({
     formatVersion: z.literal(MAP_FORMAT_VERSION),
-    mapId: z.literal(MVP_MAP_ID),
+    mapId: officeMapIdSchema,
     mapVersion: mapVersionSchema,
     contentHash: contentHashSchema,
     coordinateUnits: z.literal('pixels'),
@@ -37,7 +37,7 @@ export const mapManifestSchema = z
   })
   .strict()
   .superRefine((value, ctx) => {
-    if (value.mapVersion !== `${MVP_MAP_ID}-v1-${value.contentHash}`)
+    if (value.mapVersion !== `${value.mapId}-v1-${value.contentHash}`)
       ctx.addIssue({ code: 'custom', path: ['mapVersion'], message: 'Map hash/version mismatch' });
     if (value.geometryPath !== `/maps/${value.mapVersion}.json`)
       ctx.addIssue({

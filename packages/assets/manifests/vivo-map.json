@@ -1,0 +1,18 @@
+{
+  "assetManifestVersion": "vivo-art-v1-cfbbea6919ccb8327b9ea370f2a5bf911d7bc76c328b51789da04d932bb417fb",
+  "bounds": {
+    "width": 1664,
+    "height": 1600
+  },
+  "contentHash": "0208da25a5cdc4cbb4036ae04a5bb8796962752a3d84de24961ebc15d8038e7b",
+  "coordinateUnits": "pixels",
+  "formatVersion": 1,
+  "geometryPath": "/maps/vivo-v1-0208da25a5cdc4cbb4036ae04a5bb8796962752a3d84de24961ebc15d8038e7b.json",
+  "mapId": "vivo",
+  "mapVersion": "vivo-v1-0208da25a5cdc4cbb4036ae04a5bb8796962752a3d84de24961ebc15d8038e7b",
+  "spawn": {
+    "x": 656,
+    "y": 1264
+  },
+  "tileSize": 32
+}

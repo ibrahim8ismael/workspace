@@ -2,7 +2,7 @@
 
 Started: 2026-11-08. Parent: [completion plan](PROJECT_COMPLETION_PLAN.md#cp02--establish-one-immutable-map-and-asset-catalog). Wire boundary: [office v1](../contracts/OFFICE_V1.md). Original Commons implementation completed; Vivo adoption was reopened by owner direction on 2026-11-10. See the [superseding map/UI decision](../decisions/2026-11-08_CP02.md#superseding-owner-direction--2026-11-10) and [UI migration plan](../migration/OPENOFFICE_UI_INTEGRATION.md#owner-direction-adopt-the-supplied-map-and-ui-2026-11-10).
 
-The original CP02 rejection below is historical. The owner has since chosen the imported Vivo map from OpenOfficeForAll and this project's own APIs; coordinate the new map version, geometry, runtime collision/seats, persistence backfill and client renderer before replacing Commons in the running app.
+The original CP02 rejection below is historical. The owner has since chosen the imported Vivo map from OpenOfficeForAll and this project's own APIs. On 2026-11-10 the Vivo map became the default for newly created offices; immutable Commons offices remain registered for compatibility. CP02.6a records the server version, geometry, collision/seats and backfill. At this backend step the active office renderer still uses Commons; CP02.6b will connect VivoScene to the office APIs.
 
 ## Working arrangement
 
@@ -60,3 +60,27 @@ Run `pnpm dev:web` and open `http://127.0.0.1:5173/?commons-preview=1` (or use t
 On 2026-11-08, Codex tested Phaser 4.2.1 in Headless Chrome 152.0.7977.42 on macOS 26.6.1 arm64. The rendered avatar kept its `(80,80)` world anchor through keyboard Sit and Stand actions. Pixel comparison matched the pose sprites and 94 overlapping pixels drawn by the chair foreground. Sprite draw calls used nearest-neighbor sampling. Three keyboard close/reopen cycles removed each canvas, stopped drawing on it and created a single fresh canvas in standing pose. Blocking the standing SVG displayed an error and disabled Sit. Restoring the SVG and reopening recovered the scene. The normal sample run made no API or socket calls.
 
 The full local `pnpm check` passed 92 tests. The production build contains neither the preview assets nor Phaser. The [acceptance register](ACCEPTANCE.md#a06-cp025-local-renderer-sample) records partial A06 evidence. CP03 can start office discovery and admission against this map version. Full office rendering and pilot browser coverage follow in CP06.
+
+## Owner-directed Vivo runtime map (2026-11-10)
+
+The owner directed the project to use the supplied OpenOfficeForAll Vivo map and visual system while
+keeping this repository's API and Socket.IO authority. CP02.6 exports the imported map to an
+immutable, hash-verified server geometry at
+[`vivo-map.json`](../../packages/assets/manifests/vivo-map.json):
+`vivo-v1-0208da25a5cdc4cbb4036ae04a5bb8796962752a3d84de24961ebc15d8038e7b`. It is a 52 × 50 tile
+world (1664 × 1600 pixels), with 203 imported objects, 93 deduplicated terrain blockers, 58 seats,
+five meeting rooms, wall edges and spawn `(656,1264)`. The implementation combines terrain blockers
+with furniture blockers so the server collision agrees with the imported shared map helper.
+
+`pnpm build:vivo` regenerates the manifest and immutable geometry from `VIVO_GEOMETRY`; `pnpm
+check:vivo` verifies their bytes and hash. The API registry matches both collision geometry and
+packaged geometry before accepting a map version. Workspace creation selects Vivo. Existing
+Commons-version offices still bootstrap, receive tickets and run against their own map-specific
+bounds, collision, seats and appearance. Pending `pending-m0` records backfill to Vivo. The upstream
+map's measured-reference provenance and MIT notice remain attached in the repository. The active
+browser renderer is still Commons until CP02.6b connects VivoScene and its controls to these
+versioned server snapshots and movement commands.
+
+The API unit/integration tests pass against both map versions. Two-browser Vivo collision, seat
+contention and visual/accessibility acceptance remain follow-up checks; earlier two-browser office
+evidence exercised Commons.

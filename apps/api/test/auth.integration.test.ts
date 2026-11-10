@@ -12,6 +12,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { decryptMail, type MailPayload } from '@gather/delivery';
 import commonsManifest from '@gather/assets/manifests/commons-map.json' with { type: 'json' };
+import vivoManifest from '@gather/assets/manifests/vivo-map.json' with { type: 'json' };
 import {
   accountResponseSchema,
   authenticatedResponseSchema,
@@ -517,7 +518,7 @@ describe('company roles and isolation', () => {
     const officeId = office!._id;
     const otherOffice = await tenancy.offices.findOne({ workspaceId: otherWorkspaceId }).lean();
     const route = `/api/workspaces/${workspaceId}/offices/${officeId}`;
-    const approved = commonsManifest.mapVersion;
+    const approved = vivoManifest.mapVersion;
 
     const detail = await owner.client.get(`/api/workspaces/${workspaceId}`);
     status(detail, 200);
@@ -549,7 +550,7 @@ describe('company roles and isolation', () => {
         workspaceId,
         mapVersion: approved,
         protocolVersion: 1,
-        manifest: commonsManifest,
+        manifest: vivoManifest,
       });
     }
 
@@ -566,6 +567,17 @@ describe('company roles and isolation', () => {
     expect(unknown.body.error.code).toBe('office_not_ready');
 
     await tenancy.offices.updateOne({ _id: officeId }, { $set: { mapVersion: approved } });
+    await tenancy.offices.updateOne(
+      { _id: officeId },
+      { $set: { mapVersion: commonsManifest.mapVersion } },
+    );
+    const legacyMap = await owner.client.get(route);
+    status(legacyMap, 200);
+    expect(officeBootstrapResponseSchema.parse(legacyMap.body)).toMatchObject({
+      mapVersion: commonsManifest.mapVersion,
+      manifest: commonsManifest,
+    });
+    await tenancy.offices.updateOne({ _id: officeId }, { $set: { mapVersion: approved } });
     await tenancy.workspaces.updateOne({ _id: workspaceId }, { $set: { status: 'suspended' } });
     status(await owner.client.get(route), 403);
     await tenancy.workspaces.updateOne({ _id: workspaceId }, { $set: { status: 'active' } });
@@ -575,7 +587,7 @@ describe('company roles and isolation', () => {
     const owner = await account();
     const workspaceId = await workspace(owner);
     const office = await tenancy.offices.findOne({ workspaceId }).lean();
-    expect(office?.mapVersion).toBe(commonsManifest.mapVersion);
+    expect(office?.mapVersion).toBe(vivoManifest.mapVersion);
     const pendingId = randomUUID();
     const configuredId = randomUUID();
     const pendingWorkspaceId = randomUUID();
@@ -617,7 +629,7 @@ describe('company roles and isolation', () => {
     expect(backfilled).toMatchObject({
       _id: pendingId,
       workspaceId: pendingWorkspaceId,
-      mapVersion: commonsManifest.mapVersion,
+      mapVersion: vivoManifest.mapVersion,
     });
     expect(preserved).toMatchObject({
       _id: configuredId,
@@ -625,7 +637,7 @@ describe('company roles and isolation', () => {
       mapVersion: `commons-v1-${'0'.repeat(64)}`,
     });
     expect((await tenancy.offices.findById(office!._id).lean())?.mapVersion).toBe(
-      commonsManifest.mapVersion,
+      vivoManifest.mapVersion,
     );
   });
 
@@ -888,7 +900,7 @@ describe('office join tickets', () => {
       const response = await user.client.send(
         'post',
         `/api/workspaces/${workspaceId}/offices/${office!._id}/join-ticket`,
-        { mapVersion: commonsManifest.mapVersion, protocolVersion: 1 },
+        { mapVersion: vivoManifest.mapVersion, protocolVersion: 1 },
       );
       status(response, 201);
       const issued = joinTicketResponseSchema.parse(response.body);
@@ -900,7 +912,7 @@ describe('office join tickets', () => {
         userId: user.id,
         workspaceId,
         officeId: office!._id,
-        mapVersion: commonsManifest.mapVersion,
+        mapVersion: vivoManifest.mapVersion,
         protocolVersion: 1,
         consumedAt: null,
       });
@@ -922,7 +934,7 @@ describe('office join tickets', () => {
       const consumed = await admission.consume(issued.ticket, {
         workspaceId,
         officeId: office!._id,
-        mapVersion: commonsManifest.mapVersion,
+        mapVersion: vivoManifest.mapVersion,
         protocolVersion: 1,
       });
       expect(consumed).toMatchObject({ userId: user.id, workspaceId, officeId: office!._id });
@@ -944,7 +956,7 @@ describe('office join tickets', () => {
         .set('Origin', 'https://evil.test')
         .set('X-CSRF-Token', owner.client.csrf)
         .set('Content-Type', 'application/json')
-        .send({ mapVersion: commonsManifest.mapVersion, protocolVersion: 1 }),
+        .send({ mapVersion: vivoManifest.mapVersion, protocolVersion: 1 }),
       403,
     );
     status(
@@ -953,27 +965,27 @@ describe('office join tickets', () => {
         .set('Cookie', owner.client.cookie)
         .set('Origin', origin)
         .set('Content-Type', 'application/json')
-        .send({ mapVersion: commonsManifest.mapVersion, protocolVersion: 1 }),
+        .send({ mapVersion: vivoManifest.mapVersion, protocolVersion: 1 }),
       403,
     );
     status(
       await owner.client.send(
         'post',
         `/api/workspaces/not-a-uuid/offices/${office!._id}/join-ticket`,
-        { mapVersion: commonsManifest.mapVersion, protocolVersion: 1 },
+        { mapVersion: vivoManifest.mapVersion, protocolVersion: 1 },
       ),
       400,
     );
     status(
       await owner.client.send('post', path, {
-        mapVersion: commonsManifest.mapVersion,
+        mapVersion: vivoManifest.mapVersion,
         protocolVersion: 2,
       }),
       400,
     );
     status(
       await owner.client.send('post', path, {
-        mapVersion: commonsManifest.mapVersion,
+        mapVersion: vivoManifest.mapVersion,
         protocolVersion: 1,
         extra: true,
       }),
@@ -983,7 +995,7 @@ describe('office join tickets', () => {
       await owner.client.send(
         'post',
         `/api/workspaces/${workspaceId}/offices/${otherOffice!._id}/join-ticket`,
-        { mapVersion: commonsManifest.mapVersion, protocolVersion: 1 },
+        { mapVersion: vivoManifest.mapVersion, protocolVersion: 1 },
       ),
       404,
     );
@@ -1005,14 +1017,14 @@ describe('office join tickets', () => {
 
     await tenancy.offices.updateOne({ _id: office!._id }, { $set: { mapVersion: 'pending-m0' } });
     const pending = await owner.client.send('post', path, {
-      mapVersion: commonsManifest.mapVersion,
+      mapVersion: vivoManifest.mapVersion,
       protocolVersion: 1,
     });
     status(pending, 409);
     expect(pending.body.error.code).toBe('office_not_ready');
     await tenancy.offices.updateOne(
       { _id: office!._id },
-      { $set: { mapVersion: commonsManifest.mapVersion } },
+      { $set: { mapVersion: vivoManifest.mapVersion } },
     );
   });
 
@@ -1021,7 +1033,7 @@ describe('office join tickets', () => {
     const workspaceId = await workspace(owner);
     const office = await tenancy.offices.findOne({ workspaceId }).lean();
     const path = `/api/workspaces/${workspaceId}/offices/${office!._id}/join-ticket`;
-    const payload = { mapVersion: commonsManifest.mapVersion, protocolVersion: 1 };
+    const payload = { mapVersion: vivoManifest.mapVersion, protocolVersion: 1 };
     const fixedNow = Date.now();
     const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(fixedNow);
     const currentBucket = Math.floor(fixedNow / OFFICE_LIMITS.ticketWindowMs);
@@ -1072,14 +1084,14 @@ describe('office join tickets', () => {
     const response = await owner.client.send(
       'post',
       `/api/workspaces/${workspaceId}/offices/${office!._id}/join-ticket`,
-      { mapVersion: commonsManifest.mapVersion, protocolVersion: 1 },
+      { mapVersion: vivoManifest.mapVersion, protocolVersion: 1 },
     );
     status(response, 201);
     const raw = joinTicketResponseSchema.parse(response.body).ticket;
     const scope = {
       workspaceId,
       officeId: office!._id,
-      mapVersion: commonsManifest.mapVersion,
+      mapVersion: vivoManifest.mapVersion,
       protocolVersion: 1,
     };
     const admission = app.get(OfficeAdmissionService);
@@ -1102,7 +1114,7 @@ describe('office join tickets', () => {
     const second = await owner.client.send(
       'post',
       `/api/workspaces/${workspaceId}/offices/${office!._id}/join-ticket`,
-      { mapVersion: commonsManifest.mapVersion, protocolVersion: 1 },
+      { mapVersion: vivoManifest.mapVersion, protocolVersion: 1 },
     );
     const expiring = joinTicketResponseSchema.parse(second.body).ticket;
     const ticketModels = app.get(OfficeJoinTicketModels);
@@ -1123,13 +1135,13 @@ describe('office join tickets', () => {
     const scope = {
       workspaceId,
       officeId: office!._id,
-      mapVersion: commonsManifest.mapVersion,
+      mapVersion: vivoManifest.mapVersion,
       protocolVersion: 1,
     };
     const admission = app.get(OfficeAdmissionService);
     const issue = async () => {
       const response = await member.client.send('post', path, {
-        mapVersion: commonsManifest.mapVersion,
+        mapVersion: vivoManifest.mapVersion,
         protocolVersion: 1,
       });
       status(response, 201);
@@ -1168,14 +1180,14 @@ describe('office join tickets', () => {
     const scope = {
       workspaceId,
       officeId: office!._id,
-      mapVersion: commonsManifest.mapVersion,
+      mapVersion: vivoManifest.mapVersion,
       protocolVersion: 1,
     };
     const issue = async () => {
       const response = await member.client.send(
         'post',
         `/api/workspaces/${workspaceId}/offices/${office!._id}/join-ticket`,
-        { mapVersion: commonsManifest.mapVersion, protocolVersion: 1 },
+        { mapVersion: vivoManifest.mapVersion, protocolVersion: 1 },
       );
       status(response, 201);
       return joinTicketResponseSchema.parse(response.body).ticket;
@@ -1217,7 +1229,7 @@ describe('office join tickets', () => {
     const ownerTicketResponse = await owner.client.send(
       'post',
       `/api/workspaces/${workspaceId}/offices/${office!._id}/join-ticket`,
-      { mapVersion: commonsManifest.mapVersion, protocolVersion: 1 },
+      { mapVersion: vivoManifest.mapVersion, protocolVersion: 1 },
     );
     status(ownerTicketResponse, 201);
     const logoutTicket = joinTicketResponseSchema.parse(ownerTicketResponse.body).ticket;
@@ -1234,7 +1246,7 @@ describe('office join tickets', () => {
     const response = await member.client.send(
       'post',
       `/api/workspaces/${workspaceId}/offices/${office!._id}/join-ticket`,
-      { mapVersion: commonsManifest.mapVersion, protocolVersion: 1 },
+      { mapVersion: vivoManifest.mapVersion, protocolVersion: 1 },
     );
     status(response, 201);
     const raw = joinTicketResponseSchema.parse(response.body).ticket;
@@ -1242,7 +1254,7 @@ describe('office join tickets', () => {
     const scope = {
       workspaceId,
       officeId: office!._id,
-      mapVersion: commonsManifest.mapVersion,
+      mapVersion: vivoManifest.mapVersion,
       protocolVersion: 1,
     };
     const [consumeResult, revokeResult] = await Promise.allSettled([
@@ -1267,7 +1279,7 @@ describe('office join tickets', () => {
     const office = await tenancy.offices.findOne({ workspaceId }).lean();
     const path = `/api/workspaces/${workspaceId}/offices/${office!._id}/join-ticket`;
     const issued = await owner.client.send('post', path, {
-      mapVersion: commonsManifest.mapVersion,
+      mapVersion: vivoManifest.mapVersion,
       protocolVersion: 1,
     });
     status(issued, 201);
@@ -1294,7 +1306,7 @@ describe('office join tickets', () => {
         app.get(OfficeAdmissionService).consume(raw, {
           workspaceId,
           officeId: office!._id,
-          mapVersion: commonsManifest.mapVersion,
+          mapVersion: vivoManifest.mapVersion,
           protocolVersion: 1,
         }),
       ).rejects.toMatchObject({ status: 401 });
@@ -1343,7 +1355,7 @@ describe('office socket admission', () => {
     const response = await user.client.send(
       'post',
       `/api/workspaces/${workspaceId}/offices/${office._id}/join-ticket`,
-      { mapVersion: commonsManifest.mapVersion, protocolVersion: 1 },
+      { mapVersion: vivoManifest.mapVersion, protocolVersion: 1 },
     );
     status(response, 201);
     return {
@@ -1366,7 +1378,7 @@ describe('office socket admission', () => {
       expect(ready.snapshot.participants[0]).toMatchObject({
         displayName: 'Test Person',
         appearance: { bodyId: 'commons-worker', paletteId: 'teal' },
-        position: { x: 368, y: 272 },
+        position: vivoManifest.spawn,
         seatId: null,
       });
       expect(ready.snapshot.seats.length).toBeGreaterThan(0);
@@ -1648,7 +1660,7 @@ describe('office socket admission', () => {
         {
           participationId: ownerReady.participationId,
           officeEpoch: ownerReady.snapshot.officeEpoch,
-          mapVersion: commonsManifest.mapVersion,
+          mapVersion: vivoManifest.mapVersion,
           protocolVersion: 1,
         },
       );
@@ -1662,7 +1674,7 @@ describe('office socket admission', () => {
         'post',
         `/api/workspaces/${workspaceId}/offices/${office._id}/join-ticket/takeover`,
         {
-          mapVersion: commonsManifest.mapVersion,
+          mapVersion: vivoManifest.mapVersion,
           protocolVersion: 1,
           takeover: {
             participationId: reference.participationId,
@@ -1680,7 +1692,7 @@ describe('office socket admission', () => {
         'post',
         `/api/workspaces/${workspaceId}/offices/${office._id}/join-ticket/takeover`,
         {
-          mapVersion: commonsManifest.mapVersion,
+          mapVersion: vivoManifest.mapVersion,
           protocolVersion: 1,
           takeover: {
             participationId: reference.participationId,

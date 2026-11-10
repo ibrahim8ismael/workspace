@@ -52,6 +52,7 @@ export const VIVO_GEOMETRY: OfficeGeometry = freeze({
   widthTiles: WORLD.cols,
   heightTiles: WORLD.rows,
   spawn: { x: SPAWN_TILE.tx * TILE + TILE / 2, y: SPAWN_TILE.ty * TILE + TILE / 2 },
+  blockedTiles: [...BLOCKED].map(tileFromKey),
   blockedEdges: [...blockedEdges.values()],
   objects: OBJECTS.map((object) => ({
     objectId: object.id,
@@ -71,4 +72,4 @@ export const VIVO_GEOMETRY: OfficeGeometry = freeze({
   })),
 });
 
-export const VIVO_BLOCKED_TILES = [...BLOCKED].map(tileFromKey);
+export const VIVO_BLOCKED_TILES = VIVO_GEOMETRY.blockedTiles!;

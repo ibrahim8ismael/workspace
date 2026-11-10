@@ -24,7 +24,7 @@ import { AbuseService } from '../identity/security/abuse.service.js';
 import { digest, newSecret } from '../identity/security/secrets.js';
 import { DatabaseService } from '../../platform/database/database.service.js';
 import { invariant } from '../../platform/http/errors.js';
-import { APPROVED_OFFICE_MAP_VERSION } from './commons-registry.js';
+import { trustedOfficeMap } from './office-map-registry.js';
 import { OfficeEpochRegistry } from './office-epoch.registry.js';
 import { OfficeJoinTicketModels } from './join-ticket.models.js';
 import type { OfficeJoinTicketRecord } from './join-ticket.models.js';
@@ -43,7 +43,7 @@ interface OfficeScope {
 }
 
 function checkOffice(office: OfficeRecord, request: JoinTicketRequest) {
-  invariant(office.mapVersion === APPROVED_OFFICE_MAP_VERSION, 409, 'office_not_ready');
+  invariant(trustedOfficeMap(office.mapVersion), 409, 'office_not_ready');
   invariant(office.mapVersion === request.mapVersion, 409, 'map_version_mismatch');
   invariant(request.protocolVersion === OFFICE_PROTOCOL_VERSION, 409, 'protocol_mismatch');
 }
@@ -399,11 +399,7 @@ export class OfficeAdmissionService {
         })
         .session(tx)
         .lean();
-      invariant(
-        office && office.mapVersion === APPROVED_OFFICE_MAP_VERSION,
-        409,
-        'office_not_ready',
-      );
+      invariant(office && trustedOfficeMap(office.mapVersion), 409, 'office_not_ready');
       invariant(ticket.officeEpoch === this.epochs.current(ticket.officeId), 409, 'stale_epoch');
 
       const consumedAt = new Date();
@@ -512,7 +508,7 @@ export class OfficeAdmissionService {
       grantId(member) === ticket.membershipGrantId &&
       workspace &&
       office &&
-      office.mapVersion === APPROVED_OFFICE_MAP_VERSION &&
+      trustedOfficeMap(office.mapVersion) !== null &&
       this.epochs.current(ticket.officeId) === ticket.officeEpoch,
     );
   }

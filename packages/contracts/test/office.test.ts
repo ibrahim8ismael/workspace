@@ -113,35 +113,34 @@ describe('office v1 contracts (fixtures do not approve a map or grant access)', 
     ).toBe(false);
   });
 
-  it('rejects a self-consistent Vivo manifest and other pre-commons map identities', () => {
-    const vivoHash = 'c'.repeat(64);
-    const vivoVersion = `vivo-v1-${vivoHash}`;
-    const vivoManifest = {
+  it('accepts registered map identities and rejects unregistered map identities', () => {
+    const commonsManifest = {
       ...manifest,
-      mapId: 'vivo',
-      mapVersion: vivoVersion,
-      contentHash: vivoHash,
-      geometryPath: `/maps/${vivoVersion}.json`,
+      mapId: 'commons',
+      mapVersion: `commons-v1-${hash}`,
+      geometryPath: `/maps/commons-v1-${hash}.json`,
     };
     expect(
       officeBootstrapResponseSchema.safeParse({
         ...bootstrap,
-        mapVersion: vivoVersion,
-        manifest: vivoManifest,
+        mapVersion: commonsManifest.mapVersion,
+        manifest: commonsManifest,
       }).success,
-    ).toBe(false);
+    ).toBe(true);
     expect(
-      joinTicketRequestSchema.safeParse({ mapVersion: vivoVersion, protocolVersion: 1 }).success,
-    ).toBe(false);
+      joinTicketRequestSchema.safeParse({
+        mapVersion: commonsManifest.mapVersion,
+        protocolVersion: 1,
+      }).success,
+    ).toBe(true);
     for (const changed of [
       { ...manifest, mapId: 'campus' },
-      { ...manifest, mapId: 'vivo' },
+      { ...manifest, mapId: 'commons' },
       { ...manifest, mapVersion: `campus-v1-${hash}` },
-      { ...manifest, mapVersion: `vivo-v1-${hash}` },
+      { ...manifest, mapVersion: `commons-v1-${hash}` },
       { ...manifest, mapVersion: `commons-v2-${hash}` },
       { ...manifest, mapVersion: `commons-v1-${'B'.repeat(64)}` },
       { ...manifest, contentHash: 'b'.repeat(64) },
-      { ...manifest, geometryPath: `/maps/vivo-v1-${hash}.json` },
       { ...manifest, geometryPath: `/maps/campus-v1-${hash}.json` },
       { ...manifest, geometryPath: `/maps/${version}.json/extra` },
       { ...manifest, mapVersion: 'pending-m0' },

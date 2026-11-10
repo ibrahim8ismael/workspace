@@ -97,6 +97,8 @@ export interface OfficeGeometry {
   readonly heightTiles: number;
   /** Spawn center in world pixels, not tile coordinates. */
   readonly spawn: WorldPoint;
+  /** Terrain-blocked tiles, including non-furniture obstacles such as water. */
+  readonly blockedTiles?: readonly TilePoint[];
   /** Undirected room/wall edges; each tuple is in arbitrary endpoint order. */
   readonly blockedEdges: readonly (readonly [TilePoint, TilePoint])[];
   readonly objects: readonly OfficeObjectDefinition[];

@@ -1,6 +1,6 @@
 # Completion implementation progress
 
-Updated: 2026-11-09. Implementer/reviewer: Codex, at the project owner's request; OpenCode / DeepSeek V4.1 Flash Free at `max` implemented CP02.1–CP02.4. Codex implemented CP02.5 with the owner’s approval. Completed packets: **CP00 — documentation reconciliation**, **CP01 — owner choices and first contracts**, **CP02 — immutable Commons map and renderer sample**, and **CP03 — scoped office admission** from the [completion plan](PROJECT_COMPLETION_PLAN.md).
+Updated: 2026-11-10. Implementer/reviewer: Codex, at the project owner's request; OpenCode / DeepSeek V4.1 Flash Free at `max` implemented CP02.1–CP02.4. Codex implemented CP02.5 with the owner’s approval. Completed packets: **CP00 — documentation reconciliation**, **CP01 — owner choices and first contracts**, **CP02 — original Commons map and renderer sample** (later superseded by the owner-directed Vivo adoption), and **CP03 — scoped office admission** from the [completion plan](PROJECT_COMPLETION_PLAN.md).
 
 The owner requested a push after each completed process. Each row below is a reviewable batch: update documentation, validate, commit, then push. Git history is the authoritative record of the actual commit/push; later batches can record earlier commit IDs without self-referencing a commit that does not exist yet.
 
@@ -661,3 +661,18 @@ Final combined actual run: room deletion rejected with 401 while media initially
 Full repository `pnpm check` passed with **190 tests**: 19 contracts, 30 world, 20 media-spike, five export, five shared, 32 web and 79 API; formatting/lint/typechecks and all application builds passed. Media-spike regressions now run in the standard check command. Narrow Node/browser globals were added for actual runtime contexts, and existing empty catches/unused initialization were cleaned up. A pre-existing Markdown table formatting failure in infra/README.md was corrected. The production web build retains an existing large-chunk advisory; it is not a failed gate.
 
 CP07's named local experiment exit is demonstrated, with measured case limits and retained failures. A07 production release acceptance remains open. CP08/CP09 must replace synthetic policy identities with real participation/session/company policy, and CP10 must validate deployment privileges, keys/TLS/volume protections and any added TURN/UDP/alternate ingress. A live kernel/wrapper and trusted authenticated policy writer remain explicit assumptions. Shared-node fail-closed shutdown interrupts both companies; this is a recorded operational limitation, not confidentiality leakage.
+
+
+## CP02.6a — owner-directed Vivo server map and version registry (2026-11-10)
+
+Added a reproducible Vivo manifest and immutable geometry export with version
+`vivo-v1-0208da25a5cdc4cbb4036ae04a5bb8796962752a3d84de24961ebc15d8038e7b`. The server validates the
+52 × 50 map, all terrain/wall/furniture blockers, 58 seats and five meeting areas against the imported
+source. New workspaces select Vivo; old Commons map versions continue through bootstrap, admission,
+runtime collision and seats. The `pending-m0` backfill now targets Vivo. This closes the backend map
+version transition while retaining the upstream provenance and MIT notice.
+
+Verification: contracts 19/19, world 31/31, API 80/80; `pnpm check:vivo`, API build and image build
+passed. API integration coverage includes new Vivo offices and a legacy Commons bootstrap. The next
+step mounts upstream `VivoScene` in the current office route and wires its movement/seat/status
+actions to `OfficeClient`; two-browser Vivo collision and isolation acceptance remain.

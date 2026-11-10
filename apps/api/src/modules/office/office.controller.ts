@@ -13,7 +13,7 @@ import { actor } from '../identity/sessions/session.service.js';
 import { ValidationPipe } from '../../platform/http/validation.pipe.js';
 import { invariant } from '../../platform/http/errors.js';
 import { TenancyService } from '../tenancy/tenancy.service.js';
-import { trustedOfficeBootstrap } from './commons-registry.js';
+import { trustedOfficeBootstrap } from './office-map-registry.js';
 import { OfficeAdmissionService } from './office-admission.service.js';
 import type {
   JoinTicketRequest,

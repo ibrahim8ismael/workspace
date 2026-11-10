@@ -1,6 +1,6 @@
 import type { Model } from 'mongoose';
 import type { OfficeRecord } from '../tenancy/tenancy.models.js';
-import { APPROVED_OFFICE_MAP_VERSION } from './commons-registry.js';
+import { APPROVED_OFFICE_MAP_VERSION } from './office-map-registry.js';
 
 export interface OfficeMapBackfillResult {
   pending: number;

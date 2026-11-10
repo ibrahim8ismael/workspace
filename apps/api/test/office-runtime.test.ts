@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { OFFICE_LIMITS } from '@gather/contracts';
-import { COMMONS_GEOMETRY, pixelToTile } from '@gather/world';
+import { COMMONS_GEOMETRY, VIVO_GEOMETRY, pixelToTile } from '@gather/world';
+import commonsManifest from '@gather/assets/manifests/commons-map.json' with { type: 'json' };
+import vivoManifest from '@gather/assets/manifests/vivo-map.json' with { type: 'json' };
 import { OfficeRuntimeService } from '../dist/modules/office/runtime/office-runtime.service.js';
 import type { ConsumedOfficeTicket } from '../dist/modules/office/runtime/office-runtime.service.js';
 
-function ticket(userNumber: number): ConsumedOfficeTicket {
+function ticket(userNumber: number, mapVersion = commonsManifest.mapVersion): ConsumedOfficeTicket {
   return {
     userId: `user-${userNumber}`,
     displayName: `User ${userNumber}`,
@@ -15,12 +17,26 @@ function ticket(userNumber: number): ConsumedOfficeTicket {
     workspaceId: '10000000-0000-4000-8000-000000000001',
     officeId: '20000000-0000-4000-8000-000000000001',
     officeEpoch: '5fc87e60-62b8-4cf9-8edc-dcaa2a1d8249',
-    mapVersion: `commons-v1-${'a'.repeat(64)}`,
+    mapVersion,
     protocolVersion: 1,
   };
 }
 
 describe('office runtime reservations', () => {
+  it('runs Vivo offices against the registered 52 by 50 map and its seat layout', () => {
+    const runtime = new OfficeRuntimeService();
+    const active = ticket(1, vivoManifest.mapVersion);
+    const reservation = runtime.reserve(active, 'socket-vivo');
+    const self = reservation.ready.snapshot.participants[0]!;
+    expect(reservation.ready.mapVersion).toBe(vivoManifest.mapVersion);
+    expect(reservation.ready.snapshot.seats).toHaveLength(
+      VIVO_GEOMETRY.objects.reduce((count, object) => count + object.seats.length, 0),
+    );
+    expect(self.position).toEqual(VIVO_GEOMETRY.spawn);
+    expect(self.position.x).toBeLessThan(VIVO_GEOMETRY.widthTiles * VIVO_GEOMETRY.tileSize);
+    expect(self.position.y).toBeLessThan(VIVO_GEOMETRY.heightTiles * VIVO_GEOMETRY.tileSize);
+  });
+
   it('caps admission, prevents duplicate actors and frees capacity on release', () => {
     const runtime = new OfficeRuntimeService();
     const reservations = Array.from({ length: OFFICE_LIMITS.maxParticipants }, (_, index) =>

@@ -13,7 +13,7 @@ import { DatabaseService } from '../../platform/database/database.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { digest, newSecret } from '../identity/security/secrets.js';
 import { invariant } from '../../platform/http/errors.js';
-import { APPROVED_OFFICE_MAP_VERSION } from '../office/commons-registry.js';
+import { APPROVED_OFFICE_MAP_VERSION } from '../office/office-map-registry.js';
 
 function dto(workspace: WorkspaceRecord, role: MembershipRecord['role']): WorkspaceDto {
   return {

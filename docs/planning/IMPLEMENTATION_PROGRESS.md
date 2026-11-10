@@ -580,6 +580,12 @@ The owner confirmed that the supplied OpenOfficeForAll app, layout, reusable com
 
 Stage 1 inventory is complete. Next is restoring the supplied shell and moving the supported account/company journey into its visual system, then adapting office state and admission to the existing client. Keep the Commons map, defer unavailable chat/calendar/edit/media operations, preserve upstream notices, and ship each completed code/documentation slice in its own pushed commit.
 
+## OpenOfficeForAll UI migration — upstream account-entry styles (2026-11-10)
+
+The authenticated account flow keeps the existing secure API logic for login, registration, verification, resend and password recovery, while its entry screen now uses OpenOfficeForAll's dashboard header, welcome modal, labels, primary buttons and links. The login, loading and retry states remain on the same app entry. This is the first visible migration slice; the company list/details, office shell/map placement and unsupported feature controls still use the newer integration UI.
+
+Web TypeScript, focused ESLint, production build and `pnpm exec playwright test tests/e2e/company-office-preview.spec.ts` passed (one Chromium test). The next step reuses the upstream workspace dashboard and dialog styles for the current company list/create/invitation APIs.
+
 ## CP07.20 — Late-policy cutoff and fail-closed cold bootstrap (2026-11-10)
 
 Added authenticated delayed-policy fault (1500ms replies vs 1000ms guard abort). Room retirement is postponed until after cutoff to avoid masking lease-renewal errors. A startup timing failure led to stronger default-deny SFU bootstrap: no LiveKit child starts until a valid request-start lease newer than this boot exists. This replaces the prior three-second startup grace; stale pre-boot allow files cannot bootstrap media.

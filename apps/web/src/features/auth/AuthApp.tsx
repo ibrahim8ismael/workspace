@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { LayoutGrid } from 'lucide-react';
 import type { AccountDto, WorkspaceDto } from '@gather/contracts';
 import { ApiClient, ApiError } from '../../lib/api';
 import { clearLegacyAuthStorage } from '../../lib/legacy-storage';
@@ -15,16 +16,16 @@ type AppScreen = 'companies' | 'company' | 'security';
 
 function Shell({ children }: { children: ReactNode }) {
   return (
-    <main className="account-shell">
-      <div className="account-frame">
-        <header className="account-brand">
-          <span aria-hidden="true" className="account-mark">
-            G
+    <main className="dashboard">
+      <header className="dashboard-bar">
+        <a className="dashboard-brand" href="/" aria-label="Open Office home">
+          <span className="workspace-logo" aria-hidden="true">
+            <LayoutGrid size={18} />
           </span>
-          <span>Gather Lite</span>
-        </header>
-        {children}
-      </div>
+          <strong>Open Office</strong>
+        </a>
+      </header>
+      {children}
     </main>
   );
 }
@@ -47,7 +48,7 @@ function Field({
   maxLength?: number;
 }) {
   return (
-    <label className="account-field">
+    <label>
       <span>{label}</span>
       <input
         name={name}
@@ -136,7 +137,7 @@ function AuthFlow({
       >
         <Field label="Email" name="email" type="email" autoComplete="email" />
         <Field label="Password" name="password" type="password" autoComplete="current-password" />
-        <button className="account-primary" disabled={busy} type="submit">
+        <button className="primary enter-button" disabled={busy} type="submit">
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
       </form>
@@ -170,7 +171,7 @@ function AuthFlow({
           minLength={15}
           maxLength={128}
         />
-        <button className="account-primary" disabled={busy} type="submit">
+        <button className="primary enter-button" disabled={busy} type="submit">
           {busy ? 'Creating account…' : 'Create account'}
         </button>
       </form>
@@ -200,7 +201,7 @@ function AuthFlow({
           type="password"
           autoComplete="current-password"
         />
-        <button className="account-primary" disabled={busy} type="submit">
+        <button className="primary enter-button" disabled={busy} type="submit">
           {busy ? 'Verifying…' : 'Verify email'}
         </button>
       </form>
@@ -218,7 +219,7 @@ function AuthFlow({
         }
       >
         <Field label="Email" name="email" type="email" autoComplete="email" />
-        <button className="account-primary" disabled={busy} type="submit">
+        <button className="primary enter-button" disabled={busy} type="submit">
           {busy ? 'Sending…' : 'Resend code'}
         </button>
       </form>
@@ -236,7 +237,7 @@ function AuthFlow({
         }
       >
         <Field label="Email" name="email" type="email" autoComplete="email" />
-        <button className="account-primary" disabled={busy} type="submit">
+        <button className="primary enter-button" disabled={busy} type="submit">
           {busy ? 'Sending…' : 'Send reset code'}
         </button>
       </form>
@@ -271,7 +272,7 @@ function AuthFlow({
           minLength={15}
           maxLength={128}
         />
-        <button className="account-primary" disabled={busy} type="submit">
+        <button className="primary enter-button" disabled={busy} type="submit">
           {busy ? 'Updating…' : 'Reset password'}
         </button>
       </form>
@@ -289,36 +290,58 @@ function AuthFlow({
 
   return (
     <Shell>
-      <section className="account-card" aria-labelledby="auth-title">
-        <div className="account-eyebrow">ACCOUNT</div>
-        <h1 id="auth-title" ref={titleRef} tabIndex={-1}>
-          {title}
-        </h1>
-        <p className="account-subtitle">{subtitle}</p>
-        {error && (
-          <p className="account-message is-error" role="alert">
-            {error}
-          </p>
-        )}
-        {notice && (
-          <p className="account-message" role="status">
-            {notice}
-          </p>
-        )}
-        <div key={view}>{form}</div>
-        <nav className="account-links" aria-label="Account options">
-          {links.map(({ label, next }) => (
-            <button key={next} disabled={busy} type="button" onClick={() => move(next)}>
-              {label}
-            </button>
-          ))}
-          {initialRetry && view === 'login' && (
-            <button disabled={busy} type="button" onClick={onRetry}>
-              Retry connection
-            </button>
+      <div className="dashboard-body">
+        <div className="dashboard-empty">
+          <p>Sign in to see your companies.</p>
+        </div>
+      </div>
+      <div className="modal-backdrop welcome-backdrop">
+        <section className="modal welcome-modal" aria-labelledby="auth-title">
+          <div className="welcome-art" aria-hidden="true">
+            <span className="workspace-logo">
+              <LayoutGrid size={22} />
+            </span>
+          </div>
+          <span className="eyebrow">OPEN OFFICE</span>
+          <h1 id="auth-title" ref={titleRef} tabIndex={-1}>
+            {title}
+          </h1>
+          <p>{subtitle}</p>
+          {error && (
+            <p className="form-error" role="alert">
+              {error}
+            </p>
           )}
-        </nav>
-      </section>
+          {notice && (
+            <p className="auth-signed" role="status">
+              {notice}
+            </p>
+          )}
+          <div key={view}>{form}</div>
+          <nav aria-label="Account options">
+            {links.map(({ label, next }, index) => (
+              <span key={next}>
+                {index > 0 && ' · '}
+                <button
+                  className="link-button"
+                  disabled={busy}
+                  type="button"
+                  onClick={() => move(next)}
+                >
+                  {label}
+                </button>
+              </span>
+            ))}
+            {initialRetry && view === 'login' && (
+              <p>
+                <button className="link-button" disabled={busy} type="button" onClick={onRetry}>
+                  Retry connection
+                </button>
+              </p>
+            )}
+          </nav>
+        </section>
+      </div>
     </Shell>
   );
 }
@@ -634,7 +657,11 @@ export default function AuthApp() {
   if (state === 'loading')
     return (
       <Shell>
-        <p role="status">Checking your account…</p>
+        <div className="dashboard-body">
+          <div className="dashboard-empty">
+            <p role="status">Checking your account…</p>
+          </div>
+        </div>
       </Shell>
     );
   if (state === 'signed-out')

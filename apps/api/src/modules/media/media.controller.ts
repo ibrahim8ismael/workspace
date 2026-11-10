@@ -24,6 +24,9 @@ export class MediaController {
     @Body(new ValidationPipe(mediaPolicyInstallAckSchema)) body: unknown,
     @Res() response: Response,
   ) {
-    response.status(200).json(this.policy.acknowledgeInstallation(body));
+    const acknowledgement = this.policy.acknowledgeInstallation(body);
+    response.setHeader('Content-Type', 'application/json; charset=utf-8');
+    response.setHeader('X-CP07-Signature', acknowledgement.signature);
+    response.status(200).send(acknowledgement.body);
   }
 }

@@ -1,15 +1,96 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-export const policySignature = (key, body) => createHmac('sha256', key).update(body).digest('hex');
+export function decodePolicyKey(key) {
+  if (typeof key !== 'string') throw new Error('policy key must be canonical base64');
+  const decoded = Buffer.from(key, 'base64');
+  if (decoded.length !== 32 || decoded.toString('base64') !== key)
+    throw new Error('policy key must encode 32 bytes as canonical base64');
+  return decoded;
+}
+export const policySignature = (key, body) =>
+  createHmac('sha256', decodePolicyKey(key)).update(body).digest('hex');
 export function validPolicySignature(key, body, signature) {
   if (typeof signature !== 'string' || !/^[a-f0-9]{64}$/.test(signature)) return false;
-  return timingSafeEqual(
-    Buffer.from(policySignature(key, body), 'hex'),
-    Buffer.from(signature, 'hex'),
-  );
+  try {
+    return timingSafeEqual(
+      Buffer.from(policySignature(key, body), 'hex'),
+      Buffer.from(signature, 'hex'),
+    );
+  } catch {
+    return false;
+  }
 }
+
+export async function acknowledgePolicyInstallation({
+  endpoint,
+  key,
+  snapshot,
+  fetchImpl = fetch,
+}) {
+  try {
+    decodePolicyKey(key);
+    const body = JSON.stringify({
+      epoch: snapshot.epoch,
+      nonce: snapshot.nonce,
+      sequence: snapshot.sequence,
+    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 1000);
+    try {
+      const response = await fetchImpl(endpoint, {
+        method: 'POST',
+        redirect: 'error',
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CP07-Signature': policySignature(key, body),
+        },
+        body,
+      });
+      if (
+        response.status !== 200 ||
+        !response.body ||
+        !response.headers.get('content-type')?.startsWith('application/json')
+      )
+        return false;
+      const reader = response.body.getReader();
+      let size = 0;
+      const chunks = [];
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          size += value.byteLength;
+          if (size > 4096) {
+            await reader.cancel();
+            return false;
+          }
+          chunks.push(value);
+        }
+      } finally {
+        reader.releaseLock();
+      }
+      const responseBody = Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)));
+      if (!validPolicySignature(key, responseBody, response.headers.get('X-CP07-Signature')))
+        return false;
+      const acknowledgement = JSON.parse(responseBody.toString('utf8'));
+      return (
+        acknowledgement &&
+        Object.keys(acknowledgement).sort().join(',') === 'acknowledged,sequence' &&
+        acknowledgement.acknowledged === true &&
+        acknowledgement.sequence === snapshot.sequence
+      );
+    } finally {
+      clearTimeout(timeout);
+    }
+  } catch {
+    return false;
+  }
+}
+
 /** Authenticated, bounded policy transport; installation owns request-start expiry/sequence validation. */
 export async function pullPolicy({
   endpoint,
+  ackEndpoint,
   key,
   state,
   fetchImpl = fetch,
@@ -17,8 +98,7 @@ export async function pullPolicy({
   onInstalled = () => {},
   onVerified = () => {},
 }) {
-  if (typeof key !== 'string' || Buffer.byteLength(key) < 32)
-    throw new Error('policy key too short');
+  decodePolicyKey(key);
   const challenge = state.beginPull(randomBytes(32).toString('hex'));
   const body = JSON.stringify(challenge);
   const controller = new AbortController();
@@ -75,7 +155,12 @@ export async function pullPolicy({
       return false;
     onVerified(snapshot);
     if (!state.install(snapshot)) return false;
-    onInstalled(snapshot);
+    if (
+      ackEndpoint &&
+      !(await acknowledgePolicyInstallation({ endpoint: ackEndpoint, key, snapshot, fetchImpl }))
+    )
+      return false;
+    await onInstalled(snapshot);
     return true;
   } catch {
     return false;

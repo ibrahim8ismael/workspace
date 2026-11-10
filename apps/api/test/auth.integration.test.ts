@@ -1826,7 +1826,10 @@ describe('office socket admission', () => {
         .send(pullBody);
       status(unsignedPull, 401);
 
-      const alteredPullBody = JSON.stringify({ ...challenge, nonce: randomBytes(32).toString('hex') });
+      const alteredPullBody = JSON.stringify({
+        ...challenge,
+        nonce: randomBytes(32).toString('hex'),
+      });
       const alteredPull = await request(app.getHttpServer())
         .post('/api/media/internal/policy/pull')
         .set(
@@ -1886,6 +1889,9 @@ describe('office socket admission', () => {
         .send(acknowledgementBody);
       status(installed, 200);
       expect(installed.body).toEqual({ acknowledged: true, sequence: 1 });
+      expect(installed.headers['x-cp07-signature']).toBe(
+        createHmac('sha256', mediaMachineKey).update(installed.text).digest('hex'),
+      );
       const active = conversationUpdateSchema.parse(await firstActiveNotice);
       expect(conversationUpdateSchema.parse(await secondActiveNotice)).toEqual(active);
       expect(active).toMatchObject({

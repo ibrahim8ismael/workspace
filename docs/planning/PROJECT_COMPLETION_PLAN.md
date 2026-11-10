@@ -239,12 +239,13 @@ Depends on: CP05/CP06 and passing CP07. Deliverable: authorized one-to-one proxi
 Progress: CP08.1 implements deterministic application-side pairing and private realtime state.
 CP08.2a defines strict shared media-token, policy-pull, permit-snapshot and install-ack schemas;
 CP08.2b implements HMAC-authenticated application pull/ack routes and marks only still-current
-generations active after an exact install acknowledgement. The CP07 guard process is not yet
-connected to these routes, and application policy state is process-local. No media token, LiveKit
-browser join or actual audio has been enabled. CP07's isolated cutoff proof still needs application
-and deployment integration for release A07. Continue with the real guard connection and guarded
-grant path before exposing microphone controls; keep real-audio acceptance open until that path
-passes.
+generations active after an exact installation acknowledgement. CP08.2c adds the guard-side signed
+ACK client and shared canonical base64 key decoding, but the API and guard have not yet been exercised
+as one live networked process pair. Application policy state is process-local. No media token,
+LiveKit browser join or actual audio has been enabled. CP07's isolated cutoff proof still needs
+application and deployment integration for release A07. Continue with a real API-to-guard transport
+exercise and the guarded grant path before exposing microphone controls; keep real-audio acceptance
+open until that path passes.
 
 1. Implement deterministic pairing, one active conversation per participation, explicit opt-in and availability gates. Freeze ties, suppression after explicit leave and distance/debounce semantics; never debounce security revocation.
 2. Track conversation state/version/member set/generation in office-owner memory. Create isolated rooms per generation; retire the old generation before granting a replacement. Handle boundary churn with bounded recovery budgets.

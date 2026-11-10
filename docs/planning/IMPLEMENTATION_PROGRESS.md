@@ -847,3 +847,28 @@ This code-and-docs batch is committed and pushed separately. Next: connect the e
 pull/install loop to the signed API endpoints over an authenticated private transport, verify that
 the real guard emits its ACK only after installation, and keep media-token issuance disabled until
 that integration is proven.
+
+## CP08.2c — CP07 client ACK bridge and shared HMAC key format (2026-11-10)
+
+Connected the guard's `pullPolicy` client to an optional `CP07_POLICY_ACK_ENDPOINT`. After the
+signed policy response passes schema/challenge validation and `PermitState.install` succeeds, the
+guard posts an HMAC-authenticated ACK containing the exact epoch, nonce and sequence. It verifies
+the API's HMAC-signed response and exact acknowledgement body before writing supervisor lease
+progress or emitting the supervisor ACK. A rejected, stale, malformed or timed-out application ACK
+does not renew supervisor progress. The CP07 synthetic fixture keeps its existing mode when no app
+ACK endpoint is configured.
+
+Standardized `CP07_POLICY_KEY` on the same canonical base64 encoding of 32 random bytes used by
+`MEDIA_MACHINE_KEY`; both sides decode to the identical raw HMAC key before signing. This closes a
+previous mismatch where the fixture client treated the base64 text itself as the HMAC key. The media
+spike suite passed (23 tests), `pnpm lint` and `pnpm format:check` passed. CP08.2b's API integration
+suite remains green (88 tests), including the raw request signatures and signed policy/ACK response.
+
+This verifies the separate API endpoint and guard adapter paths, but no real API-to-guard Docker
+network, LiveKit media, token issuance or cutoff is claimed; the local container engine is
+unavailable. HMAC gives message integrity/authentication, not confidentiality or network isolation,
+so production transport and ingress restrictions remain required. A07/A08 remain open.
+
+This code-and-docs slice is committed and pushed separately. Next: exercise the app API and guard
+adapter against each other over the local authenticated transport, then add a session-bound media
+token route that requires a currently installed permit before any browser can join LiveKit.

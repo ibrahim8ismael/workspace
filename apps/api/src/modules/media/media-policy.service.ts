@@ -86,6 +86,8 @@ export class MediaPolicyService {
       409,
       'conflict',
     );
+    const body = JSON.stringify({ acknowledged: true, sequence: acknowledgement.sequence });
+    const signature = this.sign(body);
     this.pending.delete(acknowledgement.nonce);
     this.installed = {
       epoch: acknowledgement.epoch,
@@ -100,7 +102,7 @@ export class MediaPolicyService {
         this.runtime.activateProximityGeneration(generation),
       );
     }
-    return { acknowledged: true, sequence: acknowledgement.sequence };
+    return { body, signature };
   }
 
   hasInstalledPermit(generation: string, identity: string, source: 'microphone') {

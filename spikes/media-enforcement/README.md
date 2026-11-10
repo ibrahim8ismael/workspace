@@ -215,8 +215,14 @@ Key provisioning/rotation, endpoint scoping and controller implementation remain
 Seventeen spike tests pass, including response signature failure, wrong epoch or
 nonce, signed extra fields, oversized responses and permit expiry after controller
 loss. Policy tests use injected Response objects and are not a deployed controller
-or real media outage experiment. This transport is not yet connected to the
-running guard/supervisor; the earlier media progress ACKs remain fixture-generated.
+or real media outage experiment. This API is not connected to the running synthetic
+fixture authority; its earlier media progress ACKs remain fixture-generated.
+
+CP08.2c adds an optional `CP07_POLICY_ACK_ENDPOINT` hop in the guard client. The policy key is
+canonical base64 for 32 random bytes and is decoded before HMAC use so it matches the API's key
+handling. After installing a signed policy snapshot, the guard sends the exact application ACK and
+verifies the API's signed response before it emits supervisor progress. The CP07 synthetic policy
+fixture does not configure this endpoint, and no live application API/guard transport is claimed.
 
 ## CP07.11 real authenticated controller loss
 

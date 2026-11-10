@@ -27,6 +27,7 @@ const pull = async () => {
   try {
     await pullPolicy({
       endpoint: process.env.CP07_POLICY_ENDPOINT,
+      ackEndpoint: process.env.CP07_POLICY_ACK_ENDPOINT,
       key: process.env.CP07_POLICY_KEY,
       state: permits,
       onRequest: () => {

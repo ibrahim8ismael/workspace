@@ -1,8 +1,12 @@
 /** Synthetic policy authority for the isolated CP07 fixture, not application policy. */
 import http from 'node:http';
-import { policySignature, validPolicySignature } from './policy-pull.mjs';
+import { decodePolicyKey, policySignature, validPolicySignature } from './policy-pull.mjs';
 const key = process.env.CP07_POLICY_KEY;
-if (!key || key.length < 32) throw new Error('missing policy fixture key');
+try {
+  decodePolicyKey(key);
+} catch {
+  throw new Error('missing 32-byte base64 policy fixture key');
+}
 let sequence = 0;
 let delayMs = 0;
 process.on('SIGUSR1', () => {

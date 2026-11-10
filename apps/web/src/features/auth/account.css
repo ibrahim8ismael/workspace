@@ -515,6 +515,132 @@
   align-items: center;
   gap: 10px;
 }
+.invitation-manager {
+  display: grid;
+  gap: 16px;
+  margin-top: 16px;
+}
+.invitation-manager .panel-heading {
+  align-items: center;
+}
+.invitation-manager .panel-heading h2 {
+  margin: 0 0 5px;
+  color: #1d1d1f;
+  font-size: 17px;
+}
+.invitation-manager .panel-heading p {
+  margin: 0;
+  color: #6b6b72;
+  font-size: 13px;
+}
+.invitation-refresh,
+.invitation-revoke {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.invitation-create-form {
+  max-width: 560px;
+}
+.invitation-help {
+  margin: -5px 0 0;
+  color: #6b6b72;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.invitation-empty {
+  margin: 0;
+  padding: 16px 0 0;
+  border-top: 1px solid #e8e8eb;
+  color: #6b6b72;
+  font-size: 13px;
+}
+.invitation-empty > p {
+  margin: 0 0 12px;
+}
+.invitation-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid #e8e8eb;
+  list-style: none;
+}
+.invitation-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 13px 0;
+  border-bottom: 1px solid #e8e8eb;
+}
+.invitation-recipient {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+.invitation-mail-icon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  place-items: center;
+  border-radius: 10px;
+  color: #4545b5;
+  background: #f0efff;
+}
+.invitation-recipient > span:last-child {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+.invitation-recipient strong {
+  overflow: hidden;
+  color: #1d1d1f;
+  font-size: 13px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+}
+.invitation-recipient small {
+  color: #77777e;
+  font-size: 11px;
+}
+.invitation-row-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 9px;
+}
+.invitation-status {
+  padding: 5px 8px;
+  border-radius: 9999px;
+  color: #55555c;
+  background: #f0f0f2;
+  font-size: 10px;
+  font-weight: 650;
+  text-transform: capitalize;
+}
+.invitation-status-pending {
+  color: #755819;
+  background: #fff4d8;
+}
+.invitation-status-accepted {
+  color: #27643c;
+  background: #e8f5ec;
+}
+.invitation-status-revoked,
+.invitation-status-expired {
+  color: #77777e;
+  background: #f0f0f2;
+}
+.invitation-revoke {
+  height: 32px;
+  padding: 0 10px;
+  font-size: 12px;
+}
 @media (max-width: 720px) {
   .workspace-actions {
     grid-template-columns: 1fr;
@@ -531,6 +657,17 @@
   }
   .company-overview-tools {
     align-items: flex-end;
+    flex-direction: column;
+  }
+  .invitation-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .invitation-row-actions {
+    padding-left: 44px;
+  }
+  .invitation-manager .panel-heading {
+    align-items: flex-start;
     flex-direction: column;
   }
   .security-logout-all {

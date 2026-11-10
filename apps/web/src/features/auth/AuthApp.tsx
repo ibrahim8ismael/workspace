@@ -684,6 +684,7 @@ export default function AuthApp() {
         api={api}
         workspaceId={selectedCompanyId}
         mutationPending={mutationPending}
+        runMutation={runMutation}
         mutationLock={mutationLock}
         currentSession={sessionGuard.currentSession}
         sessionsLoading={sessionGuard.loading}

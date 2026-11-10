@@ -10,7 +10,7 @@ const workspace = {
   id: '7b839c68-a211-48f2-a38f-d15e7558a4ea',
   name: 'E2E Company',
   slug: 'e2e-company',
-  role: 'member',
+  role: 'owner',
   memberCount: 2,
 };
 const officeId = 'df92b3ad-d3e9-430d-82f5-6e91cbe9dfe2';
@@ -39,6 +39,7 @@ const session = {
   idleExpiresAt: new Date(sessionStart + 60 * 60_000).toISOString(),
 };
 const requestId = 'dbe6efea-048d-4b34-9111-d43880daf189';
+const invitationId = '16ab92cd-cbd4-44b6-b827-196ae6044937';
 
 test('mocked-API UI E2E: sign in, open the company preview, and return cleanly', async ({
   page,
@@ -51,6 +52,12 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   let officeTicketRequests = 0;
   let officeConnections = 0;
   let interruptOfficeConnection: (() => Promise<void>) | undefined;
+  let invitations: {
+    id: string;
+    email: string;
+    expiresAt: string;
+    status: 'pending' | 'accepted' | 'revoked' | 'expired';
+  }[] = [];
 
   await page.route('**/api/**', async (route) => {
     const request = route.request();
@@ -78,6 +85,25 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
       return authenticated ? json({ workspaces: [workspace] }) : json({}, 401);
     if (method === 'GET' && path === `/api/workspaces/${workspace.id}`)
       return authenticated ? json({ workspace: { ...workspace, officeId } }) : json({}, 401);
+    if (method === 'GET' && path === `/api/workspaces/${workspace.id}/invitations`)
+      return authenticated ? json({ invitations }) : json({}, 401);
+    if (method === 'POST' && path === `/api/workspaces/${workspace.id}/invitations`) {
+      const body = request.postDataJSON() as { email: string };
+      const invitation = {
+        id: invitationId,
+        email: body.email,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60_000).toISOString(),
+      };
+      invitations = [{ ...invitation, status: 'pending' }];
+      return json({ invitation }, 201);
+    }
+    if (
+      method === 'DELETE' &&
+      path === `/api/workspaces/${workspace.id}/invitations/${invitationId}`
+    ) {
+      invitations = invitations.map((invitation) => ({ ...invitation, status: 'revoked' }));
+      return json({ message: 'Invitation revoked.' });
+    }
     if (method === 'GET' && path === `/api/workspaces/${workspace.id}/offices/${officeId}`) {
       officeBootstrapRequests += 1;
       return json({
@@ -239,6 +265,19 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await page.getByRole('button', { name: 'Open office' }).click();
   await expect(page.getByRole('heading', { name: 'Company details' })).toBeVisible();
   await expect(page.getByRole('definition').filter({ hasText: 'e2e-company' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Employee invitations' })).toBeVisible();
+  await expect(page.getByText('No invitations have been created for this company.')).toBeVisible();
+  await page.getByLabel('Employee email').fill('employee@example.test');
+  await page.getByRole('button', { name: 'Send invitation' }).click();
+  await expect(
+    page.getByText('Invitation created for employee@example.test.', { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText('Pending', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Revoke invitation for employee@example.test' }).click();
+  await expect(
+    page.getByText('Invitation for employee@example.test was revoked.', { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText('Revoked', { exact: true })).toBeVisible();
 
   await page.getByRole('button', { name: 'Open office preview' }).click();
   await expect(page.getByText('Not connected to the office.')).toBeVisible();

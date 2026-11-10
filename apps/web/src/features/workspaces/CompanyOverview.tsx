@@ -6,6 +6,7 @@ import { ApiClient, ApiError, type OfficeWorkspaceDetail, type SessionDto } from
 import { messageForApi } from '../auth/messages';
 import { SessionLifetimeNotice } from '../auth/SessionLifetimeNotice';
 import { canOpenOfficePreview, companyOverviewViewReducer } from './company-overview-view';
+import { CompanyInvitationManager } from './CompanyInvitationManager';
 
 const LazyCompanyOfficePreview = lazy(() =>
   import('./CompanyOfficePreview').then(({ CompanyOfficePreview }) => ({
@@ -25,6 +26,7 @@ type Props = {
   api: ApiClient;
   workspaceId: string;
   mutationPending: boolean;
+  runMutation: <T>(action: () => Promise<T>, refreshMetadata?: boolean) => Promise<T>;
   mutationLock: RefObject<boolean>;
   currentSession: SessionDto | null;
   sessionsLoading: boolean;
@@ -49,6 +51,7 @@ export function CompanyOverview({
   api,
   workspaceId,
   mutationPending,
+  runMutation,
   mutationLock,
   currentSession,
   sessionsLoading,
@@ -323,6 +326,15 @@ export function CompanyOverview({
             </div>
           </section>
         ) : null}
+        {detail?.role === 'owner' && !previewOpen && (
+          <CompanyInvitationManager
+            api={api}
+            company={detail}
+            mutationPending={mutationPending}
+            runMutation={runMutation}
+            onUnauthorized={onUnauthorized}
+          />
+        )}
         <SessionLifetimeNotice
           session={currentSession}
           loading={sessionsLoading}

@@ -610,6 +610,12 @@ The company office now uses the supplied full-screen office structure: navigatio
 
 Web typecheck, focused ESLint, production build and `pnpm test:web` passed. The mocked UI E2E passed, including keyboard traversal and reconnect. After rebuilding the authorized local Docker stack to remove a stale frontend bundle, `pnpm test:e2e:live` passed with two real browser clients against the local API/Socket.IO stack, covering admission, movement, recovery, reconnect, seat contention and company isolation. This is not media/audio evidence. Next integrate owner invitation management into the supplied company UI; Chrome/Edge and screen-reader review remain open.
 
+## OpenOfficeForAll UI migration — owner invitation management (2026-11-10)
+
+Added strict browser API methods for listing, creating and revoking scoped company invitations. The company details screen displays the owner-only invitation panel using the supplied dashboard card, form, buttons and status styles. It lists safe recipient/status/expiry metadata, never invitation tokens, and retains idempotency keys for explicit uncertain-result retries. The existing join-code flow remains the member acceptance UI. The invitation API uses the transactional outbox; the local test stack delivered only to Mailpit, with no external email-provider acceptance claimed.
+
+Web typecheck, ESLint, formatting, production build, 33 web tests and mocked Chromium E2E passed. The rebuilt local Docker stack then passed `pnpm test:e2e:live`: the owner created and revoked an invitation in the browser against the real authenticated API, followed by two-browser Socket.IO admission, movement/recovery, reconnect, seat contention and company isolation. Visual/accessibility review in Chrome and Edge and obsolete presentation cleanup remain before declaring the supplied UI migration complete.
+
 ## CP07.20 — Late-policy cutoff and fail-closed cold bootstrap (2026-11-10)
 
 Added authenticated delayed-policy fault (1500ms replies vs 1000ms guard abort). Room retirement is postponed until after cutoff to avoid masking lease-renewal errors. A startup timing failure led to stronger default-deny SFU bootstrap: no LiveKit child starts until a valid request-start lease newer than this boot exists. This replaces the prior three-second startup grace; stale pre-boot allow files cannot bootstrap media.

@@ -29,6 +29,7 @@ const session = {
   absoluteExpiresAt: '2026-11-09T12:00:00.000Z',
   idleExpiresAt: '2026-11-09T01:00:00.000Z',
 };
+const invitationId = '16ab92cd-cbd4-44b6-b827-196ae6044937';
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 const csrf = () => json({ csrfToken: csrfA });
@@ -179,6 +180,75 @@ describe('same-origin API client', () => {
     expect(keys.forPayload({ ...submission, name: 'Changed Company' })).not.toBe(firstKey);
     keys.clear();
     expect(keys.forPayload(submission)).not.toBe(firstKey);
+  });
+
+  it('lists, creates and revokes workspace invitations through strict scoped contracts', async () => {
+    const calls: { input: RequestInfo | URL; init?: RequestInit }[] = [];
+    const invitation = {
+      id: invitationId,
+      email: 'employee@example.com',
+      expiresAt: '2026-11-16T12:00:00.000Z',
+    };
+    const fetcher: typeof fetch = async (input, init) => {
+      calls.push({ input, init });
+      if (input === '/api/auth/csrf') return csrf();
+      if (input === `/api/workspaces/${company.workspace.id}/invitations` && init?.method === 'GET')
+        return json({ invitations: [{ ...invitation, status: 'pending' }] });
+      if (
+        input === `/api/workspaces/${company.workspace.id}/invitations` &&
+        init?.method === 'POST'
+      )
+        return json({ invitation }, 201);
+      if (
+        input === `/api/workspaces/${company.workspace.id}/invitations/${invitationId}` &&
+        init?.method === 'DELETE'
+      )
+        return json({ message: 'Invitation revoked.' });
+      return json({ error: {} }, 404);
+    };
+    const client = new ApiClient(fetcher);
+
+    expect(await client.workspaceInvitations(company.workspace.id)).toEqual([
+      { ...invitation, status: 'pending' },
+    ]);
+    expect(
+      await client.createWorkspaceInvitation(
+        company.workspace.id,
+        { email: invitation.email },
+        'invite-command-key-01',
+      ),
+    ).toEqual({ invitation });
+    expect(
+      await client.revokeWorkspaceInvitation(
+        company.workspace.id,
+        invitationId,
+        'revoke-command-key-01',
+      ),
+    ).toEqual({ message: 'Invitation revoked.' });
+
+    expect(calls.map((call) => call.input)).toEqual([
+      `/api/workspaces/${company.workspace.id}/invitations`,
+      '/api/auth/csrf',
+      `/api/workspaces/${company.workspace.id}/invitations`,
+      `/api/workspaces/${company.workspace.id}/invitations/${invitationId}`,
+    ]);
+    expect(calls[2]?.init).toMatchObject({
+      method: 'POST',
+      body: JSON.stringify({ email: invitation.email }),
+      headers: { 'Idempotency-Key': 'invite-command-key-01' },
+    });
+    expect(calls[3]?.init).toMatchObject({
+      method: 'DELETE',
+      body: '{}',
+      headers: { 'Idempotency-Key': 'revoke-command-key-01' },
+    });
+
+    const unsafeClient = new ApiClient(async () =>
+      json({ invitations: [{ ...invitation, status: 'pending', token: 'secret' }] }),
+    );
+    await expect(unsafeClient.workspaceInvitations(company.workspace.id)).rejects.toMatchObject({
+      code: 'invalid_response',
+    });
   });
 
   it('does not retry a mutation after transport failure and marks malformed success as uncertain', async () => {

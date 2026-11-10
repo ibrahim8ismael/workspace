@@ -1,6 +1,6 @@
 # OpenOfficeForAll UI integration
 
-Status: owner-approved direction; account, company, security and office screens use the supplied OpenOfficeForAll visual system; invitation management and final browser/accessibility review remain · Updated: 2026-11-10
+Status: owner-approved direction; account, company, security, office and owner invitation screens use the supplied OpenOfficeForAll visual system; final visual/accessibility review and obsolete presentation cleanup remain · Updated: 2026-11-10
 
 ## Product direction
 
@@ -27,11 +27,11 @@ Existing integration points include `apps/web/src/lib/api.ts`, `src/features/off
 ## Ordered implementation steps
 
 1. **Inventory and lock the boundary — complete.** Pin upstream source and notices; identify current and obsolete entry points, routes, storage, and service calls. Keep this audit current as screens move.
-2. **Restore the supplied shell — complete for current screens.** Sign-in, verification and recovery use the upstream dashboard header, welcome modal, form, button and link styles. The company directory uses its dashboard, search, card grid and create/join dialogs. Company details, security and the full-screen office now use the supplied dashboard/office visual structures. Keep the current authenticated entry as the default and finish the remaining owner invitation screen before removing migration-only code.
-3. **Adapt identity and company data — in progress.** The current cookie-authenticated account flows, UUID company list/create/detail and member invitation-code acceptance use `ApiClient`; guest access and secret-bearing `localStorage` paths remain disconnected. Add owner invitation listing, creation and revocation with the current APIs, then cover role/error/retry states.
+2. **Restore the supplied shell — complete for current screens.** Sign-in, verification and recovery use the upstream dashboard header, welcome modal, form, button and link styles. The company directory uses its dashboard, search, card grid and create/join dialogs. Company details, security, owner invitation management and the full-screen office now use the supplied dashboard/office visual structures. Keep the authenticated entry as the default while final visual/accessibility review and obsolete presentation cleanup proceed.
+3. **Adapt identity and company data — complete for account/company/invitation flows.** The current cookie-authenticated account flows, UUID company list/create/detail, member invitation-code acceptance and owner invitation listing/creation/revocation use `ApiClient`; guest access and secret-bearing `localStorage` paths remain disconnected. Strict response validation, owner-only rendering and uncertain-result retries are covered.
 4. **Adapt office admission and live world — integrated.** The office shell mounts the version-checked Commons renderer and `OfficeClient`, replacing legacy raw WebSocket admission. Movement, availability, seats, snapshots/deltas, disconnect recovery, leave and fresh-ticket re-entry continue to use server-authoritative Socket.IO state.
 5. **Gate unsupported features.** Keep supplied styling and recognizable controls where helpful, while disabling service actions that have no backend. Do not show mock chat, calendar, editing or P2P media as live features.
-6. **Review and cut over.** Run unit/API/two-browser Socket.IO checks and visual/accessibility review in Chrome and Edge. The current authenticated app is already the default and its local live API/Socket.IO journey has passed; finish invitation UI and browser/accessibility review. Remove duplicate account/preview presentation code only after its needed API/client logic is covered by the integrated screens.
+6. **Review and cut over — in progress.** The current authenticated app is already the default. Mocked E2E covers the complete UI invitation and office journey; a two-browser local Docker E2E creates and revokes an invitation through the owner UI, then covers Socket.IO office behavior. Finish visual/accessibility review in Chrome and Edge. Remove duplicate account/preview presentation code only after its needed API/client logic is covered by the integrated screens.
 
 ## Completion checks
 

@@ -24,6 +24,12 @@ export function messageForApi(error: unknown) {
       return 'Could not reach the service. Check your connection and try again.';
     case 'workspace_quota':
       return 'This account has reached its company limit.';
+    case 'invitation_quota':
+      return 'This company has reached its pending invitation limit.';
+    case 'already_member':
+      return 'This person is already a member of the company.';
+    case 'not_found':
+      return 'This invitation is no longer available. Refresh the list and try again.';
     case 'idempotency_conflict':
       return 'This submission changed. Review the details and submit it again.';
     default:

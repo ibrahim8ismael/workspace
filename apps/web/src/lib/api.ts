@@ -5,11 +5,14 @@ import {
   authenticatedResponseSchema,
   changePasswordSchema,
   createWorkspaceSchema,
+  createInvitationSchema,
   csrfResponseSchema,
   emptyBodySchema,
   emailRequestSchema,
   extendSessionResponseSchema,
   idSchema,
+  invitationResponseSchema,
+  invitationsResponseSchema,
   loginSchema,
   messageResponseSchema,
   registerSchema,
@@ -29,6 +32,9 @@ import type { AccountDto, WorkspaceDto } from '@gather/contracts';
 import { z } from 'zod';
 
 export type SessionDto = z.infer<typeof sessionDtoSchema>;
+export type WorkspaceInvitationDto = z.infer<
+  typeof invitationsResponseSchema
+>['invitations'][number];
 export type OfficeWorkspaceDetail = z.infer<
   typeof officeWorkspaceDetailResponseSchema
 >['workspace'];
@@ -193,6 +199,60 @@ export class ApiClient {
 
   async workspaces(signal?: AbortSignal): Promise<WorkspaceDto[]> {
     return (await this.get('/workspaces', workspacesResponseSchema, signal)).workspaces;
+  }
+
+  async workspaceInvitations(
+    workspaceId: string,
+    signal?: AbortSignal,
+  ): Promise<WorkspaceInvitationDto[]> {
+    const parsedWorkspaceId = idSchema.safeParse(workspaceId);
+    if (!parsedWorkspaceId.success) throw new ApiError('validation_failed', 400);
+    return (
+      await this.get(
+        `/workspaces/${encodeURIComponent(parsedWorkspaceId.data)}/invitations`,
+        invitationsResponseSchema,
+        signal,
+      )
+    ).invitations;
+  }
+
+  async createWorkspaceInvitation(
+    workspaceId: string,
+    input: unknown,
+    idempotencyKey: string,
+    signal?: AbortSignal,
+  ) {
+    const parsedWorkspaceId = idSchema.safeParse(workspaceId);
+    if (!parsedWorkspaceId.success) throw new ApiError('validation_failed', 400);
+    return this.mutate(
+      `/workspaces/${encodeURIComponent(parsedWorkspaceId.data)}/invitations`,
+      input,
+      createInvitationSchema,
+      invitationResponseSchema,
+      idempotencyKey,
+      signal,
+    );
+  }
+
+  async revokeWorkspaceInvitation(
+    workspaceId: string,
+    invitationId: string,
+    idempotencyKey: string,
+    signal?: AbortSignal,
+  ) {
+    const parsedWorkspaceId = idSchema.safeParse(workspaceId);
+    const parsedInvitationId = idSchema.safeParse(invitationId);
+    if (!parsedWorkspaceId.success || !parsedInvitationId.success)
+      throw new ApiError('validation_failed', 400);
+    return this.mutate(
+      `/workspaces/${encodeURIComponent(parsedWorkspaceId.data)}/invitations/${encodeURIComponent(parsedInvitationId.data)}`,
+      {},
+      emptyBodySchema,
+      messageResponseSchema,
+      idempotencyKey,
+      signal,
+      'DELETE',
+    );
   }
 
   async workspaceDetail(id: string, signal?: AbortSignal): Promise<OfficeWorkspaceDetail> {

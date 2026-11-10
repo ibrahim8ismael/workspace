@@ -1,6 +1,6 @@
 # Invitations
 
-Status: initial persistence implemented; remaining integration/lifecycle work planned · Updated: 2026-11-08 · Target: M1
+Status: API and account UI integration implemented; real provider/release checks remain · Updated: 2026-11-10 · Target: M1
 
 
 Initial backend scope is now described by the [implemented auth/company API guide](../../contracts/AUTH_AND_ROLES_API.md). Existing plan fields below retain their draft status where not covered by that implementation; production/provider/recovery acceptance remains separate.
@@ -28,7 +28,7 @@ Source: [owning model](../../../apps/api/src/modules/tenancy/tenancy.models.ts).
 - `revokedAt`
 - `createdAt`
 
-`email` and `consumedAt` implement the proposed intendedNormalizedEmail/acceptedAt concepts. Durable command idempotency is in operations, not an invitation operationId field. Current defaults are seven-day expiry, fifty pending invites and no slot reservation. Recipient UI/real mail remain CP04 work.
+`email` and `consumedAt` implement the proposed intendedNormalizedEmail/acceptedAt concepts. Durable command idempotency is in operations, not an invitation operationId field. Current defaults are seven-day expiry, fifty pending invites and no slot reservation. The account UI now supports member code acceptance and owner invitation listing, creation and revocation using safe metadata only. Local browser evidence uses Mailpit; external-provider delivery and outage acceptance remain separate.
 
 ## Relationships
 
@@ -52,7 +52,7 @@ Source: [owning model](../../../apps/api/src/modules/tenancy/tenancy.models.ts).
 
 ## Planning question
 
-Current lifetime/quota/reservation behavior is recorded above. Complete recipient UI and real provider/outage verification under CP04.
+Current lifetime/quota/reservation behavior is recorded above. Invitation UI integration is complete; verify real provider delivery and outage behavior under the remaining CP04 work.
 
 ## Next work
 

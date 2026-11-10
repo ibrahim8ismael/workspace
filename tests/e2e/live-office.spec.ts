@@ -187,7 +187,13 @@ async function interceptWorldVersionGap(page: import('@playwright/test').Page) {
   };
 }
 
-async function companyPage(browser: Browser, client: APIRequestContext, workspaceId: string) {
+async function companyPage(
+  browser: Browser,
+  client: APIRequestContext,
+  workspaceId: string,
+  inviteEmail?: string,
+  isOwner = false,
+) {
   const context = await browser.newContext({
     storageState: await client.storageState(),
     ignoreHTTPSErrors: true,
@@ -202,6 +208,22 @@ async function companyPage(browser: Browser, client: APIRequestContext, workspac
     .getByRole('button', { name: 'Open office' })
     .click();
   await expect(page.getByRole('button', { name: 'Open office preview' })).toBeVisible();
+  if (inviteEmail) {
+    await expect(page.getByRole('heading', { name: 'Employee invitations' })).toBeVisible();
+    await page.getByLabel('Employee email').fill(inviteEmail);
+    await page.getByRole('button', { name: 'Send invitation' }).click();
+    await expect(
+      page.getByText(`Invitation created for ${inviteEmail}.`, { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByText('Pending', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: `Revoke invitation for ${inviteEmail}` }).click();
+    await expect(
+      page.getByText(`Invitation for ${inviteEmail} was revoked.`, { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByText('Revoked', { exact: true })).toBeVisible();
+  } else if (!isOwner) {
+    await expect(page.getByRole('heading', { name: 'Employee invitations' })).toHaveCount(0);
+  }
   await page.getByRole('button', { name: 'Open office preview' }).click();
   return { context, page };
 }
@@ -214,6 +236,7 @@ test('live two-browser admission, movement, collision, and seat contention', asy
 
   const ownerEmail = `cp065-owner-${randomUUID()}@example.test`;
   const memberEmail = `cp065-member-${randomUUID()}@example.test`;
+  const revokedInviteEmail = `cp065-revoked-${randomUUID()}@example.test`;
   const owner = await createAccount(ownerEmail);
   const member = await createAccount(memberEmail);
   let ownerContext: Awaited<ReturnType<typeof companyPage>>['context'] | undefined;
@@ -253,7 +276,7 @@ test('live two-browser admission, movement, collision, and seat contention', asy
       throw new Error(`Invitation acceptance failed (${accepted.status()}: ${body.error?.code}).`);
     }
 
-    const ownerOffice = await companyPage(browser, owner.client, workspaceId);
+    const ownerOffice = await companyPage(browser, owner.client, workspaceId, revokedInviteEmail);
     ownerContext = ownerOffice.context;
     const memberOffice = await companyPage(browser, member.client, workspaceId);
     memberContext = memberOffice.context;
@@ -401,6 +424,8 @@ test('live two-browser admission, movement, collision, and seat contention', asy
       browser,
       owner.client,
       secondWorkspaceBody.workspace.id,
+      undefined,
+      true,
     );
     ownerSecondContext = ownerSecondOffice.context;
     const ownerSecondPage = ownerSecondOffice.page;

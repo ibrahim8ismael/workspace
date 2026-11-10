@@ -83,9 +83,10 @@ const mediaMachineKey = randomBytes(32);
 const livekitApiKey = 'gather-test-key';
 const livekitApiSecret = randomBytes(32).toString('base64url');
 const runLiveMediaFixture = process.env['CP08_REAL_MEDIA'] === '1';
+const configuredMediaEnd = process.env['CP08_MEDIA_END'] ?? 'leave';
 const mediaEndScenario = runLiveMediaFixture
-  ? process.env['CP08_MEDIA_END'] === 'opt-out' || process.env['CP08_MEDIA_END'] === 'away'
-    ? process.env['CP08_MEDIA_END']
+  ? ['opt-out', 'away', 'session-revoke', 'membership-revoke'].includes(configuredMediaEnd)
+    ? configuredMediaEnd
     : 'leave'
   : 'leave';
 const liveKitFixtureImage =
@@ -2346,8 +2347,18 @@ describe('office socket admission', () => {
           'join_request',
           Buffer.from(JSON.stringify({ protocol: 12 })).toString('base64url'),
         );
-        const validateThroughGuard = () =>
-          fetch(tokenValidationUrl, { headers: { Origin: mediaFixture?.origin ?? origin } });
+        const validateThroughGuard = async (stage: string) => {
+          try {
+            return await fetch(tokenValidationUrl, {
+              headers: { Origin: mediaFixture?.origin ?? origin },
+            });
+          } catch (error) {
+            throw new Error(
+              `guard validation failed at ${stage} (port=${guardPort}, exit=${applicationGuard?.child.exitCode}, stderr=${applicationGuard?.getStderr().slice(-500) ?? 'stopped'})`,
+              { cause: error },
+            );
+          }
+        };
         let secondMediaGrantToken: string | undefined;
         if (runLiveMediaFixture) {
           const secondIssued = await second.client.send('post', tokenPath, {
@@ -2431,7 +2442,7 @@ describe('office socket admission', () => {
         } else {
           await vi.waitFor(
             async () => {
-              const guarded = await validateThroughGuard();
+              const guarded = await validateThroughGuard('current-application-grant');
               if (guarded.status !== 200)
                 throw new Error(`current application grant was not forwarded: ${guarded.status}`);
             },
@@ -2504,6 +2515,27 @@ describe('office socket admission', () => {
             eventId: away.eventId,
             ok: true,
           });
+        } else if (mediaEndScenario === 'session-revoke') {
+          const firstAccessEndedEvent = nextSocketEvent<Record<string, unknown>>(
+            firstSocket,
+            'office:access-ended',
+          );
+          status(await first.client.send('post', '/api/auth/logout'), 200);
+          await expect(firstAccessEndedEvent).resolves.toMatchObject({
+            reason: 'authorization_ended',
+          });
+        } else if (mediaEndScenario === 'membership-revoke') {
+          const firstAccessEndedEvent = nextSocketEvent<Record<string, unknown>>(
+            firstSocket,
+            'office:access-ended',
+          );
+          status(
+            await owner.client.send('delete', `/api/workspaces/${workspaceId}/members/${first.id}`),
+            200,
+          );
+          await expect(firstAccessEndedEvent).resolves.toMatchObject({
+            reason: 'authorization_ended',
+          });
         } else {
           const leave = {
             eventId: randomUUID(),
@@ -2521,15 +2553,26 @@ describe('office socket admission', () => {
             ok: true,
           });
         }
-        const ended = conversationUpdateSchema.parse(await firstEndedEvent);
-        expect(conversationUpdateSchema.parse(await secondEndedEvent)).toMatchObject({
+        const revokedSocket =
+          mediaEndScenario === 'session-revoke' || mediaEndScenario === 'membership-revoke';
+        const ended = conversationUpdateSchema.parse(
+          revokedSocket ? await secondEndedEvent : await firstEndedEvent,
+        );
+        if (!revokedSocket)
+          expect(conversationUpdateSchema.parse(await secondEndedEvent)).toMatchObject({
+            conversationId: joining.conversationId,
+            state: 'ended',
+            version: active.version + 1,
+            mediaReady: false,
+            participants: [],
+          });
+        expect(ended).toMatchObject({
           conversationId: joining.conversationId,
           state: 'ended',
           version: active.version + 1,
           mediaReady: false,
           participants: [],
         });
-        expect(ended).toMatchObject({ state: 'ended', mediaReady: false, participants: [] });
         const endPolicyAck = await waitForGuardMessage(
           applicationGuard,
           (message) => message.kind === 'ack' && message.sequence! > latestGuardSequence,
@@ -2566,14 +2609,14 @@ describe('office socket admission', () => {
           );
         }
         const forwardedBeforeDeniedReplay = forwardedSignalingPaths.length;
-        expect((await validateThroughGuard()).status).toBe(403);
+        expect((await validateThroughGuard('after-policy-revoke')).status).toBe(403);
         expect(forwardedSignalingPaths).toHaveLength(forwardedBeforeDeniedReplay);
         status(
           await first.client.send('post', tokenPath, {
             participationId: firstReady.participationId,
             conversationVersion: active.version,
           }),
-          409,
+          mediaEndScenario === 'session-revoke' ? 401 : 409,
         );
         await new Promise((resolve) => setTimeout(resolve, 80));
         expect(observerNotices).toEqual([]);
@@ -2602,10 +2645,10 @@ describe('office socket admission', () => {
             (expiresAt) => typeof expiresAt === 'number' && expiresAt > Date.now() / 1000,
           ),
         ).toBe(true);
-        expect((await validateThroughGuard()).status).toBe(403);
+        expect((await validateThroughGuard('after-guard-restart')).status).toBe(403);
         if (secondMediaGrantToken) {
           tokenValidationUrl.searchParams.set('access_token', secondMediaGrantToken);
-          expect((await validateThroughGuard()).status).toBe(403);
+          expect((await validateThroughGuard('second-token-after-guard-restart')).status).toBe(403);
         }
         expect(forwardedSignalingPaths).toHaveLength(forwardedBeforeDeniedReplay);
       } finally {

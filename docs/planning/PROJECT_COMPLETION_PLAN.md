@@ -280,10 +280,17 @@ two-browser actual-grant fixture with opt-out and Away triggers: the API emits a
 install ACK while the guard remains alive, and measured final decoded audio cutoff was **0 ms** in
 both runs. The fixture explicitly stops the production `ProximityAudioSession` after the server
 policy ACK; it does not yet prove `CompanyOfficePreview` reacts to these Socket.IO events itself.
-Permission denial, office leave through the mounted UI, membership/session revocation, office/API
-lease expiry, guard loss, independent-supervisor progress loss, reconnect and an SFU-refreshed JWT
-remain in the matrix. Record each input, policy ACK, last active audio sample, process state and
-outcome. Do not close A07/A08 from token expiry or UI state alone.
+Permission denial with the office/map still usable, office leave through the mounted UI, mounted-UI
+teardown after membership/session revocation, office/API lease expiry, guard loss,
+independent-supervisor progress loss, reconnect and an SFU-refreshed JWT remain in the matrix.
+CP08.5.4 also runs session logout and owner-driven membership removal during
+the real media fixture: both close the affected office socket, end the pair for the surviving
+participant, install the empty policy while the guard remains alive, and measure **0 ms** decoded-
+audio cutoff. Both old grants are rejected before and after a fresh guard/SFU restart while their
+JWTs are still unexpired. The browser session is explicitly stopped after the server ACK; this does
+not yet prove the mounted UI teardown for these revocations. Record each input, policy ACK, last
+active audio sample, process state and outcome. Do not close A07/A08 from token expiry or UI state
+alone.
 
 **CP08.6 — webhook reconciliation (pending).** Add strict raw-body signature verification,
 event-ID deduplication and late-event handling under `apps/api/src/modules/media/`; webhooks observe

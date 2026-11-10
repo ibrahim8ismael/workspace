@@ -1027,8 +1027,9 @@ Extended `tests/e2e/company-office-preview.spec.ts`. With the test media WebSock
 closed after the UI requests a media grant, the supplied company-office UI shows its media error,
 keeps the live Vivo map mounted and connected, and continues sending keyboard movement to the office
 Socket.IO server. This is a mocked-API/UI E2E resilience check, not microphone permission-denial or
-real-SFU evidence. `pnpm test:e2e` is the targeted verification for this step; permission denial with
-the full UI and the remaining CP08.5 server-side revocation/failure cases remain open.
+real-SFU evidence. `pnpm test:e2e` is the targeted verification for this step; browser permission
+denial, mounted-UI teardown on auth/membership revocation and the process/lease failure cases remain
+open.
 
 ## CP08.5.3 — real opt-out and Away policy revocation (2026-11-11)
 
@@ -1042,5 +1043,19 @@ the ended conversation, waited for the signed empty-policy ACK, stopped the prod
 sampling interval. Each focused run passed (one selected integration test; 68 unrelated tests
 skipped). The fixture currently stops the browser session explicitly after the API/guard policy
 transition; it does not claim mounted `CompanyOfficePreview` event wiring for these two triggers.
-Permission denial, leave-driven UI teardown, membership/session revocation and process/lease failures
-remain open.
+Permission denial, leave-driven UI teardown, mounted-UI behavior for membership/session revocation
+and process/lease failures remain open.
+
+## CP08.5.4 — session and membership revocation during real audio (2026-11-11)
+
+Added `pnpm test:media-session-revoke` and `pnpm test:media-membership-revoke`. Each test first
+connects two Chromium publishers/receivers using API-issued grants through the separate guard and
+LiveKit, then revokes one participant's account session or removes that participant from the company.
+The revoked office socket receives `authorization_ended`; the surviving participant receives the
+ended conversation; the guard remains alive and acknowledges the empty policy (sequence **15** for
+session logout, **20** for membership removal). Both runs measured a stable **0 ms** final decoded-
+audio cutoff after the test explicitly stopped the production `ProximityAudioSession` on policy
+ACK. Both grants remained unexpired and were rejected by the fresh-epoch guard after the SFU restart.
+The selected API integration case passed for each trigger (68 unrelated tests skipped). These runs do
+not mount `CompanyOfficePreview`, so its automatic browser teardown on auth/membership Socket.IO
+closure remains to be verified in the UI.

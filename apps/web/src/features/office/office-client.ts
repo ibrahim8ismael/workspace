@@ -3,6 +3,7 @@ import {
   officeReadySchema,
   officeSocketAuthSchema,
   officeCommandAckSchema,
+  officeChatMessageEventSchema,
   presenceUpdateEventSchema,
   seatSitEventSchema,
   seatStandEventSchema,
@@ -10,6 +11,7 @@ import {
   worldSnapshotSchema,
   type OfficeBootstrapResponse,
   type OfficeReady,
+  type OfficeMessage,
   type WorldSnapshot,
 } from '@gather/contracts';
 import { io, type Socket } from 'socket.io-client';
@@ -25,6 +27,7 @@ export type OfficeClientState = {
   ready: OfficeReady | null;
   snapshot: WorldSnapshot | null;
   message: string;
+  chatEvents: OfficeMessage[];
 };
 
 const EMPTY_STATE: OfficeClientState = {
@@ -33,6 +36,7 @@ const EMPTY_STATE: OfficeClientState = {
   ready: null,
   snapshot: null,
   message: '',
+  chatEvents: [],
 };
 
 /** Cookie-authenticated HTTP bootstrap followed by a one-use-ticket Socket.IO session. */
@@ -76,6 +80,7 @@ export class OfficeClient {
       ready: null,
       snapshot: null,
       message: '',
+      chatEvents: [],
     });
     try {
       const bootstrap = await this.api.officeBootstrap(this.workspaceId, this.officeId);
@@ -126,6 +131,11 @@ export class OfficeClient {
           return;
         }
         this.update({ snapshot: result.snapshot });
+      });
+      socket.on('chat:message', (raw: unknown) => {
+        const parsed = officeChatMessageEventSchema.safeParse(raw);
+        if (!parsed.success) return;
+        this.update({ chatEvents: mergeChatMessage(this.state.chatEvents, parsed.data) });
       });
       socket.on('world:snapshot', (raw: unknown) => {
         const parsed = worldSnapshotSchema.safeParse(raw);
@@ -286,4 +296,10 @@ function safeErrorMessage(error: unknown) {
   return error instanceof Error && /^[a-z][a-z0-9_]{0,63}$/.test(error.message)
     ? `Could not enter the office (${error.message}).`
     : 'Could not enter the office. Check your connection and try again.';
+}
+
+function mergeChatMessage(messages: OfficeMessage[], message: OfficeMessage) {
+  return [...messages.filter((candidate) => candidate.id !== message.id), message]
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+    .slice(-100);
 }

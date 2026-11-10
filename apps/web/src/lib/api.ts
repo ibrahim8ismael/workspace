@@ -15,9 +15,13 @@ import {
   invitationsResponseSchema,
   loginSchema,
   messageResponseSchema,
+  membersResponseSchema,
+  officeMessageResponseSchema,
+  officeMessagesResponseSchema,
   registerSchema,
   reauthenticateSchema,
   resetPasswordSchema,
+  sendOfficeMessageSchema,
   sessionDtoSchema,
   sessionsResponseSchema,
   verifyEmailSchema,
@@ -29,6 +33,7 @@ import {
   workspacesResponseSchema,
 } from '@gather/contracts';
 import type { AccountDto, WorkspaceDto } from '@gather/contracts';
+import type { OfficeMessage, SendOfficeMessage } from '@gather/contracts';
 import { z } from 'zod';
 
 export type SessionDto = z.infer<typeof sessionDtoSchema>;
@@ -267,6 +272,54 @@ export class ApiClient {
     ).workspace;
     if (workspace.id !== parsedId.data) throw new ApiError('invalid_response', 200);
     return workspace;
+  }
+
+  async workspaceMembers(id: string, signal?: AbortSignal) {
+    const parsedId = idSchema.safeParse(id);
+    if (!parsedId.success) throw new ApiError('validation_failed', 400);
+    return (
+      await this.get(
+        `/workspaces/${encodeURIComponent(parsedId.data)}/members`,
+        membersResponseSchema,
+        signal,
+      )
+    ).members;
+  }
+
+  async officeMessages(workspaceId: string, officeId: string, signal?: AbortSignal) {
+    return (
+      await this.get(
+        this.officeMessagesPath(workspaceId, officeId),
+        officeMessagesResponseSchema,
+        signal,
+      )
+    ).messages;
+  }
+
+  async sendOfficeMessage(
+    workspaceId: string,
+    officeId: string,
+    input: SendOfficeMessage,
+    signal?: AbortSignal,
+  ): Promise<OfficeMessage> {
+    return (
+      await this.mutate(
+        this.officeMessagesPath(workspaceId, officeId),
+        input,
+        sendOfficeMessageSchema,
+        officeMessageResponseSchema,
+        undefined,
+        signal,
+      )
+    ).message;
+  }
+
+  private officeMessagesPath(workspaceId: string, officeId: string) {
+    const parsedWorkspaceId = idSchema.safeParse(workspaceId);
+    const parsedOfficeId = idSchema.safeParse(officeId);
+    if (!parsedWorkspaceId.success || !parsedOfficeId.success)
+      throw new ApiError('validation_failed', 400);
+    return `/workspaces/${encodeURIComponent(parsedWorkspaceId.data)}/offices/${encodeURIComponent(parsedOfficeId.data)}/messages`;
   }
 
   async officeBootstrap(workspaceId: string, officeId: string, signal?: AbortSignal) {

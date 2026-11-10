@@ -1,22 +1,23 @@
 # Repository implementation layout
 
-Status: imported client, account/company APIs, office admission, authoritative Socket.IO office and integrated browser map implemented; supplied OpenOfficeForAll UI migration and product media integration pending · Updated: 2026-11-10
+Status: account/company APIs, office admission, authoritative Socket.IO office, OpenOfficeForAll-style authenticated app, Vivo map, and fixed office chat integrated; product media integration pending · Updated: 2026-11-10
 
-The owner approved the refined structure and requested library installation with incremental pushes and no Docker execution. This page supersedes the earlier suggested folder decomposition; architecture/security requirements in the source brief still apply.
+The owner approved the refined structure and requested library installation with incremental pushes. Local Docker execution is authorized for app verification, subject to Docker being available. This page supersedes the earlier suggested folder decomposition; architecture/security requirements in the source brief still apply.
 
 | Path | Responsibility | Current implementation |
 |---|---|---|
-| apps/web | Imported React/Vite frontend plus current integration modules | Default entry still mounts the newer AuthApp/company shell and live Commons office view; owner-approved OpenOfficeForAll shell/components/styles are present at root level but unreachable pending legacy service replacement |
+| apps/web | Imported React/Vite frontend plus current integration modules | Authenticated app retains the supplied OpenOfficeForAll visual system, VivoScene and ChatView, with project-owned account/company/office APIs and Socket.IO; legacy monolithic App.tsx and its service calls remain unmounted |
 | apps/shared | Imported JavaScript office/map helpers and adjacent declarations | Private pnpm workspace with import/map regression tests |
-| apps/web/src/features/office | React controls, Phaser, typed realtime adapter and state | `OfficeClient` consumes HTTP bootstrap/tickets and Socket.IO snapshots/deltas; company preview embeds the Commons renderer |
+| apps/web/src/features/office | React controls, Phaser, typed realtime adapter and state | `OfficeClient` consumes HTTP bootstrap/tickets and Socket.IO snapshots/deltas/chat events; company office selects the renderer from the server map version and defaults for current workspaces to Vivo |
 | apps/api | NestJS modular HTTP, Socket.IO gateway and runtime host | Backend account/company authorization, office admission, world movement/presence/seats, validation, cookies/CSRF, Mongo transactions and liveness |
 | apps/api/src/modules/identity | Accounts, credentials, sessions, tokens and auth delivery | Implemented backend account lifecycle and session/CSRF guards |
 | apps/api/src/modules/tenancy | Workspace company boundary, memberships, invitations and policies | Implemented scoped owner/member APIs, invitations and owner/capacity transactions |
 | apps/api/src/modules/office | Maps, admission, authoritative movement, seats and gateway adapters | Trusted map registry, workspace-scoped bootstrap, backfill, one-use tickets, Socket.IO gateway and authoritative office runtime implemented and locally tested |
-| apps/api/src/modules/conversations, media | Policy-owned conversation and media work | Empty module boundaries |
+| apps/api/src/modules/conversations | Office chat persistence and delivery | Fixed office-channel history/send APIs, 90-day expiry, scoped idempotency, and admitted-room broadcast; DM/proximity/meeting conversation policy remains open |
+| apps/api/src/modules/media | Policy-owned product media authorization and integration | Product media path remains gated; CP07 evidence is a local enforcement proof, not the application integration |
 | apps/api/src/modules/audit | Transactional security event recording | Implemented safe audit records and 30-day TTL; independent recovery mirror pending |
 | apps/worker | Outbox dispatch and delivery processors/providers | Explicitly configured BullMQ/SMTP worker; no real mail sent in tests |
-| packages/contracts | Public runtime schemas and DTOs | Liveness plus auth/company request schemas and safe account/workspace DTOs |
+| packages/contracts | Public runtime schemas and DTOs | Auth/company, office, and fixed office-chat request/response/event schemas |
 | packages/world | Pure engine-independent rules | Original Commons geometry, collision/reachability and shared map validation |
 | packages/assets | Asset provenance inventory | Original Commons SVG sources, immutable manifest/catalog and provenance; legacy public assets separately recorded |
 | packages/delivery | Server-only outbox/job contracts shared with worker | Strict ID job schema, Mongo outbox schema and authenticated encryption helpers |
@@ -46,4 +47,4 @@ Version/compatibility references consulted: [Vite prerequisites](https://vite.de
 
 The [web import notes](../migration/WEB_IMPORT.md) supersede the original empty-web setup status and explain source provenance, compatibility settings and backend limitations.
 
-The [auth/company/office API guide](../contracts/AUTH_AND_ROLES_API.md) supersedes the original empty identity/tenancy/worker status. CP05/CP06 office runtime and a browser integration are locally implemented; the supplied OpenOfficeForAll shell migration, product media, and production release evidence remain pending.
+The [auth/company/office API guide](../contracts/AUTH_AND_ROLES_API.md) supersedes the original empty identity/tenancy/worker status. CP05/CP06 office runtime, the authenticated supplied visual system and map, and the first office-wide chat API/UI slice are locally implemented; product media and production release evidence remain pending.

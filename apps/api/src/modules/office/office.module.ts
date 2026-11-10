@@ -7,6 +7,7 @@ import { OfficeAdmissionService } from './office-admission.service.js';
 import { OfficeEpochRegistry } from './office-epoch.registry.js';
 import { OfficeRuntimeService } from './runtime/office-runtime.service.js';
 import { OfficeGateway } from './realtime/office.gateway.js';
+import { OfficeRoomEventPublisher } from './office-room-event-publisher.js';
 
 @Module({
   imports: [TenancyModule, IdentityModule],
@@ -16,6 +17,7 @@ import { OfficeGateway } from './realtime/office.gateway.js';
     OfficeEpochRegistry,
     OfficeRuntimeService,
     OfficeGateway,
+    OfficeRoomEventPublisher,
   ],
   controllers: [OfficeController],
   exports: [
@@ -23,6 +25,7 @@ import { OfficeGateway } from './realtime/office.gateway.js';
     OfficeAdmissionService,
     OfficeEpochRegistry,
     OfficeRuntimeService,
+    OfficeRoomEventPublisher,
   ],
 })
 export class OfficeModule {}

@@ -316,6 +316,108 @@
   gap: 4px;
 }
 
+.office-chat-sidebar .chat-section {
+  margin-top: 4px;
+}
+
+.office-chat-sidebar .office-sidebar-summary {
+  margin-top: 12px;
+}
+
+.office-nav-placeholder {
+  padding: 14px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.office-nav-placeholder p {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
+.office-people-list {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.office-people-list h2 {
+  margin: 0 0 8px;
+  font-size: 12px;
+}
+
+.office-people-list ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+
+.office-people-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.office-people-list small {
+  color: var(--muted);
+}
+
+.office-section-placeholder {
+  display: flex;
+  width: min(460px, calc(100% - 32px));
+  min-height: 230px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  align-self: center;
+  margin: auto;
+  padding: 28px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.office-placeholder-icon {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--subtle);
+  color: var(--accent);
+}
+
+.office-section-placeholder h2 {
+  margin: 16px 0 6px;
+  font-size: 20px;
+}
+
+.office-section-placeholder p {
+  margin: 0 0 18px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.chat-view-status {
+  flex: none;
+  margin: 0;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--chat-line);
+  color: var(--chat-text-2);
+  font-size: 12px;
+}
+
 .office-shell-map {
   display: flex;
   align-items: stretch;
@@ -458,7 +560,6 @@
   .company-office-preview-layout {
     grid-template-columns: minmax(0, 1fr);
   }
-
 }
 
 @media (max-width: 640px) {

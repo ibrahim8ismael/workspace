@@ -35,6 +35,10 @@ import {
   worldSnapshotSchema,
   takeoverReferenceResponseSchema,
   OFFICE_LIMITS,
+  officeMessageSchema,
+  officeMessagesResponseSchema,
+  officeChatMessageEventSchema,
+  OFFICE_CHAT_RETENTION_DAYS,
 } from '@gather/contracts';
 import { IdentityModels } from '../dist/modules/identity/identity.models.js';
 import { TenancyModels } from '../dist/modules/tenancy/tenancy.models.js';
@@ -43,6 +47,7 @@ import { TenancyService } from '../dist/modules/tenancy/tenancy.service.js';
 import { OfficeAdmissionService } from '../dist/modules/office/office-admission.service.js';
 import { OfficeEpochRegistry } from '../dist/modules/office/office-epoch.registry.js';
 import { OfficeJoinTicketModels } from '../dist/modules/office/join-ticket.models.js';
+import { ConversationModels } from '../dist/modules/conversations/conversation.models.js';
 import { OfficeRuntimeService } from '../dist/modules/office/runtime/office-runtime.service.js';
 import { OutboxService } from '../dist/modules/identity/delivery/outbox.service.js';
 import { AuditService } from '../dist/modules/audit/audit.service.js';
@@ -114,7 +119,8 @@ class Client {
       if (response.body.csrfToken) {
         if (response.body.account) authenticatedResponseSchema.parse(response.body);
         else csrfResponseSchema.parse(response.body);
-      } else if (response.body.message) messageResponseSchema.parse(response.body);
+      } else if (typeof response.body.message === 'string')
+        messageResponseSchema.parse(response.body);
     }
     const values = response.headers['set-cookie'];
     const cookie = (Array.isArray(values) ? values : [values]).find(
@@ -1454,6 +1460,103 @@ describe('office socket admission', () => {
       expect(Object.keys(ready.snapshot.participants[0]!)).not.toContain('sessionId');
     } finally {
       client.disconnect();
+    }
+  });
+
+  it('stores office messages for 90 days, deduplicates retries, scopes history, and broadcasts to admitted members', async () => {
+    const owner = await account();
+    const member = await account();
+    const outsider = await account();
+    const workspaceId = await workspace(owner);
+    const outsiderWorkspaceId = await workspace(outsider);
+    await join(owner, workspaceId, member);
+    const { office, ticket: ownerTicket } = await issueTicket(owner, workspaceId);
+    const { ticket: memberTicket } = await issueTicket(member, workspaceId);
+    const ownerSocket = officeSocket({ ticket: ownerTicket, protocolVersion: 1 });
+    const memberSocket = officeSocket({ ticket: memberTicket, protocolVersion: 1 });
+    const messageId = randomUUID();
+    const body = { clientMessageId: messageId, text: 'Hello from the office' };
+    try {
+      const ownerReady = nextSocketEvent<unknown>(ownerSocket, 'office:ready');
+      await connectSocket(ownerSocket);
+      await ownerReady;
+      const memberReady = nextSocketEvent<unknown>(memberSocket, 'office:ready');
+      await connectSocket(memberSocket);
+      await memberReady;
+
+      const broadcast = nextSocketEvent<unknown>(memberSocket, 'chat:message');
+      const sent = await owner.client.send(
+        'post',
+        `/api/workspaces/${workspaceId}/offices/${office._id}/messages`,
+        body,
+        messageId,
+      );
+      status(sent, 201);
+      const message = officeMessageSchema.parse(sent.body.message);
+      expect(message).toMatchObject({
+        senderId: owner.id,
+        senderName: 'Test Person',
+        text: body.text,
+      });
+      expect(officeChatMessageEventSchema.parse(await broadcast)).toEqual(message);
+
+      const stored = await app.get(ConversationModels).messages.findById(message.id).lean();
+      expect(stored).toBeDefined();
+      expect(stored!.expiresAt.getTime() - stored!.createdAt.getTime()).toBe(
+        OFFICE_CHAT_RETENTION_DAYS * 24 * 60 * 60 * 1000,
+      );
+      const expiredAt = new Date(Date.now() - 1000);
+      await app.get(ConversationModels).messages.create({
+        _id: randomUUID(),
+        workspaceId,
+        officeId: office._id,
+        senderId: member.id,
+        senderName: 'Test Person',
+        clientMessageId: randomUUID(),
+        text: 'Expired history is filtered before TTL cleanup',
+        createdAt: new Date(expiredAt.getTime() - 91 * 24 * 60 * 60 * 1000),
+        expiresAt: expiredAt,
+      });
+
+      const replay = await owner.client.send(
+        'post',
+        `/api/workspaces/${workspaceId}/offices/${office._id}/messages`,
+        body,
+        messageId,
+      );
+      status(replay, 201);
+      expect(replay.body.message).toEqual(message);
+      const conflict = await owner.client.send(
+        'post',
+        `/api/workspaces/${workspaceId}/offices/${office._id}/messages`,
+        { ...body, text: 'Changed message with the same retry ID' },
+        messageId,
+      );
+      status(conflict, 409);
+
+      const history = await member.client.get(
+        `/api/workspaces/${workspaceId}/offices/${office._id}/messages`,
+      );
+      status(history, 200);
+      expect(officeMessagesResponseSchema.parse(history.body).messages).toEqual([message]);
+      status(
+        await outsider.client.get(`/api/workspaces/${workspaceId}/offices/${office._id}/messages`),
+        403,
+      );
+      status(
+        await owner.client.get(
+          `/api/workspaces/${outsiderWorkspaceId}/offices/${office._id}/messages`,
+        ),
+        403,
+      );
+      expect(
+        await app
+          .get(ConversationModels)
+          .messages.countDocuments({ workspaceId, officeId: office._id }),
+      ).toBe(2);
+    } finally {
+      ownerSocket.disconnect();
+      memberSocket.disconnect();
     }
   });
 

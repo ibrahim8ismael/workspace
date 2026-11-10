@@ -23,6 +23,7 @@ import {
 import { OfficeAdmissionService } from '../office-admission.service.js';
 import type { ConsumedOfficeTicket, OfficeReservation } from '../runtime/office-runtime.service.js';
 import { OfficeRuntimeService } from '../runtime/office-runtime.service.js';
+import { OfficeRoomEventPublisher } from '../office-room-event-publisher.js';
 
 interface OfficeSocketData {
   officeAdmission?: ConsumedOfficeTicket;
@@ -63,10 +64,12 @@ export class OfficeGateway
   constructor(
     @Inject(OfficeAdmissionService) private readonly admission: OfficeAdmissionService,
     @Inject(OfficeRuntimeService) private readonly runtime: OfficeRuntimeService,
+    @Inject(OfficeRoomEventPublisher) private readonly roomEvents: OfficeRoomEventPublisher,
   ) {}
 
   afterInit(namespace: Namespace) {
     this.namespace = namespace;
+    this.roomEvents.bind(namespace);
     namespace.use((socket, next) => {
       void this.authenticateAndReserve(socket as OfficeSocket, next);
     });

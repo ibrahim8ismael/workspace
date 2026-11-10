@@ -28,8 +28,8 @@ A folder represents a durable record, runtime entity, static definition or secur
 | [Background jobs](jobs/README.md) | M1 | Dedicated persistent noeviction BullMQ Redis |
 | [Audit events](audit-events/README.md) | M1–M5 | MongoDB: audit_events plus independent restricted recovery evidence |
 | [Assets and provenance](assets/README.md) | M0–M2 | Versioned static files and provenance manifest |
-| [Chat channels](channels/README.md) | Deferred | Proposed MongoDB collection; not scheduled |
-| [Chat messages](chat-messages/README.md) | Deferred | Proposed MongoDB collection; not scheduled |
+| [Chat channels](channels/README.md) | CP06 limited slice | Fixed `office` channel projection; no channel collection |
+| [Chat messages](chat-messages/README.md) | CP06 limited slice | MongoDB: `office_messages`; 90-day TTL |
 | [Calendar events](calendar-events/README.md) | Deferred | Proposed MongoDB collection; not scheduled |
 | [Desk assignments](desk-assignments/README.md) | Deferred | Proposed MongoDB collection; not scheduled |
 

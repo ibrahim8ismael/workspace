@@ -6,7 +6,7 @@ This record follows the production-facing frontend at `apps/web/main.tsx`. Value
 
 ## Completed corrections
 
-- Removed the active `office-preview` fake channel, empty demo message/user arrays, hard-coded preview user ID, and disabled composer. The active office sidebar now renders an explicit unavailable state and, while connected, only the live participant roster from the validated office snapshot. No message API or message event exists yet; chat stays a separately scoped backend feature. See [chat messages](../entities/chat-messages/README.md) and the [completion plan](PROJECT_COMPLETION_PLAN.md).
+- Removed the active `office-preview` fake channel, empty demo message/user arrays, hard-coded preview user ID, and disabled composer. CP06.11 now renders the supplied OpenOfficeForAll chat view with company-member names, authenticated message history/send APIs and office-room `chat:message` broadcasts. The fixed office channel retains messages for 90 days. DMs, nearby chat, attachments and channel editing remain unavailable. See [chat messages](../entities/chat-messages/README.md) and the [completion plan](PROJECT_COMPLETION_PLAN.md).
 - Corrected the browser-client README: the current authenticated shell mounts the versioned server-selected map, Vivo in the current environment, rather than Commons.
 - Removed the client-side `vivo` map fallback. The renderer now requires the map ID from the validated office bootstrap and shows a recoverable navigation message if connected state is incomplete.
 - Centralized the active app name as `Open Office` and removed the stale `Gather Lite` title/description from the active browser entry experience.
@@ -28,4 +28,4 @@ This record follows the production-facing frontend at `apps/web/main.tsx`. Value
 
 ## Current implementation limits
 
-This audit removes misleading active placeholders and records which requested data has no backend source yet. It does not claim text chat, personal avatar selection, meetings, calendar, editing, or media as implemented. The release acceptance gates remain in [ACCEPTANCE.md](ACCEPTANCE.md).
+This audit removes misleading active placeholders and records which requested data has no backend source yet. It does not claim personal avatar selection, meetings, calendar, editing, or product media as implemented. The release acceptance gates remain in [ACCEPTANCE.md](ACCEPTANCE.md).

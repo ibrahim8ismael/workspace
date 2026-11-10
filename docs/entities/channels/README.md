@@ -1,23 +1,18 @@
 # Chat channels
 
-Status: draft plan · Updated: 2026-11-05 · Target: Deferred
+Status: one built-in office channel only · Updated: 2026-11-10 · Target: CP06
 
 ## Responsibility
 
-Group future persistent messaging by workspace or office.
+Provide the fixed company-wide `office` channel for the first messaging slice. Channel identity is resolved from the workspace and office route; there is no customer-managed channel collection or CRUD.
 
-- Owning module: Unassigned until activated.
-- State location: Proposed MongoDB collection; not scheduled.
-- These are proposed contracts and fields, not implemented models. Apply the [baseline](../../README.md#source-precedence) and [cross-cutting rules](../../architecture/README.md#shared-invariants).
+- Owning UI: supplied OpenOfficeForAll chat view.
+- State location: one built-in channel projection; messages are persisted in `office_messages`.
+- Direct messages, nearby chat, meeting channels and channel administration remain unimplemented.
 
-## Proposed data
+## Runtime representation
 
-- `id`
-- `workspaceId`
-- `officeId optional`
-- `kind`
-- `name`
-- `policyVersion`
+The built-in channel is a UI projection (`id: office`, `name: office`), not a persisted channel record. Workspace and office IDs are resolved from the authorized route. Durable message rows own `workspaceId`, `officeId`, sender identity and retention timestamps.
 
 ## Relationships
 
@@ -27,16 +22,16 @@ Group future persistent messaging by workspace or office.
 
 ## Invariants and lifecycle
 
-- Outside MVP; no model, API, queue or frontend feature is authorized by this planning entry.
-- Must inherit tenant-scoped authorization and define privacy/retention before implementation.
+- Channel messages inherit active workspace membership and exact office scope.
+- History retention is 90 days. See [chat messages](../chat-messages/README.md).
 
 ## Interface outline
 
-- No MVP endpoint or realtime event; upstream UI remains hidden until supported.
+- No channel CRUD endpoint exists. Message history/send routes use the scoped office API, and `chat:message` broadcasts to that admitted office room.
 
 ## Planning question
 
-Choose visibility, membership and retention before designing endpoints.
+Additional channels require product rules for visibility, membership, permissions and retention before API work.
 
 ## Next work
 

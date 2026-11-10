@@ -1,6 +1,6 @@
 # Upstream reuse and migration plan
 
-Status: user-supplied web/shared code integrated with pnpm; product migration pending · Updated: 2026-11-08
+Status: supplied web/map/styles integrated into authenticated app; remaining surfaces and media still in progress · Updated: 2026-11-10
 
 Source brief: [upstream inventory and limitations](../../GATHER_LITE_PROJECT_KNOWLEDGE.md). The imported source and public assets are pinned to commit `23d6b8999396f9e9d51291bf85bd7b72161f833f`; the earlier tree-only identification was resolved by the recorded import. This pin is not proof of current upstream behavior or blanket clearance of every upstream asset. Preserve the copied notices and provenance; unresolved/private reference material remains excluded.
 
@@ -14,7 +14,7 @@ See [web/shared integration](WEB_IMPORT.md) and [pinned source manifest](UPSTREA
 4. Mount Phaser with a typed React bridge. Prove pixel sampling, anchors, occlusion and complete cleanup using the real sample.
 5. Replace `useOffice` raw-WebSocket integration with Socket.IO adapters; the protocols are not interchangeable. Replace localStorage account/admin/invite secrets with server session/ticket/role flows.
 6. Adapt workspace/onboarding and media UI to backend DTOs. With all-LiveKit selected, reduce upstream P2P media logic rather than maintaining two lifecycles implicitly.
-7. Exclude recorder, persistent chat/calendar and unsupported UI. The old monolithic backend and JSON business-data stores do not remain a hidden second authority.
+7. Keep the supported fixed office text channel on project APIs; exclude DMs, nearby/meeting chat, channel administration, recorder, calendar and other unsupported UI until their policies and services exist. The old monolithic backend and JSON business-data stores do not remain a hidden second authority.
 
 ## Data migration decision
 

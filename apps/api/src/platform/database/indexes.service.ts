@@ -7,6 +7,7 @@ import { TenancyModels } from '../../modules/tenancy/tenancy.models.js';
 import { AuditService } from '../../modules/audit/audit.service.js';
 import { OutboxService } from '../../modules/identity/delivery/outbox.service.js';
 import { OfficeJoinTicketModels } from '../../modules/office/join-ticket.models.js';
+import { ConversationModels } from '../../modules/conversations/conversation.models.js';
 import type { ApiEnvironment } from '../config/environment.js';
 
 @Injectable()
@@ -19,6 +20,7 @@ export class IndexesService implements OnApplicationBootstrap {
     @Inject(AuditService) private readonly audit: AuditService,
     @Inject(OutboxService) private readonly outbox: OutboxService,
     @Inject(OfficeJoinTicketModels) private readonly officeTickets: OfficeJoinTicketModels,
+    @Inject(ConversationModels) private readonly conversations: ConversationModels,
   ) {}
   async create() {
     await this.identity.createIndexes();
@@ -27,6 +29,7 @@ export class IndexesService implements OnApplicationBootstrap {
     await this.audit.mirrorOutbox.createIndexes();
     await this.outbox.model.createIndexes();
     await this.officeTickets.createIndexes();
+    await this.conversations.createIndexes();
   }
   async onApplicationBootstrap() {
     const hello = await this.db.connection.db!.admin().command({ hello: 1 });
@@ -95,5 +98,31 @@ export class IndexesService implements OnApplicationBootstrap {
       )
     )
       throw new Error('Missing exact office ticket TTL index. Run db:indexes.');
+
+    const messageIndexes = await this.conversations.messages.collection.indexes();
+    const exactIndex = (
+      key: Record<string, 1 | -1>,
+      predicate: (index: (typeof messageIndexes)[number]) => boolean = () => true,
+    ) =>
+      messageIndexes.some(
+        (index) =>
+          Object.keys(index.key).length === Object.keys(key).length &&
+          Object.entries(key).every(([field, direction]) => index.key[field] === direction) &&
+          !index.sparse &&
+          !index.partialFilterExpression &&
+          (!index.collation || index.collation.locale === 'simple') &&
+          predicate(index),
+      );
+    if (
+      !exactIndex(
+        { workspaceId: 1, officeId: 1, senderId: 1, clientMessageId: 1 },
+        (index) => index.unique === true,
+      )
+    )
+      throw new Error('Missing exact unique office message idempotency index. Run db:indexes.');
+    if (!exactIndex({ workspaceId: 1, officeId: 1, createdAt: -1 }))
+      throw new Error('Missing exact office message history index. Run db:indexes.');
+    if (!exactIndex({ expiresAt: 1 }, (index) => index.expireAfterSeconds === 0))
+      throw new Error('Missing exact office message TTL index. Run db:indexes.');
   }
 }

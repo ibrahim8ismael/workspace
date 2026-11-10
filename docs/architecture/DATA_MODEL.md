@@ -1,6 +1,6 @@
 # Data model and consistency plan
 
-Status: initial identity/tenant/delivery models implemented; office/runtime additions planned · Updated: 2026-11-08
+Status: identity/tenant/delivery, office admission and first office-chat persistence implemented; remaining runtime/media additions planned · Updated: 2026-11-10
 
 ## Customer tenancy
 
@@ -25,10 +25,12 @@ The following collections exist. Mongo `_id` is the stored identity; safe API DT
 | outbox | `_id`; state + createdAt; subjectId + kind | payload, attempts, expiresAt, cleanupAt, deliveredAt; purge secrets on delivery/expiry; TTL cleanupAt |
 | audit_events | `_id`; TTL expiresAt | createdAt and thirty-day expiry; independent recovery mirror absent |
 | audit_mirror_outbox | `_id` (same stable event ID); state + createdAt | versioned allowlisted projection and SHA-256 digest; pending only, no dispatcher, acknowledgement, or cleanup policy |
+| office_join_tickets | unique `ticketDigest`; TTL `expiresAt` | one-use ticket bound to account/session/membership grant/workspace/office/epoch/map; consumed under current policy |
+| office_messages | unique workspace/office/sender/clientMessageId; workspace/office/createdAt; TTL `expiresAt` | trimmed text and safe sender projection; expires exactly 90 days after creation and is filtered before asynchronous TTL deletion |
 
 Source of truth: [identity models](../../apps/api/src/modules/identity/identity.models.ts), [tenancy models](../../apps/api/src/modules/tenancy/tenancy.models.ts), [outbox schema](../../packages/delivery/src/outbox.ts), [audit and audit mirror outbox schemas](../../apps/api/src/modules/audit/audit.service.ts) and [index provisioning/startup checks](../../apps/api/src/platform/database/indexes.service.ts).
 
-The proposed `office_join_tickets` collection does not exist yet. CP03 adds its digest uniqueness and TTL alongside map/protocol/epoch/session/activation-grant binding. Audit workspace/time lookup indexing, operation-result retention, independent mirror acknowledgement and any additional outbox tenant projection require an explicit owning contract; none is claimed by the table above.
+The `office_join_tickets` collection is implemented in CP03. `office_messages` is implemented in CP06.11 for one company-wide office channel. Audit workspace/time lookup indexing, operation-result retention, independent mirror acknowledgement and any additional outbox tenant projection require an explicit owning contract; none is claimed by the table above.
 
 Provisional/conditional collections: `map_versions` for metadata if static manifests need DB references, and `map_overrides` only if scoped decoration edits enter implementation. Static geometry, seat/zone definitions, appearance subdocuments and media JWTs do not require dedicated collections by default. All field details are in the [entity catalog](../entities/README.md).
 
@@ -48,6 +50,7 @@ Account/company mutations below are implemented and have local evidence in [AUTH
 | Remove member | membership status/version, count, audit | Conditional current owner/member policy; live revocation hint follows commit |
 | Transfer ownership | workspace owner/policy, both roles, both users’ owned counts, audit | Exactly one owner; new-owner quota; recent reauthentication |
 | Join office | durable one-use ticket consumption; then serialized runtime reservation | Memory and Mongo are not one transaction; failure requires fresh ticket and cleanup |
+| Send office message | lock actor and current membership, validate office parent, create one message | sender-scoped client message ID makes retry stable; event publishes after commit only to that office room |
 
 Unknown transaction outcomes are reconciled using stable operation IDs and result lookup. Do not blindly replay external effects or increment counts twice. Outbox dispatch is at-least-once; individual effects need idempotency. Not every audit/outbox row is mandatory for every mutation: define the required event set with each domain command.
 

@@ -4,21 +4,23 @@ import {
   Bell,
   CalendarDays,
   ChevronDown,
+  Hash,
   LayoutGrid,
-  Map,
+  Map as MapIcon,
   MicOff,
   MessageCircle,
   Settings2,
   VideoOff,
 } from 'lucide-react';
 import type { AccountDto } from '@gather/contracts';
+import type { OfficeMessage } from '@gather/contracts';
 import type { OfficeWorkspaceDetail } from '../../lib/api';
 import { ApiClient } from '../../lib/api';
 import { DEFAULT_LOOK } from '../../../avatarLook';
 import VivoScene from '../../../VivoScene';
-import type { Participant } from '../../../types';
 import type { Overrides } from '../../../../shared/office-objects.js';
-import { OfficeChatStatus } from './OfficeChatStatus';
+import ChatView from '../../../chat/ChatView';
+import type { ChatMessage, DirectoryUser, Participant } from '../../../types';
 import { OfficeClient } from '../office/office-client';
 import './office-preview.css';
 
@@ -32,6 +34,22 @@ const LiveCommonsScene = lazy(() =>
     default: module.LiveCommonsScene,
   })),
 );
+
+type OfficeSection = 'office' | 'chat' | 'calendar' | 'activity';
+const OFFICE_CHANNEL = {
+  id: 'office',
+  name: 'office',
+  topic: 'Company-wide office chat · Messages are retained for 90 days.',
+};
+const MEMBER_COLORS = ['#7968e6', '#54a98f', '#d18b49', '#6888bf', '#bd6b83'];
+
+function mergeOfficeMessages(current: OfficeMessage[], incoming: OfficeMessage[]) {
+  const merged = new Map(current.map((message) => [message.id, message]));
+  for (const message of incoming) merged.set(message.id, message);
+  return [...merged.values()]
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+    .slice(-100);
+}
 
 function sceneAvatarForAppearance(appearance: { bodyId: string; paletteId: string }) {
   if (appearance.bodyId === 'commons-worker' && appearance.paletteId === 'teal')
@@ -58,12 +76,49 @@ export function CompanyOfficePreview({ account, api, detail, onBack, onOpenSecur
   const [officeActionError, setOfficeActionError] = useState('');
   const [officeActionPending, setOfficeActionPending] = useState(false);
   const [zoom, setZoom] = useState(1.35);
+  const [section, setSection] = useState<OfficeSection>('office');
+  const [chatMessages, setChatMessages] = useState<OfficeMessage[]>([]);
+  const [chatUsers, setChatUsers] = useState<DirectoryUser[]>([]);
+  const [chatDraft, setChatDraft] = useState('');
+  const [chatLoading, setChatLoading] = useState(true);
+  const [chatAvailable, setChatAvailable] = useState(false);
+  const [chatError, setChatError] = useState('');
+  const pendingChatMessage = useRef<{ text: string; id: string } | null>(null);
 
   useEffect(() => {
     titleRef.current?.focus();
   }, [connected]);
 
   useEffect(() => () => client.close(), [client]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void Promise.all([
+      api.officeMessages(detail.id, detail.officeId, controller.signal),
+      api.workspaceMembers(detail.id, controller.signal),
+    ])
+      .then(([messages, members]) => {
+        if (controller.signal.aborted) return;
+        setChatMessages((current) => mergeOfficeMessages(current, messages));
+        setChatUsers(
+          members.map((member, index) => ({
+            userId: member.userId,
+            name: member.displayName,
+            color: MEMBER_COLORS[index % MEMBER_COLORS.length] ?? MEMBER_COLORS[0]!,
+          })),
+        );
+        setChatAvailable(true);
+        setChatError('');
+      })
+      .catch(() => {
+        if (controller.signal.aborted) return;
+        setChatError('Could not load office messages. Check your connection and retry.');
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setChatLoading(false);
+      });
+    return () => controller.abort();
+  }, [api, connected, detail.id, detail.officeId]);
 
   async function runOfficeAction(action: () => Promise<void>) {
     setOfficeActionError('');
@@ -80,6 +135,41 @@ export function CompanyOfficePreview({ account, api, detail, onBack, onOpenSecur
       setOfficeActionPending(false);
     }
   }
+
+  async function sendChatMessage(text: string) {
+    setChatError('');
+    const pendingMessage =
+      pendingChatMessage.current?.text === text
+        ? pendingChatMessage.current
+        : { text, id: crypto.randomUUID() };
+    pendingChatMessage.current = pendingMessage;
+    try {
+      const message = await api.sendOfficeMessage(detail.id, detail.officeId, {
+        clientMessageId: pendingMessage.id,
+        text,
+      });
+      setChatMessages((current) => mergeOfficeMessages(current, [message]));
+      pendingChatMessage.current = null;
+    } catch {
+      setChatError('Your message could not be sent. Check your connection and try again.');
+      throw new Error('office_message_send_failed');
+    }
+  }
+
+  const chatViewMessages: ChatMessage[] = useMemo(
+    () =>
+      mergeOfficeMessages(chatMessages, state.chatEvents).map((message) => ({
+        id: message.id,
+        participantId: message.senderId,
+        userId: message.senderId,
+        name: message.senderName,
+        text: message.text,
+        channel: 'channel',
+        channelId: OFFICE_CHANNEL.id,
+        createdAt: message.createdAt,
+      })),
+    [chatMessages, state.chatEvents],
+  );
 
   if (!connected) {
     return (
@@ -234,38 +324,42 @@ export function CompanyOfficePreview({ account, api, detail, onBack, onOpenSecur
         </div>
         <div className="rail-main">
           <button
-            className="nav-item current"
+            className={`nav-item${section === 'office' ? ' current' : ''}`}
             type="button"
             aria-label="Office"
-            aria-pressed="true"
+            aria-pressed={section === 'office'}
             title="Office"
+            onClick={() => setSection('office')}
           >
-            <Map size={22} />
+            <MapIcon size={22} />
           </button>
           <button
-            className="nav-item"
+            className={`nav-item${section === 'chat' ? ' current' : ''}`}
             type="button"
-            aria-label="Text chat is unavailable"
-            title="Text chat is unavailable"
-            disabled
+            aria-label="Messages"
+            aria-pressed={section === 'chat'}
+            title="Messages"
+            onClick={() => setSection('chat')}
           >
             <MessageCircle size={22} />
           </button>
           <button
-            className="nav-item"
+            className={`nav-item${section === 'calendar' ? ' current' : ''}`}
             type="button"
-            aria-label="Calendar is unavailable"
-            title="Calendar is unavailable"
-            disabled
+            aria-label="Calendar"
+            aria-pressed={section === 'calendar'}
+            title="Calendar"
+            onClick={() => setSection('calendar')}
           >
             <CalendarDays size={22} />
           </button>
           <button
-            className="nav-item"
+            className={`nav-item${section === 'activity' ? ' current' : ''}`}
             type="button"
-            aria-label="Activity is unavailable"
-            title="Activity is unavailable"
-            disabled
+            aria-label="Activity"
+            aria-pressed={section === 'activity'}
+            title="Activity"
+            onClick={() => setSection('activity')}
           >
             <Bell size={22} />
           </button>
@@ -300,15 +394,42 @@ export function CompanyOfficePreview({ account, api, detail, onBack, onOpenSecur
             </h1>
           </div>
 
-          <div className="floor-selector">
-            <LayoutGrid size={15} />
-            <span>{mapId === 'vivo' ? 'Vivo office' : 'Commons office'}</span>
-            <span className="office-preview-badge">Office</span>
-          </div>
+          {section === 'office' ? (
+            <>
+              <div className="floor-selector">
+                <LayoutGrid size={15} />
+                <span>{mapId === 'vivo' ? 'Vivo office' : 'Commons office'}</span>
+                <span className="office-preview-badge">Office</span>
+              </div>
+              <p className="office-sidebar-summary">
+                Choose a room on the map and talk with your team.
+              </p>
+            </>
+          ) : section === 'chat' ? (
+            <div className="chat-sidebar office-chat-sidebar" aria-label="Message conversations">
+              <p className="chat-section">
+                <span>CHANNELS</span>
+              </p>
+              <button className="chat-nav-row is-active" type="button" aria-current="page">
+                <Hash size={16} />
+                <span>{OFFICE_CHANNEL.name}</span>
+              </button>
+              <p className="office-sidebar-summary">
+                One company-wide office channel. Messages are retained for 90 days.
+              </p>
+            </div>
+          ) : (
+            <div className="office-nav-placeholder">
+              <strong>{section === 'calendar' ? 'Calendar' : 'Activity'}</strong>
+              <p>
+                {section === 'calendar'
+                  ? 'Calendar events are not connected to a company API yet.'
+                  : 'Company activity is not connected to an activity feed yet.'}
+              </p>
+            </div>
+          )}
 
-          <p className="office-sidebar-summary">Text chat is unavailable in this release.</p>
-
-          {connected && state.snapshot && self ? (
+          {section === 'office' && connected && state.snapshot && self ? (
             <div className="office-world-controls" role="group" aria-label="Office controls">
               <div role="group" aria-labelledby="office-availability-title">
                 <h3 id="office-availability-title">Your availability</h3>
@@ -372,14 +493,23 @@ export function CompanyOfficePreview({ account, api, detail, onBack, onOpenSecur
                 </p>
               )}
             </div>
-          ) : (
+          ) : section === 'office' ? (
             <p className="empty-small">Enter the office to update your status or use a seat.</p>
-          )}
+          ) : null}
 
-          <OfficeChatStatus
-            connected={connected}
-            participants={snapshot.participants}
-          />
+          {section === 'office' && snapshot && snapshot.participants.length > 0 && (
+            <section className="office-people-list" aria-label="People in the office">
+              <h2>People here</h2>
+              <ul>
+                {snapshot.participants.map((participant) => (
+                  <li key={participant.participationId}>
+                    <span>{participant.displayName}</span>
+                    <small>{participant.availability}</small>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
 
           <div className="sidebar-foot">
             <span className={`connection ${connected ? 'connected' : ''}`}>
@@ -396,95 +526,153 @@ export function CompanyOfficePreview({ account, api, detail, onBack, onOpenSecur
 
         <main
           id="office-map"
-          className="map-area office-shell-map"
+          className={`map-area office-shell-map${section === 'chat' ? ' is-chat-view' : ''}`}
           tabIndex={-1}
-          aria-label={`OpenOfficeForAll ${mapId === 'vivo' ? 'Vivo' : 'Commons'} office map`}
+          aria-label={
+            section === 'office'
+              ? `OpenOfficeForAll ${mapId === 'vivo' ? 'Vivo' : 'Commons'} office map`
+              : section === 'chat'
+                ? 'Office messages'
+                : section === 'calendar'
+                  ? 'Office calendar'
+                  : 'Office activity'
+          }
         >
-          <div className="office-map-heading">
-            <strong>
-              {connected
-                ? `Live ${mapId === 'vivo' ? 'Vivo' : 'Commons'} office`
-                : `${mapId === 'vivo' ? 'Vivo' : 'Commons'} office`}
-            </strong>
-            <span className="office-preview-badge">{connected ? 'Live' : 'Read only'}</span>
-          </div>
-          <div className="office-map-stage">
-            {mapId === 'vivo' ? (
-              <VivoScene
-                participants={sceneParticipants}
-                selfId={connected ? (state.ready?.participationId ?? null) : null}
-                objects={[]}
-                zoom={zoom}
-                simplified={false}
-                editItem={null}
-                selectedObject={null}
-                editorOpen={false}
-                overrides={noOverrides}
-                onMove={() => {}}
-                onMovementIntent={(dx, dy) => client.move(dx, dy)}
-                onPlace={() => {}}
-                onSelect={() => {}}
-                onSelectObject={() => {}}
-                onMoveObject={() => {}}
-                onRemove={() => {}}
-                onSit={(seatId) => void runOfficeAction(() => client.sit(seatId))}
-                onStand={() => void runOfficeAction(() => client.stand())}
-                meetings={{}}
-                areaNames={{}}
-                onZoom={setZoom}
-                onAreaClick={() => {}}
-              />
-            ) : connected && state.bootstrap && state.ready && state.snapshot ? (
-              <Suspense fallback={<p role="status">Loading office map…</p>}>
-                <LiveCommonsScene
-                  bootstrap={state.bootstrap}
-                  snapshot={state.snapshot}
-                  localParticipationId={state.ready.participationId}
-                  onMovement={(dx, dy) => client.move(dx, dy)}
+          {section === 'office' ? (
+            <>
+              <div className="office-map-heading">
+                <strong>
+                  {connected
+                    ? `Live ${mapId === 'vivo' ? 'Vivo' : 'Commons'} office`
+                    : `${mapId === 'vivo' ? 'Vivo' : 'Commons'} office`}
+                </strong>
+                <span className="office-preview-badge">{connected ? 'Live' : 'Read only'}</span>
+              </div>
+              <div className="office-map-stage">
+                {mapId === 'vivo' ? (
+                  <VivoScene
+                    participants={sceneParticipants}
+                    selfId={connected ? (state.ready?.participationId ?? null) : null}
+                    objects={[]}
+                    zoom={zoom}
+                    simplified={false}
+                    editItem={null}
+                    selectedObject={null}
+                    editorOpen={false}
+                    overrides={noOverrides}
+                    onMove={() => {}}
+                    onMovementIntent={(dx, dy) => client.move(dx, dy)}
+                    onPlace={() => {}}
+                    onSelect={() => {}}
+                    onSelectObject={() => {}}
+                    onMoveObject={() => {}}
+                    onRemove={() => {}}
+                    onSit={(seatId) => void runOfficeAction(() => client.sit(seatId))}
+                    onStand={() => void runOfficeAction(() => client.stand())}
+                    meetings={{}}
+                    areaNames={{}}
+                    onZoom={setZoom}
+                    onAreaClick={() => {}}
+                  />
+                ) : connected && state.bootstrap && state.ready && state.snapshot ? (
+                  <Suspense fallback={<p role="status">Loading office map…</p>}>
+                    <LiveCommonsScene
+                      bootstrap={state.bootstrap}
+                      snapshot={state.snapshot}
+                      localParticipationId={state.ready.participationId}
+                      onMovement={(dx, dy) => client.move(dx, dy)}
+                    />
+                  </Suspense>
+                ) : (
+                  <Suspense fallback={<p role="status">Loading office map…</p>}>
+                    <CommonsScene />
+                  </Suspense>
+                )}
+              </div>
+              <div
+                className="controlbar office-controlbar"
+                role="group"
+                aria-label="Office connection controls"
+              >
+                <span
+                  className={`status-dot ${connected ? 'available' : 'away'}`}
+                  aria-hidden="true"
                 />
-              </Suspense>
-            ) : (
-              <Suspense fallback={<p role="status">Loading office map…</p>}>
-                <CommonsScene />
-              </Suspense>
-            )}
-          </div>
-          <div
-            className="controlbar office-controlbar"
-            role="group"
-            aria-label="Office connection controls"
-          >
-            <span className={`status-dot ${connected ? 'available' : 'away'}`} aria-hidden="true" />
-            <span className="office-control-status" role="status" aria-live="polite">
-              <span>{connectionMessage}</span>
-              <small>
-                {connected
-                  ? 'Use arrow keys or WASD to move.'
-                  : 'Enter the office to move and interact.'}
-              </small>
-            </span>
-            <span className="control-separator" />
-            {connected ? (
+                <span className="office-control-status" role="status" aria-live="polite">
+                  <span>{connectionMessage}</span>
+                  <small>
+                    {connected
+                      ? 'Use arrow keys or WASD to move.'
+                      : 'Enter the office to move and interact.'}
+                  </small>
+                </span>
+                <span className="control-separator" />
+                {connected ? (
+                  <button
+                    className="icon-button leave-meeting"
+                    type="button"
+                    aria-label="Leave office"
+                    title="Leave office"
+                    onClick={() => client.close()}
+                  >
+                    <ArrowLeft size={19} />
+                  </button>
+                ) : (
+                  <button
+                    className="primary enter-button"
+                    type="button"
+                    disabled={state.status === 'connecting'}
+                    onClick={() => void client.connect()}
+                  >
+                    {state.status === 'connecting' ? 'Connecting…' : 'Enter office'}
+                  </button>
+                )}
+              </div>
+            </>
+          ) : section === 'chat' ? (
+            <>
+              <ChatView
+                conversation={{ kind: 'channel', id: OFFICE_CHANNEL.id }}
+                channels={[OFFICE_CHANNEL]}
+                users={chatUsers}
+                participants={[]}
+                selfUserId={account.id}
+                messages={chatViewMessages}
+                online={chatAvailable}
+                draft={chatDraft}
+                onDraft={setChatDraft}
+                onSend={sendChatMessage}
+                onTopic={() => {}}
+                englishOnly
+                topicEditable={false}
+                showChannelTools={false}
+                statusMessage={
+                  chatLoading
+                    ? 'Loading recent office messages…'
+                    : chatError || (chatAvailable ? '' : 'Office messages are unavailable.')
+                }
+              />
+            </>
+          ) : (
+            <section className="office-section-placeholder" aria-live="polite">
+              <span className="office-placeholder-icon" aria-hidden="true">
+                {section === 'calendar' ? <CalendarDays size={24} /> : <Bell size={24} />}
+              </span>
+              <h2>{section === 'calendar' ? 'Calendar' : 'Activity'}</h2>
+              <p>
+                {section === 'calendar'
+                  ? 'Calendar events are not available until the company calendar API is connected.'
+                  : 'Activity notifications are not available until the company activity API is connected.'}
+              </p>
               <button
-                className="icon-button leave-meeting"
+                className="dashboard-secondary"
                 type="button"
-                aria-label="Leave office"
-                title="Leave office"
-                onClick={() => client.close()}
+                onClick={() => setSection('office')}
               >
-                <ArrowLeft size={19} />
+                Return to office
               </button>
-            ) : (
-              <button
-                className="primary enter-button"
-                type="button"
-                disabled={state.status === 'connecting'}
-                onClick={() => void client.connect()}
-              >
-                {state.status === 'connecting' ? 'Connecting…' : 'Enter office'}
-              </button>
-            )}
-          </div>
+            </section>
+          )}
         </main>
       </div>
     </div>

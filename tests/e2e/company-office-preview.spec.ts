@@ -47,6 +47,17 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   const unexpectedApiCalls: string[] = [];
   const officeEvents: string[] = [];
   const movementInputs: Array<{ dx: number; dy: number }> = [];
+  const sentOfficeMessages: Array<{ clientMessageId: string; text: string }> = [];
+  let failNextOfficeMessage = true;
+  const officeHistory = [
+    {
+      id: 'c8f3e6ec-0fc0-47f0-9270-a05ad980c5a7',
+      senderId: '41bbf5d6-37d7-4468-9892-9776ff19e008',
+      senderName: 'Office Teammate',
+      text: 'Welcome to the team chat',
+      createdAt: '2026-11-10T17:00:00.000Z',
+    },
+  ];
   let officeBootstrapRequests = 0;
   let officeTicketRequests = 0;
   let officeConnections = 0;
@@ -77,6 +88,54 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
       return authenticated ? json({ workspaces: [workspace] }) : json({}, 401);
     if (method === 'GET' && path === `/api/workspaces/${workspace.id}`)
       return authenticated ? json({ workspace: { ...workspace, officeId } }) : json({}, 401);
+    if (method === 'GET' && path === `/api/workspaces/${workspace.id}/members`)
+      return json({
+        members: [
+          {
+            userId: account.id,
+            displayName: account.displayName,
+            role: 'owner',
+            joinedAt: '2026-11-09T00:00:00.000Z',
+          },
+          {
+            userId: '41bbf5d6-37d7-4468-9892-9776ff19e008',
+            displayName: 'Office Teammate',
+            role: 'member',
+            joinedAt: '2026-11-09T00:00:00.000Z',
+          },
+        ],
+      });
+    if (method === 'GET' && path === `/api/workspaces/${workspace.id}/offices/${officeId}/messages`)
+      return json({ messages: officeHistory });
+    if (
+      method === 'POST' &&
+      path === `/api/workspaces/${workspace.id}/offices/${officeId}/messages`
+    ) {
+      const body = request.postDataJSON() as { clientMessageId: string; text: string };
+      sentOfficeMessages.push(body);
+      if (failNextOfficeMessage) {
+        failNextOfficeMessage = false;
+        return json(
+          {
+            error: {
+              code: 'temporarily_unavailable',
+              message: 'temporarily_unavailable',
+              requestId,
+            },
+          },
+          503,
+        );
+      }
+      return json({
+        message: {
+          id: 'd43b20e4-940d-4f56-bd60-b18d6f9fa3dd',
+          senderId: account.id,
+          senderName: account.displayName,
+          text: body.text,
+          createdAt: '2026-11-10T17:01:00.000Z',
+        },
+      });
+    }
     if (method === 'GET' && path === `/api/workspaces/${workspace.id}/offices/${officeId}`) {
       officeBootstrapRequests += 1;
       return json({
@@ -265,9 +324,25 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await expect(page.getByRole('group', { name: 'Office controls' })).toBeVisible();
   await expect(page.getByRole('group', { name: 'Your availability' })).toBeVisible();
   await expect(page.getByRole('group', { name: 'Seats' })).toHaveCount(0);
-  await expect(page.getByRole('list', { name: 'People in the office' })).toContainText(
+  await expect(page.getByRole('region', { name: 'People in the office' })).toContainText(
     account.displayName,
   );
+  await page.getByRole('button', { name: 'Messages' }).click();
+  await expect(page.getByRole('heading', { name: 'Welcome to #office' })).toBeVisible();
+  await expect(page.getByText('Welcome to the team chat')).toBeVisible();
+  await expect(page.getByText('Office Teammate').first()).toBeVisible();
+  const officeMessageBox = page.getByRole('textbox', { name: 'Message office' });
+  await officeMessageBox.fill('A message that should survive a retry');
+  await page.getByRole('button', { name: 'Send message' }).click();
+  await expect(page.locator('.chat-view-status')).toContainText('could not be sent');
+  await expect(officeMessageBox).toHaveValue('A message that should survive a retry');
+  await page.getByRole('button', { name: 'Send message' }).click();
+  await expect(page.getByText('A message that should survive a retry')).toBeVisible();
+  expect(sentOfficeMessages).toHaveLength(2);
+  expect(sentOfficeMessages[0]?.text).toBe(sentOfficeMessages[1]?.text);
+  expect(sentOfficeMessages[0]?.clientMessageId).toBe(sentOfficeMessages[1]?.clientMessageId);
+  await page.getByRole('button', { name: 'Office', exact: true }).click();
+  await expect(page.locator('.office-scene .office-map')).toHaveCount(1);
   await page.getByRole('button', { name: 'Back to companies' }).focus();
   await page.keyboard.press('Tab');
   await page.keyboard.press('Tab');
@@ -281,6 +356,13 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
     'aria-pressed',
     'true',
   );
+  officeHistory.push({
+    id: '7db151ba-fbf2-42a3-ad73-59bdad580f0e',
+    senderId: '41bbf5d6-37d7-4468-9892-9776ff19e008',
+    senderName: 'Office Teammate',
+    text: 'This arrived during the reconnect',
+    createdAt: '2026-11-10T17:02:00.000Z',
+  });
   expect(interruptOfficeConnection).toBeDefined();
   await interruptOfficeConnection!();
   await expect(page.getByText('Office connection closed.')).toBeVisible();
@@ -289,6 +371,9 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await page.getByRole('button', { name: 'Join' }).click();
   await expect(page.getByText('1 person in the office')).toBeVisible();
   await expect(page.locator('.office-scene .office-map')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Messages' }).click();
+  await expect(page.getByText('This arrived during the reconnect')).toBeVisible();
+  await page.getByRole('button', { name: 'Office', exact: true }).click();
   expect(officeBootstrapRequests).toBe(2);
   expect(officeTicketRequests).toBe(2);
   expect(officeConnections).toBe(2);

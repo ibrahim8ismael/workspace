@@ -4,7 +4,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { createCommonsSceneCleanup } from '../commons-preview/scene-lifecycle';
 import type { OfficeWorkspaceDetail } from '../src/lib/api';
 import { canOpenOfficePreview } from '../src/features/workspaces/company-overview-view';
-import { OfficePreviewChat } from '../src/features/workspaces/OfficePreviewChat';
 import { CompanyOfficePreview } from '../src/features/workspaces/CompanyOfficePreview';
 import { ApiClient } from '../src/lib/api';
 import type { AccountDto } from '@gather/contracts';
@@ -69,35 +68,48 @@ describe('company office preview selection', () => {
   });
 });
 
-describe('disconnected preview chat', () => {
-  it('shows an empty, disconnected, non-sendable chat surface', () => {
+describe('office chat view', () => {
+  it('renders the supplied view with the live fixed channel and retention copy', () => {
     const html = renderToStaticMarkup(
-      createElement(OfficePreviewChat, { companyName: 'Example Company' }),
+      createElement(ChatView, {
+        conversation: { kind: 'channel', id: 'office' },
+        channels: [
+          {
+            id: 'office',
+            name: 'office',
+            topic: 'Company-wide office chat · Messages are retained for 90 days.',
+          },
+        ],
+        users: [],
+        participants: [],
+        selfUserId: account.id,
+        messages: [
+          {
+            id: 'message-1',
+            participantId: account.id,
+            userId: account.id,
+            name: account.displayName,
+            text: 'Hello from the office',
+            channel: 'channel',
+            channelId: 'office',
+            createdAt: '2026-11-10T12:00:00.000Z',
+          },
+        ],
+        online: true,
+        draft: '',
+        onDraft: () => undefined,
+        onSend: () => undefined,
+        onTopic: () => undefined,
+        englishOnly: true,
+        topicEditable: false,
+        showChannelTools: false,
+      }),
     );
-    expect(html).toContain('Text chat is unavailable');
-    expect(html).toContain('No participants or messages are loaded for Example Company.');
-    expect(html).toContain('Sending is disabled');
-    expect(html).toContain('Text chat unavailable');
-    expect(html).toMatch(/<fieldset[^>]*disabled/);
-    expect(html).toMatch(/<textarea[^>]*disabled/);
-    expect(html).toMatch(/<button[^>]*class="chat-send"[^>]*disabled/);
-    expect(html).not.toContain('class="chat-message');
-  });
-
-  it('keeps the preview in English when the saved interface language is Spanish', () => {
-    const previousLanguage = language();
-    setLanguage('es');
-    try {
-      const html = renderToStaticMarkup(
-        createElement(OfficePreviewChat, { companyName: 'Example Company' }),
-      );
-      expect(html).toContain('Welcome to #office-preview');
-      expect(html).toContain('Message office-preview');
-      expect(html).toContain('More options');
-      expect(html).not.toContain('Cerca de ti');
-    } finally {
-      setLanguage(previousLanguage);
-    }
+    expect(html).toContain('Welcome to #office');
+    expect(html).toContain('Messages are retained for 90 days.');
+    expect(html).toContain('Hello from the office');
+    expect(html).toContain('Message office');
+    expect(html).not.toContain('office-preview');
   });
 
   it('keeps the default chat surface on the saved interface language', () => {

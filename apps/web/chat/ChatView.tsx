@@ -72,10 +72,14 @@ type Props = {
   online: boolean;
   draft: string;
   onDraft: (text: string) => void;
-  onSend: (text: string) => void;
+  onSend: (text: string) => void | Promise<void>;
   onTopic: (channelId: string, topic: string) => void;
   /** Keep this surface in English when embedded in the English-first account application. */
   englishOnly?: boolean;
+  /** Hide controls whose backing workspace API has not been implemented. */
+  topicEditable?: boolean;
+  showChannelTools?: boolean;
+  statusMessage?: string;
 };
 
 /** The reference's chat page: header, conversation introduction, grouped messages and a formatting composer. */
@@ -92,6 +96,9 @@ export default function ChatView({
   onSend,
   onTopic,
   englishOnly = false,
+  topicEditable = true,
+  showChannelTools = true,
+  statusMessage = '',
 }: Props) {
   const t = englishOnly ? tEnglish : appTranslate;
   const formatLocale = englishOnly ? 'en' : locale();
@@ -137,10 +144,14 @@ export default function ChatView({
     setMenuOpen(false);
   }, [conversation]);
 
-  const send = () => {
+  const send = async () => {
     if (!draft.trim() || !online) return;
-    onSend(draft.trim());
-    onDraft('');
+    try {
+      await onSend(draft.trim());
+      onDraft('');
+    } catch {
+      // The owning feature reports its error and leaves the draft available for retry.
+    }
   };
   const keyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -208,15 +219,21 @@ export default function ChatView({
         <button
           type="button"
           className="chat-title"
+          disabled={conversation.kind === 'channel' && !topicEditable}
           onClick={() =>
+            topicEditable &&
             conversation.kind === 'channel' &&
             (setTopic(channel?.topic ?? ''), setEditingTopic(true))
           }
-          title={conversation.kind === 'channel' ? t('Editar la descripción del canal') : title}
+          title={
+            conversation.kind === 'channel' && topicEditable
+              ? t('Editar la descripción del canal')
+              : title
+          }
         >
           {header}
         </button>
-        {conversation.kind !== 'nearby' && (
+        {showChannelTools && conversation.kind !== 'nearby' && (
           <div className="chat-header-tools">
             <div
               className="chat-members"
@@ -256,7 +273,7 @@ export default function ChatView({
               </button>
               {menuOpen && (
                 <div className="chat-menu" role="menu">
-                  {conversation.kind === 'channel' && (
+                  {conversation.kind === 'channel' && topicEditable && (
                     <button
                       role="menuitem"
                       onClick={() => {
@@ -285,12 +302,17 @@ export default function ChatView({
           </div>
         )}
       </header>
+      {statusMessage && (
+        <p className="chat-view-status" role="status" aria-live="polite">
+          {statusMessage}
+        </p>
+      )}
       <div className="chat-scroll">
         <div className="chat-intro">
           {conversation.kind === 'channel' && (
             <>
               <h2>{t('Bienvenido a #{name}', { name: title })}</h2>
-              {editingTopic ? (
+              {editingTopic && topicEditable ? (
                 <form
                   className="chat-topic-form"
                   onSubmit={(event) => {

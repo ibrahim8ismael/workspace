@@ -394,3 +394,22 @@ not deliberately kill the real shared Docker daemon or validate a frozen Linux
 scheduler. Correctness still assumes a live SFU wrapper/kernel, protected lease
 writer/mounts and trusted controller/guard code. Host/VM failure domains and
 production installation privileges need their deployment acceptance checks.
+
+## CP07.20 late signed policy, default-deny bootstrap and invalid JWT probes
+
+`--delay-policy` signals the private controller to delay signed replies by 1500ms,
+beyond the guard's 1000ms abort deadline. Generation retirement is intentionally
+postponed until after media cutoff, so retirement cannot mask an incorrectly
+renewed lease. The combined two-room/source/both-host-watchdogs-dead run passed:
+last active audio 5224ms/video 4845ms, second-room video 4826ms. Cutoff exceeding
+8000ms now fails the harness explicitly. Both old and refreshed replay were denied.
+Actual admission probes reject wrong-identity, wrong-signature, expired,
+unrestricted-publication and screen-share-audio grants; microphone-positive and
+camera/screen-negative SFU tests still pass.
+
+A cold-start race exposed by this scenario was corrected in `sfu-lease.sh`:
+the wrapper now waits without starting LiveKit until a correctly scoped lease
+whose policy request began after this SFU boot is installed. This supersedes the
+three-second bootstrap grace in CP07.19. A stale pre-boot file never starts media;
+once first started, expiry terminates the LiveKit child directly. The namespace
+can exist for controller/guard startup while the SFU has no running media process.

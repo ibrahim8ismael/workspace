@@ -4,6 +4,10 @@ import { policySignature, validPolicySignature } from './policy-pull.mjs';
 const key = process.env.CP07_POLICY_KEY;
 if (!key || key.length < 32) throw new Error('missing policy fixture key');
 let sequence = 0;
+let delayMs = 0;
+process.on('SIGUSR1', () => {
+  delayMs = 1500;
+});
 http
   .createServer(async (req, res) => {
     if (req.method !== 'POST' || req.url !== '/policy') {
@@ -37,6 +41,7 @@ http
         res.end();
         return;
       }
+      if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs));
       const response = JSON.stringify({
         ...request,
         sequence: ++sequence,

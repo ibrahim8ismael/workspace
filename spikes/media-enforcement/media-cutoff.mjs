@@ -38,6 +38,8 @@ const isolated = process.argv.includes('--isolated');
 const policyLoss = process.argv.includes('--policy-loss');
 const companies = process.argv.includes('--company-isolation');
 const sfuLease = process.argv.includes('--sfu-lease');
+const delayedPolicy = process.argv.includes('--delay-policy');
+if (delayedPolicy && !policyLoss) throw new Error('--delay-policy requires --policy-loss');
 if (sfuLease && !policyLoss) throw new Error('--sfu-lease requires --policy-loss');
 const sfuEpoch = randomBytes(32).toString('hex');
 if (companies && !policyLoss) throw new Error('--company-isolation requires --policy-loss');
@@ -341,6 +343,53 @@ try {
     );
     if (foreignAccepted) throw new Error('Cross-room guard scope bypass');
     sourcePermissionResult.foreignRoomRejected = true;
+    for (const scenario of [
+      { name: 'wrongIdentity', identity: 'unlisted-user', secret, ttl: '2m' },
+      {
+        name: 'wrongSignature',
+        identity: 'receiver',
+        secret: 'not-the-fixture-secret'.repeat(2),
+        ttl: '2m',
+      },
+      { name: 'expired', identity: 'receiver', secret, ttl: '-5s' },
+      { name: 'unrestrictedPublish', identity: 'publisher', secret, ttl: '2m', publish: true },
+      {
+        name: 'screenAudio',
+        identity: 'publisher',
+        secret,
+        ttl: '2m',
+        publish: true,
+        sources: [4],
+      },
+    ]) {
+      const grant = new AccessToken('fixture', scenario.secret, {
+        identity: scenario.identity,
+        ttl: scenario.ttl,
+      });
+      grant.addGrant({
+        roomJoin: true,
+        room: 'cutoff-fixture',
+        canPublish: Boolean(scenario.publish),
+        canSubscribe: !scenario.publish,
+        ...(scenario.sources ? { canPublishSources: scenario.sources } : {}),
+      });
+      const accepted = await publisher.evaluate(
+        async (jwt) => {
+          const room = new window.LivekitClient.Room();
+          try {
+            await room.connect(window.fixtureSocket, jwt);
+            return true;
+          } catch {
+            return false;
+          } finally {
+            await room.disconnect();
+          }
+        },
+        await grant.toJwt(),
+      );
+      if (accepted) throw new Error('Invalid admission accepted: ' + scenario.name);
+      sourcePermissionResult[scenario.name + 'Rejected'] = true;
+    }
   }
   const originalReceiverToken = await token('receiver');
   await receiver.evaluate(async (token) => {
@@ -625,10 +674,13 @@ try {
     if (healthy.frames <= before.frames || healthy.audio <= before.audio)
       throw new Error('Media did not continue during healthy progress');
     if (policyLoss) {
-      await docker('rm', '-f', policyId);
-      policyId = undefined;
+      if (delayedPolicy) await docker('kill', '--signal', 'USR1', policyId);
+      else {
+        await docker('rm', '-f', policyId);
+        policyId = undefined;
+      }
     }
-    retirement.retire('cutoff-fixture');
+    if (!delayedPolicy) retirement.retire('cutoff-fixture');
     if (freezeGuard) await docker('pause', guardId);
     startedAt = Date.now();
   }
@@ -688,6 +740,8 @@ try {
     lastAudioAt: window.lastAudioAt,
   }));
   await new Promise((r) => setTimeout(r, 1000));
+  if (final.lastAudioAt - startedAt > 8000 || final.lastFrameAt - startedAt > 8000)
+    throw new Error('Measured media cutoff exceeds eight-second fixture budget');
   const after = await receiver.evaluate(() => window.framesReceived);
   if (after !== final.frames) throw new Error('Media still advancing after shutdown');
   if ((await receiver.evaluate(() => window.audioSamples)) !== final.audioSamples)
@@ -704,6 +758,7 @@ try {
     companyIsolationResult.lastFrameAfterFaultMs = first.lastFrameAt - startedAt;
     companyIsolationResult.sharedNodeShutdownInterruptedSecondCompany = true;
   }
+  if (delayedPolicy) retirement.retire('cutoff-fixture');
   guard?.close();
   await docker('start', id);
   const previousGuardEpoch = guardEpoch;
@@ -742,7 +797,9 @@ try {
   console.log(
     JSON.stringify({
       scenario: policyLoss
-        ? 'authenticated-controller-loss'
+        ? delayedPolicy
+          ? 'authenticated-delayed-policy'
+          : 'authenticated-controller-loss'
         : progressStall
           ? 'fixture-install-progress-then-stall'
           : 'missing-guard-progress',

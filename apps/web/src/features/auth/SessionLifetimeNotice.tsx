@@ -74,7 +74,7 @@ export function SessionLifetimeNotice({
           <h2 id="session-lifetime-title">Current session</h2>
         </div>
         <button
-          className="account-secondary"
+          className="dashboard-secondary"
           type="button"
           disabled={loading || mutationPending}
           onClick={onRefresh}
@@ -111,7 +111,7 @@ export function SessionLifetimeNotice({
             valid.
           </p>
           <button
-            className="account-secondary"
+            className="dashboard-secondary"
             type="button"
             disabled={
               mutationPending ||

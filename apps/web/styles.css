@@ -4600,7 +4600,7 @@ button .avatar {
   background: #fff;
   box-shadow: 0 1px 2px #0000000a;
 }
-.dashboard-info-panel {
+.dashboard .dashboard-info-panel {
   min-width: 0;
   padding: clamp(20px, 3vw, 28px);
   border: 1px solid #e2e2e2;
@@ -4610,6 +4610,10 @@ button .avatar {
 }
 .dashboard-body.company-overview-content {
   width: min(100%, 920px);
+  margin: 0 auto;
+}
+.dashboard-body.dashboard-security-body {
+  width: min(100%, 1040px);
   margin: 0 auto;
 }
 .company-detail-state {

@@ -230,6 +230,12 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await page.getByRole('button', { name: 'Sign in' }).click();
 
   await expect(page.getByText('E2E Company', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Account security' }).click();
+  await expect(page.getByRole('heading', { name: 'Account security' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Signed-in sessions' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Verify password' })).toBeVisible();
+  await page.getByRole('button', { name: 'Back to companies' }).click();
+  await expect(page.getByText('E2E Company', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Open office' }).click();
   await expect(page.getByRole('heading', { name: 'Company details' })).toBeVisible();
   await expect(page.getByRole('definition').filter({ hasText: 'e2e-company' })).toBeVisible();

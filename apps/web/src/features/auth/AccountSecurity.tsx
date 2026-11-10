@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { ArrowLeft, LayoutGrid } from 'lucide-react';
 import type { AccountDto } from '@gather/contracts';
 import { ApiClient, ApiError, type SessionDto } from '../../lib/api';
 import { messageForApi } from './messages';
@@ -147,40 +148,35 @@ export function AccountSecurity({
   }
 
   return (
-    <main className="workspace-shell">
-      <header className="workspace-topbar">
-        <a
-          className="workspace-brand"
-          href="/"
-          aria-label="Gather Lite home"
-          onClick={(event) => {
-            if (mutationPending) event.preventDefault();
-          }}
-        >
-          <span className="account-mark" aria-hidden="true">
-            G
+    <main className="dashboard">
+      <header className="dashboard-bar">
+        <a className="dashboard-brand" href="/" aria-label="Open Office home">
+          <span className="workspace-logo" aria-hidden="true">
+            <LayoutGrid size={18} />
           </span>
-          <strong>Gather Lite</strong>
+          <strong>Open Office</strong>
         </a>
-        <div className="workspace-user">
-          <span>{account.displayName}</span>
-          <button type="button" disabled={mutationPending} onClick={onBack}>
+        <div className="dashboard-account-actions">
+          <span className="dashboard-account-name">{account.displayName}</span>
+          <button
+            className="dashboard-secondary"
+            type="button"
+            disabled={mutationPending}
+            onClick={onBack}
+          >
+            <ArrowLeft size={15} aria-hidden="true" />
             Back to companies
           </button>
         </div>
       </header>
 
-      <div className="workspace-content security-content">
-        <section className="workspace-heading">
+      <div className="dashboard-body dashboard-security-body">
+        <section className="dashboard-heading">
           <div>
-            <p className="account-eyebrow">ACCOUNT</p>
             <h1 ref={titleRef} tabIndex={-1}>
               Account security
             </h1>
-            <p className="workspace-lead">Review sessions and manage your sign-in.</p>
-          </div>
-          <div className="workspace-avatar" aria-hidden="true">
-            {account.displayName.trim().slice(0, 1).toUpperCase()}
+            <p>Review sessions and manage your sign-in.</p>
           </div>
         </section>
 
@@ -207,7 +203,7 @@ export function AccountSecurity({
           onExpire={onExpire}
         />
 
-        <section className="security-panel" aria-labelledby="sessions-title">
+        <section className="security-panel dashboard-info-panel" aria-labelledby="sessions-title">
           <div className="security-panel-heading">
             <div>
               <h2 id="sessions-title">Signed-in sessions</h2>
@@ -244,7 +240,7 @@ export function AccountSecurity({
                     </span>
                   </div>
                   <button
-                    className="account-secondary"
+                    className="dashboard-secondary"
                     type="button"
                     disabled={securityActionsBlocked}
                     onClick={() => void revokeSession(session)}
@@ -258,12 +254,15 @@ export function AccountSecurity({
         </section>
 
         <div className="security-actions">
-          <section className="security-panel" aria-labelledby="verify-password-title">
+          <section
+            className="security-panel dashboard-info-panel"
+            aria-labelledby="verify-password-title"
+          >
             <p className="account-eyebrow">ACCOUNT SECURITY</p>
             <h2 id="verify-password-title">Verify password</h2>
             <p>Confirm your password to refresh your sign-in and continue sensitive actions.</p>
             <form className="security-form" onSubmit={(event) => void verifyPassword(event)}>
-              <label className="account-field">
+              <label className="dashboard-label">
                 <span>Password</span>
                 <input
                   autoComplete="current-password"
@@ -275,20 +274,23 @@ export function AccountSecurity({
                   type="password"
                 />
               </label>
-              <button className="account-primary" disabled={securityActionsBlocked} type="submit">
+              <button className="dashboard-create" disabled={securityActionsBlocked} type="submit">
                 Verify password
               </button>
             </form>
           </section>
 
-          <section className="security-panel" aria-labelledby="change-password-title">
+          <section
+            className="security-panel dashboard-info-panel"
+            aria-labelledby="change-password-title"
+          >
             <p className="account-eyebrow">PASSWORD</p>
             <h2 id="change-password-title">Change password</h2>
             <p>
               If recent verification is required, verify first, then enter both passwords again.
             </p>
             <form className="security-form" onSubmit={(event) => void changePassword(event)}>
-              <label className="account-field">
+              <label className="dashboard-label">
                 <span>Current password</span>
                 <input
                   autoComplete="current-password"
@@ -300,7 +302,7 @@ export function AccountSecurity({
                   type="password"
                 />
               </label>
-              <label className="account-field">
+              <label className="dashboard-label">
                 <span>New password</span>
                 <input
                   autoComplete="new-password"
@@ -312,20 +314,23 @@ export function AccountSecurity({
                   type="password"
                 />
               </label>
-              <button className="account-primary" disabled={securityActionsBlocked} type="submit">
+              <button className="dashboard-create" disabled={securityActionsBlocked} type="submit">
                 Change password
               </button>
             </form>
           </section>
         </div>
 
-        <section className="security-panel security-logout-all" aria-labelledby="logout-all-title">
+        <section
+          className="security-panel dashboard-info-panel security-logout-all"
+          aria-labelledby="logout-all-title"
+        >
           <div>
             <h2 id="logout-all-title">Sign out all sessions</h2>
             <p>All browsers will need to sign in again.</p>
           </div>
           <button
-            className="account-secondary"
+            className="dashboard-danger"
             type="button"
             disabled={mutationPending}
             onClick={() => void signOutEverywhere()}

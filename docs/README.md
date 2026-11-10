@@ -65,3 +65,5 @@ The latest [web/shared import](migration/WEB_IMPORT.md) records the actual front
 Backend work starts from the [authentication and company roles implementation plan](planning/AUTH_AND_ROLES_IMPLEMENTATION.md), written before source implementation.
 
 The backend-only [authentication and company roles API](contracts/AUTH_AND_ROLES_API.md) now implements the first identity/tenancy slice. Frontend integration and production release gates remain separate.
+
+Current CP07 local enforcement proof: [measured audio/video fault evidence and deployment limits](planning/MEDIA_ENFORCEMENT_EVIDENCE.md). The named isolated experiment exit is demonstrated; production A07 acceptance and application media integration remain separate.

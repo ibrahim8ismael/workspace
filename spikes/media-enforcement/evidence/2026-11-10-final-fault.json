@@ -1,0 +1,40 @@
+{
+  "date": "2026-11-10",
+  "scenario": "authenticated-controller-loss",
+  "isolated": true,
+  "guardedSupervisor": true,
+  "sfuLease": true,
+  "failedRoomDelete": { "failed": true, "status": 401 },
+  "guardEpochChanged": true,
+  "sourcePermissionResult": {
+    "cameraRejected": true,
+    "screenShareRejected": true,
+    "microphonePublished": true,
+    "foreignRoomRejected": true,
+    "wrongIdentityRejected": true,
+    "wrongSignatureRejected": true,
+    "expiredRejected": true,
+    "unrestrictedPublishRejected": true,
+    "screenAudioRejected": true
+  },
+  "companyIsolationResult": {
+    "firstPeers": ["publisher"],
+    "secondPeers": ["publisher-b"],
+    "secondTrackOwners": ["publisher-b"],
+    "frames": 223,
+    "lastFrameAfterFaultMs": 4692,
+    "sharedNodeShutdownInterruptedSecondCompany": true
+  },
+  "freezeGuard": true,
+  "staleTokenAcceptedAfterRestart": false,
+  "refreshedTokenAcceptedAfterRestart": false,
+  "framesReceived": 258,
+  "audioSamples": 664,
+  "lastAudibleSampleAfterStartMs": 5035,
+  "lastDecodedFrameAfterStartMs": 4702,
+  "stableObservationMs": 1000,
+  "supervisor": {
+    "kind": "worker-started",
+    "pid": 37269
+  }
+}

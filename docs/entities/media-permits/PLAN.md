@@ -1,21 +1,21 @@
 # Media permits and generations implementation plan
 
-Status: planned; no implementation or verification evidence · Target: M0 spike; M3 integration
+Status: local isolated CP07 spike verified; application/deployment integration pending CP08/CP10 · Updated: 2026-11-10
 
 ## Implementation tasks
 
-- [ ] Choose a container-aware independent shutdown design with bounded authority.
-- [ ] Build private two-person and three-person removal spike.
-- [ ] Inject guard freeze, controller loss, delayed snapshots, failed room deletion and bypass attempts.
-- [ ] Record measured cutoff and node-wide interruption costs before expanding media.
+- [x] Choose a container-aware independent shutdown design with bounded authority.
+- [x] Build a private four-browser/two-room enforcement spike.
+- [x] Inject guard freeze, controller loss, delayed snapshots, failed room deletion and bypass attempts.
+- [x] Record measured cutoff and node-wide interruption costs before expanding media.
 
 ## Acceptance criteria
 
-The following are future checks, not passing results.
+Checked criteria apply only to the measured local ICE/TCP profile in [the evidence report](../../planning/MEDIA_ENFORCEMENT_EVIDENCE.md), not production A07 acceptance.
 
-- [ ] Expired permits independently terminate protected forwarding within the chosen measured target.
-- [ ] Frozen guard cannot leave a healthy SFU forwarding indefinitely.
-- [ ] Original/refreshed-token replay and cold restart cannot resurrect a retired room.
+- [x] Expired permits independently terminate protected forwarding within the chosen measured target.
+- [x] Frozen guard cannot leave a healthy SFU forwarding indefinitely.
+- [x] Original/refreshed-token replay and cold restart cannot resurrect a retired room.
 
 ## Dependencies and completion
 

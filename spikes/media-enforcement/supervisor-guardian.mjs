@@ -37,7 +37,9 @@ child.stdout.on('data', (chunk) => {
   for (const line of lines) {
     try {
       if (JSON.parse(line).state === 'stop-unconfirmed') child.kill('SIGTERM');
-    } catch {}
+    } catch {
+      /* Rejected fixture input or unavailable probe; never grants progress. */
+    }
   }
 });
 process.stdout.write(JSON.stringify({ kind: 'worker-started', pid: child.pid }) + '\n');

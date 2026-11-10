@@ -217,6 +217,8 @@ Exit: two separate browser contexts sign in, enter the same office, move/collide
 
 ### CP07 — Prove bounded media enforcement before product integration
 
+Status: local isolated ICE/TCP spike exit demonstrated on 2026-11-10. See [the evidence matrix and failure boundaries](MEDIA_ENFORCEMENT_EVIDENCE.md). This scoped local proof does not accept production A07 or implement application media policy; promotion and additional transports require their own validation.
+
 Depends on: D02/D03/D05 and approved private fixture environment. Start early after CP01 because failure can change media feasibility.
 
 1. Pin compatible LiveKit server/SDK and container image digests for the experiment. Inventory every join/reconnect/refreshed-token path and required media/TURN listener.
@@ -329,7 +331,7 @@ No Docker execution, infrastructure provisioning, real email, publishing or sour
 
 CP00–CP05.4b are implemented with local evidence for the agreed slices. CP04.4c external SMTP remains deferred; local Mailpit evidence is not provider acceptance. CP04.5 has a transactional audit outbox, while independent audit delivery, retention and recovery acceptance remain open. CP05 single-process admission, authorization/revocation, movement/presence/seats, snapshot recovery and explicit takeover are locally verified; multi-process coordination and real Mongo outage drills remain open. CP06.1–CP06.10b provide typed client entry, live Phaser rendering/controls, two-browser admission/presence/movement, availability, wall collision, seat contention, two-company office isolation, scene teardown, browser snapshot recovery, fresh-ticket re-entry and separately verified mocked-client/API disconnect recovery. Preserve CP01 decisions and do not reopen accepted choices without a specific change.
 
-CP06.10c transport recovery now passes against local Docker using bidirectional heartbeat loss. Immediate next packet: **CP06.10d — renderer visual and browser accessibility review**, followed by CP07 media enforcement proof. Join the already-passing mocked browser close/re-entry flow with the real API's passing Socket.IO disconnect cleanup evidence through the local Caddy/API stack. Review map anchors and occlusion, and complete screen-reader plus Chrome/Edge keyboard checks. CP06.10a verifies named control groups and keyboard focus in mocked Chromium; CP06.10b verifies the client and server sides separately, but not as one browser-to-gateway interruption. Keep unsupported text chat disabled until its backend event contract is scoped. CP07's isolated media enforcement proof can proceed as a separate dependency track before any audio/video product integration; CP08 must wait for CP07 to pass.
+Immediate next implementation packet: **CP08 — application-scoped opt-in proximity and guarded voice**, using the final isolated/SFU-local-lease CP07 design in [the evidence report](MEDIA_ENFORCEMENT_EVIDENCE.md). Replace synthetic fixture policy with real participation/session/company authorization. CP06 formal browser, visual and screen-reader release acceptance remains open in A06; external SMTP remains owner-deferred.
 
 For each packet, record environment, scenario, observed result and remaining limits in implementation progress and the acceptance register. Keep local test-created accounts/workspaces isolated to the local development stack. Codex owns implementation review and independent verification in this run; preserve the owner's external SMTP deferral and do not treat Mailpit or simulated acknowledgements as provider acceptance.
 

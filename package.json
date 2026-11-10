@@ -22,7 +22,7 @@
     "lint": "eslint . --max-warnings 0",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test:contracts && pnpm test:world && pnpm check:commons && pnpm test:commons && pnpm test:shared && pnpm test:web && pnpm test:api && pnpm build",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test:contracts && pnpm test:world && pnpm test:media-spike && pnpm check:commons && pnpm test:commons && pnpm test:shared && pnpm test:web && pnpm test:api && pnpm build",
     "clean": "node scripts/clean.mjs",
     "test:shared": "pnpm --filter @gather/legacy-shared test",
     "test:web": "pnpm exec vitest run --config apps/web/vitest.config.ts",
@@ -31,7 +31,8 @@
     "test:e2e:live": "LIVE_OFFICE_E2E=1 pnpm exec playwright test tests/e2e/live-office.spec.ts",
     "db:indexes": "pnpm build:packages && pnpm --filter @gather/api db:indexes",
     "test:contracts": "pnpm --filter @gather/contracts test",
-    "test:world": "pnpm --filter @gather/world test"
+    "test:world": "pnpm --filter @gather/world test",
+    "test:media-spike": "node --test spikes/media-enforcement/test/*.test.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

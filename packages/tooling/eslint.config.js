@@ -26,6 +26,33 @@ export default tseslint.config(
     },
   },
   {
+    files: ['spikes/media-enforcement/**/*.mjs'],
+    languageOptions: {
+      globals: {
+        Buffer: 'readonly',
+        fetch: 'readonly',
+        Response: 'readonly',
+        AbortController: 'readonly',
+        AbortSignal: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
+      },
+    },
+  },
+  {
+    files: ['spikes/media-enforcement/media-cutoff.mjs'],
+    languageOptions: {
+      globals: {
+        window: 'readonly',
+        document: 'readonly',
+        AudioContext: 'readonly',
+        MediaStream: 'readonly',
+      },
+    },
+  },
+  {
     files: ['infra/mongodb/**/*.js'],
     languageOptions: {
       globals: { db: 'readonly', print: 'readonly', quit: 'readonly', sleep: 'readonly' },

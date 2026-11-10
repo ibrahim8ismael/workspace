@@ -1,6 +1,6 @@
 # Media permits and generations
 
-Status: draft plan · Updated: 2026-11-05 · Target: M0 spike; M3 integration
+Status: local CP07 spike implemented/verified; application integration pending · Updated: 2026-11-10
 
 ## Responsibility
 
@@ -32,12 +32,12 @@ Enforce current application authorization at signaling admission and bound forwa
 
 ## Invariants and lifecycle
 
-- Custom enforcement is proposed and unproven; it is not a standard LiveKit revocation feature.
+- Custom enforcement is demonstrated in the [local CP07 profile](../../planning/MEDIA_ENFORCEMENT_EVIDENCE.md), with production integration still unverified; this is not a standard LiveKit revocation feature.
 - Guard initiates scoped policy pulls; pushes may revoke but cannot independently extend a permit.
 - Late/superseded replies cannot extend request-start deadlines or revive retired generations.
 - Deny signaling first; retire/delete rooms; independent supervision stops SFU forwarding if control/guard fails.
 - No public signaling/admin bypass; cold restart defaults to deny.
-- Proposed total cutoff target is eight seconds; measure forwarding cessation. Docker-compatible independent supervision is open.
+- The local profile asserts an eight-second receiver cutoff; final active-audio measurements were 5035ms/5224ms. Production deployment and additional transports require new acceptance evidence.
 
 ## Interface outline
 

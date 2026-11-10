@@ -29,6 +29,8 @@ const docker = async (...args) => {
         () => {},
       );
     }
+    // Child-process errors embed secret-bearing environment arguments; redact the raw cause.
+    // eslint-disable-next-line preserve-caught-error
     throw new Error('Fixture Docker operation failed: ' + args[0]);
   }
 };
@@ -226,7 +228,9 @@ try {
     try {
       await fetch('http://127.0.0.1:17880', { signal: AbortSignal.timeout(1000) });
       bypassReachable = true;
-    } catch {}
+    } catch {
+      /* Rejected fixture input or unavailable probe; never grants progress. */
+    }
     if (bypassReachable) throw new Error('Direct signaling bypass is reachable');
     const ports = JSON.parse(await docker('inspect', id))[0].NetworkSettings.Ports;
     if (ports['7880/tcp']?.length) throw new Error('SFU signaling port published');
@@ -269,7 +273,7 @@ try {
         room.localParticipant.permissions.canPublish = true;
         room.localParticipant.permissions.canPublishSources = [];
         const rejected = [];
-        let microphonePublished = false;
+        let microphonePublished;
         try {
           for (const source of [
             window.LivekitClient.Track.Source.Camera,
@@ -584,6 +588,32 @@ try {
     if (claims.sub !== 'receiver' || claims.video?.room !== 'cutoff-fixture')
       throw new Error('Invalid refreshed fixture token');
   }
+  let failedRoomDelete = null;
+  if (process.argv.includes('--failed-room-delete')) {
+    if (!guardId) throw new Error('--failed-room-delete requires --isolated');
+    const before = await receiver.evaluate(() => ({
+      frames: window.framesReceived,
+      audio: window.audioSamples,
+    }));
+    const failure = await docker(
+      'exec',
+      guardId,
+      'node',
+      '--input-type=module',
+      '-e',
+      "import {RoomServiceClient} from '/workspace/apps/api/node_modules/livekit-server-sdk/dist/RoomServiceClient.js';const client=new RoomServiceClient('http://127.0.0.1:7880',process.env.CP07_KEY,'deliberately-wrong-fixture-secret');try{await client.deleteRoom('cutoff-fixture');console.log(JSON.stringify({failed:false}));}catch(error){console.log(JSON.stringify({failed:true,status:error.status??error.statusCode??null}));}",
+    );
+    failedRoomDelete = JSON.parse(failure);
+    if (!failedRoomDelete.failed || ![401, 403].includes(failedRoomDelete.status))
+      throw new Error('Room deletion did not fail with verified authorization rejection');
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const after = await receiver.evaluate(() => ({
+      frames: window.framesReceived,
+      audio: window.audioSamples,
+    }));
+    if (after.frames <= before.frames || after.audio <= before.audio)
+      throw new Error('Failed deletion did not preserve media precondition');
+  }
   if (isolated) retirement = new RetirementStore(retirementDirectory);
   const progressStall = policyLoss || process.argv.includes('--progress-stall');
   if (!progressStall) retirement.retire('cutoff-fixture');
@@ -623,7 +653,9 @@ try {
       try {
         const event = JSON.parse(line);
         if (event.kind === 'worker-started') workerPid = event.pid;
-      } catch {}
+      } catch {
+        /* Rejected fixture input or unavailable probe; never grants progress. */
+      }
     }
   });
   if (progressStall) {
@@ -657,7 +689,9 @@ try {
             const message = JSON.parse(line);
             if (['expect', 'ack'].includes(message.kind))
               watchdog.stdin.write(JSON.stringify(message) + '\n');
-          } catch {}
+          } catch {
+            /* Rejected fixture input or unavailable probe; never grants progress. */
+          }
         }
       });
     } else {
@@ -806,6 +840,7 @@ try {
       isolated,
       guardedSupervisor,
       sfuLease,
+      failedRoomDelete,
       guardEpochChanged: previousGuardEpoch !== guardEpoch,
       sourcePermissionResult,
       companyIsolationResult,

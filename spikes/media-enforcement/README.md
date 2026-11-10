@@ -413,3 +413,15 @@ whose policy request began after this SFU boot is installed. This supersedes the
 three-second bootstrap grace in CP07.19. A stale pre-boot file never starts media;
 once first started, expiry terminates the LiveKit child directly. The namespace
 can exist for controller/guard startup while the SFU has no running media process.
+
+## Consolidated local exit evidence
+
+See [MEDIA_ENFORCEMENT_EVIDENCE.md](../../docs/planning/MEDIA_ENFORCEMENT_EVIDENCE.md)
+for the final local proof matrix, exact pinned profile, invocation commands,
+measurements and deployment exclusions. The final failed-deletion/frozen-guard/
+both-host-enforcers-dead run measured audio/video cutoff at 5035ms/4702ms and denied
+both original/refreshed restart tokens. Installation expectations and ACKs bind
+the verified authority snapshot sequence, not a locally generated counter.
+The standard `pnpm check` now includes `pnpm test:media-spike` and passed 190 tests
+across the repository, including all twenty spike regressions. None of these
+commands integrate production media or accept the A07 deployment release gate.

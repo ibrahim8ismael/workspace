@@ -19,27 +19,24 @@ const permits = new PermitState(
   () => performance.now(),
   new RetirementStore(CP07_RETIREMENTS),
 );
-let pulling = false,
-  version = 0;
+let pulling = false;
 const pull = async () => {
   if (!policyEnabled || pulling) return;
   pulling = true;
-  const installedVersion = ++version;
   let leaseStarted;
   try {
     await pullPolicy({
       endpoint: process.env.CP07_POLICY_ENDPOINT,
       key: process.env.CP07_POLICY_KEY,
       state: permits,
-      onRequest: ({ nonce }) => {
+      onRequest: () => {
         if (process.env.CP07_LEASE_PATH)
           leaseStarted = Math.floor(
             Number(readFileSync('/proc/uptime', 'utf8').split(' ')[0]) * 1000,
           );
-        process.stdout.write(
-          JSON.stringify({ kind: 'expect', nonce, version: installedVersion }) + '\n',
-        );
       },
+      onVerified: ({ nonce, sequence }) =>
+        process.stdout.write(JSON.stringify({ kind: 'expect', nonce, version: sequence }) + '\n'),
       onInstalled: ({ nonce, sequence }) => {
         if (process.env.CP07_LEASE_PATH) {
           const path = process.env.CP07_LEASE_PATH;
@@ -51,7 +48,7 @@ const pull = async () => {
           renameSync(path + '.tmp', path);
         }
         process.stdout.write(
-          JSON.stringify({ kind: 'ack', epoch, nonce, sequence, version: installedVersion }) + '\n',
+          JSON.stringify({ kind: 'ack', epoch, nonce, sequence, version: sequence }) + '\n',
         );
       },
     });

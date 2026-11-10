@@ -15,6 +15,7 @@ export async function pullPolicy({
   fetchImpl = fetch,
   onRequest = () => {},
   onInstalled = () => {},
+  onVerified = () => {},
 }) {
   if (typeof key !== 'string' || Buffer.byteLength(key) < 32)
     throw new Error('policy key too short');
@@ -72,6 +73,7 @@ export async function pullPolicy({
       )
     )
       return false;
+    onVerified(snapshot);
     if (!state.install(snapshot)) return false;
     onInstalled(snapshot);
     return true;

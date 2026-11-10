@@ -281,8 +281,8 @@ install ACK while the guard remains alive, and measured final decoded audio cuto
 both runs. The fixture explicitly stops the production `ProximityAudioSession` after the server
 policy ACK; it does not yet prove `CompanyOfficePreview` reacts to these Socket.IO events itself.
 Permission denial with the office/map still usable, office leave through the mounted UI, mounted-UI
-teardown after membership/session revocation, office/API lease expiry, guard loss,
-independent-supervisor progress loss and an SFU-refreshed JWT remain in the matrix.
+teardown after membership/session revocation, office/API lease expiry, guard loss and
+independent-supervisor progress loss remain in the matrix.
 CP08.5.4 also runs session logout and owner-driven membership removal during
 the real media fixture: both close the affected office socket, end the pair for the surviving
 participant, install the empty policy while the guard remains alive, and measure **0 ms** decoded-
@@ -294,9 +294,13 @@ alone.
 
 CP08.5.5 restarts the pinned SFU during an active, real two-browser application-grant call. Both
 production clients observed `reconnecting`, returned to `live`, and resumed decoded audio with the
-same still-valid application JWTs; recovery took **14,024 ms** from the restart request. This covers
-LiveKit reconnect before the 60-second token expires; it does not cover SFU token refresh or old
-refreshed-token rejection.
+same still-valid application JWTs; recovery took **14,024 ms** from the restart request. CP08.5.6
+then forced a real LiveKit participant update, captured the production SDK's SFU-refreshed JWT,
+verified its identity/room/microphone-only claims, and reconnected the production media session
+through the live guard with audio recovery. After conversation revocation plus fresh guard/SFU
+restart, the still-unexpired refreshed JWT and original application JWT were both denied by the
+guard. This covers refresh and replay within the pinned local fixture; mounted UI teardown, browser
+permission denial, lease/process loss and deployment ingress remain open.
 
 **CP08.6 — webhook reconciliation (pending).** Add strict raw-body signature verification,
 event-ID deduplication and late-event handling under `apps/api/src/modules/media/`; webhooks observe

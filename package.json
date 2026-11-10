@@ -36,6 +36,7 @@
     "test:media-session-revoke": "CP08_MEDIA_END=session-revoke pnpm test:media-live",
     "test:media-membership-revoke": "CP08_MEDIA_END=membership-revoke pnpm test:media-live",
     "test:media-reconnect": "CP08_MEDIA_RECONNECT=1 pnpm test:media-live",
+    "test:media-token-refresh": "CP08_MEDIA_TOKEN_REFRESH=1 pnpm test:media-live",
     "test:e2e:live": "LIVE_OFFICE_E2E=1 pnpm exec playwright test tests/e2e/live-office.spec.ts",
     "db:indexes": "pnpm build:packages && pnpm --filter @gather/api db:indexes",
     "test:contracts": "pnpm --filter @gather/contracts test",

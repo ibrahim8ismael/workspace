@@ -93,6 +93,8 @@ export async function startApplicationMediaClient({ fixtureUrl, grants }) {
     const observations = await Promise.all(pages.map(readObservations));
     return {
       observations,
+      pages,
+      grants,
       exerciseMuteUnmute: async () => {
         const sender = pages[0];
         const receiver = pages[1];
@@ -243,6 +245,53 @@ export async function runApplicationMediaCutoffCli() {
         process.stdout.write(JSON.stringify({ kind: 'reconnect-armed' }) + '\n');
         const result = await client.exerciseReconnect();
         process.stdout.write(JSON.stringify({ kind: 'media-reconnect', ...result }) + '\n');
+        continue;
+      }
+      if (command.kind === 'read-refreshed-token') {
+        const page = client.pages[1];
+        await page.waitForFunction(() => window.__mediaFixture.refreshedToken.length > 0, null, {
+          timeout: 10000,
+        });
+        const token = await page.evaluate(() => window.__mediaFixture.refreshedToken);
+        process.stdout.write(JSON.stringify({ kind: 'refreshed-token', token }) + '\n');
+        continue;
+      }
+      if (command.kind === 'exercise-token-reconnect') {
+        if (typeof command.token !== 'string' || command.token.length > 8192)
+          throw new Error('invalid refreshed media token');
+        const receiver = client.pages[1];
+        const peerIdentity = client.grants[0].identity;
+        const before = await readObservations(receiver);
+        await receiver.evaluate(() => window.postMessage({ kind: 'stop' }, location.origin));
+        await receiver.waitForFunction(() => window.__mediaFixture.status === 'off', null, {
+          timeout: 5000,
+        });
+        await receiver.evaluate(
+          (grant) => window.postMessage({ kind: 'start', grant }, location.origin),
+          { ...client.grants[1], token: command.token },
+        );
+        await receiver.waitForFunction(
+          () => ['live', 'error'].includes(window.__mediaFixture.status),
+          null,
+          { timeout: 10000 },
+        );
+        await receiver.waitForFunction(
+          ({ identity, samples }) =>
+            window.__mediaFixture.status === 'live' &&
+            window.__mediaFixture.remoteIdentities.includes(identity) &&
+            window.__mediaFixture.activeAudioSamples > samples + 5,
+          { identity: peerIdentity, samples: before.activeAudioSamples },
+          { timeout: 10000 },
+        );
+        const observation = await readObservations(receiver);
+        process.stdout.write(
+          JSON.stringify({
+            kind: 'token-reconnect',
+            live: observation.status === 'live',
+            resumedSamples: observation.activeAudioSamples - before.activeAudioSamples,
+            remoteIdentityPresent: observation.remoteIdentities.includes(peerIdentity),
+          }) + '\n',
+        );
         continue;
       }
       if (command.kind !== 'stop') continue;

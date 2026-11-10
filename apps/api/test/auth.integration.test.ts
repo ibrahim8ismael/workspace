@@ -73,7 +73,7 @@ import { OfficeSocketAdapter } from '../dist/modules/office/realtime/office-sock
 import { io } from 'socket.io-client';
 import type { Socket } from 'socket.io-client';
 import type { AddressInfo } from 'node:net';
-import { TokenVerifier } from 'livekit-server-sdk';
+import { RoomServiceClient, TokenVerifier } from 'livekit-server-sdk';
 
 const origin = 'https://api.gather.test';
 const password = 'a quartz river beneath the lantern';
@@ -84,6 +84,7 @@ const livekitApiKey = 'gather-test-key';
 const livekitApiSecret = randomBytes(32).toString('base64url');
 const runLiveMediaFixture = process.env['CP08_REAL_MEDIA'] === '1';
 const runMediaReconnect = process.env['CP08_MEDIA_RECONNECT'] === '1';
+const runMediaTokenRefresh = process.env['CP08_MEDIA_TOKEN_REFRESH'] === '1';
 const configuredMediaEnd = process.env['CP08_MEDIA_END'] ?? 'leave';
 const mediaEndScenario = runLiveMediaFixture
   ? ['opt-out', 'away', 'session-revoke', 'membership-revoke'].includes(configuredMediaEnd)
@@ -2351,9 +2352,11 @@ describe('office socket admission', () => {
           'join_request',
           Buffer.from(JSON.stringify({ protocol: 12 })).toString('base64url'),
         );
-        const validateThroughGuard = async (stage: string) => {
+        const validateTokenThroughGuard = async (token: string, stage: string) => {
           try {
-            return await fetch(tokenValidationUrl, {
+            const validationUrl = new URL(tokenValidationUrl);
+            validationUrl.searchParams.set('access_token', token);
+            return await fetch(validationUrl, {
               headers: { Origin: mediaFixture?.origin ?? origin },
             });
           } catch (error) {
@@ -2363,7 +2366,10 @@ describe('office socket admission', () => {
             );
           }
         };
+        const validateThroughGuard = (stage: string) =>
+          validateTokenThroughGuard(mediaGrant.token, stage);
         let secondMediaGrantToken: string | undefined;
+        let refreshedMediaGrantToken: string | undefined;
         if (runLiveMediaFixture) {
           const secondIssued = await second.client.send('post', tokenPath, {
             participationId: secondReady.participationId,
@@ -2443,6 +2449,67 @@ describe('office socket admission', () => {
               resumed: mediaControls['resumed'],
             })}`,
           );
+          if (runMediaTokenRefresh) {
+            const roomService = new RoomServiceClient(
+              `http://127.0.0.1:${liveKitFixture!.signalingPort}`,
+              livekitApiKey,
+              livekitApiSecret,
+            );
+            await roomService.updateParticipant(active.generation, secondReady.participationId, {
+              metadata: JSON.stringify({ refresh: randomUUID() }),
+            });
+            applicationMediaClient.send({ kind: 'read-refreshed-token' });
+            const tokenMessage = await waitForApplicationMediaMessage(
+              applicationMediaClient,
+              (message) => message['kind'] === 'refreshed-token',
+              'the SFU-refreshed production SDK token',
+            );
+            refreshedMediaGrantToken = tokenMessage['token'] as string;
+            expect(typeof refreshedMediaGrantToken).toBe('string');
+            expect(refreshedMediaGrantToken).not.toBe(secondMediaGrantToken);
+            const refreshedClaims = await new TokenVerifier(livekitApiKey, livekitApiSecret).verify(
+              refreshedMediaGrantToken,
+              0,
+            );
+            expect(refreshedClaims.sub).toBe(secondReady.participationId);
+            expect(refreshedClaims.exp).toBeGreaterThan(Date.now() / 1000);
+            expect(refreshedClaims.video).toMatchObject({
+              room: active.generation,
+              roomJoin: true,
+              canPublish: true,
+              canPublishSources: ['microphone'],
+              canSubscribe: true,
+              canPublishData: false,
+              canUpdateOwnMetadata: false,
+            });
+            expect(refreshedClaims.video?.roomAdmin ?? false).toBe(false);
+            applicationMediaClient.send({
+              kind: 'exercise-token-reconnect',
+              token: refreshedMediaGrantToken,
+            });
+            const refreshedReconnect = await waitForApplicationMediaMessage(
+              applicationMediaClient,
+              (message) => message['kind'] === 'token-reconnect',
+              'a production LiveKit session reconnecting with the refreshed token',
+            );
+            expect(refreshedReconnect['live']).toBe(true);
+            expect(refreshedReconnect['remoteIdentityPresent']).toBe(true);
+            expect(refreshedReconnect['resumedSamples'] as number).toBeGreaterThan(5);
+            console.info(
+              `CP08.5 SFU token refresh: ${JSON.stringify({
+                originalExp: (
+                  await new TokenVerifier(livekitApiKey, livekitApiSecret).verify(
+                    secondMediaGrantToken!,
+                    0,
+                  )
+                ).exp,
+                refreshedExp: refreshedClaims.exp,
+                acceptedByGuardAndSfu: refreshedReconnect['live'] === true,
+                resumedSamples: refreshedReconnect['resumedSamples'],
+                roomAndMicrophoneGrantsPreserved: true,
+              })}`,
+            );
+          }
           if (runMediaReconnect) {
             applicationMediaClient.send({ kind: 'exercise-reconnect' });
             await waitForApplicationMediaMessage(
@@ -2675,10 +2742,32 @@ describe('office socket admission', () => {
             (expiresAt) => typeof expiresAt === 'number' && expiresAt > Date.now() / 1000,
           ),
         ).toBe(true);
+        if (refreshedMediaGrantToken) {
+          const refreshedClaims = await new TokenVerifier(livekitApiKey, livekitApiSecret).verify(
+            refreshedMediaGrantToken,
+            0,
+          );
+          expect(refreshedClaims.exp).toEqual(expect.any(Number));
+          expect(refreshedClaims.exp!).toBeGreaterThan(Date.now() / 1000);
+        }
         expect((await validateThroughGuard('after-guard-restart')).status).toBe(403);
+        if (runMediaTokenRefresh && refreshedMediaGrantToken) {
+          const refreshedAfterRestart = await validateTokenThroughGuard(
+            refreshedMediaGrantToken,
+            'refreshed-token-after-guard-restart',
+          );
+          expect(refreshedAfterRestart.status).toBe(403);
+          expect(forwardedSignalingPaths).toHaveLength(forwardedBeforeDeniedReplay);
+        }
         if (secondMediaGrantToken) {
-          tokenValidationUrl.searchParams.set('access_token', secondMediaGrantToken);
-          expect((await validateThroughGuard('second-token-after-guard-restart')).status).toBe(403);
+          expect(
+            (
+              await validateTokenThroughGuard(
+                secondMediaGrantToken,
+                'second-token-after-guard-restart',
+              )
+            ).status,
+          ).toBe(403);
         }
         expect(forwardedSignalingPaths).toHaveLength(forwardedBeforeDeniedReplay);
       } finally {

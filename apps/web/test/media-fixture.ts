@@ -24,6 +24,7 @@ declare global {
       lastActiveAudioAt: number;
       startedAt: number;
       disconnectReason: string;
+      refreshedToken: string;
     };
   }
 }
@@ -37,6 +38,7 @@ window.__mediaFixture = {
   lastActiveAudioAt: 0,
   startedAt: 0,
   disconnectReason: '',
+  refreshedToken: '',
 };
 
 const session = new ProximityAudioSession(
@@ -84,9 +86,14 @@ const session = new ProximityAudioSession(
     };
   },
   () =>
-    createLiveKitProximityRoom((reason) => {
-      window.__mediaFixture.disconnectReason = String(reason ?? '');
-    }),
+    createLiveKitProximityRoom(
+      (reason) => {
+        window.__mediaFixture.disconnectReason = String(reason ?? '');
+      },
+      (token) => {
+        window.__mediaFixture.refreshedToken = token;
+      },
+    ),
 );
 
 let contextCurrent = true;

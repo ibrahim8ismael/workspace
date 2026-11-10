@@ -36,13 +36,17 @@ function mediaError(error: unknown) {
 
 export async function createLiveKitProximityRoom(
   onDisconnectReason?: (reason: unknown) => void,
+  onTokenRefreshed?: (token: string) => void,
 ): Promise<ProximityRoom> {
-  const { Room, RoomEvent, Track } = await import('livekit-client');
+  const { EngineEvent, Room, RoomEvent, Track } = await import('livekit-client');
   const room = new Room({
     adaptiveStream: false,
     dynacast: false,
     publishDefaults: { stopMicTrackOnMute: true, preConnectBuffer: false },
   });
+  if (onTokenRefreshed) {
+    room.engine.on(EngineEvent.TokenRefreshed, onTokenRefreshed);
+  }
   return {
     connect: async (serverUrl, token) => {
       await room.connect(serverUrl, token);

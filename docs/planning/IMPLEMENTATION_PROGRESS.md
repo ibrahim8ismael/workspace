@@ -1,6 +1,6 @@
 # Completion implementation progress
 
-Updated: 2026-11-10. Implementer/reviewer: Codex, at the project owner's request; OpenCode / DeepSeek V4.1 Flash Free at `max` implemented CP02.1–CP02.4. Codex implemented CP02.5 with the owner’s approval. Completed packets: **CP00 — documentation reconciliation**, **CP01 — owner choices and first contracts**, **CP02 — original Commons map and renderer sample** (later superseded by the owner-directed Vivo adoption), and **CP03 — scoped office admission** from the [completion plan](PROJECT_COMPLETION_PLAN.md).
+Updated: 2026-11-11. Implementer/reviewer: Codex, at the project owner's request; OpenCode / DeepSeek V4.1 Flash Free at `max` implemented CP02.1–CP02.4. Codex implemented CP02.5 with the owner’s approval. Completed packets: **CP00 — documentation reconciliation**, **CP01 — owner choices and first contracts**, **CP02 — original Commons map and renderer sample** (later superseded by the owner-directed Vivo adoption), and **CP03 — scoped office admission** from the [completion plan](PROJECT_COMPLETION_PLAN.md).
 
 The owner requested a push after each completed process. Each row below is a reviewable batch: update documentation, validate, commit, then push. Git history is the authoritative record of the actual commit/push; later batches can record earlier commit IDs without self-referencing a commit that does not exist yet.
 
@@ -1069,4 +1069,18 @@ and office conversation alive. Both production browser `ProximityAudioSession` i
 application JWTs. Recovery measured **14,024 ms** from the restart request; the two receiver counters
 reached 193 and 185 active samples. The real API/guard/SFU/two-browser test passed (one selected API
 integration case; 68 unrelated tests skipped). This exercises SDK reconnect before the token's
-60-second expiry, not an SFU-refreshed JWT; fresh/expired token behavior remains a separate case.
+60-second expiry, not an SFU-refreshed JWT; refreshed-token handling is covered separately below.
+
+## CP08.5.6 — SFU-refreshed token reconnect and restart rejection (2026-11-11)
+
+Added `pnpm test:media-token-refresh`. The test updates a connected participant through LiveKit's
+server API, captures the refreshed JWT from the production SDK engine event, verifies the signed
+identity, room, expiry and microphone-only grants, then reconnects the production
+`ProximityAudioSession` through the live policy guard with that refreshed JWT. Audio resumed and
+the peer identity remained visible (six additional active decoded samples). After the conversation
+ended and both guard and SFU were restarted with a fresh guard epoch, the still-unexpired refreshed
+JWT was rejected at the guard; the original API JWT was also rejected. The selected real
+API/guard/SFU/two-Chromium integration case passed (one passed, 68 unrelated tests skipped). The
+refreshed JWT stays in the local fixture pipe and is not printed in test output. This closes the
+SFU-refresh/replay case only for this pinned local fixture; mounted-office UI teardown, permission
+denial, lease/process failures and deployment ingress coverage remain open.

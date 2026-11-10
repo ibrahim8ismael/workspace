@@ -9,11 +9,12 @@ import { MongoMemoryReplSet } from 'mongodb-memory-server-core';
 import request from 'supertest';
 import type { Response as HttpResponse } from 'supertest';
 import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { spawn, type ChildProcessByStdio } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
+import type { Readable } from 'node:stream';
 import { decryptMail, type MailPayload } from '@gather/delivery';
 import commonsManifest from '@gather/assets/manifests/commons-map.json' with { type: 'json' };
 import vivoManifest from '@gather/assets/manifests/vivo-map.json' with { type: 'json' };
@@ -124,7 +125,7 @@ function nextSocketEvent<T>(socket: Socket, event: string) {
 }
 type GuardOutput = { kind?: string; sequence?: number };
 type ApplicationGuard = {
-  child: ChildProcessWithoutNullStreams;
+  child: ChildProcessByStdio<null, Readable, Readable>;
   messages: GuardOutput[];
   getStderr: () => string;
 };

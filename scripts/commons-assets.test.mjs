@@ -86,7 +86,8 @@ test('production manifest is schema-valid and independently matches every artifa
   assert.deepEqual(manifestBytes, expected.manifest.bytes);
 
   const manifest = mapManifestSchema.parse(JSON.parse(manifestBytes.toString('utf8')));
-  assert.equal(manifest.mapId, MVP_MAP_ID);
+  assert.equal(manifest.mapId, 'commons');
+  assert.notEqual(manifest.mapId, MVP_MAP_ID);
   assert.equal(manifest.tileSize, MAP_TILE_SIZE);
   assert.equal(manifest.assetManifestVersion, `commons-art-v1-${expected.catalog.digest}`);
   assert.equal(manifest.assetManifestVersion.length, 79);

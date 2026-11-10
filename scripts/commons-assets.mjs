@@ -7,7 +7,6 @@ import { COMMONS_GEOMETRY, validateOfficeGeometry } from '../packages/world/dist
 import {
   MAP_FORMAT_VERSION,
   MAP_TILE_SIZE,
-  MVP_MAP_ID,
   appearanceSchema,
   mapManifestSchema,
 } from '../packages/contracts/dist/index.js';
@@ -18,6 +17,7 @@ const SOURCE_RELATIVE = 'packages/assets/source/commons';
 const SPRITE_RELATIVE = 'packages/assets/sprites';
 const MAP_RELATIVE = 'packages/assets/maps';
 const MANIFEST_RELATIVE = 'packages/assets/manifests';
+const COMMONS_MAP_ID = 'commons';
 const POINTER_MANIFEST_RELATIVE = `${MANIFEST_RELATIVE}/commons-map.json`;
 const ASSET_MANIFEST_PREFIX = 'commons-art-v1-';
 // Fixed trusted sources are single-line, rect-only SVGs. This full grammar describes that shape;
@@ -85,8 +85,8 @@ function loadRecord(root, file, record, sprites) {
 
 export function buildCommonsAssets(root = MODULE_ROOT) {
   invariant(
-    COMMONS_GEOMETRY.mapId === MVP_MAP_ID && COMMONS_GEOMETRY.tileSize === MAP_TILE_SIZE,
-    `world geometry must use mapId "${MVP_MAP_ID}" and tileSize ${MAP_TILE_SIZE}`,
+    COMMONS_GEOMETRY.mapId === COMMONS_MAP_ID && COMMONS_GEOMETRY.tileSize === MAP_TILE_SIZE,
+    `world geometry must use mapId "${COMMONS_MAP_ID}" and tileSize ${MAP_TILE_SIZE}`,
   );
   const validated = validateOfficeGeometry(COMMONS_GEOMETRY);
   const defaultAppearance = appearanceSchema.parse({
@@ -133,7 +133,7 @@ export function buildCommonsAssets(root = MODULE_ROOT) {
 
   const catalog = {
     formatVersion: MAP_FORMAT_VERSION,
-    mapId: MVP_MAP_ID,
+    mapId: COMMONS_MAP_ID,
     appearances: [{ ...defaultAppearance }],
     defaultAppearance,
     directions: [...source.DIRECTIONS],
@@ -165,12 +165,12 @@ export function buildCommonsAssets(root = MODULE_ROOT) {
   };
   const geometryBytes = Buffer.from(JSON.stringify(sortRecord(geometry)), 'utf8');
   const geometryDigest = sha256Hex(geometryBytes);
-  const mapVersion = `${MVP_MAP_ID}-v1-${geometryDigest}`;
+  const mapVersion = `${COMMONS_MAP_ID}-v1-${geometryDigest}`;
   const geometryRelativePath = `${MAP_RELATIVE}/${mapVersion}.json`;
 
   const manifest = {
     formatVersion: MAP_FORMAT_VERSION,
-    mapId: MVP_MAP_ID,
+    mapId: COMMONS_MAP_ID,
     mapVersion,
     contentHash: geometryDigest,
     coordinateUnits: 'pixels',

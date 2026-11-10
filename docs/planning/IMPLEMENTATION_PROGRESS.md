@@ -954,3 +954,25 @@ The EGM CP08 audit also found stale contract/entity text describing grant routes
 and `mediaReady` as always false. This docs batch corrects those statuses and records the remaining
 webhook, real-SFU, measured cutoff and deployment gaps. The owner-selected 90-day office chat
 retention remains implemented by CP06.11.
+
+## Commons asset check after Vivo MVP selection (2026-11-10)
+
+The full repository check exposed a stale coupling in `scripts/commons-assets.mjs`: the legacy,
+original Commons export used the current MVP map ID to validate its own geometry and to build its
+manifest. After Vivo became the MVP, that check rejected valid Commons artifacts (`commons` is a
+separate map identity). The Commons exporter now validates and emits its fixed `commons` identity;
+Vivo remains the MVP and is checked by its own asset pipeline. The production Commons manifest,
+geometry, catalog and sprite hashes are unchanged.
+
+Regression coverage asserts the Commons manifest remains `commons` while the configured MVP ID is
+different. This is a maintenance fix for the retained Commons asset pipeline, not a change to the
+active Vivo office or its map data. The CP08.3c integration test's child-process type was also
+corrected to match its actual `ignore/pipe/pipe` stdio configuration; this lets the full API test
+typecheck exercise the separate guard process without weakening its stream handling.
+
+Verification: full `pnpm check` passed, including formatting, lint, workspace typechecks, contract
+tests (24), world tests (31), media-enforcement tests (25), Commons asset tests (5), shared tests
+(5), web tests (37), API integration tests (88), map asset checks and production builds. Commons
+and Vivo map IDs/manifests validated independently, with all committed Commons artifact hashes
+unchanged. The web build still reports the existing large preview chunk (about 1.39 MB minified)
+and lazy LiveKit chunk (about 532 kB); this map-check fix does not alter that bundling.

@@ -17,13 +17,29 @@ if (!process.argv.includes('--run-local'))
   throw new Error('Requires --run-local and authorized local Docker');
 const context = process.env.CP07_DOCKER_CONTEXT || 'orbstack';
 const exec = promisify(execFile);
-const docker = async (...args) =>
-  (await exec('docker', ['--context', context, ...args], { timeout: 30000 })).stdout.trim();
+const docker = async (...args) => {
+  try {
+    return (
+      await exec('docker', ['--context', context, ...args], { timeout: 30000 })
+    ).stdout.trim();
+  } catch (error) {
+    const created = error.stdout?.trim();
+    if (args[0] === 'run' && /^[a-f0-9]{64}$/.test(created ?? '')) {
+      await exec('docker', ['--context', context, 'rm', '-f', created], { timeout: 5000 }).catch(
+        () => {},
+      );
+    }
+    throw new Error('Fixture Docker operation failed: ' + args[0]);
+  }
+};
 const image =
   'livekit/livekit-server@sha256:25cd902de7cacbd5f1f779f6a6ac1eae20ba8f56b0935934ce6b0ab80d1e3d20';
 const isolated = process.argv.includes('--isolated');
 const policyLoss = process.argv.includes('--policy-loss');
 const companies = process.argv.includes('--company-isolation');
+const sfuLease = process.argv.includes('--sfu-lease');
+if (sfuLease && !policyLoss) throw new Error('--sfu-lease requires --policy-loss');
+const sfuEpoch = randomBytes(32).toString('hex');
 if (companies && !policyLoss) throw new Error('--company-isolation requires --policy-loss');
 if (policyLoss && !isolated) throw new Error('--policy-loss requires --isolated');
 const policyKey = randomBytes(32).toString('hex');
@@ -31,6 +47,7 @@ const secret = randomBytes(32).toString('hex');
 const config = `port: 7880\nbind_addresses: [${isolated ? '127.0.0.1' : '0.0.0.0'}]\nrtc:\n  tcp_port: 17881\n  node_ip: 127.0.0.1\n  use_external_ip: false\nkeys:\n  fixture: ${secret}\n`;
 let id, browser, watchdog, guard, guardId, progressTimer, policyId, progressLogs;
 const retirementDirectory = await mkdtemp(join(tmpdir(), 'cp07-guard-'));
+const leaseDirectory = await mkdtemp(join(tmpdir(), 'cp07-lease-'));
 let retirement, secondReceiver, companyIsolationResult;
 let guardEpoch;
 const server = createServer(async (req, res) => {
@@ -60,7 +77,20 @@ try {
     '127.0.0.1:17881:17881',
     '-e',
     `LIVEKIT_CONFIG=${config}`,
+    ...(sfuLease
+      ? [
+          '-e',
+          `CP07_SFU_EPOCH=${sfuEpoch}`,
+          '-v',
+          `${process.cwd()}/spikes/media-enforcement/sfu-lease.sh:/sfu-lease.sh:ro`,
+          '-v',
+          `${leaseDirectory}:/lease:ro`,
+          '--entrypoint',
+          '/bin/sh',
+        ]
+      : []),
     image,
+    ...(sfuLease ? ['/sfu-lease.sh'] : []),
   );
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   for (let i = 0; i < 40; i++) {
@@ -126,6 +156,16 @@ try {
         `${root}/apps/api/node_modules:/workspace/apps/api/node_modules:ro`,
         '-v',
         `${retirementDirectory}:/retirements:ro`,
+        ...(sfuLease
+          ? [
+              '-v',
+              `${leaseDirectory}:/lease:rw`,
+              '-e',
+              'CP07_LEASE_PATH=/lease/current',
+              '-e',
+              `CP07_SFU_EPOCH=${sfuEpoch}`,
+            ]
+          : []),
         '-e',
         'CP07_KEY=fixture',
         '-e',
@@ -592,11 +632,16 @@ try {
     if (freezeGuard) await docker('pause', guardId);
     startedAt = Date.now();
   }
-  if (process.argv.includes('--supervisor-crash') && guardedSupervisor) {
+  if (process.argv.includes('--supervisor-crash') && sfuLease) {
+    if (!workerPid) throw new Error('--sfu-lease crash test requires --guarded-supervisor');
+    watchdog.kill('SIGKILL');
+    process.kill(workerPid, 'SIGKILL');
+  }
+  if (process.argv.includes('--supervisor-crash') && guardedSupervisor && !sfuLease) {
     if (!workerPid) throw new Error('Guardian did not identify its child');
     process.kill(workerPid, 'SIGKILL');
   }
-  if (process.argv.includes('--supervisor-crash') && !guardedSupervisor) {
+  if (process.argv.includes('--supervisor-crash') && !guardedSupervisor && !sfuLease) {
     if (!policyLoss) throw new Error('--supervisor-crash requires --policy-loss');
     const beforeCrash = await receiver.evaluate(() => ({
       frames: window.framesReceived,
@@ -630,7 +675,11 @@ try {
     );
   }
   const code = await watchdogExited;
-  if (code !== 0) throw new Error('Supervisor failed');
+  if (sfuLease && process.argv.includes('--supervisor-crash')) {
+    await new Promise((resolve) => setTimeout(resolve, 6000));
+    if ((await docker('inspect', '--format', '{{.State.Running}}', id)) !== 'false')
+      throw new Error('SFU-local lease did not stop media server');
+  } else if (code !== 0) throw new Error('Supervisor failed');
   await new Promise((r) => setTimeout(r, 2000));
   const final = await receiver.evaluate(() => ({
     frames: window.framesReceived,
@@ -699,6 +748,7 @@ try {
           : 'missing-guard-progress',
       isolated,
       guardedSupervisor,
+      sfuLease,
       guardEpochChanged: previousGuardEpoch !== guardEpoch,
       sourcePermissionResult,
       companyIsolationResult,
@@ -724,4 +774,5 @@ try {
   server.close();
   if (id) await docker('rm', '-f', id);
   await rm(retirementDirectory, { recursive: true, force: true });
+  await rm(leaseDirectory, { recursive: true, force: true });
 }

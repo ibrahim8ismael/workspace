@@ -2,6 +2,7 @@
 import { TokenVerifier } from '../../apps/api/node_modules/livekit-server-sdk/dist/AccessToken.js';
 import { createSignalingGuard } from './signaling-guard.mjs';
 import { performance } from 'node:perf_hooks';
+import { readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { sourceGrantsAllowed } from './source-grants.mjs';
 import { PermitState } from './permit-state.mjs';
 import { pullPolicy } from './policy-pull.mjs';
@@ -24,19 +25,35 @@ const pull = async () => {
   if (!policyEnabled || pulling) return;
   pulling = true;
   const installedVersion = ++version;
+  let leaseStarted;
   try {
     await pullPolicy({
       endpoint: process.env.CP07_POLICY_ENDPOINT,
       key: process.env.CP07_POLICY_KEY,
       state: permits,
-      onRequest: ({ nonce }) =>
+      onRequest: ({ nonce }) => {
+        if (process.env.CP07_LEASE_PATH)
+          leaseStarted = Math.floor(
+            Number(readFileSync('/proc/uptime', 'utf8').split(' ')[0]) * 1000,
+          );
         process.stdout.write(
           JSON.stringify({ kind: 'expect', nonce, version: installedVersion }) + '\n',
-        ),
-      onInstalled: ({ nonce, sequence }) =>
+        );
+      },
+      onInstalled: ({ nonce, sequence }) => {
+        if (process.env.CP07_LEASE_PATH) {
+          const path = process.env.CP07_LEASE_PATH;
+          writeFileSync(
+            path + '.tmp',
+            process.env.CP07_SFU_EPOCH + ' ' + (leaseStarted + 5000) + '\n',
+            { mode: 0o600 },
+          );
+          renameSync(path + '.tmp', path);
+        }
         process.stdout.write(
           JSON.stringify({ kind: 'ack', epoch, nonce, sequence, version: installedVersion }) + '\n',
-        ),
+        );
+      },
     });
   } finally {
     pulling = false;

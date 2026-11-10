@@ -365,3 +365,32 @@ The full two-room/source/controller-loss/denied-primary-stop experiment passed:
 guardEpochChanged=true, original/refreshed replay false, first-room audio/video
 cutoff 3096ms/2689ms and second-room video 2723ms. The broader shared-Docker-control
 failure boundary is still distinct from the tested per-process actuator failures.
+
+## CP07.19 SFU-local expiry independent of Docker control
+
+`--sfu-lease` (requires isolated policy mode) launches pinned LiveKit under
+`sfu-lease.sh`, a PID-1 wrapper in the same SFU container. The guard atomically
+writes a per-fixture SFU-epoch lease only after authenticated policy installation.
+Its deadline is five seconds from the request's shared Linux `/proc/uptime`
+reading, not response receipt. The SFU mounts that lease read-only and polls its
+own child every 50ms. It sends SIGKILL directly to its LiveKit child on expiry:
+no Docker API/host process is involved in enforcement. Wrong epochs, malformed
+values and implausibly future deadlines cannot extend the lease. Startup has a
+three-second bootstrap window; signaling still defaults to deny until policy
+installs. Existing stale files cannot extend that bootstrap window.
+
+The first cold-restart attempt failed because an old expired lease killed SFU
+before namespace peer containers could start. Bootstrap handling was corrected,
+then the full real experiment passed with
+`--run-local --isolated --policy-loss --guarded-supervisor --supervisor-crash --sfu-lease --source-permissions --company-isolation`.
+Both host guardian and child watchdog were SIGKILLed after policy loss. The SFU
+stopped itself: last audio 5045ms/video 4672ms, second-room video 4710ms after fault
+initiation. Docker inspect confirmed it had exited before test cleanup. Original
+and refreshed replays were rejected after restart; boot epoch changed; sources
+and exclusive two-room track/participant checks passed. Twenty regressions pass.
+
+This demonstrates no Docker stop request is needed in this fault path. It does
+not deliberately kill the real shared Docker daemon or validate a frozen Linux
+scheduler. Correctness still assumes a live SFU wrapper/kernel, protected lease
+writer/mounts and trusted controller/guard code. Host/VM failure domains and
+production installation privileges need their deployment acceptance checks.

@@ -2,7 +2,7 @@
 
 Started: 2026-11-08. Parent: [completion plan](PROJECT_COMPLETION_PLAN.md#cp02--establish-one-immutable-map-and-asset-catalog). Wire boundary: [office v1](../contracts/OFFICE_V1.md). Original Commons implementation completed; Vivo adoption was reopened by owner direction on 2026-11-10. See the [superseding map/UI decision](../decisions/2026-11-08_CP02.md#superseding-owner-direction--2026-11-10) and [UI migration plan](../migration/OPENOFFICE_UI_INTEGRATION.md#owner-direction-adopt-the-supplied-map-and-ui-2026-11-10).
 
-The original CP02 rejection below is historical. The owner has since chosen the imported Vivo map from OpenOfficeForAll and this project's own APIs. On 2026-11-10 the Vivo map became the default for newly created offices; immutable Commons offices remain registered for compatibility. CP02.6a records the server version, geometry, collision/seats and backfill. At this backend step the active office renderer still uses Commons; CP02.6b will connect VivoScene to the office APIs.
+The original CP02 rejection below is historical. The owner has since chosen the imported Vivo map from OpenOfficeForAll and this project's own APIs. On 2026-11-10 the Vivo map became the default for newly created offices; immutable Commons offices remain registered for compatibility. CP02.6a records the server version, geometry, collision/seats and backfill. CP02.6b connects upstream VivoScene to the office APIs and selects a compatible renderer from the authenticated map manifest.
 
 ## Working arrangement
 
@@ -77,9 +77,10 @@ check:vivo` verifies their bytes and hash. The API registry matches both collisi
 packaged geometry before accepting a map version. Workspace creation selects Vivo. Existing
 Commons-version offices still bootstrap, receive tickets and run against their own map-specific
 bounds, collision, seats and appearance. Pending `pending-m0` records backfill to Vivo. The upstream
-map's measured-reference provenance and MIT notice remain attached in the repository. The active
-browser renderer is still Commons until CP02.6b connects VivoScene and its controls to these
-versioned server snapshots and movement commands.
+map's measured-reference provenance and MIT notice remain attached in the repository. CP02.6b
+mounts upstream VivoScene for Vivo offices, connects its movement, seat and presence controls to
+server-authoritative snapshots and commands, and keeps the older Commons renderer for offices that
+already carry an immutable Commons version.
 
 The API unit/integration tests pass against both map versions. Two-browser Vivo collision, seat
 contention and visual/accessibility acceptance remain follow-up checks; earlier two-browser office

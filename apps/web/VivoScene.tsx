@@ -60,6 +60,8 @@ type Props = {
   navigationTarget?: Point & { nonce: number };
   resetViewKey?: number;
   onMove: (x: number, y: number) => void;
+  /** Server-authoritative movement intent, emitted for each local navigation step. */
+  onMovementIntent?: (dx: -1 | 0 | 1, dy: -1 | 0 | 1) => void;
   onPlace: (x: number, y: number, free?: boolean) => void;
   onSelect: (id: string) => void;
   onSelectObject: (id: string | null) => void;
@@ -127,11 +129,10 @@ const KEY_DIRECTION: Record<string, [number, number, Facing]> = {
 };
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 const typing = (target: EventTarget | null) =>
-  target instanceof HTMLElement &&
-  (target.tagName === 'INPUT' ||
-    target.tagName === 'TEXTAREA' ||
-    target.tagName === 'SELECT' ||
-    target.isContentEditable);
+  target instanceof Element &&
+  (target.matches('input, textarea, select, button, a, [role="button"]') ||
+    target.closest('button, a, [role="button"]') !== null ||
+    (target instanceof HTMLElement && target.isContentEditable));
 const facingFor = (dx: number, dy: number): Facing =>
   Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'east' : 'west') : dy > 0 ? 'south' : 'north';
 const footOf = (point: Point) => ({ x: point.x, y: point.y + TILE / 2 - 2 });
@@ -712,6 +713,7 @@ export default function VivoScene({
   navigationTarget,
   resetViewKey,
   onMove,
+  onMovementIntent,
   onPlace,
   onSelect,
   onSelectObject,
@@ -852,6 +854,8 @@ export default function VivoScene({
   seatActions.current = { onSit, onStand };
   const callback = useRef(onMove);
   callback.current = onMove;
+  const movementIntent = useRef(onMovementIntent);
+  movementIntent.current = onMovementIntent;
   const currentSelf = useRef(self);
   currentSelf.current = self;
   const editing = useRef<string | null>(editKind);
@@ -1115,10 +1119,15 @@ export default function VivoScene({
       }
     };
     const up = (event: KeyboardEvent) => {
-      keys.current.delete(event.key.toLowerCase());
+      const key = event.key.toLowerCase();
+      const wasMovementKey = KEY_DIRECTION[key] !== undefined && keys.current.has(key);
+      keys.current.delete(key);
+      if (wasMovementKey && ![...keys.current].some((held) => KEY_DIRECTION[held]))
+        movementIntent.current?.(0, 0);
     };
     const blur = () => {
       keys.current.clear();
+      movementIntent.current?.(0, 0);
       cancelRoute();
       pendingNavigation.current = null;
     };
@@ -1193,6 +1202,8 @@ export default function VivoScene({
         if (progress >= 1) {
           step.current = null;
           callback.current(tile.current.tx * TILE + TILE / 2, tile.current.ty * TILE + TILE / 2);
+          if (!route.current.length && ![...keys.current].some((key) => KEY_DIRECTION[key]))
+            movementIntent.current?.(0, 0);
         }
       }
       if (!step.current && canMove) {
@@ -1237,6 +1248,10 @@ export default function VivoScene({
         if (next) {
           const from = tileCenter(tile.current),
             to = tileCenter(next);
+          movementIntent.current?.(
+            Math.sign(next.tx - tile.current.tx) as -1 | 0 | 1,
+            Math.sign(next.ty - tile.current.ty) as -1 | 0 | 1,
+          );
           tile.current = next;
           step.current = {
             from,
@@ -1695,6 +1710,7 @@ export default function VivoScene({
         className="office-map"
         viewBox={`${viewX} ${viewY} ${viewWidth} ${viewHeight}`}
         role="group"
+        tabIndex={0}
         aria-label={t(
           'Oficina Vivo. Muévete con las flechas o WASD; clic para caminar, clic en una silla o E para sentarte; flechas o E para levantarte; arrastra el fondo para desplazar el mapa.',
         )}

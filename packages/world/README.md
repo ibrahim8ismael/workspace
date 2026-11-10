@@ -5,10 +5,10 @@ renderer. The package has no framework, database, network or browser dependencie
 
 ## Scope
 
-This first CP02 batch implements discrete tile collision only. It answers whether one adjacent tile
-step is open; it does not implement continuous movement, pathfinding, speed, timing, map/asset
-export, seats, zones, runtime authority or admission. Physical movement and server timing remain
-CP05 work and must not treat this helper as runtime authorization by itself.
+The initial CP02 helper batch implemented discrete tile collision. It answers whether one adjacent
+tile step is open; it does not implement continuous movement, pathfinding, speed or timing. Later
+CP02 work adds map-specific geometry, seats and zones; CP05 provides runtime authority and admission.
+Do not treat these pure helpers as runtime authorization by themselves.
 
 ### Coordinates and bounds
 
@@ -59,13 +59,17 @@ layout is recorded in the [CP02 plan](../../docs/planning/CP02_WORLD_AND_MAP.md#
 `validateOfficeGeometry` checks typed geometry and returns pixel bounds, collision data and
 a tile reachability query. It throws a `RangeError` on the first invalid field. A future reader
 of untrusted JSON needs a separate structural decoder before calling it. The catalog, immutable
-export and Phaser sample are the remaining CP02 batches.
+export and Phaser sample were added in later CP02 batches; server movement and admission remain in
+CP05.
 
 By owner direction, `VIVO_GEOMETRY` now derives authoritative bounds, wall edges, blockers, seats
 and meeting zones from the imported OpenOfficeForAll Vivo files. The upstream map header identifies
 its measured reference as Gather 2.0; preserve that provenance and the upstream notice. Geometry
-validation passes, but the API registry and active browser renderer still use Commons until their
-coordinated migration is complete.
+includes both wall/furniture blockers and the map's 93 unique terrain-blocked tiles. The API now
+registers immutable versions for both Commons and Vivo; new offices use Vivo while stored Commons
+offices remain supported. `pnpm check:vivo` verifies the checked-in Vivo map artifact against this
+geometry. The client renderer and authenticated office adapter are connected in the companion UI
+integration batch.
 
 ## Verification
 

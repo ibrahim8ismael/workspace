@@ -675,4 +675,23 @@ version transition while retaining the upstream provenance and MIT notice.
 Verification: contracts 19/19, world 31/31, API 80/80; `pnpm check:vivo`, API build and image build
 passed. API integration coverage includes new Vivo offices and a legacy Commons bootstrap. The next
 step mounts upstream `VivoScene` in the current office route and wires its movement/seat/status
-actions to `OfficeClient`; two-browser Vivo collision and isolation acceptance remain.
+actions to `OfficeClient`; two-browser Vivo collision and isolation acceptance remain. Pushed as
+`64cb536` (`feat(world): register owner-directed Vivo map`).
+
+## CP02.6b — Vivo map and controls in the authenticated office (2026-11-10)
+
+Mounted the supplied OpenOfficeForAll `VivoScene` in the authenticated company office screen. It
+renders the imported base map and seats, adapts server snapshots to the upstream participant shape,
+and sends movement intents, availability and seat actions through this repository's `OfficeClient`.
+The office preloads its authenticated bootstrap and selects the renderer by immutable map version:
+new Vivo offices use VivoScene; previously stored Commons offices keep the compatible Commons
+renderer and seat controls. The app remains on its secure `AuthApp` entry point; the legacy upstream
+`App.tsx` services and bearer-token flow stay unmounted. Unsupported chat, calendar, editor and media
+actions remain unavailable.
+
+Verification: formatter, ESLint, typecheck, and the targeted Playwright run passed. The browser test
+covers sign-in, direct company entry, Vivo scene mounting, movement intent, sit/stand, availability,
+disconnect/re-entry, keyboard focus and ensuring controls do not trigger movement. It uses mocked
+HTTP and Socket.IO; the live two-browser spec still targets the earlier Commons renderer and needs
+conversion before it can serve as Vivo acceptance. Visual anchor/occlusion review, screen-reader
+review, and Chrome/Edge signoff also remain. This batch is committed and pushed separately.

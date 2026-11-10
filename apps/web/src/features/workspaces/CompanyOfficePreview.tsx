@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   ArrowLeft,
   Bell,
@@ -10,11 +10,23 @@ import {
 } from 'lucide-react';
 import type { OfficeWorkspaceDetail } from '../../lib/api';
 import { ApiClient } from '../../lib/api';
-import { CommonsScene } from '../../../commons-preview/CommonsScene';
-import { LiveCommonsScene } from '../../../commons-preview/LiveCommonsScene';
+import VivoScene from '../../../VivoScene';
+import type { Participant } from '../../../types';
+import type { Overrides } from '../../../../shared/office-objects.js';
 import { OfficePreviewChat } from './OfficePreviewChat';
 import { OfficeClient } from '../office/office-client';
 import './office-preview.css';
+
+const CommonsScene = lazy(() =>
+  import('../../../commons-preview/CommonsScene').then((module) => ({
+    default: module.CommonsScene,
+  })),
+);
+const LiveCommonsScene = lazy(() =>
+  import('../../../commons-preview/LiveCommonsScene').then((module) => ({
+    default: module.LiveCommonsScene,
+  })),
+);
 
 type Props = {
   api: ApiClient;
@@ -32,6 +44,8 @@ export function CompanyOfficePreview({ api, detail, onBack, onOpenSecurity }: Pr
   const state = useSyncExternalStore(client.subscribe, client.getSnapshot, client.getSnapshot);
   const [officeActionError, setOfficeActionError] = useState('');
   const [officeActionPending, setOfficeActionPending] = useState(false);
+  const [zoom, setZoom] = useState(1.35);
+  const [loadedMapId, setLoadedMapId] = useState<'commons' | 'vivo'>('vivo');
 
   useEffect(() => {
     titleRef.current?.focus();
@@ -39,11 +53,41 @@ export function CompanyOfficePreview({ api, detail, onBack, onOpenSecurity }: Pr
 
   useEffect(() => () => client.close(), [client]);
 
+  useEffect(() => {
+    let active = true;
+    void api
+      .officeBootstrap(detail.id, detail.officeId)
+      .then((bootstrap) => {
+        if (active) setLoadedMapId(bootstrap.manifest.mapId);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [api, detail.id, detail.officeId]);
+
   const connected = state.status === 'connected';
+  const mapId = state.bootstrap?.manifest.mapId ?? loadedMapId;
   const participantCount = state.snapshot?.participants.length ?? 0;
   const self = state.snapshot?.participants.find(
     (participant) => participant.participationId === state.ready?.participationId,
   );
+  const sceneParticipants: Participant[] = (state.snapshot?.participants ?? []).map(
+    (participant) => ({
+      id: participant.participationId,
+      name: participant.displayName,
+      color: '#f6c08f',
+      x: participant.position.x,
+      y: participant.position.y,
+      facing: participant.facing,
+      ...(participant.seatId ? { seatId: participant.seatId } : {}),
+      status: participant.availability,
+      mic: false,
+      camera: false,
+      screen: false,
+    }),
+  );
+  const noOverrides: Overrides = {};
 
   async function runOfficeAction(action: () => Promise<void>) {
     setOfficeActionError('');
@@ -154,7 +198,7 @@ export function CompanyOfficePreview({ api, detail, onBack, onOpenSecurity }: Pr
 
           <div className="floor-selector">
             <LayoutGrid size={15} />
-            <span>Commons office</span>
+            <span>{mapId === 'vivo' ? 'Vivo office' : 'Commons office'}</span>
             <span className="office-preview-badge">Office</span>
           </div>
 
@@ -182,35 +226,42 @@ export function CompanyOfficePreview({ api, detail, onBack, onOpenSecurity }: Pr
                   ))}
                 </div>
               </div>
-              <div role="group" aria-labelledby="office-seats-title">
-                <h3 id="office-seats-title">Seats</h3>
-                <div className="office-world-control-row">
-                  {self.seatId ? (
-                    <button
-                      className="dashboard-secondary"
-                      type="button"
-                      disabled={officeActionPending}
-                      onClick={() => void runOfficeAction(() => client.stand())}
-                    >
-                      Stand up
-                    </button>
-                  ) : (
-                    state.snapshot.seats
-                      .filter((seat) => seat.occupantParticipationId === null)
-                      .map((seat) => (
-                        <button
-                          className="dashboard-secondary"
-                          type="button"
-                          key={seat.seatId}
-                          disabled={officeActionPending}
-                          onClick={() => void runOfficeAction(() => client.sit(seat.seatId))}
-                        >
-                          Sit · {seat.seatId}
-                        </button>
-                      ))
-                  )}
+              {mapId === 'commons' && (
+                <div role="group" aria-labelledby="office-seats-title">
+                  <h3 id="office-seats-title">Seats</h3>
+                  <div className="office-world-control-row">
+                    {self.seatId ? (
+                      <button
+                        className="dashboard-secondary"
+                        type="button"
+                        disabled={officeActionPending}
+                        onClick={() => void runOfficeAction(() => client.stand())}
+                      >
+                        Stand up
+                      </button>
+                    ) : (
+                      state.snapshot.seats
+                        .filter((seat) => seat.occupantParticipationId === null)
+                        .map((seat) => (
+                          <button
+                            className="dashboard-secondary"
+                            type="button"
+                            key={seat.seatId}
+                            disabled={officeActionPending}
+                            onClick={() => void runOfficeAction(() => client.sit(seat.seatId))}
+                          >
+                            Sit · {seat.seatId}
+                          </button>
+                        ))
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
+              <p className="office-scene-help">
+                {mapId === 'vivo'
+                  ? 'Use the arrow keys or WASD to move. Click a chair or press E to sit.'
+                  : 'Use the arrow keys or WASD to move. Choose an available seat here.'}
+              </p>
               {officeActionError && (
                 <p className="office-action-error" role="alert">
                   {officeActionError}
@@ -236,7 +287,7 @@ export function CompanyOfficePreview({ api, detail, onBack, onOpenSecurity }: Pr
                   ? 'Connecting…'
                   : 'Not connected'}
             </span>
-            <span>Commons</span>
+            <span>{mapId === 'vivo' ? 'Vivo' : 'Commons'}</span>
           </div>
         </aside>
 
@@ -244,22 +295,55 @@ export function CompanyOfficePreview({ api, detail, onBack, onOpenSecurity }: Pr
           id="office-map"
           className="map-area office-shell-map"
           tabIndex={-1}
-          aria-label="Approved Commons office map"
+          aria-label={`OpenOfficeForAll ${mapId === 'vivo' ? 'Vivo' : 'Commons'} office map`}
         >
           <div className="office-map-heading">
-            <strong>{connected ? 'Live Commons office' : 'Commons office'}</strong>
+            <strong>
+              {connected
+                ? `Live ${mapId === 'vivo' ? 'Vivo' : 'Commons'} office`
+                : `${mapId === 'vivo' ? 'Vivo' : 'Commons'} office`}
+            </strong>
             <span className="office-preview-badge">{connected ? 'Live' : 'Read only'}</span>
           </div>
           <div className="office-map-stage">
-            {connected && state.bootstrap && state.ready && state.snapshot ? (
-              <LiveCommonsScene
-                bootstrap={state.bootstrap}
-                snapshot={state.snapshot}
-                localParticipationId={state.ready.participationId}
-                onMovement={(dx, dy) => client.move(dx, dy)}
+            {mapId === 'vivo' ? (
+              <VivoScene
+                participants={sceneParticipants}
+                selfId={connected ? (state.ready?.participationId ?? null) : null}
+                objects={[]}
+                zoom={zoom}
+                simplified={false}
+                editItem={null}
+                selectedObject={null}
+                editorOpen={false}
+                overrides={noOverrides}
+                onMove={() => {}}
+                onMovementIntent={(dx, dy) => client.move(dx, dy)}
+                onPlace={() => {}}
+                onSelect={() => {}}
+                onSelectObject={() => {}}
+                onMoveObject={() => {}}
+                onRemove={() => {}}
+                onSit={(seatId) => void runOfficeAction(() => client.sit(seatId))}
+                onStand={() => void runOfficeAction(() => client.stand())}
+                meetings={{}}
+                areaNames={{}}
+                onZoom={setZoom}
+                onAreaClick={() => {}}
               />
+            ) : connected && state.bootstrap && state.ready && state.snapshot ? (
+              <Suspense fallback={<p role="status">Loading office map…</p>}>
+                <LiveCommonsScene
+                  bootstrap={state.bootstrap}
+                  snapshot={state.snapshot}
+                  localParticipationId={state.ready.participationId}
+                  onMovement={(dx, dy) => client.move(dx, dy)}
+                />
+              </Suspense>
             ) : (
-              <CommonsScene />
+              <Suspense fallback={<p role="status">Loading office map…</p>}>
+                <CommonsScene />
+              </Suspense>
             )}
           </div>
           <div

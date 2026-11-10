@@ -287,7 +287,7 @@
   line-height: 1.5;
 }
 
-/* OpenOfficeForAll office shell, with the current Commons renderer and office client mounted inside it. */
+/* OpenOfficeForAll office shell, with the versioned renderer and office client mounted inside it. */
 .office-shell {
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
     env(safe-area-inset-left);
@@ -383,16 +383,15 @@
   padding: 58px 18px 76px;
 }
 
-.office-map-stage > .commons-scene,
-.office-map-stage > .live-commons-scene {
+.office-map-stage > .office-scene {
   display: flex;
   width: 100%;
   height: 100%;
   min-height: 0;
   flex: 1;
-  flex-direction: column;
-  align-items: stretch;
-  justify-content: center;
+  border: 1px solid #ffffff8c;
+  border-radius: 13px;
+  box-shadow: 0 10px 28px #18362921;
 }
 
 .office-map-stage .commons-scene-host {

@@ -10,11 +10,8 @@ import { ApiClient } from '../src/lib/api';
 import ChatView from '../chat/ChatView';
 import { language, setLanguage } from '../i18n';
 
-vi.mock('../commons-preview/CommonsScene', () => ({
-  CommonsScene: () => null,
-}));
-vi.mock('../commons-preview/LiveCommonsScene', () => ({
-  LiveCommonsScene: () => null,
+vi.mock('../VivoScene', () => ({
+  default: () => createElement('div', { 'data-testid': 'openoffice-vivo-scene' }),
 }));
 
 const workspaceId = '7b839c68-a211-48f2-a38f-d15e7558a4ea';
@@ -52,7 +49,9 @@ describe('company office preview selection', () => {
     expect(html).not.toContain('Company slug:');
     expect(html).not.toContain('SIGN-IN STATUS');
     expect(html).not.toContain('Employee invitations');
-    expect(html).toContain('Commons office');
+    expect(html).toContain('Vivo office');
+    expect(html).toContain('data-testid="openoffice-vivo-scene"');
+    expect(html).not.toContain('Commons office');
     expect(html).toContain('Back to companies');
     expect(html).toContain('Not connected to the office.');
     expect(html).toContain('Enter office');

@@ -124,21 +124,21 @@ Exit: owner decisions and safe request/response/error/version rules are recorded
 
 ### CP02 — Establish one immutable map and asset catalog
 
-Status: complete. See [Commons map and renderer evidence](CP02_WORLD_AND_MAP.md#cp025-renderer-sample).
+The initial Commons implementation and renderer sample remain as historical evidence. The owner later directed the product to use the imported Vivo map and OpenOfficeForAll renderer. The CP02.6a server registry and CP02.6b authenticated UI adapter are implemented; real two-browser Vivo verification and formal visual/accessibility review remain. See [Vivo runtime map adoption](CP02_WORLD_AND_MAP.md#owner-directed-vivo-runtime-map-2026-11-10) and the [UI integration plan](../migration/OPENOFFICE_UI_INTEGRATION.md).
 
 Depends on: D04 and CP01's version/geometry contract. Deliverable: the same trusted map rules for API and Phaser.
 
-1. Source review found the Vivo external-reference attribution; the owner accepted an independently designed original `commons` map instead ([decision](../decisions/2026-11-08_CP02.md)). Inventory its coordinate units, tile size, bounds, spawn, collision shapes/blocked edges, object IDs, seats/exits and fixed meeting zones. Keep imported geometry/art outside its approved registry.
-2. Extract reviewed pure TypeScript geometry/collision/seat/zone functions into `packages/world`. Do not bind the new API to browser globals or the three-map legacy import switch.
-3. Store an immutable manifest with content hash and asset-manifest version. Validate unique IDs, walkable/reachable spawn and exits, bounds and matching client/server collision results.
-4. Create the smallest approved appearance/texture catalog with dimensions, foot origins, direction/frame order and draw layers. Keep all license notices and provenance when producing derived textures. Export procedural SVG art or redraw it only as needed for the selected map.
-5. Define upgrade behavior: changed map content means a new version, drained old runtime and fresh bootstrap/admission. No mutable editor in this packet.
+1. Pin the owner's selected Vivo source, map helpers, public assets and MIT/provenance notices. The source header records the measured-reference attribution; preserve it with the import. **Complete.**
+2. Derive pure world geometry, terrain/wall/object blockers, seats and meeting zones in `packages/world`; validate against the shared map source. **Complete.**
+3. Store immutable content-hashed manifests, verify packaged bytes against registered geometry, use Vivo for new offices, and preserve Commons versions already assigned to existing offices. **Complete.**
+4. Mount the supplied `VivoScene` in the authenticated React office and adapt its participant, movement, availability and seat controls to this project's HTTP bootstrap and Socket.IO client. Keep the legacy bearer-token services unmounted. **Integrated; full browser review remains.**
+5. Keep unsupported chat, calendar, editor and media actions disabled until their project APIs and authorization contracts exist. **Current screen gates them.**
 
-Existing inputs: `apps/shared/{vivo-map,vivo-geometry,office-world,office-seats,office-meetings,office-objects}.js`, `apps/shared/maps/`, `apps/web/{avatarLook,avatarSprite,navigation}.ts`, `apps/web/sprites/`, `apps/web/public/`, `packages/assets/manifests/provenance.json`, `docs/migration/UPSTREAM_IMPORT.json`.
+Existing inputs: `apps/shared/{vivo-map,vivo-geometry,office-world,office-seats,office-meetings,office-objects}.js`, `apps/shared/maps/`, `apps/web/{VivoScene.tsx,avatarLook,avatarSprite,navigation}.ts`, `apps/web/sprites/`, `apps/web/public/`, `packages/assets/manifests/provenance.json`, `docs/migration/UPSTREAM_IMPORT.json`.
 
-Proposed additions: `packages/world/src/{map,collision,seats,zones}.ts`, `packages/world/src/maps/<approved-map>.ts`, world unit/fixture tests, and approved map/texture manifests under `packages/assets/manifests/`. Update package exports and tests so API and client consume the same version.
+Current additions: `packages/world/src/vivo.ts`, generated hashed manifests under `packages/assets/manifests/`, the API map registry and `scripts/vivo-assets.mjs`. Keep API collision geometry and the renderer's pinned shared map aligned as either gains a new version.
 
-Exit: pure-rule tests cover walls/edges, object collision, spawn, duplicate IDs and seat exits. A small React-mounted Phaser sample demonstrates one real avatar/object, nearest-neighbor sampling, sitting/standing origin and occlusion. Full map/client integration continues in CP06. Record the partial A06 evidence.
+Exit: unit/integration tests cover geometry/version acceptance, API tests cover both maps, and the mocked browser test covers authenticated Vivo rendering and controls. Live two-browser movement/collision/seat contention on Vivo, visual anchor/occlusion review, screen-reader audit and Chrome/Edge signoff remain release evidence. Record the partial A05/A06 evidence.
 
 ### CP03 — Implement office bootstrap and one-use admission tickets
 
@@ -207,7 +207,7 @@ Depends on: CP02 sample, CP04 account/company path and CP05 protocol. Deliverabl
 6. Remove or hide unsupported chat/calendar/recording/editor/desk-ownership/reactive legacy focus controls from the MVP routes and bundles where practical. Keep useful artwork and licensed helpers; delete obsolete transport/auth adapters after callers move.
 7. Verify keyboard/focus/dialog behavior, zoom/essential controls, resize and reduced-motion behavior where applicable. Product language/RTL expansion follows CP01's explicit scope, not chat language.
 
-CP06.1 implements the typed browser boundary first: fetch a company-scoped bootstrap, request a short-lived ticket in memory, connect WebSocket-only to `/office`, validate `office:ready`, apply only contiguous epoch/version deltas and request a full snapshot on a gap. CP06.2 mounts it behind an explicit action in the authenticated company route, displays connection/access states and the server roster, and closes it on leave or route teardown. CP06.3 replaces the static preview with the version-checked Commons map, server-positioned avatars/seats, local camera follow and keyboard movement intent. Text chat remains disconnected because the MVP has no chat message API or realtime event contract; do not mark its composer live until a separately scoped backend contract exists.
+CP06.1 implements the typed browser boundary first: fetch a company-scoped bootstrap, request a short-lived ticket in memory, connect WebSocket-only to `/office`, validate `office:ready`, apply only contiguous epoch/version deltas and request a full snapshot on a gap. CP06.2 mounts it behind an explicit action in the authenticated company route, displays connection/access states and the server roster, and closes it on leave or route teardown. CP06.3 mounts the version-checked upstream Vivo map, server-positioned avatars/seats, local camera follow and keyboard/pointer movement intent. Text chat remains disconnected because the MVP has no chat message API or realtime event contract; do not mark its composer live until a separately scoped backend contract exists.
 
 Existing paths to migrate: `apps/web/{App.tsx,VivoScene.tsx,MiniOffice.tsx,useOffice.ts,AvatarEditor.tsx,avatarLook.ts,avatarSprite.ts,navigation.ts,types.ts,styles.css,scene.css,main.tsx,vite.config.ts}`; reused sprite/public files retain notices. Update imported shared tests deliberately when import ownership changes.
 

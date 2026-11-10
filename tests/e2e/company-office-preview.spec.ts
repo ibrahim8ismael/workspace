@@ -16,19 +16,19 @@ const workspace = {
 const officeId = 'df92b3ad-d3e9-430d-82f5-6e91cbe9dfe2';
 const participationId = '8f34d8de-bddb-489d-9cde-f03f1a98b68e';
 const officeEpoch = '668bde07-cc48-4623-a58c-2efbc8ac21d5';
-const mapVersion = 'commons-v1-d980be0345e864c38446a3f4effeaf12534e4ae68c10926e3c190d69c1958364';
+const mapVersion = 'vivo-v1-0208da25a5cdc4cbb4036ae04a5bb8796962752a3d84de24961ebc15d8038e7b';
 const officeManifest = {
   formatVersion: 1,
-  mapId: 'commons',
+  mapId: 'vivo',
   mapVersion,
-  contentHash: 'd980be0345e864c38446a3f4effeaf12534e4ae68c10926e3c190d69c1958364',
+  contentHash: '0208da25a5cdc4cbb4036ae04a5bb8796962752a3d84de24961ebc15d8038e7b',
   coordinateUnits: 'pixels',
   tileSize: 32,
-  bounds: { width: 768, height: 512 },
-  spawn: { x: 368, y: 272 },
+  bounds: { width: 1664, height: 1600 },
+  spawn: { x: 656, y: 1264 },
   geometryPath: `/maps/${mapVersion}.json`,
   assetManifestVersion:
-    'commons-art-v1-c8b015529d31999841c00e9b5962f226f694467b811540d5eb9c01740951770f',
+    'vivo-art-v1-cfbbea6919ccb8327b9ea370f2a5bf911d7bc76c328b51789da04d932bb417fb',
 };
 const sessionStart = Date.now();
 const session = {
@@ -114,12 +114,7 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
     let stateVersion = 0;
     let availability = 'available';
     let sittingAt: string | null = null;
-    const seatIds = [
-      'commons-northwest-table:0',
-      'commons-northwest-table:1',
-      'commons-southeast-table:0',
-      'commons-southeast-table:1',
-    ];
+    const seatIds = ['24c48737:0', '52e00cff:0', 'd8fe8680:0', '88544309:0'];
     const emitWorldDelta = () => {
       const firstSeat = sittingAt === seatIds[0];
       socket.send(
@@ -133,7 +128,7 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
               participationId,
               displayName: account.displayName,
               appearance: { bodyId: 'commons-worker', paletteId: 'teal' },
-              position: firstSeat ? { x: 80, y: 80 } : { x: 368, y: 272 },
+              position: firstSeat ? { x: 624, y: 1168 } : { x: 656, y: 1264 },
               facing: 'south',
               availability,
               seatId: sittingAt,
@@ -169,7 +164,7 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
                   participationId,
                   displayName: account.displayName,
                   appearance: { bodyId: 'commons-worker', paletteId: 'teal' },
-                  position: { x: 368, y: 272 },
+                  position: officeManifest.spawn,
                   facing: 'south',
                   availability: 'available',
                   seatId: null,
@@ -254,16 +249,14 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await expect(page.getByRole('button', { name: 'Enter office' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Text chat is unavailable' })).toBeVisible();
   await expect(page.getByLabel('Message office-preview')).toBeDisabled();
-  await expect(page.locator('.commons-scene canvas')).toHaveCount(1);
-  await expect(page.getByText('Avatar standing.')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Sit' })).toBeEnabled();
-  await page.getByRole('button', { name: 'Sit' }).click();
-  await expect(page.getByText('Avatar sitting.')).toBeVisible();
+  await expect(page.locator('.office-scene .office-map')).toHaveCount(1);
+  await expect(page.locator('.office-map-heading strong')).toHaveText('Vivo office');
+  await expect.poll(() => officeBootstrapRequests).toBe(1);
 
   await page.getByRole('button', { name: 'Enter office' }).click();
   await expect(page.getByText('1 person in the office')).toBeVisible();
-  await expect(page.getByText('Live office map. Use arrow keys or WASD to move.')).toBeVisible();
-  await expect(page.locator('.live-commons-scene canvas')).toHaveCount(1);
+  await expect(page.getByText('Live Vivo office', { exact: true })).toBeVisible();
+  await expect(page.locator('.office-scene .office-map')).toHaveCount(1);
   await expect(page.getByRole('group', { name: 'Office connection controls' })).toBeVisible();
   const officeSkipLink = page.getByRole('link', { name: 'Skip to office map' });
   await officeSkipLink.focus();
@@ -271,57 +264,68 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await expect(page.locator('#office-map')).toBeFocused();
   await expect(page.getByRole('group', { name: 'Office controls' })).toBeVisible();
   await expect(page.getByRole('group', { name: 'Your availability' })).toBeVisible();
-  await expect(page.getByRole('group', { name: 'Seats' })).toBeVisible();
+  await expect(page.getByRole('group', { name: 'Seats' })).toHaveCount(0);
   await expect(page.getByRole('list', { name: 'People in the office' })).toContainText(
     account.displayName,
   );
   await page.getByRole('button', { name: 'Back to companies' }).focus();
   await page.keyboard.press('Tab');
   await page.keyboard.press('Tab');
-  await expect(page.getByRole('button', { name: 'Busy' })).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Busy', exact: true })).toBeFocused();
   const busyFocusStyle = await page
-    .getByRole('button', { name: 'Busy' })
+    .getByRole('button', { name: 'Busy', exact: true })
     .evaluate((button) => getComputedStyle(button).outlineStyle);
   expect(busyFocusStyle).toBe('solid');
-  await page.getByRole('button', { name: 'Busy' }).click();
-  await expect(page.getByRole('button', { name: 'Busy' })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'Busy', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Busy', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
   expect(interruptOfficeConnection).toBeDefined();
   await interruptOfficeConnection!();
   await expect(page.getByText('Office connection closed.')).toBeVisible();
-  await expect(page.locator('.live-commons-scene canvas')).toHaveCount(0);
+  await expect(page.locator('.office-scene .office-map')).toHaveCount(1);
   await expect.poll(() => officeEvents.filter((event) => event === 'disconnect').length).toBe(1);
   await page.getByRole('button', { name: 'Enter office' }).click();
   await expect(page.getByText('1 person in the office')).toBeVisible();
-  await expect(page.locator('.live-commons-scene canvas')).toHaveCount(1);
-  expect(officeBootstrapRequests).toBe(2);
+  await expect(page.locator('.office-scene .office-map')).toHaveCount(1);
+  expect(officeBootstrapRequests).toBe(3);
   expect(officeTicketRequests).toBe(2);
   expect(officeConnections).toBe(2);
-  await page.getByRole('button', { name: 'Sit · commons-northwest-table:0' }).click();
-  await expect(page.getByRole('button', { name: 'Stand up' })).toBeVisible();
-  await page.getByRole('button', { name: 'Stand up' }).click();
-  await expect(page.getByRole('button', { name: 'Sit · commons-northwest-table:0' })).toBeVisible();
-  const map = page.getByRole('group', {
-    name: 'Live Commons office map with server-positioned participants',
-  });
+  const seatTarget = page.locator('.office-scene [data-seat-id="24c48737:0"]');
+  const movementCountBeforeSeat = movementInputs.length;
+  await seatTarget.click();
+  await expect
+    .poll(() =>
+      movementInputs.slice(movementCountBeforeSeat).some(({ dx, dy }) => dx !== 0 || dy !== 0),
+    )
+    .toBe(true);
+  await expect.poll(() => officeEvents.includes('seat:sit')).toBe(true);
+  await expect.poll(() => seatTarget.getAttribute('aria-label')).toContain('Stand up');
+  await seatTarget.click();
+  await expect.poll(() => officeEvents.filter((event) => event === 'seat:stand').length).toBe(1);
+  const map = page.locator('.office-scene svg.office-map');
   await map.focus();
   await expect(map).toBeFocused();
   await page.keyboard.down('ArrowRight');
   await expect.poll(() => officeEvents.includes('world:input')).toBe(true);
   await page.keyboard.up('ArrowRight');
   await expect.poll(() => movementInputs.at(-1)).toEqual({ dx: 0, dy: 0 });
-  await page.getByRole('button', { name: 'Busy' }).focus();
+  await page.getByRole('button', { name: 'Away', exact: true }).focus();
   const inputsBeforeControlKey = movementInputs.length;
   await page.keyboard.down('ArrowRight');
   await page.waitForTimeout(250);
   await page.keyboard.up('ArrowRight');
-  expect(movementInputs).toHaveLength(inputsBeforeControlKey);
+  expect(
+    movementInputs.slice(inputsBeforeControlKey).every(({ dx, dy }) => dx === 0 && dy === 0),
+  ).toBe(true);
   await page.getByRole('button', { name: 'Leave office' }).click();
   await expect(page.getByText('Not connected to the office.')).toBeVisible();
   await expect.poll(() => officeEvents.filter((event) => event === 'disconnect').length).toBe(2);
 
   await page.getByRole('button', { name: 'Back to companies' }).click();
   await expect(page.getByRole('heading', { name: 'Your companies' })).toBeVisible();
-  await expect(page.locator('.commons-scene canvas')).toHaveCount(0);
+  await expect(page.locator('.office-scene .office-map')).toHaveCount(0);
   expect(unexpectedApiCalls).toEqual([]);
   expect(officeEvents).toContain('connect');
   expect(officeEvents).toContain('presence:update');

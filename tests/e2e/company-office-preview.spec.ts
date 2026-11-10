@@ -349,6 +349,19 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
                 participants: [],
               })}]`,
             );
+          } else if (packet[0] === 'conversation:leave') {
+            socket.send(
+              `42/office,["conversation:update",${JSON.stringify({
+                officeEpoch,
+                conversationId: proximityConversationId,
+                kind: 'proximity',
+                state: 'ended',
+                version: 3,
+                generation: proximityGeneration,
+                mediaReady: false,
+                participants: [],
+              })}]`,
+            );
           } else if (packet[0] === 'seat:sit' && packet[1].payload?.seatId) {
             sittingAt = packet[1].payload.seatId;
             emitWorldDelta();
@@ -435,6 +448,19 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await expect.poll(() => movementInputs.length).toBeGreaterThan(movementCountAfterMediaError);
   await page.keyboard.up('ArrowRight');
   await expect(mapAfterMediaError).toHaveCount(1);
+  await page.getByRole('button', { name: 'Leave conversation' }).click();
+  await expect.poll(() => officeEvents.includes('conversation:leave')).toBe(true);
+  await expect(page.getByRole('button', { name: 'Leave conversation' })).toHaveCount(0);
+  await expect(microphoneButton).toBeDisabled();
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect(mapAfterMediaError).toHaveCount(1);
+  const movementCountAfterConversationLeave = movementInputs.length;
+  await mapAfterMediaError.focus();
+  await page.keyboard.down('ArrowRight');
+  await expect
+    .poll(() => movementInputs.length)
+    .toBeGreaterThan(movementCountAfterConversationLeave);
+  await page.keyboard.up('ArrowRight');
   await page.getByRole('button', { name: 'Opt out of nearby voice' }).click();
   await expect(
     page.getByText('Nearby voice is off. Your microphone will stay off until you turn it on.'),

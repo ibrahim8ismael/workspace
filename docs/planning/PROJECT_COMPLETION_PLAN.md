@@ -280,8 +280,8 @@ two-browser actual-grant fixture with opt-out and Away triggers: the API emits a
 install ACK while the guard remains alive, and measured final decoded audio cutoff was **0 ms** in
 both runs. The fixture explicitly stops the production `ProximityAudioSession` after the server
 policy ACK; it does not yet prove `CompanyOfficePreview` reacts to these Socket.IO events itself.
-Permission denial with the office/map still usable, office leave through the mounted UI, mounted-UI
-teardown after membership/session revocation, office/API lease expiry, guard loss and
+Permission denial with the office/map still usable, active-media leave through the mounted UI,
+mounted-UI teardown after membership/session revocation, office/API lease expiry, guard loss and
 independent-supervisor progress loss remain in the matrix.
 CP08.5.4 also runs session logout and owner-driven membership removal during
 the real media fixture: both close the affected office socket, end the pair for the surviving
@@ -301,6 +301,12 @@ through the live guard with audio recovery. After conversation revocation plus f
 restart, the still-unexpired refreshed JWT and original application JWT were both denied by the
 guard. This covers refresh and replay within the pinned local fixture; mounted UI teardown, browser
 permission denial, lease/process loss and deployment ingress remain open.
+
+CP08.5.7 adds a mounted-office E2E where the mocked media WebSocket fails, the user leaves the
+conversation through the UI, and the Vivo map continues to render and accept movement. It verifies
+the UI's session-stop/ended-state path under media failure. A real audio cutoff caused by leaving an
+active media call, capture-permission denial, membership/session teardown and lease/process faults
+remain open.
 
 **CP08.6 — webhook reconciliation (pending).** Add strict raw-body signature verification,
 event-ID deduplication and late-event handling under `apps/api/src/modules/media/`; webhooks observe

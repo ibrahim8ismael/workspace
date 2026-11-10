@@ -1084,3 +1084,15 @@ API/guard/SFU/two-Chromium integration case passed (one passed, 68 unrelated tes
 refreshed JWT stays in the local fixture pipe and is not printed in test output. This closes the
 SFU-refresh/replay case only for this pinned local fixture; mounted-office UI teardown, permission
 denial, lease/process failures and deployment ingress coverage remain open.
+
+## CP08.5.7 — mounted office leave after media failure (2026-11-11)
+
+Extended `tests/e2e/company-office-preview.spec.ts` so the mocked office socket accepts
+`conversation:leave` and emits the ended conversation state. In the mounted supplied office UI, the
+scenario first pairs the participant and deliberately closes the mocked LiveKit WebSocket. The
+user then leaves the conversation through the UI; the command is sent, the media error clears, the
+microphone control is disabled, and the Vivo map remains mounted and continues sending movement
+input. `pnpm exec playwright test tests/e2e/company-office-preview.spec.ts` passed (one test). This
+verifies the mounted UI's failed-media leave and map-resilience path. Because the media socket is
+deliberately unavailable, it does not measure real audio cutoff for leaving an active media call;
+that remains open alongside mounted-UI session/membership revocation and capture-permission denial.

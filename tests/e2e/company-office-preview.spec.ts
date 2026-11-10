@@ -66,6 +66,9 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   let officeBootstrapRequests = 0;
   let officeTicketRequests = 0;
   let officeConnections = 0;
+  let officeServerSocket: import('@playwright/test').WebSocketRoute | undefined;
+  let holdNextMediaSocket = false;
+  let heldLiveKitSocketClosed = false;
   let interruptOfficeConnection: (() => Promise<void>) | undefined;
   await page.route('**/api/**', async (route) => {
     const request = route.request();
@@ -201,6 +204,7 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
 
   await page.routeWebSocket(/\/socket\.io\//, (socket) => {
     officeConnections += 1;
+    officeServerSocket = socket;
     if (officeConnections === 1)
       interruptOfficeConnection = () =>
         socket.close({ code: 1011, reason: 'simulated office transport interruption' });
@@ -378,6 +382,13 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
 
   await page.routeWebSocket('wss://media.example.test/**', (socket) => {
     liveKitSocketAttempts += 1;
+    if (holdNextMediaSocket) {
+      holdNextMediaSocket = false;
+      socket.onClose(() => {
+        heldLiveKitSocketClosed = true;
+      });
+      return;
+    }
     socket.close({ code: 1001, reason: 'mock media service unavailable' });
   });
 
@@ -546,10 +557,36 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   expect(
     movementInputs.slice(inputsBeforeControlKey).every(({ dx, dy }) => dx === 0 && dy === 0),
   ).toBe(true);
+
+  holdNextMediaSocket = true;
+  await page.getByRole('button', { name: 'Opt in to nearby voice' }).click();
+  await expect(
+    page.getByText('Paired with Office Teammate. Turn on your microphone when ready.'),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Activate proximity microphone' }).click();
+  await expect.poll(() => mediaTokenRequests).toHaveLength(2);
+  await expect.poll(() => liveKitSocketAttempts).toBe(2);
+  await expect.poll(() => heldLiveKitSocketClosed).toBe(false);
+  officeServerSocket?.send(
+    `42/office,["office:access-ended",${JSON.stringify({
+      officeEpoch,
+      reason: 'authorization_ended',
+    })}]`,
+  );
+  await expect(page.getByText('Office access ended. Re-enter to reconnect.')).toBeVisible();
+  // Access loss must tear down the pending media attempt owned by the mounted office preview.
+  await expect.poll(() => heldLiveKitSocketClosed).toBe(true);
+  await expect(page.locator('.office-action-error')).toHaveCount(0);
+  await expect(page.locator('.office-scene svg.office-map')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Join' })).toBeVisible();
+  await page.getByRole('button', { name: 'Join' }).click();
+  await expect(page.getByText('1 person in the office')).toBeVisible();
+  await expect(page.locator('.office-map-heading strong')).toHaveText('Live Vivo office');
+
   await page.getByRole('button', { name: 'Leave office' }).click();
   await expect(page.getByRole('heading', { name: 'Welcome to E2E Company' })).toBeVisible();
   await expect(page.locator('.office-scene .office-map')).toHaveCount(0);
-  await expect.poll(() => officeEvents.filter((event) => event === 'disconnect').length).toBe(2);
+  await expect.poll(() => officeEvents.filter((event) => event === 'disconnect').length).toBe(3);
 
   await page.getByRole('button', { name: 'Back to companies' }).click();
   await expect(page.getByRole('heading', { name: 'Your companies' })).toBeVisible();

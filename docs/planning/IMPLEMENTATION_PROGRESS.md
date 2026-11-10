@@ -1096,3 +1096,14 @@ input. `pnpm exec playwright test tests/e2e/company-office-preview.spec.ts` pass
 verifies the mounted UI's failed-media leave and map-resilience path. Because the media socket is
 deliberately unavailable, it does not measure real audio cutoff for leaving an active media call;
 that remains open alongside mounted-UI session/membership revocation and capture-permission denial.
+
+## CP08.5.8 — mounted office teardown on access revocation (2026-11-11)
+
+Extended the same mocked Chromium E2E to hold the second LiveKit WebSocket open during a pending
+connection attempt, then emit a valid `office:access-ended` event with `authorization_ended`. The
+mounted `CompanyOfficePreview` automatically closed the pending LiveKit socket, removed the office
+map/session from the revoked view and showed the re-entry state. The user could re-enter, load the
+map and leave normally afterward. The E2E passed (one test). This proves the UI cleanup path for a
+pending media connection after the same access-ended event used for session/membership revocation;
+it does not prove media cutoff when an active audio track is forwarding or identify which backend
+revocation produced the event. Active-call teardown and measured forwarding cutoff remain open.

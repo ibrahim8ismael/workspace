@@ -281,7 +281,7 @@ install ACK while the guard remains alive, and measured final decoded audio cuto
 both runs. The fixture explicitly stops the production `ProximityAudioSession` after the server
 policy ACK; it does not yet prove `CompanyOfficePreview` reacts to these Socket.IO events itself.
 Permission denial with the office/map still usable, active-media leave through the mounted UI,
-mounted-UI teardown after membership/session revocation, office/API lease expiry, guard loss and
+active-media teardown after membership/session revocation, office/API lease expiry, guard loss and
 independent-supervisor progress loss remain in the matrix.
 CP08.5.4 also runs session logout and owner-driven membership removal during
 the real media fixture: both close the affected office socket, end the pair for the surviving
@@ -305,8 +305,14 @@ permission denial, lease/process loss and deployment ingress remain open.
 CP08.5.7 adds a mounted-office E2E where the mocked media WebSocket fails, the user leaves the
 conversation through the UI, and the Vivo map continues to render and accept movement. It verifies
 the UI's session-stop/ended-state path under media failure. A real audio cutoff caused by leaving an
-active media call, capture-permission denial, membership/session teardown and lease/process faults
-remain open.
+active media call, capture-permission denial, active-call membership/session teardown and
+lease/process faults remain open.
+
+CP08.5.8 extends the mocked E2E to hold a LiveKit signaling socket during connection, deliver
+`office:access-ended` with `authorization_ended`, and verify the mounted preview closes that socket
+and returns to the re-entry state. This proves UI cleanup for a pending connection, not live audio
+forwarding cutoff or a particular backend revocation trigger. Active-call teardown, permission
+denial and lease/guard/supervisor fault cases remain open.
 
 **CP08.6 — webhook reconciliation (pending).** Add strict raw-body signature verification,
 event-ID deduplication and late-event handling under `apps/api/src/modules/media/`; webhooks observe

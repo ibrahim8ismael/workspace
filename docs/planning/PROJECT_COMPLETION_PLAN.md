@@ -130,7 +130,7 @@ Depends on: D04 and CP01's version/geometry contract. Deliverable: the same trus
 
 1. Pin the owner's selected Vivo source, map helpers, public assets and MIT/provenance notices. The source header records the measured-reference attribution; preserve it with the import. **Complete.**
 2. Derive pure world geometry, terrain/wall/object blockers, seats and meeting zones in `packages/world`; validate against the shared map source. **Complete.**
-3. Store immutable content-hashed manifests, verify packaged bytes against registered geometry, use Vivo for new offices, and preserve Commons versions already assigned to existing offices. **Complete.**
+3. Store immutable content-hashed manifests, verify packaged bytes against registered geometry, use Vivo for new offices, and migrate existing offices from the exact trusted Commons version to Vivo with a repeatable dry-run/apply command. **Implementation complete; apply to each environment after backup.**
 4. Mount the supplied `VivoScene` in the authenticated React office and adapt its participant, movement, availability and seat controls to this project's HTTP bootstrap and Socket.IO client. Show the owner-approved camera-off pre-join screen without loading a map, then display the server-selected map after Socket.IO admission. Keep the legacy bearer-token services unmounted. **Integrated; full browser review remains.**
 5. Keep unsupported chat, calendar, editor and media actions disabled until their project APIs and authorization contracts exist. **Current screen gates them.**
 

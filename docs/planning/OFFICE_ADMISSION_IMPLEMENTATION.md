@@ -2,6 +2,8 @@
 
 This plan records the M2 office bootstrap and admission implementation. CP03 delivered the first HTTP slice; CP05 delivered Socket.IO admission, continuing authorization, snapshots and same-session takeover. Deployment evidence and browser integration remain tracked in the project plan and acceptance register.
 
+The early CP03 decisions below used Commons. The owner later selected Vivo for all offices. New offices and pending records use Vivo; run `db:migrate-legacy-office-maps-to-vivo` to move existing records from the exact registered Commons version. Back up MongoDB and stop the API before applying the migration; see [CP02.6e](IMPLEMENTATION_PROGRESS.md#cp026e--migrate-existing-offices-from-commons-to-vivo).
+
 ## Scope and prerequisites
 
 - Use the current model of one company workspace with one office. The owner accepted D12 one company/workspace/office and D13 self-service verified-user creation on 2026-11-08. D13 lifecycle/offboarding remains open. The office slice uses the existing workspace status policy.

@@ -81,16 +81,18 @@ function loadTrustedMap(
   });
 }
 
-const maps = [
-  loadTrustedMap(commonsManifestJson, COMMONS_GEOMETRY),
-  loadTrustedMap(vivoManifestJson, VIVO_GEOMETRY),
-];
+const commonsMap = loadTrustedMap(commonsManifestJson, COMMONS_GEOMETRY);
+const vivoMap = loadTrustedMap(vivoManifestJson, VIVO_GEOMETRY);
+const maps = [commonsMap, vivoMap];
 const mapsByVersion = new Map(maps.map((map) => [map.manifest.mapVersion, map]));
 const defaultMap = mapsByVersion.get(vivoManifestJson.mapVersion);
 if (!defaultMap) throw new Error('The default Vivo office map is not registered');
 
-/** New workspaces use Vivo; older immutable Commons offices remain available. */
+/** New and migrated workspaces use the trusted Vivo version. */
 export const APPROVED_OFFICE_MAP_VERSION = defaultMap.manifest.mapVersion;
+
+/** Exact registered legacy versions that may be migrated to the current default. */
+export const LEGACY_OFFICE_MAP_VERSIONS = Object.freeze([commonsMap.manifest.mapVersion]);
 
 export function trustedOfficeMap(version: string): TrustedOfficeMap | null {
   return mapsByVersion.get(version) ?? null;

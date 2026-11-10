@@ -1,8 +1,8 @@
 # CP02 — pure world rules and immutable map
 
-Started: 2026-11-08. Parent: [completion plan](PROJECT_COMPLETION_PLAN.md#cp02--establish-one-immutable-map-and-asset-catalog). Wire boundary: [office v1](../contracts/OFFICE_V1.md). Original Commons implementation completed; Vivo adoption was reopened by owner direction on 2026-11-10. See the [superseding map/UI decision](../decisions/2026-11-08_CP02.md#superseding-owner-direction--2026-11-10) and [UI migration plan](../migration/OPENOFFICE_UI_INTEGRATION.md#owner-direction-adopt-the-supplied-map-and-ui-2026-11-10).
+Started: 2026-11-08. Parent: [completion plan](PROJECT_COMPLETION_PLAN.md#cp02--establish-one-immutable-map-and-asset-catalog). Wire boundary: [office v1](../contracts/OFFICE_V1.md). Original Commons implementation is retained as migration/rollback material; owner-directed Vivo adoption and local existing-office migration are complete. See the [superseding map/UI decision](../decisions/2026-11-08_CP02.md#superseding-owner-direction--2026-11-10) and [UI migration plan](../migration/OPENOFFICE_UI_INTEGRATION.md#owner-direction-adopt-the-supplied-map-and-ui-2026-11-10).
 
-The original CP02 rejection below is historical. The owner has since chosen the imported Vivo map from OpenOfficeForAll and this project's own APIs. On 2026-11-10 the Vivo map became the default for newly created offices; immutable Commons offices remain registered for compatibility. CP02.6a records the server version, geometry, collision/seats and backfill. CP02.6b connects upstream VivoScene to the office APIs and selects a compatible renderer from the authenticated map manifest.
+The original CP02 rejection below is historical. The owner has since chosen the imported Vivo map from OpenOfficeForAll and this project's own APIs. On 2026-11-10 the Vivo map became the default for new offices, the exact trusted Commons records in the local database were migrated, and the authenticated UI was rebuilt. CP02.6a records the server version, geometry, collision/seats and backfill. CP02.6b connects upstream VivoScene to the office APIs and selects a compatible renderer from the authenticated map manifest. Other database environments still require their own backup and migration run.
 
 ## Working arrangement
 
@@ -25,7 +25,7 @@ Each completed batch updates [implementation progress](IMPLEMENTATION_PROGRESS.m
 
 Read-only inspection of `apps/shared/maps/vivo.js` reports 32-pixel tiles, a 52 × 50 grid (1664 × 1600 pixels), spawn tile `(20,39)` / center `(656,1264)`, 22 areas, 203 objects, five `MeetingRoom` areas, 58 seat entries and 94 object blocker entries before deduplication. These counts describe imported data; they do not prove reachability or approve it.
 
-The map header says it was generated from `docs/references/vivo/vivo-map-spec.json` and measures the reference office “Vivo” in Gather 2.0. That reference source is not present in this checkout. The [import pin](../migration/UPSTREAM_IMPORT.json) and retained `apps/shared/LICENSE.upstream` establish copied-code provenance, but do not resolve the geometry's external-reference attribution. The [project brief](../../GATHER_LITE_PROJECT_KNOWLEDGE.md) explicitly excludes third-party Gather branding/maps/art and ignored private reference packs. The owner therefore accepted an original replacement; Vivo remains historical migration input, without an approved runtime hash.
+The map header says it was generated from `docs/references/vivo/vivo-map-spec.json` and measures the reference office “Vivo” in Gather 2.0. That reference source is not present in this checkout. The [import pin](../migration/UPSTREAM_IMPORT.json) and retained `apps/shared/LICENSE.upstream` record the copied source and notice; keep the measured-reference attribution visible with the imported map. The earlier project brief excluded third-party Gather branding/maps/art, so CP02 initially produced an original Commons replacement. The owner later superseded that map choice and directed the project to use the Vivo map supplied by OpenOfficeForAll. Vivo is now the owner-selected, content-hashed runtime map; other environments still need the documented database migration for existing Commons offices.
 
 The [asset inventory](../../packages/assets/manifests/provenance.json) pins public files. The avatar READMEs describe upstream-user PixelLab exports, 92 × 92 canvases and a shared `(46,69)` foot anchor; the pixel asset README separately identifies generated/procedural artwork. These are source declarations, not a newly completed clearance or measured Phaser demonstration. No new texture or approved appearance catalog has been produced in CP02.1.
 
@@ -87,3 +87,16 @@ movement, presence, seat sit/stand synchronization, dropped-delta recovery, sock
 re-entry, and company isolation through Caddy/API/Socket.IO. Vivo wall-collision and concurrent
 seat-contention checks, plus formal visual/accessibility acceptance, remain follow-up work; earlier
 Commons browser tests still provide the wall and seat-race evidence for that map only.
+
+## Owner-requested existing-office migration to Vivo (2026-11-10)
+
+The owner clarified that existing offices such as `testbany` must also display the selected Vivo map;
+preserving Commons for existing offices is superseded. `db:migrate-legacy-office-maps-to-vivo` is a
+dry-run-by-default, repeatable migration that matches only the exact trusted Commons manifest version
+and preserves office/workspace IDs. It leaves unknown and pending versions alone. Back up the database,
+stop the API to close active office sessions, review the dry-run count, apply the migration, then restart
+the API. Every client must fetch a fresh bootstrap and join ticket. The local migration updated all
+58 trusted Commons offices; direct database verification confirmed that `testbany` now has the Vivo
+map version and that all 72 local offices use Vivo. A live two-browser check displayed the Vivo
+renderer and confirmed movement, then failed at the separate seat-claim assertion. Exact results and
+the remaining follow-up are recorded in [implementation progress](IMPLEMENTATION_PROGRESS.md#cp026e--migrate-existing-offices-from-commons-to-vivo).

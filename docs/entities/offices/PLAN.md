@@ -7,7 +7,7 @@ Implementation boundary: [current API and limitations](../../contracts/AUTH_AND_
 ## Implementation tasks
 
 - [x] Persist one office reference per workspace with a unique workspaceId index.
-- [x] Validate the immutable Commons map and spawn and backfill pending offices under CP02/CP03.
+- [x] Validate the immutable Vivo map and spawn, assign it to new/pending offices, and provide a bounded migration from the trusted Commons version under CP02/CP03.
 - [ ] Implement office lifecycle, epoch creation and serialized command dispatch.
 - [ ] Implement capacity, draining and fresh-restart behavior.
 - [x] Expose authorized office discovery and bootstrap.

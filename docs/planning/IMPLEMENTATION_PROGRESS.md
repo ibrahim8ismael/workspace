@@ -733,3 +733,22 @@ office E2E passed. The local Caddy frontend was rebuilt and restarted in OrbStac
 returned 200. `pnpm test:e2e:live` then passed against the real local API and Socket.IO, including
 two-browser movement, seat/status synchronization, snapshot recovery, reconnect and company
 isolation. Browser launch required the previously authorized local Chromium process permission.
+
+## CP02.6e — migrate existing offices from Commons to Vivo (2026-11-10)
+
+The owner confirmed that existing offices must use the selected Vivo map too. Added
+`db:migrate-legacy-office-maps-to-vivo`, a repeatable dry-run/apply migration that matches only the
+exact trusted Commons manifest version, changes it to the approved Vivo version, and preserves
+office/workspace IDs. Unknown/custom versions and `pending-m0` records are not changed. Its API
+integration test verifies no-op dry-run, exact-version filtering, preserved IDs, and idempotent
+re-application.
+
+Before applying in an environment, back up MongoDB and stop the API so active office sessions close.
+Local execution completed: the dry-run found 58 candidates; apply updated all 58, preserving office
+and workspace IDs. After the API restart, a direct Mongo check confirmed that `testbany` (office
+`31e62fd4-4773-4829-865d-bb82cf3c1d6f`) uses Vivo and that all 72 local offices now use the Vivo
+manifest version. The rebuilt Caddy app and API health checks passed. The latest live two-browser run
+rendered `Live Vivo office`, confirmed a Vivo SVG map and authoritative movement, then timed out
+waiting for a seat claim at `tests/e2e/live-office.spec.ts:276`; the full live scenario is not green
+until that separate seat interaction is fixed and rerun. Other environments still need their own
+backup, dry-run review, explicit apply, API restart and fresh client bootstrap.

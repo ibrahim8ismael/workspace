@@ -54,6 +54,7 @@ import { AbuseService } from '../dist/modules/identity/security/abuse.service.js
 import { digest } from '../dist/modules/identity/security/secrets.js';
 import { configureHttp } from '../dist/platform/http/configure.js';
 import { backfillOfficeMap } from '../dist/modules/office/backfill-office-map.js';
+import { migrateLegacyOfficeMapsToVivo } from '../dist/modules/office/migrate-legacy-office-maps.js';
 import { OfficeSocketAdapter } from '../dist/modules/office/realtime/office-socket.adapter.js';
 import { io } from 'socket.io-client';
 import type { Socket } from 'socket.io-client';
@@ -639,6 +640,70 @@ describe('company roles and isolation', () => {
     expect((await tenancy.offices.findById(office!._id).lean())?.mapVersion).toBe(
       vivoManifest.mapVersion,
     );
+  });
+
+  it('migrates only the exact trusted Commons office version to Vivo', async () => {
+    const legacyId = randomUUID();
+    const legacyWorkspaceId = randomUUID();
+    const pendingId = randomUUID();
+    const pendingWorkspaceId = randomUUID();
+    const unknownId = randomUUID();
+    const unknownWorkspaceId = randomUUID();
+    const unknownMapVersion = `commons-v1-${'0'.repeat(64)}`;
+    await tenancy.offices.create([
+      {
+        _id: legacyId,
+        workspaceId: legacyWorkspaceId,
+        mapVersion: commonsManifest.mapVersion,
+        createdAt: new Date(),
+      },
+      {
+        _id: pendingId,
+        workspaceId: pendingWorkspaceId,
+        mapVersion: 'pending-m0',
+        createdAt: new Date(),
+      },
+      {
+        _id: unknownId,
+        workspaceId: unknownWorkspaceId,
+        mapVersion: unknownMapVersion,
+        createdAt: new Date(),
+      },
+    ]);
+
+    const dryRun = await migrateLegacyOfficeMapsToVivo(tenancy.offices);
+    expect(dryRun).toEqual({
+      fromMapVersions: [commonsManifest.mapVersion],
+      toMapVersion: vivoManifest.mapVersion,
+      candidates: 1,
+      updated: 0,
+      remaining: 1,
+    });
+    expect((await tenancy.offices.findById(legacyId).lean())?.mapVersion).toBe(
+      commonsManifest.mapVersion,
+    );
+
+    expect(await migrateLegacyOfficeMapsToVivo(tenancy.offices, true)).toEqual({
+      fromMapVersions: [commonsManifest.mapVersion],
+      toMapVersion: vivoManifest.mapVersion,
+      candidates: 1,
+      updated: 1,
+      remaining: 0,
+    });
+    expect(await migrateLegacyOfficeMapsToVivo(tenancy.offices, true)).toEqual({
+      fromMapVersions: [commonsManifest.mapVersion],
+      toMapVersion: vivoManifest.mapVersion,
+      candidates: 0,
+      updated: 0,
+      remaining: 0,
+    });
+    expect(await tenancy.offices.findById(legacyId).lean()).toMatchObject({
+      _id: legacyId,
+      workspaceId: legacyWorkspaceId,
+      mapVersion: vivoManifest.mapVersion,
+    });
+    expect((await tenancy.offices.findById(pendingId).lean())?.mapVersion).toBe('pending-m0');
+    expect((await tenancy.offices.findById(unknownId).lean())?.mapVersion).toBe(unknownMapVersion);
   });
 
   it('creates one owner and an office record atomically and reconciles idempotent retries', async () => {

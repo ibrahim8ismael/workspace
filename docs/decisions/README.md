@@ -8,7 +8,7 @@ Agreed choices come from the supplied project brief. A recommended default is us
 
 **B2B SaaS for companies and their teams**, confirmed by the owner on 2026-11-05. See the [product plan](../product/B2B_SAAS.md). Payments remain excluded from MVP.
 
-React + TypeScript application UI; Phaser renderer rewrite; NestJS HTTP with Socket.IO realtime; MongoDB/Mongoose durable state; Redis and BullMQ; first-party opaque cookie sessions; self-hosted LiveKit integration; Caddy and Docker; no MVP billing. Reuse suitable Open Office For All frontend/assets after provenance review. Keep a single canonical office owner initially.
+React + TypeScript application UI; Phaser renderer rewrite; NestJS HTTP with Socket.IO realtime; MongoDB/Mongoose durable state; Redis and BullMQ; first-party opaque cookie sessions; self-hosted LiveKit integration; Caddy and Docker; no MVP billing. The owner confirmed on 2026-11-10 that the supplied OpenOfficeForAll frontend, layout and styles are the product UI; replace its legacy services with this project's APIs and Socket.IO. Preserve asset provenance and keep the separately approved Commons map. See the [integration plan](../migration/OPENOFFICE_UI_INTEGRATION.md). Keep a single canonical office owner initially.
 
 ## CP01 accepted decisions (2026-11-08)
 

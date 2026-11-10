@@ -9,7 +9,7 @@ See [web/shared integration](WEB_IMPORT.md) and [pinned source manifest](UPSTREA
 ## Import sequence
 
 1. Record commit, copied paths, source terms/notices and modifications. Inventory each asset's provenance; block unresolved/private third-party art.
-2. Import the smallest reusable UI, one avatar/object and map metadata needed for M0. React/SVG procedural art may need export or a Phaser rewrite; individual PNG frames can remain textures.
+2. Use the owner-supplied OpenOfficeForAll frontend, layout and styles as the product UI. Replace obsolete service/data calls screen by screen; do not rebuild a parallel shell. The current implementation steps are tracked in [OpenOfficeForAll UI integration](OPENOFFICE_UI_INTEGRATION.md). Individual upstream map data still requires its own provenance review; the separately approved Commons map remains canonical.
 3. Extract pure geometry/navigation/seat/zone helpers into `packages/world` after review. Define stable object IDs and the immutable map contract.
 4. Mount Phaser with a typed React bridge. Prove pixel sampling, anchors, occlusion and complete cleanup using the real sample.
 5. Replace `useOffice` raw-WebSocket integration with Socket.IO adapters; the protocols are not interchangeable. Replace localStorage account/admin/invite secrets with server session/ticket/role flows.

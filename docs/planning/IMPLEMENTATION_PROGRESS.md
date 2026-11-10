@@ -432,6 +432,14 @@ Accessibility review found that the live map was not keyboard-focusable while Ph
 
 Validation: mocked Chromium Playwright E2E passed, including map focus, Tab traversal to Busy, movement on the map, release-to-stop, and no movement when an action button receives arrow keys. Web typecheck, targeted ESLint and whitespace checks passed. Formal screen-reader and installed Chrome/Edge review remain open; no browser matrix acceptance is claimed. CP07 is the next implementation dependency.
 
+## CP06.10e — Local live UI, API and Socket.IO smoke (2026-11-10)
+
+With the owner handling the local development-certificate warning in Zen, the Docker/Caddy app was opened at `https://localhost:8443`. The authenticated company view entered the office through the real API and Socket.IO path; the page showed one connected participant and the live Commons map. Keyboard movement changed the followed map view. Busy updated the participant roster, then availability was restored to Available. The text-chat panel correctly stayed disabled because text messaging is not implemented.
+
+The first real two-browser E2E run passed admission, remote movement/presence, dropped-delta recovery, heartbeat-loss cleanup, fresh-ticket re-entry and seat contention before exposing two test-driver issues in the final wall check: the route crossed the table's seat tile, then keyboard focus remained on the seat button. The test now routes via a clear tile and refocuses the map. The corrected `pnpm test:e2e:live` passed its full Chromium scenario against the local Docker stack. The earlier API suite passed 79/79 tests. These checks prove the current local integration, not production/browser-matrix acceptance.
+
+The running default screen is the new AuthApp/account shell; the original OpenOfficeForAll UI remains unreachable from the entry point. The owner has now confirmed the supplied interface and styles as the product UI. Its local identity, raw WebSocket, P2P and legacy map assumptions require replacement while its shell and reusable components are restored. See the [integration plan](../migration/OPENOFFICE_UI_INTEGRATION.md), [browser client status](../../apps/web/README.md), and [upstream import record](../migration/WEB_IMPORT.md). Zen manual review does not close the accepted Chrome/Edge, formal visual, or screen-reader gates.
+
 ## CP07.1 — Experimental permit policy state
 
 Implemented `spikes/media-enforcement/permit-state.mjs`: default denial, guard epoch/nonce/sequence checks, exact actor/room/source/version bindings, five-second request-start deadlines, atomic snapshots, empty-snapshot removal and irreversible explicit generation retirement during the process lifetime. The caller must supply monotonic time and authenticate strict policy DTOs. No production integration exists.
@@ -565,6 +573,12 @@ Added `sfu-lease.sh` as the pinned SFU container's PID-1 wrapper. Authenticated 
 Actual full two-room/source/policy-loss run killed both guardian and watchdog. SFU exited through its local lease; no host process remained to send a Docker stop. Last decoded video 4672ms, active audio **5045ms**, second-room video 4710ms after fault initiation. Docker inspect confirmed stopped before cleanup; original/refreshed replay false and guard epoch changed. Twenty regression tests passed. A failed controller container from the initial restart attempt was explicitly removed.
 
 Remaining limits: experiment uses a synthetic controller and local ICE/TCP; no assertion covers a frozen kernel/VM, malicious authorized lease writer, or production host fencing. Docker daemon was not terminated because the dev stack is shared; the successful fallback path performs no Docker control operation at the fault. Full deployment acceptance remains separate.
+
+## OpenOfficeForAll UI migration — inventory and boundary (2026-11-10)
+
+The owner confirmed that the supplied OpenOfficeForAll app, layout, reusable components and styles are the product UI. Repository audit confirmed the upstream files and MIT/provenance notices are present at pinned commit `23d6b8999396f9e9d51291bf85bd7b72161f833f`; `main.tsx` currently routes around them to the newer AuthApp. The supplied `App.tsx` combines UI with legacy login/token storage, slug-based workspace services, `/config`, raw WebSocket events and P2P media. Current `ApiClient`/`OfficeClient` already cover cookie sessions, company APIs, office bootstrap/tickets and Socket.IO. The integration map and ordered migration are documented in [OPENOFFICE_UI_INTEGRATION.md](../migration/OPENOFFICE_UI_INTEGRATION.md).
+
+Stage 1 inventory is complete. Next is restoring the supplied shell and moving the supported account/company journey into its visual system, then adapting office state and admission to the existing client. Keep the Commons map, defer unavailable chat/calendar/edit/media operations, preserve upstream notices, and ship each completed code/documentation slice in its own pushed commit.
 
 ## CP07.20 — Late-policy cutoff and fail-closed cold bootstrap (2026-11-10)
 

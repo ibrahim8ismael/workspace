@@ -22,6 +22,8 @@ Local frozen/offline pnpm install succeeds. Browser smoke checks exercised the d
 
 Current boundary (2026-11-08): NestJS now exposes account/session/company APIs in addition to liveness. `/api/workspaces` requires authentication and uses the new UUID-based DTOs; the imported client still expects the legacy contract. The liveness-only/404 behavior observed during the original import smoke test is historical. Legacy account, socket and media integration remains pending. The visual check did not authenticate a user, create a company, join multiplayer or verify calls. Those remain product implementation gates; no mock service or automatic legacy backend was introduced.
 
+**Owner direction updated 2026-11-10:** OpenOfficeForAll's supplied app UI and styles are the product UI. The UI remains unreachable from the current default entry until its old API/storage/socket/media calls are adapted. See the [integration inventory and steps](OPENOFFICE_UI_INTEGRATION.md). The 2026-11-08 visual smoke summary above is historical; current local account/company/socket evidence is tracked in [implementation progress](../planning/IMPLEMENTATION_PROGRESS.md#cp0610e--local-live-ui-api-and-socketio-smoke-2026-11-10).
+
 ## Verified commands
 
 - `pnpm install --offline --frozen-lockfile`: passed with the current lockfile.

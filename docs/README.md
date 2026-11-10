@@ -1,16 +1,16 @@
 # Gather Lite project documentation
 
-Current review (2026-11-08): read the [documentation/code drift report](planning/2026-11-08_DRIFT_REPORT.md) and [full MVP completion plan](planning/PROJECT_COMPLETION_PLAN.md) for the current baseline, remaining work, dependencies and evidence gates. Historical evidence retains its original dates; current documentation corrections are tracked in the [implementation progress](planning/IMPLEMENTATION_PROGRESS.md). The completion plan is proposed delivery work, not approval of open decisions or release signoff.
+Current review (2026-11-10): read the [documentation/code drift report](planning/2026-11-08_DRIFT_REPORT.md), [full MVP completion plan](planning/PROJECT_COMPLETION_PLAN.md), and [OpenOfficeForAll UI integration plan](migration/OPENOFFICE_UI_INTEGRATION.md) for the current baseline, remaining work, dependencies and evidence gates. Historical evidence retains its original dates; current documentation corrections are tracked in the [implementation progress](planning/IMPLEMENTATION_PROGRESS.md). The completion plan is proposed delivery work, not approval of open decisions or release signoff.
 
-Status: initial backend implemented; office/client/media integration pending · Updated: 2026-11-08
+Status: CP00–CP07 locally implemented/proven; supplied OpenOfficeForAll UI migration and product media integration pending · Updated: 2026-11-10
 
-Gather Lite is a **B2B SaaS virtual office for companies and their teams**, delivered through a browser with React application controls, a Phaser world, NestJS APIs, Socket.IO authoritative office state, MongoDB/Mongoose durable data, Redis/BullMQ jobs, and self-hosted LiveKit media. The monorepo tooling, imported web/shared client, backend account/session/company authorization, transactional audit records and encrypted mail outbox/worker are implemented. The imported frontend is not connected to those APIs. Phaser, office admission/simulation, Socket.IO and production media enforcement remain planned. The [implemented API reference](contracts/AUTH_AND_ROLES_API.md) describes current backend contracts; other schemas, routes and acceptance checks retain their proposal status unless supported by code and evidence. Local backend tests do not establish provider, deployment or pilot acceptance.
+Gather Lite is a **B2B SaaS virtual office for companies and their teams**, delivered through a browser with React controls, a Phaser world, NestJS APIs, Socket.IO authoritative office state, MongoDB/Mongoose data, Redis/BullMQ jobs, and a planned self-hosted LiveKit product path. Account/company APIs, office admission/runtime, a current authenticated browser integration, transactional audit and encrypted mail outbox/worker are implemented and locally verified. The supplied OpenOfficeForAll source is present, but its shell is not yet the default and its legacy service calls are not connected; the owner has selected that UI and its styles as the product base. The new AuthApp and office screen currently provide the integration proof. Product LiveKit media and release acceptance remain open. See the [current API reference](contracts/AUTH_AND_ROLES_API.md) and [UI migration plan](migration/OPENOFFICE_UI_INTEGRATION.md); proposed routes and release criteria remain proposals unless code/evidence supports them.
 
 ## Product direction
 
 B2B SaaS is an agreed requirement. Read the [B2B SaaS product plan](product/B2B_SAAS.md) for company tenancy, onboarding, administration and commercial scope. The owner accepted one company/workspace/office and verified-user self-service onboarding on 2026-11-08; a future organization hierarchy requires a separate decision. Payments remain excluded from MVP.
 
-Current implementation checkpoints: CP00–CP03 are complete. CP04 connects browser accounts/companies and delivery; its [delivery batches](planning/CP04_BROWSER_AND_DELIVERY.md) distinguish local browser evidence from remaining session, infrastructure and real-mail work. See [owner decisions](decisions/2026-11-08_CP01.md), [office v1 contract](contracts/OFFICE_V1.md) and [progress](planning/IMPLEMENTATION_PROGRESS.md). Authoritative realtime office/media integration remains pending.
+Current implementation checkpoints: CP00–CP07 have local implementation or experimental proof; production/release acceptance remains open. CP04 connects browser accounts/companies and delivery; CP05/CP06 add authoritative office realtime and a live Commons browser view; CP07 is an isolated local media-enforcement proof, not product voice. See [owner decisions](decisions/README.md), [office v1 contract](contracts/OFFICE_V1.md), and [progress](planning/IMPLEMENTATION_PROGRESS.md). CP08 media UX and migration of the supplied UI onto current services remain next.
 
 ## Start here
 
@@ -60,7 +60,7 @@ Repository setup is tracked in [setup progress](planning/SETUP_PROGRESS.md).
 
 The [implemented repository layout](architecture/REPOSITORY.md) records the refined module grouping and package ownership.
 
-The latest [web/shared import](migration/WEB_IMPORT.md) records the actual frontend source layout and its current limitations.
+The [web/shared import](migration/WEB_IMPORT.md) records source provenance; the [OpenOfficeForAll UI integration plan](migration/OPENOFFICE_UI_INTEGRATION.md) records the owner-approved migration into current APIs and Socket.IO.
 
 Backend work starts from the [authentication and company roles implementation plan](planning/AUTH_AND_ROLES_IMPLEMENTATION.md), written before source implementation.
 

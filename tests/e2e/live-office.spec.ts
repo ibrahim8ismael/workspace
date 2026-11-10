@@ -365,13 +365,15 @@ test('live two-browser admission, movement, collision, and seat contention', asy
     await expect(memberPage.getByRole('button', { name: contestedSeat })).toBeVisible();
 
     const winnerCanvas = winnerPage.locator('.live-commons-scene canvas');
-    let beforeBoundary = await participantPosition(winnerPage, winnerName);
-    let boundaryX = Math.floor(beforeBoundary.x / 32);
-    let boundaryY = Math.floor(beforeBoundary.y / 32);
-    await moveToTile(winnerPage, winnerName, { tx: boundaryX, ty: 1 });
-    beforeBoundary = await participantPosition(winnerPage, winnerName);
-    boundaryX = Math.floor(beforeBoundary.x / 32);
-    boundaryY = Math.floor(beforeBoundary.y / 32);
+    // Reach a clear tile just inside the north wall. Moving straight up from (5, 3) crosses
+    // the northwest table's seat tile, so route through (6, 3) before checking the wall. The
+    // seat button took keyboard focus, so focus the map again before sending movement input.
+    await winnerCanvas.click();
+    await moveToTile(winnerPage, winnerName, { tx: 6, ty: 3 });
+    await moveToTile(winnerPage, winnerName, { tx: 6, ty: 1 });
+    const beforeBoundary = await participantPosition(winnerPage, winnerName);
+    const boundaryX = Math.floor(beforeBoundary.x / 32);
+    const boundaryY = Math.floor(beforeBoundary.y / 32);
     await winnerCanvas.click();
     await holdKey(winnerPage, 'ArrowUp', 800);
     const atWall = await participantPosition(winnerPage, winnerName);

@@ -1,6 +1,6 @@
 # Backend API
 
-NestJS backend-only authentication and company RBAC. The frontend is unchanged and is not integrated with these endpoints. No Docker command is required by the code or test suite.
+NestJS API, company authorization, office admission and Socket.IO runtime. The browser currently connects account/company flows and the company-scoped Commons office through same-origin HTTP and Socket.IO. The supplied OpenOfficeForAll UI remains to be migrated to these adapters. Backend/API unit and integration tests do not require Docker; the full live browser E2E uses the local Compose stack.
 
 ## Configure and run
 
@@ -30,4 +30,4 @@ See [backend API guide](../../docs/contracts/AUTH_AND_ROLES_API.md) for routes, 
 
 Implemented: pending registration, password-bound verification, mailbox recovery, login, opaque cookie sessions, CSRF/Origin checks, session rotation/revocation/extension, password change, Mongo-backed abuse budgets, company owner/member authorization, recipient-bound invitations, atomic ownership transfer and exact capacity counters. Audit events and encrypted transactional mail outbox records are committed with domain mutations.
 
-Email delivery requires separately configuring and explicitly starting the SMTP/BullMQ worker. SMTP provider delivery, production proxy behavior, independent audit/recovery mirroring, full compromised-password datasets, distributed load targets and office/media authorization are not established by local API tests. See the remaining release gates in the backend guide. No frontend adapter, socket gateway, media grant issuer or platform-superadmin endpoint was added.
+Email delivery requires separately configuring and explicitly starting the SMTP/BullMQ worker. SMTP provider delivery, production proxy behavior, independent audit/recovery mirroring, full compromised-password datasets, distributed load targets, deployment-level media authorization and LiveKit grant issuance are not established by local API tests. The browser `ApiClient`/`OfficeClient` currently connect account/company, office bootstrap/tickets and the `/office` Socket.IO gateway; the supplied UI migration is tracked separately. No platform-superadmin endpoint was added.

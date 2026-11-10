@@ -803,3 +803,22 @@ no real audio cutoff or media UX acceptance is claimed.
 This CP08.1 batch is committed and pushed separately. Next: wire the proved CP07 guard/supervisor to
 real application membership and the LiveKit adapter; only then expose the upstream microphone
 controls and run two-browser audio, cutoff, revocation, reconnect, and company-isolation checks.
+
+## CP08.2a — guarded media contract boundary (2026-11-10)
+
+Added strict shared schemas for a session-bound media-token request/response and the CP07 machine
+policy exchange: guard boot epoch/nonce challenge, bounded signed snapshot with generation/identity/
+room/source permits, and exact positive-sequence installation acknowledgement. Token requests cannot
+select a room or source, policy sources are deduplicated, and a policy snapshot cannot contain two
+permits for the same generation/identity.
+
+This step defines wire shapes only. There is still no machine-authenticated API handler, application
+policy publisher, installation-ack processing, media-token endpoint, or active LiveKit client. The
+media controls remain unavailable until those pieces are implemented and verified against the
+guard.
+
+Verification: `pnpm test:contracts` passed (24 tests), including rejection of client-selected room,
+zero versions, duplicate permits/sources, and malformed policy challenges; contracts TypeScript
+typecheck and `pnpm lint` passed. The contract batch is committed and pushed separately. Next:
+implement the private signed policy pull/ack API, connect it to current office conversation state,
+and test that no token can be issued before the exact permit-install acknowledgement.

@@ -242,6 +242,9 @@ cutoff proof still needs application/deployment integration for release A07. Con
 guarded grant and LiveKit path before exposing microphone controls; keep this phase's real-audio
 acceptance open until that path passes.
 
+CP08.2a now defines strict shared media-token, policy-pull, permit-snapshot and install-ack schemas.
+The routes, application-state bridge, and token signer remain to be implemented.
+
 1. Implement deterministic pairing, one active conversation per participation, explicit opt-in and availability gates. Freeze ties, suppression after explicit leave and distance/debounce semantics; never debounce security revocation.
 2. Track conversation state/version/member set/generation in office-owner memory. Create isolated rooms per generation; retire the old generation before granting a replacement. Handle boundary churn with bounded recovery budgets.
 3. Add protected HTTP media-token issuance bound to the same session's live participation and current conversation. Resolve identity/room/sources on the server; install the exact permit, recheck policy, then issue a short-lived grant.

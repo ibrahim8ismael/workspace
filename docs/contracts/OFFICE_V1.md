@@ -106,6 +106,8 @@ Issuance limits protect reconnect churn without replacing HTTP/auth limits. Sepa
 
 D02 is accepted all-LiveKit. Source-specific JWT/permit/webhook schemas and the actual installed-ack/shutdown protocol are frozen against the pinned successful CP07 proof before production CP08 media. No JWT signing or media permission is established by these public event shapes. Full company lifecycle/export/retention and actual supported browser-version evidence remain at CP09/CP11 gates.
 
+CP08.2a adds shared HTTP DTOs for a scoped media-token request/response and the signed guard policy pull/snapshot/install-ack boundary. They are schemas only; no route signs tokens or consumes acknowledgements yet.
+
 ## Validation evidence to record
 
 Focused contract checks cover secret/identity overposting, map hash/path/version mismatch, invalid protocol/pending maps, out-of-bounds spawn, non-intent movement, duplicate/inconsistent occupancy, stale epoch/base/replayed delta, bounded acknowledgement errors, Unicode byte limits, oversized aggregate snapshots and private end notices. Existing auth/company integration checks validate real response compatibility. Runtime replay/expiry/race/flood/lease/media enforcement scenarios must still run with their actual implementations; fixtures cannot close A04–A08.

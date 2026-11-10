@@ -9,5 +9,6 @@ export * from './http/office.js';
 export * from './realtime/office.js';
 export * from './http/profile.js';
 export * from './http/chat.js';
+export * from './http/media.js';
 export * from './realtime/conversations.js';
 export * from './realtime/events.js';

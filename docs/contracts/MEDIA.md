@@ -6,6 +6,8 @@ CP01 public opt-in/conversation/meeting shapes are defined in [OFFICE_V1.md](OFF
 
 CP08.1 now implements the application-side opt-in/availability pairing state and private `conversation:update` delivery. It still reports `mediaReady: false`; there is no media-token endpoint or usable LiveKit join path yet. The OpenOfficeForAll audio/video controls must remain unavailable until the application checks current membership/session/conversation policy, installs and acknowledges the proven generation permit, rechecks policy, and issues a scoped token.
 
+CP08.2a adds strict shared schemas for the media-token response/request and the guard's signed policy challenge, bounded permit snapshot, and exact installation acknowledgement. These DTOs alone do not enable the route or authorize a client. The policy handler and token endpoint remain pending.
+
 ## Libraries and network boundaries
 
 | Component | Responsibility |

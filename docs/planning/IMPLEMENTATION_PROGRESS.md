@@ -634,6 +634,12 @@ Session expiry cleanup moved into a single invisible account-root hook so removi
 
 Web typecheck, focused ESLint/format checks, production build and all 32 current web tests passed. Mocked Chromium E2E passed direct office navigation, absence of the removed panels, clean return, Socket.IO controls and expiry-driven sign-out. The first live run exposed a test-interception timing dependency: direct navigation loads Socket.IO before the old late WebSocket interception. Registering the probe before navigation corrected that setup without weakening the dropped-delta/resync assertions. The rebuilt local Docker frontend then passed the full two-browser live E2E, including movement, dropped-delta recovery, reconnect, seat contention, company isolation and returning/re-entering through the company directory. Chrome/Edge-specific acceptance remains separate.
 
+## OpenOfficeForAll migration — owner reselects supplied Vivo map (2026-11-10)
+
+The owner directed using the same Vivo map and UI styles from OpenOfficeForAll, with this project's APIs. This supersedes the earlier D04 decision to replace Vivo with original Commons geometry. Source review confirms `apps/shared/maps/vivo.js` declares its geometry as measurements from Gather 2.0; this source note is preserved in the migration plan. No runtime change is claimed in this entry. The current client still mounts the Commons Phaser renderer and the API registry accepts Commons only.
+
+Implementation order: establish the imported map's versioned server manifest and authoritative collision/seat geometry; add a safe office-map version backfill plan; connect the upstream `VivoScene` and office UI to `OfficeClient`; replace account/workspace legacy service calls with `ApiClient`; then verify map movement, collision, seats, reconnect and company isolation in two browsers. Preserve the imported MIT notices and make the Gather-derived geometry provenance explicit in release evidence.
+
 ## CP07.20 — Late-policy cutoff and fail-closed cold bootstrap (2026-11-10)
 
 Added authenticated delayed-policy fault (1500ms replies vs 1000ms guard abort). Room retirement is postponed until after cutoff to avoid masking lease-renewal errors. A startup timing failure led to stronger default-deny SFU bootstrap: no LiveKit child starts until a valid request-start lease newer than this boot exists. This replaces the prior three-second startup grace; stale pre-boot allow files cannot bootstrap media.

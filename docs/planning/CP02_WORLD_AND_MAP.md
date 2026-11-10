@@ -1,6 +1,8 @@
 # CP02 — pure world rules and immutable map
 
-Started: 2026-11-08. Parent: [completion plan](PROJECT_COMPLETION_PLAN.md#cp02--establish-one-immutable-map-and-asset-catalog). Wire boundary: [office v1](../contracts/OFFICE_V1.md). CP02 is complete.
+Started: 2026-11-08. Parent: [completion plan](PROJECT_COMPLETION_PLAN.md#cp02--establish-one-immutable-map-and-asset-catalog). Wire boundary: [office v1](../contracts/OFFICE_V1.md). Original Commons implementation completed; Vivo adoption was reopened by owner direction on 2026-11-10. See the [superseding map/UI decision](../decisions/2026-11-08_CP02.md#superseding-owner-direction--2026-11-10) and [UI migration plan](../migration/OPENOFFICE_UI_INTEGRATION.md#owner-direction-adopt-the-supplied-map-and-ui-2026-11-10).
+
+The original CP02 rejection below is historical. The owner has since chosen the imported Vivo map from OpenOfficeForAll and this project's own APIs; coordinate the new map version, geometry, runtime collision/seats, persistence backfill and client renderer before replacing Commons in the running app.
 
 ## Working arrangement
 

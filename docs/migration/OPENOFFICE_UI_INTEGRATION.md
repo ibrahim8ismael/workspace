@@ -12,6 +12,12 @@ The source is pinned to commit `23d6b8999396f9e9d51291bf85bd7b72161f833f`; prese
 
 Company selection opens the office shell directly after authorized detail loading. The intermediate company-details page, owner invitation panel and repeated sign-in status cards are removed from the active UI. The office Back action returns to the company directory. Session expiry checks run invisibly at the account root. Dedicated account-security session management remains available. Owner invitation APIs and their unmounted component are retained; this plan no longer requires their panel in the main journey. Historical test results below describe the UI before this simplification; current regression coverage asserts direct office navigation and absence of those panels.
 
+## Owner direction: adopt the supplied map and UI (2026-11-10)
+
+The owner has now directed the project to use the OpenOfficeForAll UI styles and its same Vivo map, while connecting only this project's APIs and Socket.IO. This supersedes the earlier Commons-only map choice recorded in CP02. The checked-in upstream `apps/shared/maps/vivo.js` header identifies its source as measurements of Gather 2.0's Vivo office; that provenance is retained here so the dependency is visible and must travel with the import notices.
+
+The live app has not completed this migration yet: `main.tsx` still mounts `src/features/auth/AuthApp.tsx`, and its office mounts the Commons renderer. The upstream `App.tsx` and `VivoScene.tsx` remain disconnected because they contain legacy service calls and world assumptions. The map cannot be swapped on the client alone: server bounds, collision, spawn, seats, office versions and join tickets must agree with Vivo. Complete the map contract and server geometry first, then adapt the actual upstream map and workspace UI to `ApiClient` and `OfficeClient`, keeping unsupported legacy chat, calendar, editing and media actions unavailable.
+
 ## Repository inventory
 
 | UI area | Supplied frontend source | Current integration / incompatibility | Target |

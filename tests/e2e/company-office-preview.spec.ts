@@ -426,6 +426,15 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
     .poll(() => mediaTokenRequests)
     .toEqual([{ participationId, conversationVersion: 2 }]);
   await expect.poll(() => liveKitSocketAttempts).toBeGreaterThan(0);
+  await expect(page.getByRole('alert')).toContainText('Proximity audio disconnected');
+  const mapAfterMediaError = page.locator('.office-scene svg.office-map');
+  await expect(mapAfterMediaError).toHaveCount(1);
+  const movementCountAfterMediaError = movementInputs.length;
+  await mapAfterMediaError.focus();
+  await page.keyboard.down('ArrowRight');
+  await expect.poll(() => movementInputs.length).toBeGreaterThan(movementCountAfterMediaError);
+  await page.keyboard.up('ArrowRight');
+  await expect(mapAfterMediaError).toHaveCount(1);
   await page.getByRole('button', { name: 'Opt out of nearby voice' }).click();
   await expect(
     page.getByText('Nearby voice is off. Your microphone will stay off until you turn it on.'),

@@ -1020,3 +1020,12 @@ audio measured **668 ms** with at least six additional active samples. Both are 
 second cutoff budget. `pnpm test:media-live` passed the focused real API/guard/SFU/browser test;
 Prettier and lint also passed. Permission denial plus map usability, full UI component wiring,
 opt-out/away and server-side revocation/failure cases remain in CP08.5.
+
+## CP08.5.2 — office map survives a media-service failure (2026-11-11)
+
+Extended `tests/e2e/company-office-preview.spec.ts`. With the test media WebSocket deliberately
+closed after the UI requests a media grant, the supplied company-office UI shows its media error,
+keeps the live Vivo map mounted and connected, and continues sending keyboard movement to the office
+Socket.IO server. This is a mocked-API/UI E2E resilience check, not microphone permission-denial or
+real-SFU evidence. `pnpm test:e2e` is the targeted verification for this step; permission denial with
+the full UI and the remaining CP08.5 server-side revocation/failure cases remain open.

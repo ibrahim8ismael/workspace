@@ -976,3 +976,35 @@ tests (24), world tests (31), media-enforcement tests (25), Commons asset tests 
 and Vivo map IDs/manifests validated independently, with all committed Commons artifact hashes
 unchanged. The web build still reports the existing large preview chunk (about 1.39 MB minified)
 and lazy LiveKit chunk (about 532 kB); this map-check fix does not alter that bundling.
+
+## CP08.4 — real API grants through guarded LiveKit audio (2026-11-11)
+
+Added an opt-in end-to-end media fixture, `pnpm test:media-live`. The existing API integration test
+creates a real nearby pair, starts a pinned LiveKit SFU and the separate CP07 application-policy
+guard, and lets the guard install/ACK the active policy over signed local HTTP. It issues both
+participants' short-lived grants through the actual API route. A Vite-served browser fixture loads
+the production `ProximityAudioSession` class in two Playwright Chromium clients with fake microphones.
+Both clients join through the guard; each reports the other current participation as its only remote
+audio identity, with active waveform samples. The fixture is opt-in and keeps its Docker ports on
+loopback.
+
+The selected pair then ends through the API Socket.IO command and the guard ACKs the empty policy.
+The browser fixture applies the production session's stop operation and measures decoded audio
+samples at 20 ms intervals: **0 ms measured cutoff**, with both sample counters stable after
+cleanup. This proves the real API token → guard → LiveKit → Chromium audio path and the session stop
+path. The test does not mount `CompanyOfficePreview`; it does not independently prove the full UI
+component responds to Socket.IO state changes. That cross-layer UI proof, permission denial and the
+CP08.5 revocation/failure matrix remain open.
+
+After the explicit leave, both original tokens were still unexpired and rejected by the guard after
+restarting the guard with a fresh epoch and restarting the pinned SFU. The first run exposed a
+fixture-only ICE TCP port mismatch: the server advertised its container port while Docker mapped a
+different host port. The fixture now sets its advertised ICE TCP port equal to the loopback-published
+host port. Chromium itself was installed into Playwright's local cache to run this opt-in test; no
+browser binary or generated token was added to the repository. Targeted verification passed one
+CP08.4 API integration test (68 unrelated tests skipped), web/API test typechecks, lint and format.
+The full `pnpm check` also passed: all 215 contract, world, media-enforcement, asset, shared,
+web and API tests, plus the production build. The build retains the existing large preview bundle
+warning (about 1.39 MB minified) and the LiveKit client chunk (about 532 kB). The fixture's Vite
+child now receives only the process/runtime variables it needs instead of inheriting the API test
+process environment.

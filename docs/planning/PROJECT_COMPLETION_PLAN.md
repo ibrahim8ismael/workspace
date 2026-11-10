@@ -252,14 +252,20 @@ after pair end and after a fresh-epoch guard restart. The focused API process-in
 web/type/lint/build checks and mocked office browser flow pass. The policy remains process-local.
 This does not prove actual LiveKit join/audio, SFU forwarding cutoff or production deployment.
 
-**CP08.4 — actual application-grant media fixture (pending).** Extend
-`apps/api/test/auth.integration.test.ts`, `spikes/media-enforcement/guard-process.mjs` and
-`spikes/media-enforcement/media-cutoff.mjs` to use the pinned LiveKit server with the actual API
-grant and policy pull/ACK path. Keep the fixture opt-in and isolated. Start two browser clients with
-fake audio devices, route signaling only through the guard, assert each receiver subscribes to the
-other current participation, then end the pair and measure the last decoded audio sample against
-the existing eight-second cutoff. Assert the old token is rejected after guard/SFU restart. Clean up
-the fixture SFU, browser pages, guard and temporary policy/retirement data on every exit.
+**CP08.4 — actual application-grant media fixture (complete locally, 2026-11-11).** Added the
+opt-in `pnpm test:media-live` path. It starts the pinned LiveKit image
+`livekit/livekit-server@sha256:25cd902de7cacbd5f1f779f6a6ac1eae20ba8f56b0935934ce6b0ab80d1e3d20`,
+the real CP07 guard process connected to the Nest test API over signed pull/ACK, and two Chromium
+clients with fake microphones. Both API-issued, current-participation grants publish/subscribe only
+through the guard; each browser receives active audio from exactly its paired participation. The
+fixture loads the production `ProximityAudioSession` implementation, ends the server-side pair,
+applies the session stop, and measures the final decoded waveform sample. The observed cutoff was
+**0 ms at a 20 ms sample interval**, with stable post-stop counters. It then verifies both still-
+unexpired original grants are denied after guard and SFU restart. Containers, browser pages,
+processes and temporary policy/retirement state are cleaned up. This local fixture does not mount
+the full `CompanyOfficePreview` or verify its Socket.IO-to-component stop wiring; that belongs in
+CP08.5. Full `pnpm check` passed all 215 tests and the production build. This is real media-path
+evidence, not production deployment acceptance.
 
 **CP08.5 — revocation/failure matrix (pending).** In the same fixture, exercise permission denial,
 mute/unmute, opt-out, away, office leave, membership/session revocation, office/API lease expiry,

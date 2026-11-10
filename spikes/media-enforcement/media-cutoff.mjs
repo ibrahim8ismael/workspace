@@ -13,6 +13,11 @@ import {
   AccessToken,
   TokenVerifier,
 } from '../../apps/api/node_modules/livekit-server-sdk/dist/AccessToken.js';
+if (process.argv.includes('--application-grant-clients')) {
+  const { runApplicationMediaCutoffCli } = await import('./application-media-client.mjs');
+  await runApplicationMediaCutoffCli();
+  process.exit(0);
+}
 if (!process.argv.includes('--run-local'))
   throw new Error('Requires --run-local and authorized local Docker');
 const context = process.env.CP07_DOCKER_CONTEXT || 'orbstack';

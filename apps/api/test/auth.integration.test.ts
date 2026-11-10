@@ -9,12 +9,13 @@ import { MongoMemoryReplSet } from 'mongodb-memory-server-core';
 import request from 'supertest';
 import type { Response as HttpResponse } from 'supertest';
 import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
-import { spawn, type ChildProcessByStdio } from 'node:child_process';
+import { execFile as execFileCallback, spawn, type ChildProcessByStdio } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
-import type { Readable } from 'node:stream';
+import type { Readable, Writable } from 'node:stream';
+import { promisify } from 'node:util';
 import { decryptMail, type MailPayload } from '@gather/delivery';
 import commonsManifest from '@gather/assets/manifests/commons-map.json' with { type: 'json' };
 import vivoManifest from '@gather/assets/manifests/vivo-map.json' with { type: 'json' };
@@ -81,11 +82,228 @@ const encryption = randomBytes(32);
 const mediaMachineKey = randomBytes(32);
 const livekitApiKey = 'gather-test-key';
 const livekitApiSecret = randomBytes(32).toString('base64url');
+const runLiveMediaFixture = process.env['CP08_REAL_MEDIA'] === '1';
+const liveKitFixtureImage =
+  'livekit/livekit-server@sha256:25cd902de7cacbd5f1f779f6a6ac1eae20ba8f56b0935934ce6b0ab80d1e3d20';
+const execFileAsync = promisify(execFileCallback);
 let app: NestExpressApplication;
 let mongo: MongoMemoryReplSet;
 let identities: IdentityModels;
 let tenancy: TenancyModels;
 let outbox: OutboxService;
+let liveMediaGuardPort: number | undefined;
+
+async function unusedLoopbackPort() {
+  const server = createServer();
+  const port = await listenLoopback(server);
+  await closeHttpServer(server);
+  return port;
+}
+
+async function startViteMediaFixture() {
+  const port = await unusedLoopbackPort();
+  const env: NodeJS.ProcessEnv = { NODE_ENV: 'development' };
+  for (const key of ['PATH', 'HOME', 'TMPDIR', 'TMP', 'TEMP']) {
+    if (process.env[key]) env[key] = process.env[key];
+  }
+  const root = resolve(process.cwd(), '../..');
+  const viteCli = resolve(root, 'apps/web/node_modules/vite/bin/vite.js');
+  const child = spawn(
+    process.execPath,
+    [viteCli, '--host', '127.0.0.1', '--port', String(port), '--strictPort'],
+    { cwd: resolve(root, 'apps/web'), env, stdio: ['ignore', 'pipe', 'pipe'] },
+  );
+  let diagnostics = '';
+  child.stdout.setEncoding('utf8');
+  child.stderr.setEncoding('utf8');
+  child.stdout.on('data', (chunk: string) => {
+    diagnostics += chunk;
+  });
+  child.stderr.on('data', (chunk: string) => {
+    diagnostics += chunk;
+  });
+  const url = `http://127.0.0.1:${port}/test/media-fixture.html`;
+  try {
+    await vi.waitFor(
+      async () => {
+        if (child.exitCode !== null)
+          throw new Error(`Vite media fixture exited: ${diagnostics.slice(-1000)}`);
+        const response = await fetch(url, { signal: AbortSignal.timeout(1000) });
+        const html = await response.text();
+        if (!response.ok || !html.includes('Proximity media integration fixture'))
+          throw new Error('Vite media fixture is not ready');
+      },
+      { timeout: 20000, interval: 100 },
+    );
+  } catch {
+    child.kill('SIGKILL');
+    throw new Error('Vite media fixture did not start');
+  }
+  return {
+    url,
+    origin: new URL(url).origin,
+    stop: async () => {
+      if (child.exitCode !== null || child.signalCode !== null) return;
+      const stopped = new Promise<void>((resolve) => child.once('exit', () => resolve()));
+      child.kill('SIGTERM');
+      await Promise.race([stopped, new Promise((resolve) => setTimeout(resolve, 2000))]);
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill('SIGKILL');
+        await stopped;
+      }
+    },
+  };
+}
+
+async function startLiveKitFixture() {
+  const context = process.env['CP07_DOCKER_CONTEXT'] ?? 'orbstack';
+  const docker = async (...args: string[]) => {
+    try {
+      const result = await execFileAsync('docker', ['--context', context, ...args], {
+        timeout: 30000,
+        maxBuffer: 65536,
+      });
+      return result.stdout.trim();
+    } catch {
+      throw new Error(`LiveKit fixture Docker operation failed: ${args[0]}`);
+    }
+  };
+  const signalingPort = await unusedLoopbackPort();
+  const rtcPort = await unusedLoopbackPort();
+  const config = `port: 7880\nbind_addresses: [0.0.0.0]\nrtc:\n  tcp_port: ${rtcPort}\n  node_ip: 127.0.0.1\n  use_external_ip: false\nkeys:\n  ${livekitApiKey}: ${livekitApiSecret}\n`;
+  const containerId = await docker(
+    'run',
+    '-d',
+    '--restart',
+    'no',
+    '--label',
+    'gather.cp08.fixture=true',
+    '-p',
+    `127.0.0.1:${signalingPort}:7880`,
+    '-p',
+    `127.0.0.1:${rtcPort}:${rtcPort}`,
+    '-e',
+    `LIVEKIT_CONFIG=${config}`,
+    liveKitFixtureImage,
+  );
+  try {
+    await vi.waitFor(
+      async () => {
+        const response = await fetch(`http://127.0.0.1:${signalingPort}`, {
+          signal: AbortSignal.timeout(500),
+        });
+        if (response.status >= 500) throw new Error('LiveKit fixture is not ready');
+      },
+      { timeout: 20000, interval: 250 },
+    );
+  } catch {
+    await docker('rm', '-f', containerId).catch(() => '');
+    throw new Error('Pinned LiveKit fixture did not become ready');
+  }
+  return {
+    containerId,
+    signalingPort,
+    docker,
+    restart: async () => {
+      await docker('rm', '-f', containerId);
+      return startLiveKitFixture();
+    },
+    stop: async () => {
+      await docker('rm', '-f', containerId).catch(() => '');
+    },
+  };
+}
+
+type ApplicationMediaClient = {
+  child: ChildProcessByStdio<Writable, Readable, Readable>;
+  messages: Record<string, unknown>[];
+  getStderr: () => string;
+  send: (message: Record<string, unknown>) => void;
+};
+
+function startApplicationMediaClient(config: {
+  fixtureUrl: string;
+  grants: Array<{
+    serverUrl: string;
+    token: string;
+    conversationVersion: number;
+    generation: string;
+    identity: string;
+  }>;
+}): ApplicationMediaClient {
+  const root = resolve(process.cwd(), '../..');
+  const script = resolve(root, 'spikes/media-enforcement/media-cutoff.mjs');
+  const child = spawn(process.execPath, [script, '--application-grant-clients'], {
+    cwd: root,
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  const messages: Record<string, unknown>[] = [];
+  let stdoutBuffer = '';
+  let stderr = '';
+  child.stdout.setEncoding('utf8');
+  child.stdout.on('data', (chunk: string) => {
+    stdoutBuffer += chunk;
+    let newline = stdoutBuffer.indexOf('\n');
+    while (newline >= 0) {
+      const line = stdoutBuffer.slice(0, newline);
+      stdoutBuffer = stdoutBuffer.slice(newline + 1);
+      try {
+        messages.push(JSON.parse(line) as Record<string, unknown>);
+      } catch {
+        // Ignore non-protocol diagnostics; never print grant-bearing fixture input.
+      }
+      newline = stdoutBuffer.indexOf('\n');
+    }
+  });
+  child.stderr.setEncoding('utf8');
+  child.stderr.on('data', (chunk: string) => {
+    stderr += chunk;
+  });
+  child.stdin.write(JSON.stringify(config) + '\n');
+  child.stdin.on('error', () => {});
+  return {
+    child,
+    messages,
+    getStderr: () => stderr,
+    send: (message) => {
+      if (child.exitCode !== null || child.signalCode !== null) return;
+      try {
+        child.stdin.write(JSON.stringify(message) + '\n');
+      } catch {
+        // A completed fixture may already have closed its command pipe.
+      }
+    },
+  };
+}
+
+async function waitForApplicationMediaMessage(
+  client: ApplicationMediaClient,
+  predicate: (message: Record<string, unknown>) => boolean,
+  label: string,
+) {
+  let result: Record<string, unknown> | undefined;
+  await vi.waitFor(
+    () => {
+      if (client.child.exitCode !== null)
+        throw new Error(`application media client exited before ${label}: ${client.getStderr()}`);
+      result = client.messages.find(predicate);
+      if (!result) throw new Error(`application media client has not emitted ${label}`);
+    },
+    { timeout: 65000, interval: 50 },
+  );
+  return result!;
+}
+
+async function stopApplicationMediaClient(client: ApplicationMediaClient) {
+  if (client.child.exitCode !== null || client.child.signalCode !== null) return;
+  client.send({ kind: 'stop' });
+  const stopped = new Promise<void>((resolve) => client.child.once('exit', () => resolve()));
+  await Promise.race([stopped, new Promise((resolve) => setTimeout(resolve, 2000))]);
+  if (client.child.exitCode === null && client.child.signalCode === null) {
+    client.child.kill('SIGKILL');
+    await stopped;
+  }
+}
 
 function status(response: HttpResponse, expected: number) {
   expect(response.status, response.body.error?.code).toBe(expected);
@@ -123,7 +341,7 @@ function nextSocketEvent<T>(socket: Socket, event: string) {
     socket.once('connect_error', (error) => reject(error));
   });
 }
-type GuardOutput = { kind?: string; sequence?: number };
+type GuardOutput = { kind?: string; sequence?: number; epoch?: string };
 type ApplicationGuard = {
   child: ChildProcessByStdio<null, Readable, Readable>;
   messages: GuardOutput[];
@@ -137,6 +355,7 @@ function startApplicationGuard(options: {
   port: number;
   retirementDirectory: string;
   sfuUpstream: string;
+  origin?: string;
 }): ApplicationGuard {
   const root = resolve(process.cwd(), '../..');
   const script = resolve(root, 'spikes/media-enforcement/guard-process.mjs');
@@ -146,7 +365,7 @@ function startApplicationGuard(options: {
       ...process.env,
       CP07_KEY: livekitApiKey,
       CP07_SECRET: livekitApiSecret,
-      CP07_ORIGIN: origin,
+      CP07_ORIGIN: options.origin ?? origin,
       CP07_RETIREMENTS: options.retirementDirectory,
       CP07_GUARD_EPOCH: options.epoch,
       CP07_APPLICATION_POLICY: '1',
@@ -354,7 +573,12 @@ beforeAll(async () => {
   process.env['DB_AUTO_INDEX'] = 'true';
   process.env['OUTBOX_ENCRYPTION_KEY'] = encryption.toString('base64');
   process.env['MEDIA_MACHINE_KEY'] = mediaMachineKey.toString('base64');
-  process.env['LIVEKIT_URL'] = 'wss://livekit.gather.test';
+  if (runLiveMediaFixture) {
+    liveMediaGuardPort = await unusedLoopbackPort();
+    process.env['LIVEKIT_URL'] = `ws://127.0.0.1:${liveMediaGuardPort}`;
+  } else {
+    process.env['LIVEKIT_URL'] = 'wss://livekit.gather.test';
+  }
   process.env['LIVEKIT_API_KEY'] = livekitApiKey;
   process.env['LIVEKIT_API_SECRET'] = livekitApiSecret;
   process.env['MONGOMS_DOWNLOAD_DIR'] = resolve(process.cwd(), '../../.cache/mongodb-binaries');
@@ -1848,377 +2072,489 @@ describe('office socket admission', () => {
     }
   });
 
-  it('keeps proximity conversation state private and ends it on explicit leave', async () => {
-    const owner = await account();
-    const first = await account();
-    const second = await account();
-    const observer = await account();
-    const workspaceId = await workspace(owner);
-    await join(owner, workspaceId, first);
-    await join(owner, workspaceId, second);
-    await join(owner, workspaceId, observer);
+  it(
+    'keeps proximity conversation state private and ends it on explicit leave',
+    async () => {
+      const owner = await account();
+      const first = await account();
+      const second = await account();
+      const observer = await account();
+      const workspaceId = await workspace(owner);
+      await join(owner, workspaceId, first);
+      await join(owner, workspaceId, second);
+      await join(owner, workspaceId, observer);
 
-    const [{ ticket: firstTicket }, { ticket: secondTicket }, { ticket: observerTicket }] =
-      await Promise.all([
-        issueTicket(first, workspaceId),
-        issueTicket(second, workspaceId),
-        issueTicket(observer, workspaceId),
-      ]);
-    const firstSocket = officeSocket({ ticket: firstTicket, protocolVersion: 1 });
-    const secondSocket = officeSocket({ ticket: secondTicket, protocolVersion: 1 });
-    const observerSocket = officeSocket({ ticket: observerTicket, protocolVersion: 1 });
-    const observerNotices: unknown[] = [];
-    let applicationGuard: ApplicationGuard | undefined;
-    let mediaUpstream: ReturnType<typeof createServer> | undefined;
-    let retirementDirectory: string | undefined;
-    const forwardedSignalingPaths: string[] = [];
-    observerSocket.on('conversation:update', (notice: unknown) => observerNotices.push(notice));
+      const [{ ticket: firstTicket }, { ticket: secondTicket }, { ticket: observerTicket }] =
+        await Promise.all([
+          issueTicket(first, workspaceId),
+          issueTicket(second, workspaceId),
+          issueTicket(observer, workspaceId),
+        ]);
+      const firstSocket = officeSocket({ ticket: firstTicket, protocolVersion: 1 });
+      const secondSocket = officeSocket({ ticket: secondTicket, protocolVersion: 1 });
+      const observerSocket = officeSocket({ ticket: observerTicket, protocolVersion: 1 });
+      const observerNotices: unknown[] = [];
+      let applicationGuard: ApplicationGuard | undefined;
+      let mediaUpstream: ReturnType<typeof createServer> | undefined;
+      let mediaFixture: Awaited<ReturnType<typeof startViteMediaFixture>> | undefined;
+      let liveKitFixture: Awaited<ReturnType<typeof startLiveKitFixture>> | undefined;
+      let applicationMediaClient: ApplicationMediaClient | undefined;
+      let retirementDirectory: string | undefined;
+      const forwardedSignalingPaths: string[] = [];
+      observerSocket.on('conversation:update', (notice: unknown) => observerNotices.push(notice));
 
-    try {
-      const firstReadyEvent = nextSocketEvent<unknown>(firstSocket, 'office:ready');
-      await connectSocket(firstSocket);
-      const firstReady = officeReadySchema.parse(await firstReadyEvent);
-      const secondReadyEvent = nextSocketEvent<unknown>(secondSocket, 'office:ready');
-      await connectSocket(secondSocket);
-      const secondReady = officeReadySchema.parse(await secondReadyEvent);
-      const observerReadyEvent = nextSocketEvent<unknown>(observerSocket, 'office:ready');
-      await connectSocket(observerSocket);
-      await observerReadyEvent;
+      try {
+        const firstReadyEvent = nextSocketEvent<unknown>(firstSocket, 'office:ready');
+        await connectSocket(firstSocket);
+        const firstReady = officeReadySchema.parse(await firstReadyEvent);
+        const secondReadyEvent = nextSocketEvent<unknown>(secondSocket, 'office:ready');
+        await connectSocket(secondSocket);
+        const secondReady = officeReadySchema.parse(await secondReadyEvent);
+        const observerReadyEvent = nextSocketEvent<unknown>(observerSocket, 'office:ready');
+        await connectSocket(observerSocket);
+        await observerReadyEvent;
 
-      const firstParticipant = firstReady.snapshot.participants.find(
-        (participant) => participant.participationId === firstReady.participationId,
-      )!;
-      const secondParticipant = secondReady.snapshot.participants.find(
-        (participant) => participant.participationId === secondReady.participationId,
-      )!;
-      expect(
-        Math.hypot(
-          firstParticipant.position.x - secondParticipant.position.x,
-          firstParticipant.position.y - secondParticipant.position.y,
-        ) / 32,
-      ).toBeLessThanOrEqual(2);
+        const firstParticipant = firstReady.snapshot.participants.find(
+          (participant) => participant.participationId === firstReady.participationId,
+        )!;
+        const secondParticipant = secondReady.snapshot.participants.find(
+          (participant) => participant.participationId === secondReady.participationId,
+        )!;
+        expect(
+          Math.hypot(
+            firstParticipant.position.x - secondParticipant.position.x,
+            firstParticipant.position.y - secondParticipant.position.y,
+          ) / 32,
+        ).toBeLessThanOrEqual(2);
 
-      const firstJoinNotice = nextSocketEvent<unknown>(firstSocket, 'conversation:update');
-      const secondJoinNotice = nextSocketEvent<unknown>(secondSocket, 'conversation:update');
-      const firstOptIn = {
-        eventId: randomUUID(),
-        officeEpoch: firstReady.snapshot.officeEpoch,
-        payload: { enabled: true },
-      };
-      const firstOptInAck = await new Promise<unknown>((resolve) => {
-        firstSocket.emit('proximity:set-opt-in', firstOptIn, resolve);
-      });
-      expect(officeCommandAckSchema.parse(firstOptInAck)).toEqual({
-        eventId: firstOptIn.eventId,
-        ok: true,
-      });
-
-      const secondOptIn = {
-        eventId: randomUUID(),
-        officeEpoch: secondReady.snapshot.officeEpoch,
-        payload: { enabled: true },
-      };
-      const secondOptInAck = await new Promise<unknown>((resolve) => {
-        secondSocket.emit('proximity:set-opt-in', secondOptIn, resolve);
-      });
-      expect(officeCommandAckSchema.parse(secondOptInAck)).toEqual({
-        eventId: secondOptIn.eventId,
-        ok: true,
-      });
-      const joining = conversationUpdateSchema.parse(await firstJoinNotice);
-      expect(conversationUpdateSchema.parse(await secondJoinNotice)).toEqual(joining);
-      expect(joining).toMatchObject({
-        officeEpoch: firstReady.snapshot.officeEpoch,
-        kind: 'proximity',
-        state: 'joining',
-        version: 1,
-        mediaReady: false,
-      });
-      expect(joining.participants.map(({ participationId }) => participationId).sort()).toEqual(
-        [firstReady.participationId, secondReady.participationId].sort(),
-      );
-
-      const challenge = {
-        epoch: 'a'.repeat(64),
-        nonce: randomBytes(32).toString('hex'),
-      };
-      const pullBody = JSON.stringify(challenge);
-      const unsignedPull = await request(app.getHttpServer())
-        .post('/api/media/internal/policy/pull')
-        .set('Content-Type', 'application/json')
-        .send(pullBody);
-      status(unsignedPull, 401);
-
-      const alteredPullBody = JSON.stringify({
-        ...challenge,
-        nonce: randomBytes(32).toString('hex'),
-      });
-      const alteredPull = await request(app.getHttpServer())
-        .post('/api/media/internal/policy/pull')
-        .set(
-          'X-CP07-Signature',
-          createHmac('sha256', mediaMachineKey).update(pullBody).digest('hex'),
-        )
-        .set('Content-Type', 'application/json')
-        .send(alteredPullBody);
-      status(alteredPull, 401);
-
-      const signedPull = await request(app.getHttpServer())
-        .post('/api/media/internal/policy/pull')
-        .set(
-          'X-CP07-Signature',
-          createHmac('sha256', mediaMachineKey).update(pullBody).digest('hex'),
-        )
-        .set('Content-Type', 'application/json')
-        .send(pullBody);
-      status(signedPull, 200);
-      const snapshot = mediaPolicySnapshotSchema.parse(JSON.parse(signedPull.text));
-      expect(snapshot).toMatchObject({
-        epoch: challenge.epoch,
-        nonce: challenge.nonce,
-        sequence: 1,
-      });
-      expect(snapshot.permits).toHaveLength(2);
-      expect(snapshot.permits.map(({ identity }) => identity).sort()).toEqual(
-        [firstReady.participationId, secondReady.participationId].sort(),
-      );
-      for (const permit of snapshot.permits) {
-        expect(permit).toMatchObject({
-          generation: joining.generation,
-          room: joining.generation,
-          version: 1,
-          sources: ['microphone'],
+        const firstJoinNotice = nextSocketEvent<unknown>(firstSocket, 'conversation:update');
+        const secondJoinNotice = nextSocketEvent<unknown>(secondSocket, 'conversation:update');
+        const firstOptIn = {
+          eventId: randomUUID(),
+          officeEpoch: firstReady.snapshot.officeEpoch,
+          payload: { enabled: true },
+        };
+        const firstOptInAck = await new Promise<unknown>((resolve) => {
+          firstSocket.emit('proximity:set-opt-in', firstOptIn, resolve);
         });
-      }
-      expect(signedPull.headers['x-cp07-signature']).toBe(
-        createHmac('sha256', mediaMachineKey).update(signedPull.text).digest('hex'),
-      );
+        expect(officeCommandAckSchema.parse(firstOptInAck)).toEqual({
+          eventId: firstOptIn.eventId,
+          ok: true,
+        });
 
-      status(
-        await first.client.send(
-          'post',
-          `/api/conversations/${joining.conversationId}/media-token`,
-          {
-            participationId: firstReady.participationId,
-            conversationVersion: joining.version,
-          },
-        ),
-        409,
-      );
-
-      const firstActiveNotice = nextSocketEvent<unknown>(firstSocket, 'conversation:update');
-      const secondActiveNotice = nextSocketEvent<unknown>(secondSocket, 'conversation:update');
-      const acknowledgement = {
-        epoch: snapshot.epoch,
-        nonce: snapshot.nonce,
-        sequence: snapshot.sequence,
-      };
-      const acknowledgementBody = JSON.stringify(acknowledgement);
-      const installed = await request(app.getHttpServer())
-        .post('/api/media/internal/policy/ack')
-        .set(
-          'X-CP07-Signature',
-          createHmac('sha256', mediaMachineKey).update(acknowledgementBody).digest('hex'),
-        )
-        .set('Content-Type', 'application/json')
-        .send(acknowledgementBody);
-      status(installed, 200);
-      expect(installed.body).toEqual({ acknowledged: true, sequence: 1 });
-      expect(installed.headers['x-cp07-signature']).toBe(
-        createHmac('sha256', mediaMachineKey).update(installed.text).digest('hex'),
-      );
-      const active = conversationUpdateSchema.parse(await firstActiveNotice);
-      expect(conversationUpdateSchema.parse(await secondActiveNotice)).toEqual(active);
-      expect(active).toMatchObject({
-        conversationId: joining.conversationId,
-        generation: joining.generation,
-        state: 'active',
-        version: 2,
-        mediaReady: true,
-      });
-
-      const tokenPath = `/api/conversations/${joining.conversationId}/media-token`;
-      const issued = await first.client.send('post', tokenPath, {
-        participationId: firstReady.participationId,
-        conversationVersion: active.version,
-      });
-      status(issued, 200);
-      const mediaGrant = mediaTokenResponseSchema.parse(issued.body);
-      expect(issued.headers['cache-control']).toBe('no-store');
-      expect(mediaGrant).toMatchObject({
-        serverUrl: 'wss://livekit.gather.test',
-        conversationVersion: active.version,
-        generation: active.generation,
-      });
-      const tokenClaims = await new TokenVerifier(livekitApiKey, livekitApiSecret).verify(
-        mediaGrant.token,
-        0,
-      );
-      expect(tokenClaims.sub).toBe(firstReady.participationId);
-      expect(tokenClaims.exp).toBe(Date.parse(mediaGrant.expiresAt) / 1000);
-      expect(tokenClaims.video).toMatchObject({
-        room: active.generation,
-        roomJoin: true,
-        roomAdmin: false,
-        canPublish: true,
-        canPublishSources: ['microphone'],
-        canSubscribe: true,
-        canPublishData: false,
-        canUpdateOwnMetadata: false,
-      });
-      expect(tokenClaims.video).not.toHaveProperty('roomCreate');
-      expect(tokenClaims.video).not.toHaveProperty('roomList');
-      expect(tokenClaims.video).not.toHaveProperty('roomRecord');
-
-      mediaUpstream = createServer((incoming, response) => {
-        forwardedSignalingPaths.push(
-          new URL(incoming.url ?? '/', 'http://upstream.local').pathname,
+        const secondOptIn = {
+          eventId: randomUUID(),
+          officeEpoch: secondReady.snapshot.officeEpoch,
+          payload: { enabled: true },
+        };
+        const secondOptInAck = await new Promise<unknown>((resolve) => {
+          secondSocket.emit('proximity:set-opt-in', secondOptIn, resolve);
+        });
+        expect(officeCommandAckSchema.parse(secondOptInAck)).toEqual({
+          eventId: secondOptIn.eventId,
+          ok: true,
+        });
+        const joining = conversationUpdateSchema.parse(await firstJoinNotice);
+        expect(conversationUpdateSchema.parse(await secondJoinNotice)).toEqual(joining);
+        expect(joining).toMatchObject({
+          officeEpoch: firstReady.snapshot.officeEpoch,
+          kind: 'proximity',
+          state: 'joining',
+          version: 1,
+          mediaReady: false,
+        });
+        expect(joining.participants.map(({ participationId }) => participationId).sort()).toEqual(
+          [firstReady.participationId, secondReady.participationId].sort(),
         );
-        response.writeHead(200, { 'Content-Type': 'application/json' });
-        response.end('{}');
-      });
-      const upstreamPort = await listenLoopback(mediaUpstream);
-      const guardPortProbe = createServer();
-      const guardPort = await listenLoopback(guardPortProbe);
-      await closeHttpServer(guardPortProbe);
-      retirementDirectory = await mkdtemp(resolve(tmpdir(), 'gather-cp08-app-guard-'));
-      const apiAddress = app.getHttpServer().address() as AddressInfo;
-      applicationGuard = startApplicationGuard({
-        apiBaseUrl: `http://127.0.0.1:${apiAddress.port}`,
-        epoch: challenge.epoch,
-        host: '127.0.0.1',
-        port: guardPort,
-        retirementDirectory,
-        sfuUpstream: `http://127.0.0.1:${upstreamPort}`,
-      });
-      const firstGuardAck = await waitForGuardMessage(
-        applicationGuard,
-        (message) => message.kind === 'ack' && message.sequence! > snapshot.sequence,
-        'the application-policy installation acknowledgement',
-      );
-      const tokenValidationUrl = new URL(`http://127.0.0.1:${guardPort}/rtc/v1/validate`);
-      tokenValidationUrl.searchParams.set('access_token', mediaGrant.token);
-      tokenValidationUrl.searchParams.set(
-        'join_request',
-        Buffer.from(JSON.stringify({ protocol: 12 })).toString('base64url'),
-      );
-      const validateThroughGuard = () => fetch(tokenValidationUrl, { headers: { Origin: origin } });
-      await vi.waitFor(
-        async () => {
-          const guarded = await validateThroughGuard();
-          if (guarded.status !== 200)
-            throw new Error(`current application grant was not forwarded: ${guarded.status}`);
-        },
-        { timeout: 5000, interval: 50 },
-      );
-      expect(forwardedSignalingPaths).toContain('/rtc/v1/validate');
-      let latestGuardSequence = firstGuardAck.sequence!;
 
-      status(
-        await observer.client.send('post', tokenPath, {
-          participationId: firstReady.participationId,
-          conversationVersion: active.version,
-        }),
-        404,
-      );
-      const foreignOwner = await account();
-      await workspace(foreignOwner);
-      status(
-        await foreignOwner.client.send('post', tokenPath, {
-          participationId: firstReady.participationId,
-          conversationVersion: active.version,
-        }),
-        404,
-      );
+        const challenge = {
+          epoch: 'a'.repeat(64),
+          nonce: randomBytes(32).toString('hex'),
+        };
+        const pullBody = JSON.stringify(challenge);
+        const unsignedPull = await request(app.getHttpServer())
+          .post('/api/media/internal/policy/pull')
+          .set('Content-Type', 'application/json')
+          .send(pullBody);
+        status(unsignedPull, 401);
 
-      const replayedAck = await request(app.getHttpServer())
-        .post('/api/media/internal/policy/ack')
-        .set(
-          'X-CP07-Signature',
-          createHmac('sha256', mediaMachineKey).update(acknowledgementBody).digest('hex'),
-        )
-        .set('Content-Type', 'application/json')
-        .send(acknowledgementBody);
-      status(replayedAck, 409);
+        const alteredPullBody = JSON.stringify({
+          ...challenge,
+          nonce: randomBytes(32).toString('hex'),
+        });
+        const alteredPull = await request(app.getHttpServer())
+          .post('/api/media/internal/policy/pull')
+          .set(
+            'X-CP07-Signature',
+            createHmac('sha256', mediaMachineKey).update(pullBody).digest('hex'),
+          )
+          .set('Content-Type', 'application/json')
+          .send(alteredPullBody);
+        status(alteredPull, 401);
 
-      await new Promise((resolve) => setTimeout(resolve, 80));
-      expect(observerNotices).toEqual([]);
+        const signedPull = await request(app.getHttpServer())
+          .post('/api/media/internal/policy/pull')
+          .set(
+            'X-CP07-Signature',
+            createHmac('sha256', mediaMachineKey).update(pullBody).digest('hex'),
+          )
+          .set('Content-Type', 'application/json')
+          .send(pullBody);
+        status(signedPull, 200);
+        const snapshot = mediaPolicySnapshotSchema.parse(JSON.parse(signedPull.text));
+        expect(snapshot).toMatchObject({
+          epoch: challenge.epoch,
+          nonce: challenge.nonce,
+          sequence: 1,
+        });
+        expect(snapshot.permits).toHaveLength(2);
+        expect(snapshot.permits.map(({ identity }) => identity).sort()).toEqual(
+          [firstReady.participationId, secondReady.participationId].sort(),
+        );
+        for (const permit of snapshot.permits) {
+          expect(permit).toMatchObject({
+            generation: joining.generation,
+            room: joining.generation,
+            version: 1,
+            sources: ['microphone'],
+          });
+        }
+        expect(signedPull.headers['x-cp07-signature']).toBe(
+          createHmac('sha256', mediaMachineKey).update(signedPull.text).digest('hex'),
+        );
 
-      latestGuardSequence = Math.max(
-        ...applicationGuard.messages
-          .filter((message) => message.kind === 'ack')
-          .map((message) => message.sequence ?? 0),
-      );
-      const firstEndedEvent = nextSocketEvent<unknown>(firstSocket, 'conversation:update');
-      const secondEndedEvent = nextSocketEvent<unknown>(secondSocket, 'conversation:update');
-      const leave = {
-        eventId: randomUUID(),
-        officeEpoch: firstReady.snapshot.officeEpoch,
-        payload: {
+        status(
+          await first.client.send(
+            'post',
+            `/api/conversations/${joining.conversationId}/media-token`,
+            {
+              participationId: firstReady.participationId,
+              conversationVersion: joining.version,
+            },
+          ),
+          409,
+        );
+
+        const firstActiveNotice = nextSocketEvent<unknown>(firstSocket, 'conversation:update');
+        const secondActiveNotice = nextSocketEvent<unknown>(secondSocket, 'conversation:update');
+        const acknowledgement = {
+          epoch: snapshot.epoch,
+          nonce: snapshot.nonce,
+          sequence: snapshot.sequence,
+        };
+        const acknowledgementBody = JSON.stringify(acknowledgement);
+        const installed = await request(app.getHttpServer())
+          .post('/api/media/internal/policy/ack')
+          .set(
+            'X-CP07-Signature',
+            createHmac('sha256', mediaMachineKey).update(acknowledgementBody).digest('hex'),
+          )
+          .set('Content-Type', 'application/json')
+          .send(acknowledgementBody);
+        status(installed, 200);
+        expect(installed.body).toEqual({ acknowledged: true, sequence: 1 });
+        expect(installed.headers['x-cp07-signature']).toBe(
+          createHmac('sha256', mediaMachineKey).update(installed.text).digest('hex'),
+        );
+        const active = conversationUpdateSchema.parse(await firstActiveNotice);
+        expect(conversationUpdateSchema.parse(await secondActiveNotice)).toEqual(active);
+        expect(active).toMatchObject({
           conversationId: joining.conversationId,
-          conversationVersion: active.version,
-        },
-      };
-      const leaveAck = await new Promise<unknown>((resolve) => {
-        firstSocket.emit('conversation:leave', leave, resolve);
-      });
-      expect(officeCommandAckSchema.parse(leaveAck)).toEqual({ eventId: leave.eventId, ok: true });
-      const ended = conversationUpdateSchema.parse(await firstEndedEvent);
-      expect(conversationUpdateSchema.parse(await secondEndedEvent)).toMatchObject({
-        conversationId: joining.conversationId,
-        state: 'ended',
-        version: active.version + 1,
-        mediaReady: false,
-        participants: [],
-      });
-      expect(ended).toMatchObject({ state: 'ended', mediaReady: false, participants: [] });
-      const endPolicyAck = await waitForGuardMessage(
-        applicationGuard,
-        (message) => message.kind === 'ack' && message.sequence! > latestGuardSequence,
-        'the empty policy snapshot after the pair ended',
-      );
-      latestGuardSequence = endPolicyAck.sequence!;
-      const forwardedBeforeDeniedReplay = forwardedSignalingPaths.length;
-      expect((await validateThroughGuard()).status).toBe(403);
-      expect(forwardedSignalingPaths).toHaveLength(forwardedBeforeDeniedReplay);
-      status(
-        await first.client.send('post', tokenPath, {
+          generation: joining.generation,
+          state: 'active',
+          version: 2,
+          mediaReady: true,
+        });
+
+        const tokenPath = `/api/conversations/${joining.conversationId}/media-token`;
+        const issued = await first.client.send('post', tokenPath, {
           participationId: firstReady.participationId,
           conversationVersion: active.version,
-        }),
-        409,
-      );
-      await new Promise((resolve) => setTimeout(resolve, 80));
-      expect(observerNotices).toEqual([]);
+        });
+        status(issued, 200);
+        const mediaGrant = mediaTokenResponseSchema.parse(issued.body);
+        expect(issued.headers['cache-control']).toBe('no-store');
+        expect(mediaGrant).toMatchObject({
+          serverUrl: runLiveMediaFixture
+            ? `ws://127.0.0.1:${liveMediaGuardPort}`
+            : 'wss://livekit.gather.test',
+          conversationVersion: active.version,
+          generation: active.generation,
+        });
+        const tokenClaims = await new TokenVerifier(livekitApiKey, livekitApiSecret).verify(
+          mediaGrant.token,
+          0,
+        );
+        expect(tokenClaims.sub).toBe(firstReady.participationId);
+        expect(tokenClaims.exp).toBe(Date.parse(mediaGrant.expiresAt) / 1000);
+        expect(tokenClaims.video).toMatchObject({
+          room: active.generation,
+          roomJoin: true,
+          roomAdmin: false,
+          canPublish: true,
+          canPublishSources: ['microphone'],
+          canSubscribe: true,
+          canPublishData: false,
+          canUpdateOwnMetadata: false,
+        });
+        expect(tokenClaims.video).not.toHaveProperty('roomCreate');
+        expect(tokenClaims.video).not.toHaveProperty('roomList');
+        expect(tokenClaims.video).not.toHaveProperty('roomRecord');
+        const applicationTokenExpiries = [tokenClaims.exp];
 
-      await stopApplicationGuard(applicationGuard);
-      applicationGuard = undefined;
-      await new Promise((resolve) => setTimeout(resolve, 5100));
-      const restartedEpoch = randomBytes(32).toString('hex');
-      applicationGuard = startApplicationGuard({
-        apiBaseUrl: `http://127.0.0.1:${apiAddress.port}`,
-        epoch: restartedEpoch,
-        host: '127.0.0.1',
-        port: guardPort,
-        retirementDirectory,
-        sfuUpstream: `http://127.0.0.1:${upstreamPort}`,
-      });
-      await waitForGuardMessage(
-        applicationGuard,
-        (message) => message.kind === 'ack' && message.sequence === 1,
-        'the restarted guard’s fresh-epoch default-deny snapshot',
-      );
-      expect((await validateThroughGuard()).status).toBe(403);
-      expect(forwardedSignalingPaths).toHaveLength(forwardedBeforeDeniedReplay);
-    } finally {
-      if (applicationGuard) await stopApplicationGuard(applicationGuard);
-      if (mediaUpstream) await closeHttpServer(mediaUpstream);
-      if (retirementDirectory) await rm(retirementDirectory, { recursive: true, force: true });
-      firstSocket.disconnect();
-      secondSocket.disconnect();
-      observerSocket.disconnect();
-    }
-  });
+        if (runLiveMediaFixture) {
+          liveKitFixture = await startLiveKitFixture();
+          mediaFixture = await startViteMediaFixture();
+        } else {
+          mediaUpstream = createServer((incoming, response) => {
+            forwardedSignalingPaths.push(
+              new URL(incoming.url ?? '/', 'http://upstream.local').pathname,
+            );
+            response.writeHead(200, { 'Content-Type': 'application/json' });
+            response.end('{}');
+          });
+        }
+        const upstreamPort =
+          liveKitFixture?.signalingPort ?? (await listenLoopback(mediaUpstream!));
+        const guardPortProbe = liveMediaGuardPort ? undefined : createServer();
+        const guardPort = liveMediaGuardPort ?? (await listenLoopback(guardPortProbe!));
+        if (guardPortProbe) await closeHttpServer(guardPortProbe);
+        retirementDirectory = await mkdtemp(resolve(tmpdir(), 'gather-cp08-app-guard-'));
+        const apiAddress = app.getHttpServer().address() as AddressInfo;
+        applicationGuard = startApplicationGuard({
+          apiBaseUrl: `http://127.0.0.1:${apiAddress.port}`,
+          epoch: challenge.epoch,
+          host: '127.0.0.1',
+          port: guardPort,
+          retirementDirectory,
+          sfuUpstream: `http://127.0.0.1:${upstreamPort}`,
+          ...(mediaFixture ? { origin: mediaFixture.origin } : {}),
+        });
+        const firstGuardAck = await waitForGuardMessage(
+          applicationGuard,
+          (message) => message.kind === 'ack' && message.sequence! > snapshot.sequence,
+          'the application-policy installation acknowledgement',
+        );
+        const tokenValidationUrl = new URL(`http://127.0.0.1:${guardPort}/rtc/v1/validate`);
+        tokenValidationUrl.searchParams.set('access_token', mediaGrant.token);
+        tokenValidationUrl.searchParams.set(
+          'join_request',
+          Buffer.from(JSON.stringify({ protocol: 12 })).toString('base64url'),
+        );
+        const validateThroughGuard = () =>
+          fetch(tokenValidationUrl, { headers: { Origin: mediaFixture?.origin ?? origin } });
+        let secondMediaGrantToken: string | undefined;
+        if (runLiveMediaFixture) {
+          const secondIssued = await second.client.send('post', tokenPath, {
+            participationId: secondReady.participationId,
+            conversationVersion: active.version,
+          });
+          status(secondIssued, 200);
+          const secondMediaGrant = mediaTokenResponseSchema.parse(secondIssued.body);
+          secondMediaGrantToken = secondMediaGrant.token;
+          const secondTokenClaims = await new TokenVerifier(livekitApiKey, livekitApiSecret).verify(
+            secondMediaGrant.token,
+            0,
+          );
+          applicationTokenExpiries.push(secondTokenClaims.exp);
+          applicationMediaClient = startApplicationMediaClient({
+            fixtureUrl: mediaFixture!.url,
+            grants: [
+              { ...mediaGrant, identity: firstReady.participationId },
+              { ...secondMediaGrant, identity: secondReady.participationId },
+            ],
+          });
+          let connected: Record<string, unknown>;
+          try {
+            connected = await waitForApplicationMediaMessage(
+              applicationMediaClient,
+              (message) => message['kind'] === 'connected',
+              'two real LiveKit audio subscriptions',
+            );
+          } catch (error) {
+            const acknowledgements = applicationGuard.messages
+              .filter((message) => message.kind === 'ack')
+              .slice(-5)
+              .map(({ sequence, epoch }) => ({ sequence, epoch }));
+            throw new Error(
+              `${error instanceof Error ? error.message : 'media fixture failed'}; guard acknowledgements=${JSON.stringify(acknowledgements)}; guard stderr=${applicationGuard.getStderr().slice(-1000)}`,
+              { cause: error },
+            );
+          }
+          const observations = connected['observations'] as Array<{
+            status: string;
+            remoteIdentities: string[];
+            activeAudioSamples: number;
+          }>;
+          expect(observations).toHaveLength(2);
+          expect(observations[0]).toMatchObject({
+            status: 'live',
+            remoteIdentities: [secondReady.participationId],
+          });
+          expect(observations[1]).toMatchObject({
+            status: 'live',
+            remoteIdentities: [firstReady.participationId],
+          });
+          expect(observations.every(({ activeAudioSamples }) => activeAudioSamples >= 10)).toBe(
+            true,
+          );
+        } else {
+          await vi.waitFor(
+            async () => {
+              const guarded = await validateThroughGuard();
+              if (guarded.status !== 200)
+                throw new Error(`current application grant was not forwarded: ${guarded.status}`);
+            },
+            { timeout: 5000, interval: 50 },
+          );
+          expect(forwardedSignalingPaths).toContain('/rtc/v1/validate');
+        }
+        let latestGuardSequence = firstGuardAck.sequence!;
+
+        status(
+          await observer.client.send('post', tokenPath, {
+            participationId: firstReady.participationId,
+            conversationVersion: active.version,
+          }),
+          404,
+        );
+        const foreignOwner = await account();
+        await workspace(foreignOwner);
+        status(
+          await foreignOwner.client.send('post', tokenPath, {
+            participationId: firstReady.participationId,
+            conversationVersion: active.version,
+          }),
+          404,
+        );
+
+        const replayedAck = await request(app.getHttpServer())
+          .post('/api/media/internal/policy/ack')
+          .set(
+            'X-CP07-Signature',
+            createHmac('sha256', mediaMachineKey).update(acknowledgementBody).digest('hex'),
+          )
+          .set('Content-Type', 'application/json')
+          .send(acknowledgementBody);
+        status(replayedAck, 409);
+
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        expect(observerNotices).toEqual([]);
+
+        latestGuardSequence = Math.max(
+          ...applicationGuard.messages
+            .filter((message) => message.kind === 'ack')
+            .map((message) => message.sequence ?? 0),
+        );
+        const firstEndedEvent = nextSocketEvent<unknown>(firstSocket, 'conversation:update');
+        const secondEndedEvent = nextSocketEvent<unknown>(secondSocket, 'conversation:update');
+        const leave = {
+          eventId: randomUUID(),
+          officeEpoch: firstReady.snapshot.officeEpoch,
+          payload: {
+            conversationId: joining.conversationId,
+            conversationVersion: active.version,
+          },
+        };
+        const leaveAck = await new Promise<unknown>((resolve) => {
+          firstSocket.emit('conversation:leave', leave, resolve);
+        });
+        expect(officeCommandAckSchema.parse(leaveAck)).toEqual({
+          eventId: leave.eventId,
+          ok: true,
+        });
+        const ended = conversationUpdateSchema.parse(await firstEndedEvent);
+        expect(conversationUpdateSchema.parse(await secondEndedEvent)).toMatchObject({
+          conversationId: joining.conversationId,
+          state: 'ended',
+          version: active.version + 1,
+          mediaReady: false,
+          participants: [],
+        });
+        expect(ended).toMatchObject({ state: 'ended', mediaReady: false, participants: [] });
+        const endPolicyAck = await waitForGuardMessage(
+          applicationGuard,
+          (message) => message.kind === 'ack' && message.sequence! > latestGuardSequence,
+          'the empty policy snapshot after the pair ended',
+        );
+        latestGuardSequence = endPolicyAck.sequence!;
+        if (applicationMediaClient) {
+          applicationMediaClient.send({ kind: 'stop' });
+          const measured = await waitForApplicationMediaMessage(
+            applicationMediaClient,
+            (message) => message['kind'] === 'cutoff',
+            'the measured real audio cutoff after conversation leave',
+          );
+          expect(measured['stable']).toBe(true);
+          expect(measured['cutoffMs']).toEqual(expect.any(Number));
+          expect(measured['cutoffMs'] as number).toBeLessThanOrEqual(8000);
+          console.info(
+            `CP08.4 media cutoff: ${JSON.stringify({
+              cutoffMs: measured['cutoffMs'],
+              activeSamples: (
+                measured['observations'] as Array<{ activeAudioSamples: number }>
+              ).map(({ activeAudioSamples }) => activeAudioSamples),
+              stable: measured['stable'],
+            })}`,
+          );
+        }
+        const forwardedBeforeDeniedReplay = forwardedSignalingPaths.length;
+        expect((await validateThroughGuard()).status).toBe(403);
+        expect(forwardedSignalingPaths).toHaveLength(forwardedBeforeDeniedReplay);
+        status(
+          await first.client.send('post', tokenPath, {
+            participationId: firstReady.participationId,
+            conversationVersion: active.version,
+          }),
+          409,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        expect(observerNotices).toEqual([]);
+
+        await stopApplicationGuard(applicationGuard);
+        applicationGuard = undefined;
+        await new Promise((resolve) => setTimeout(resolve, 5100));
+        if (liveKitFixture) liveKitFixture = await liveKitFixture.restart();
+        const restartedEpoch = randomBytes(32).toString('hex');
+        applicationGuard = startApplicationGuard({
+          apiBaseUrl: `http://127.0.0.1:${apiAddress.port}`,
+          epoch: restartedEpoch,
+          host: '127.0.0.1',
+          port: guardPort,
+          retirementDirectory,
+          sfuUpstream: `http://127.0.0.1:${liveKitFixture?.signalingPort ?? upstreamPort}`,
+          ...(mediaFixture ? { origin: mediaFixture.origin } : {}),
+        });
+        await waitForGuardMessage(
+          applicationGuard,
+          (message) => message.kind === 'ack' && message.sequence === 1,
+          'the restarted guard’s fresh-epoch default-deny snapshot',
+        );
+        expect(
+          applicationTokenExpiries.every(
+            (expiresAt) => typeof expiresAt === 'number' && expiresAt > Date.now() / 1000,
+          ),
+        ).toBe(true);
+        expect((await validateThroughGuard()).status).toBe(403);
+        if (secondMediaGrantToken) {
+          tokenValidationUrl.searchParams.set('access_token', secondMediaGrantToken);
+          expect((await validateThroughGuard()).status).toBe(403);
+        }
+        expect(forwardedSignalingPaths).toHaveLength(forwardedBeforeDeniedReplay);
+      } finally {
+        if (applicationMediaClient) await stopApplicationMediaClient(applicationMediaClient);
+        if (applicationGuard) await stopApplicationGuard(applicationGuard);
+        if (mediaUpstream) await closeHttpServer(mediaUpstream);
+        if (mediaFixture) await mediaFixture.stop();
+        if (liveKitFixture) await liveKitFixture.stop();
+        if (retirementDirectory) await rm(retirementDirectory, { recursive: true, force: true });
+        firstSocket.disconnect();
+        secondSocket.disconnect();
+        observerSocket.disconnect();
+      }
+    },
+    runLiveMediaFixture ? 120000 : undefined,
+  );
 
   it('repairs a missed world delta with a current safe snapshot', async () => {
     const owner = await account();

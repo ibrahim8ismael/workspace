@@ -34,7 +34,9 @@ function mediaError(error: unknown) {
   return 'Could not connect proximity audio. Check microphone access and your connection.';
 }
 
-async function liveKitRoomFactory(): Promise<ProximityRoom> {
+export async function createLiveKitProximityRoom(
+  onDisconnectReason?: (reason: unknown) => void,
+): Promise<ProximityRoom> {
   const { Room, RoomEvent, Track } = await import('livekit-client');
   const room = new Room({
     adaptiveStream: false,
@@ -70,8 +72,12 @@ async function liveKitRoomFactory(): Promise<ProximityRoom> {
       return () => room.off(RoomEvent.TrackUnsubscribed, handler);
     },
     onDisconnected: (listener) => {
-      room.on(RoomEvent.Disconnected, listener);
-      return () => room.off(RoomEvent.Disconnected, listener);
+      const handler = (reason?: unknown) => {
+        onDisconnectReason?.(reason);
+        listener();
+      };
+      room.on(RoomEvent.Disconnected, handler);
+      return () => room.off(RoomEvent.Disconnected, handler);
     },
     onReconnecting: (listener) => {
       room.on(RoomEvent.Reconnecting, listener);
@@ -97,7 +103,7 @@ export class ProximityAudioSession {
   constructor(
     private readonly onState: StateListener,
     private readonly bindRemoteTrack: RemoteTrackBinder,
-    private readonly createRoom: RoomFactory = liveKitRoomFactory,
+    private readonly createRoom: RoomFactory = createLiveKitProximityRoom,
   ) {}
 
   async start(

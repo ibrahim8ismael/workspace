@@ -30,6 +30,7 @@
     "test:web": "pnpm exec vitest run --config apps/web/vitest.config.ts",
     "test:e2e": "pnpm exec playwright test",
     "test:api": "pnpm build:packages && pnpm --filter @gather/worker build && pnpm --filter @gather/api test",
+    "test:media-live": "pnpm build:packages && pnpm --filter @gather/worker build && pnpm --filter @gather/api build && CP08_REAL_MEDIA=1 pnpm --filter @gather/api exec tsc -p tsconfig.tests.json && CP08_REAL_MEDIA=1 pnpm --filter @gather/api exec vitest run --config vitest.config.ts test/auth.integration.test.ts -t \"keeps proximity conversation state private and ends it on explicit leave\" --reporter=verbose",
     "test:e2e:live": "LIVE_OFFICE_E2E=1 pnpm exec playwright test tests/e2e/live-office.spec.ts",
     "db:indexes": "pnpm build:packages && pnpm --filter @gather/api db:indexes",
     "test:contracts": "pnpm --filter @gather/contracts test",

@@ -50,13 +50,27 @@ describe('company office preview selection', () => {
     expect(companyOverviewViewReducer(preview, 'reset')).toBe('details');
   });
 
-  it('renders the authenticated company identity and explicit local-preview boundary', () => {
+  it('renders the authenticated company in the supplied office shell', () => {
     const html = renderToStaticMarkup(
-      createElement(CompanyOfficePreview, { api, detail, onBack: () => undefined }),
+      createElement(CompanyOfficePreview, {
+        api,
+        detail,
+        onBack: () => undefined,
+        onOpenSecurity: () => undefined,
+        currentSession: null,
+        sessionsLoading: false,
+        sessionsError: '',
+        sessionActionStatus: '',
+        sessionActionError: '',
+        mutationPending: false,
+        onRefreshSessions: () => undefined,
+        onKeepWorking: () => undefined,
+        onSessionExpire: () => undefined,
+      }),
     );
     expect(html).toContain('Example Company');
-    expect(html).toContain('gather/example-company');
-    expect(html).toContain('Company-scoped office');
+    expect(html).toContain('Company slug: example-company');
+    expect(html).toContain('Commons office');
     expect(html).toContain('Back to company details');
     expect(html).toContain('Not connected to the office.');
     expect(html).toContain('Enter office');

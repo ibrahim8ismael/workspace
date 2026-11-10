@@ -287,6 +287,232 @@
   line-height: 1.5;
 }
 
+/* OpenOfficeForAll office shell, with the current Commons renderer and office client mounted inside it. */
+.office-shell .office-shell-sidebar .panel-heading h1 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.office-sidebar-summary {
+  margin: 0 0 10px;
+  padding: 10px 11px;
+  border-radius: 9px;
+  background: var(--subtle);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.office-shell .office-world-controls {
+  gap: 12px;
+  margin: 4px 0 12px;
+  padding: 12px;
+}
+
+.office-shell .office-world-controls h3 {
+  margin-bottom: 7px;
+}
+
+.office-shell .office-world-control-row {
+  gap: 5px;
+}
+
+.office-shell .office-world-control-row .dashboard-secondary {
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 11px;
+}
+
+.office-shell .session-lifetime {
+  flex: 0 0 auto;
+  margin: 8px 0 0;
+  padding: 12px;
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+.office-shell .session-lifetime-heading {
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.office-shell .session-lifetime-heading .account-eyebrow {
+  margin-bottom: 5px;
+  font-size: 9px;
+}
+
+.office-shell .session-lifetime h2 {
+  font-size: 13px;
+}
+
+.office-shell .session-lifetime > .dashboard-secondary {
+  min-height: 32px;
+  padding: 0 10px;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.office-shell .office-preview-chat {
+  min-height: 320px;
+  flex: 0 0 auto;
+  margin-top: 10px;
+  border-radius: 10px;
+}
+
+.office-shell .office-preview-chat-status {
+  padding: 12px;
+}
+
+.office-shell .office-live-participants {
+  gap: 4px;
+}
+
+.office-shell .office-preview-chat-frame {
+  min-height: 190px;
+}
+
+.office-shell-map {
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  background: #d7e5dc;
+}
+
+.office-map-heading {
+  position: absolute;
+  z-index: 3;
+  top: 14px;
+  left: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid #ffffffa8;
+  border-radius: 9px;
+  background: #ffffffdf;
+  color: #1d1d1f;
+  font-size: 12px;
+  box-shadow: 0 2px 8px #17252218;
+}
+
+.office-map-stage {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  min-width: 0;
+  align-items: stretch;
+  justify-content: center;
+  padding: 58px 18px 76px;
+}
+
+.office-map-stage > .commons-scene,
+.office-map-stage > .live-commons-scene {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+}
+
+.office-map-stage .commons-scene-host {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  flex: 1;
+  place-items: center;
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid #ffffff8c;
+  border-radius: 13px;
+  background: #d7e5dc;
+  box-shadow: 0 10px 28px #18362921;
+}
+
+.office-map-stage .commons-scene canvas {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  image-rendering: pixelated;
+}
+
+.office-map-stage .commons-scene-status {
+  position: absolute;
+  z-index: 2;
+  top: 53px;
+  left: 50%;
+  max-width: calc(100% - 32px);
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 4px 8px;
+  border-radius: 5px;
+  background: #ffffffc9;
+  color: #36584b;
+  font-size: 10px;
+  text-align: center;
+}
+
+.office-controlbar {
+  height: auto;
+  min-height: 48px;
+  max-width: calc(100% - 24px);
+  gap: 10px;
+  padding: 6px 8px 6px 12px;
+}
+
+.office-controlbar > .status-dot {
+  position: static;
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border: 0;
+}
+
+.office-control-status {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  color: #ffffffe6;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.office-control-status > span,
+.office-control-status small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.office-control-status small {
+  color: #ffffff99;
+  font-size: 9px;
+}
+
+.office-controlbar .control-separator {
+  margin: 0 1px;
+}
+
+.office-controlbar .primary {
+  min-height: 34px;
+  height: 34px;
+  padding: 0 13px;
+  border-radius: 11px;
+  font-size: 12px;
+}
+
+.office-controlbar .icon-button.leave-meeting {
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+}
+
 @media (max-width: 880px) {
   .company-office-preview-layout {
     grid-template-columns: minmax(0, 1fr);

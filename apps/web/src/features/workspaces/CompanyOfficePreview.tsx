@@ -1,21 +1,54 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import type { OfficeWorkspaceDetail } from '../../lib/api';
+import {
+  ArrowLeft,
+  Bell,
+  CalendarDays,
+  LayoutGrid,
+  Map,
+  MessageCircle,
+  Settings2,
+} from 'lucide-react';
+import type { OfficeWorkspaceDetail, SessionDto } from '../../lib/api';
 import { ApiClient } from '../../lib/api';
 import { CommonsScene } from '../../../commons-preview/CommonsScene';
 import { LiveCommonsScene } from '../../../commons-preview/LiveCommonsScene';
 import { OfficePreviewChat } from './OfficePreviewChat';
 import { OfficeClient } from '../office/office-client';
+import { SessionLifetimeNotice } from '../auth/SessionLifetimeNotice';
 import './office-preview.css';
 
 type Props = {
   api: ApiClient;
   detail: OfficeWorkspaceDetail;
   onBack: () => void;
+  onOpenSecurity: () => void;
+  currentSession: SessionDto | null;
+  sessionsLoading: boolean;
+  sessionsError: string;
+  sessionActionStatus: string;
+  sessionActionError: string;
+  mutationPending: boolean;
+  onRefreshSessions: () => void;
+  onKeepWorking: () => void;
+  onSessionExpire: () => void;
 };
 
-export function CompanyOfficePreview({ api, detail, onBack }: Props) {
+export function CompanyOfficePreview({
+  api,
+  detail,
+  onBack,
+  onOpenSecurity,
+  currentSession,
+  sessionsLoading,
+  sessionsError,
+  sessionActionStatus,
+  sessionActionError,
+  mutationPending,
+  onRefreshSessions,
+  onKeepWorking,
+  onSessionExpire,
+}: Props) {
   const titleRef = useRef<HTMLHeadingElement>(null);
-  const emptyState = detail.memberCount === 1 ? 'member' : 'members';
   const client = useMemo(
     () => new OfficeClient(api, detail.id, detail.officeId),
     [api, detail.id, detail.officeId],
@@ -52,84 +85,105 @@ export function CompanyOfficePreview({ api, detail, onBack }: Props) {
     }
   }
 
+  const connectionMessage =
+    state.status === 'connected'
+      ? participantCount === 1
+        ? '1 person in the office'
+        : `${participantCount} people in the office`
+      : state.status === 'connecting'
+        ? 'Connecting to the office…'
+        : state.status === 'ended' || state.status === 'error' || state.status === 'disconnected'
+          ? state.message
+          : 'Not connected to the office.';
+
   return (
-    <section className="company-office-preview" aria-labelledby="company-office-preview-title">
-      <header className="company-office-preview-heading">
-        <div>
-          <p className="account-eyebrow">OFFICE PREVIEW</p>
-          <div className="company-office-preview-title-row">
+    <div className="app-shell office-shell" data-workspace-id={detail.id}>
+      <nav className="rail" aria-label="Office navigation">
+        <div className="brand" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+          <span />
+        </div>
+        <div className="rail-main">
+          <button
+            className="nav-item current"
+            type="button"
+            aria-label="Office"
+            aria-pressed="true"
+            title="Office"
+          >
+            <Map size={22} />
+          </button>
+          <button
+            className="nav-item"
+            type="button"
+            aria-label="Text chat is unavailable"
+            title="Text chat is unavailable"
+            disabled
+          >
+            <MessageCircle size={22} />
+          </button>
+          <button
+            className="nav-item"
+            type="button"
+            aria-label="Calendar is unavailable"
+            title="Calendar is unavailable"
+            disabled
+          >
+            <CalendarDays size={22} />
+          </button>
+          <button
+            className="nav-item"
+            type="button"
+            aria-label="Activity is unavailable"
+            title="Activity is unavailable"
+            disabled
+          >
+            <Bell size={22} />
+          </button>
+        </div>
+        <div className="rail-bottom">
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="Back to company details"
+            title="Back to company details"
+            onClick={onBack}
+          >
+            <ArrowLeft size={19} />
+          </button>
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="Account security"
+            title="Account security"
+            onClick={onOpenSecurity}
+          >
+            <Settings2 size={19} />
+          </button>
+        </div>
+      </nav>
+
+      <div className="workspace">
+        <aside className="side-panel panel-people office-shell-sidebar" aria-label="Office details">
+          <div className="panel-heading">
             <h1 id="company-office-preview-title" ref={titleRef} tabIndex={-1}>
               {detail.name}
             </h1>
-            <span className="office-preview-badge">
-              {connected ? 'Office connected' : 'Company-scoped office'}
-            </span>
           </div>
-          <p className="workspace-lead">gather/{detail.slug}</p>
-        </div>
-        <button className="account-secondary" type="button" onClick={onBack}>
-          Back to company details
-        </button>
-      </header>
 
-      <div className="office-session-controls" role="group" aria-label="Office connection controls">
-        <p className="office-session-status" role="status" aria-live="polite">
-          <span className={`status-dot ${connected ? 'available' : 'away'}`} aria-hidden="true" />
-          {state.status === 'connected'
-            ? participantCount === 1
-              ? '1 person in the office'
-              : `${participantCount} people in the office`
-            : state.status === 'connecting'
-              ? 'Connecting to the office…'
-              : state.status === 'ended'
-                ? state.message
-                : state.status === 'error'
-                  ? state.message
-                  : state.status === 'disconnected'
-                    ? state.message
-                    : 'Not connected to the office.'}
-        </p>
-        {connected ? (
-          <button className="account-secondary" type="button" onClick={() => client.close()}>
-            Leave office
-          </button>
-        ) : (
-          <button
-            className="account-primary"
-            type="button"
-            disabled={state.status === 'connecting'}
-            onClick={() => void client.connect()}
-          >
-            {state.status === 'connecting' ? 'Connecting…' : 'Enter office'}
-          </button>
-        )}
-      </div>
-
-      <div className="company-office-preview-layout">
-        <section
-          className="office-preview-panel office-preview-map"
-          aria-labelledby="preview-map-title"
-        >
-          <div className="office-preview-panel-heading">
-            <p className="account-eyebrow">APPROVED COMMONS MAP</p>
-            <h2 id="preview-map-title">{connected ? 'Live office map' : 'Office map'}</h2>
-            <p>
-              {connected
-                ? 'Move with arrow keys or WASD. The office server validates each movement.'
-                : 'Read-only local renderer using the approved Commons geometry and art.'}
-            </p>
+          <div className="floor-selector">
+            <LayoutGrid size={15} />
+            <span>Commons office</span>
+            <span className="office-preview-badge">Office</span>
           </div>
-          {connected && state.bootstrap && state.ready && state.snapshot ? (
-            <LiveCommonsScene
-              bootstrap={state.bootstrap}
-              snapshot={state.snapshot}
-              localParticipationId={state.ready.participationId}
-              onMovement={(dx, dy) => client.move(dx, dy)}
-            />
-          ) : (
-            <CommonsScene />
-          )}
-          {connected && state.snapshot && self && (
+
+          <p className="office-sidebar-summary">
+            Company slug: {detail.slug}. Text chat is unavailable in this release.
+          </p>
+
+          {connected && state.snapshot && self ? (
             <div className="office-world-controls" role="group" aria-label="Office controls">
               <div role="group" aria-labelledby="office-availability-title">
                 <h3 id="office-availability-title">Your availability</h3>
@@ -137,7 +191,7 @@ export function CompanyOfficePreview({ api, detail, onBack }: Props) {
                   {(['available', 'busy', 'away'] as const).map((availability) => (
                     <button
                       key={availability}
-                      className="account-secondary"
+                      className="dashboard-secondary"
                       type="button"
                       aria-pressed={self.availability === availability}
                       disabled={officeActionPending || self.availability === availability}
@@ -156,7 +210,7 @@ export function CompanyOfficePreview({ api, detail, onBack }: Props) {
                 <div className="office-world-control-row">
                   {self.seatId ? (
                     <button
-                      className="account-secondary"
+                      className="dashboard-secondary"
                       type="button"
                       disabled={officeActionPending}
                       onClick={() => void runOfficeAction(() => client.stand())}
@@ -168,7 +222,7 @@ export function CompanyOfficePreview({ api, detail, onBack }: Props) {
                       .filter((seat) => seat.occupantParticipationId === null)
                       .map((seat) => (
                         <button
-                          className="account-secondary"
+                          className="dashboard-secondary"
                           type="button"
                           key={seat.seatId}
                           disabled={officeActionPending}
@@ -186,20 +240,96 @@ export function CompanyOfficePreview({ api, detail, onBack }: Props) {
                 </p>
               )}
             </div>
+          ) : (
+            <p className="empty-small">Enter the office to update your status or use a seat.</p>
           )}
-        </section>
 
-        <OfficePreviewChat
-          companyName={detail.name}
-          connected={connected}
-          participants={state.snapshot?.participants ?? []}
-        />
+          <SessionLifetimeNotice
+            session={currentSession}
+            loading={sessionsLoading}
+            error={sessionsError}
+            actionStatus={sessionActionStatus}
+            actionError={sessionActionError}
+            mutationPending={mutationPending}
+            onRefresh={onRefreshSessions}
+            onExtend={onKeepWorking}
+            onExpire={onSessionExpire}
+          />
+
+          <OfficePreviewChat
+            companyName={detail.name}
+            connected={connected}
+            participants={state.snapshot?.participants ?? []}
+          />
+
+          <div className="sidebar-foot">
+            <span className={`connection ${connected ? 'connected' : ''}`}>
+              <i />
+              {connected
+                ? 'Connected'
+                : state.status === 'connecting'
+                  ? 'Connecting…'
+                  : 'Not connected'}
+            </span>
+            <span>Commons</span>
+          </div>
+        </aside>
+
+        <main className="map-area office-shell-map" aria-label="Approved Commons office map">
+          <div className="office-map-heading">
+            <strong>{connected ? 'Live Commons office' : 'Commons office'}</strong>
+            <span className="office-preview-badge">{connected ? 'Live' : 'Read only'}</span>
+          </div>
+          <div className="office-map-stage">
+            {connected && state.bootstrap && state.ready && state.snapshot ? (
+              <LiveCommonsScene
+                bootstrap={state.bootstrap}
+                snapshot={state.snapshot}
+                localParticipationId={state.ready.participationId}
+                onMovement={(dx, dy) => client.move(dx, dy)}
+              />
+            ) : (
+              <CommonsScene />
+            )}
+          </div>
+          <div
+            className="controlbar office-controlbar"
+            role="group"
+            aria-label="Office connection controls"
+          >
+            <span className={`status-dot ${connected ? 'available' : 'away'}`} aria-hidden="true" />
+            <span className="office-control-status" role="status" aria-live="polite">
+              <span>{connectionMessage}</span>
+              <small>
+                {connected
+                  ? 'Use arrow keys or WASD to move.'
+                  : 'Enter the office to move and interact.'}
+              </small>
+            </span>
+            <span className="control-separator" />
+            {connected ? (
+              <button
+                className="icon-button leave-meeting"
+                type="button"
+                aria-label="Leave office"
+                title="Leave office"
+                onClick={() => client.close()}
+              >
+                <ArrowLeft size={19} />
+              </button>
+            ) : (
+              <button
+                className="primary enter-button"
+                type="button"
+                disabled={state.status === 'connecting'}
+                onClick={() => void client.connect()}
+              >
+                {state.status === 'connecting' ? 'Connecting…' : 'Enter office'}
+              </button>
+            )}
+          </div>
+        </main>
       </div>
-
-      <p className="office-preview-company-meta">
-        {detail.memberCount} {emptyState} in this company. Company details and session controls
-        remain available from this preview.
-      </p>
-    </section>
+    </div>
   );
 }

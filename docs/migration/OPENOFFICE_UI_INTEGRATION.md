@@ -1,6 +1,6 @@
 # OpenOfficeForAll UI integration
 
-Status: owner-approved direction; account entry, company directory, company details and security use upstream dashboard styling; office shell remains to migrate · Updated: 2026-11-10
+Status: owner-approved direction; account, company, security and office screens use the supplied OpenOfficeForAll visual system; invitation management and final browser/accessibility review remain · Updated: 2026-11-10
 
 ## Product direction
 
@@ -22,16 +22,16 @@ The source is pinned to commit `23d6b8999396f9e9d51291bf85bd7b72161f833f`; prese
 | Audio/video | `useMedia.ts`, `useSfu.ts`, meeting components | Old P2P/raw signaling lifecycle conflicts with the accepted all-LiveKit architecture. CP07 enforcement evidence is a local proof, not product media integration | Remove old media transport calls; connect LiveKit controls only after CP08 authorization, proximity and browser flows exist |
 | Preferences and identity | App/profile/avatar controls and multiple local stores | Local visual preferences may be suitable; names, identity, access keys and sessions must not become client authority | Classify each setting: server-owned identity/policy goes to an API; harmless presentation preferences may stay local after review |
 
-Existing new-side integration points include `apps/web/src/lib/api.ts`, `src/features/office/office-client.ts`, `src/features/office/world-state.ts`, `src/features/workspaces/CompanyOverview.tsx`, and `src/features/workspaces/CompanyOfficePreview.tsx`. These already prove real local API and Socket.IO behavior; their current account/preview layout is not the target product shell.
+Existing integration points include `apps/web/src/lib/api.ts`, `src/features/office/office-client.ts`, `src/features/office/world-state.ts`, `src/features/workspaces/CompanyOverview.tsx`, and `src/features/workspaces/CompanyOfficePreview.tsx`. The current authenticated journey reuses the supplied dashboard and office-shell visual structure while these project-owned components keep the current API and Socket.IO behavior. The upstream legacy services are not mounted.
 
 ## Ordered implementation steps
 
 1. **Inventory and lock the boundary — complete.** Pin upstream source and notices; identify current and obsolete entry points, routes, storage, and service calls. Keep this audit current as screens move.
-2. **Restore the supplied shell — in progress.** Sign-in, verification and recovery use the upstream dashboard header, welcome modal, form, button and link styles. The authenticated company directory uses the upstream dashboard header, search, card grid and create/join dialogs, backed by the current workspace APIs. Company details and account security now use that same dashboard, card and control system. Next migrate the office shell. Keep a migration route until the new default can complete login and company selection.
-3. **Adapt identity and company data.** Replace legacy account/workspace service calls with `ApiClient`; map UUID workspace DTOs and role-based membership into the supplied views. Add owner invitations and member acceptance using current APIs. Remove guest login and secret-bearing `localStorage` paths.
-4. **Adapt office admission and live world.** Replace `useOffice` raw WebSocket with `OfficeClient`; embed the version-checked Commons renderer in the supplied office layout. Connect movement, availability, seats, deltas, resync, leave and fresh-ticket re-entry to server state.
+2. **Restore the supplied shell — complete for current screens.** Sign-in, verification and recovery use the upstream dashboard header, welcome modal, form, button and link styles. The company directory uses its dashboard, search, card grid and create/join dialogs. Company details, security and the full-screen office now use the supplied dashboard/office visual structures. Keep the current authenticated entry as the default and finish the remaining owner invitation screen before removing migration-only code.
+3. **Adapt identity and company data — in progress.** The current cookie-authenticated account flows, UUID company list/create/detail and member invitation-code acceptance use `ApiClient`; guest access and secret-bearing `localStorage` paths remain disconnected. Add owner invitation listing, creation and revocation with the current APIs, then cover role/error/retry states.
+4. **Adapt office admission and live world — integrated.** The office shell mounts the version-checked Commons renderer and `OfficeClient`, replacing legacy raw WebSocket admission. Movement, availability, seats, snapshots/deltas, disconnect recovery, leave and fresh-ticket re-entry continue to use server-authoritative Socket.IO state.
 5. **Gate unsupported features.** Keep supplied styling and recognizable controls where helpful, while disabling service actions that have no backend. Do not show mock chat, calendar, editing or P2P media as live features.
-6. **Review and cut over.** Run unit/API/two-browser Socket.IO checks and visual/accessibility review in Chrome and Edge. Make the upstream-styled app the default only when login, company selection and office entry work. Remove the duplicate account/preview shell after its needed API/client logic is relocated and covered.
+6. **Review and cut over.** Run unit/API/two-browser Socket.IO checks and visual/accessibility review in Chrome and Edge. The current authenticated app is already the default and its local live API/Socket.IO journey has passed; finish invitation UI and browser/accessibility review. Remove duplicate account/preview presentation code only after its needed API/client logic is covered by the integrated screens.
 
 ## Completion checks
 
@@ -39,6 +39,7 @@ Existing new-side integration points include `apps/web/src/lib/api.ts`, `src/fea
 - Registration, verification, login, session security, company creation, invitations and membership use current cookie-authenticated APIs.
 - Office discovery/admission uses the current workspace and office IDs, bootstrap and one-use tickets. No legacy `/ws` connection is opened.
 - Two browsers observe authoritative movement, presence, seat contention, company isolation, dropped-delta recovery and re-entry through Socket.IO.
+- Owners can list, create and revoke invitations; members can accept a valid invitation through the current API flow.
 - No account/session/access secret is read from or written to `localStorage`; unsupported chat/calendar/editor/media features do not pretend to work.
 - Existing licensing/provenance, accessibility, and English-first Chrome/Edge checks remain in the release evidence.
 

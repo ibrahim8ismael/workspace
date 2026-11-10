@@ -262,9 +262,8 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await expect(page.getByRole('list', { name: 'People in the office' })).toContainText(
     account.displayName,
   );
-  await page
-    .getByRole('group', { name: 'Live Commons office map with server-positioned participants' })
-    .focus();
+  await page.getByRole('button', { name: 'Back to company details' }).focus();
+  await page.keyboard.press('Tab');
   await page.keyboard.press('Tab');
   await expect(page.getByRole('button', { name: 'Busy' })).toBeFocused();
   const busyFocusStyle = await page

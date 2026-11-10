@@ -171,6 +171,34 @@ export function CompanyOverview({
     };
   }, [mutationLock]);
 
+  if (previewOpen && detail) {
+    return (
+      <Suspense
+        fallback={
+          <div className="app-shell" role="status">
+            Loading office…
+          </div>
+        }
+      >
+        <LazyCompanyOfficePreview
+          api={api}
+          detail={detail}
+          onBack={() => dispatchView('back-to-details')}
+          onOpenSecurity={onOpenSecurity}
+          currentSession={currentSession}
+          sessionsLoading={sessionsLoading}
+          sessionsError={sessionsError}
+          sessionActionStatus={sessionActionStatus}
+          sessionActionError={sessionActionError}
+          mutationPending={mutationPending}
+          onRefreshSessions={onRefreshSessions}
+          onKeepWorking={onKeepWorking}
+          onSessionExpire={onSessionExpire}
+        />
+      </Suspense>
+    );
+  }
+
   return (
     <main className="dashboard" data-workspace-id={workspaceId}>
       <header className="dashboard-bar">
@@ -203,119 +231,98 @@ export function CompanyOverview({
       </header>
 
       <div className="dashboard-body company-overview-content">
-        {previewOpen && detail ? (
-          <Suspense
-            fallback={
-              <section className="dashboard-info-panel" role="status">
-                Loading office preview…
-              </section>
-            }
+        <section className="dashboard-heading">
+          <div>
+            <h1 ref={titleRef} tabIndex={-1}>
+              {detail?.name ?? (loading ? 'Loading company…' : 'Company details')}
+            </h1>
+            {detail && <p>Company slug: {detail.slug}</p>}
+          </div>
+        </section>
+
+        {error && (
+          <p className="account-message is-error" role="alert">
+            {error}
+          </p>
+        )}
+
+        {loading ? (
+          <section className="dashboard-info-panel company-detail-state" role="status">
+            Loading company details…
+          </section>
+        ) : error ? (
+          <section className="dashboard-info-panel company-detail-state">
+            <button
+              className="dashboard-create"
+              type="button"
+              disabled={mutationPending}
+              onClick={() => void refresh()}
+            >
+              Refresh company
+            </button>
+          </section>
+        ) : detail ? (
+          <section
+            className="dashboard-info-panel company-overview-panel"
+            aria-labelledby="company-details-title"
           >
-            <LazyCompanyOfficePreview
-              api={api}
-              detail={detail}
-              onBack={() => dispatchView('back-to-details')}
-            />
-          </Suspense>
-        ) : (
-          <>
-            <section className="dashboard-heading">
+            <div className="panel-heading">
               <div>
-                <h1 ref={titleRef} tabIndex={-1}>
-                  {detail?.name ?? (loading ? 'Loading company…' : 'Company details')}
-                </h1>
-                {detail && <p>Company slug: {detail.slug}</p>}
+                <h2 id="company-details-title">Company details</h2>
+                <p>This view is based on your current company membership.</p>
               </div>
-            </section>
-
-            {error && (
-              <p className="account-message is-error" role="alert">
-                {error}
-              </p>
-            )}
-
-            {loading ? (
-              <section className="dashboard-info-panel company-detail-state" role="status">
-                Loading company details…
-              </section>
-            ) : error ? (
-              <section className="dashboard-info-panel company-detail-state">
+              <div className="company-overview-tools">
+                <span className={`role-pill role-${detail.role}`}>{formatRole(detail.role)}</span>
                 <button
-                  className="dashboard-create"
+                  className="account-secondary"
                   type="button"
-                  disabled={mutationPending}
+                  disabled={loading || mutationPending}
                   onClick={() => void refresh()}
                 >
                   Refresh company
                 </button>
-              </section>
-            ) : detail ? (
-              <section
-                className="dashboard-info-panel company-overview-panel"
-                aria-labelledby="company-details-title"
+              </div>
+            </div>
+            <dl className="company-detail-list">
+              <div>
+                <dt>Company name</dt>
+                <dd>{detail.name}</dd>
+              </div>
+              <div>
+                <dt>Company slug</dt>
+                <dd>{detail.slug}</dd>
+              </div>
+              <div>
+                <dt>Your role</dt>
+                <dd>{formatRole(detail.role)}</dd>
+              </div>
+              <div>
+                <dt>Members</dt>
+                <dd>
+                  {detail.memberCount} {detail.memberCount === 1 ? 'member' : 'members'}
+                </dd>
+              </div>
+            </dl>
+            <div className="company-overview-actions">
+              <button
+                className="dashboard-create"
+                type="button"
+                disabled={mutationPending}
+                onClick={() => dispatchView('open-preview')}
               >
-                <div className="panel-heading">
-                  <div>
-                    <h2 id="company-details-title">Company details</h2>
-                    <p>This view is based on your current company membership.</p>
-                  </div>
-                  <div className="company-overview-tools">
-                    <span className={`role-pill role-${detail.role}`}>
-                      {formatRole(detail.role)}
-                    </span>
-                    <button
-                      className="account-secondary"
-                      type="button"
-                      disabled={loading || mutationPending}
-                      onClick={() => void refresh()}
-                    >
-                      Refresh company
-                    </button>
-                  </div>
-                </div>
-                <dl className="company-detail-list">
-                  <div>
-                    <dt>Company name</dt>
-                    <dd>{detail.name}</dd>
-                  </div>
-                  <div>
-                    <dt>Company slug</dt>
-                    <dd>{detail.slug}</dd>
-                  </div>
-                  <div>
-                    <dt>Your role</dt>
-                    <dd>{formatRole(detail.role)}</dd>
-                  </div>
-                  <div>
-                    <dt>Members</dt>
-                    <dd>
-                      {detail.memberCount} {detail.memberCount === 1 ? 'member' : 'members'}
-                    </dd>
-                  </div>
-                </dl>
-                <div className="company-overview-actions">
-                  <button
-                    className="dashboard-create"
-                    type="button"
-                    disabled={mutationPending}
-                    onClick={() => dispatchView('open-preview')}
-                  >
-                    Open office preview
-                  </button>
-                  <button
-                    className="dashboard-secondary"
-                    type="button"
-                    disabled={mutationPending}
-                    onClick={onBackToCompanies}
-                  >
-                    Switch company
-                  </button>
-                </div>
-              </section>
-            ) : null}
-          </>
-        )}
-
+                Open office preview
+              </button>
+              <button
+                className="dashboard-secondary"
+                type="button"
+                disabled={mutationPending}
+                onClick={onBackToCompanies}
+              >
+                Switch company
+              </button>
+            </div>
+          </section>
+        ) : null}
         <SessionLifetimeNotice
           session={currentSession}
           loading={sessionsLoading}

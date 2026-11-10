@@ -604,6 +604,12 @@ Account security now uses the dashboard header, card layout, fields and action b
 
 Web TypeScript, focused ESLint, production build and `pnpm exec playwright test tests/e2e/company-office-preview.spec.ts` passed (one Chromium test); the flow now also opens account security, checks its sections, and returns to the company dashboard. The pre-existing large lazy office-preview chunk warning remains. Next adapt the office shell and embed the existing `OfficeClient` and Commons renderer, keeping unsupported media/chat actions visibly unavailable.
 
+## OpenOfficeForAll UI migration — office shell and live Commons adapter (2026-11-10)
+
+The company office now uses the supplied full-screen office structure: navigation rail, company sidebar, map area and bottom control bar. The versioned Commons renderer and `OfficeClient` remain the sources for map and live state, including movement, availability, seats and Socket.IO reconnect. The sidebar retains the account-session expiry controls. Chat is labeled unavailable; calendar and activity controls are disabled. No legacy office API or media path is mounted.
+
+Web typecheck, focused ESLint, production build and `pnpm test:web` passed. The mocked UI E2E passed, including keyboard traversal and reconnect. After rebuilding the authorized local Docker stack to remove a stale frontend bundle, `pnpm test:e2e:live` passed with two real browser clients against the local API/Socket.IO stack, covering admission, movement, recovery, reconnect, seat contention and company isolation. This is not media/audio evidence. Next integrate owner invitation management into the supplied company UI; Chrome/Edge and screen-reader review remain open.
+
 ## CP07.20 — Late-policy cutoff and fail-closed cold bootstrap (2026-11-10)
 
 Added authenticated delayed-policy fault (1500ms replies vs 1000ms guard abort). Room retirement is postponed until after cutoff to avoid masking lease-renewal errors. A startup timing failure led to stronger default-deny SFU bootstrap: no LiveKit child starts until a valid request-start lease newer than this boot exists. This replaces the prior three-second startup grace; stale pre-boot allow files cannot bootstrap media.

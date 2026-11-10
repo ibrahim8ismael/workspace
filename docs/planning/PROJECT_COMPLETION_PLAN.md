@@ -267,12 +267,17 @@ the full `CompanyOfficePreview` or verify its Socket.IO-to-component stop wiring
 CP08.5. Full `pnpm check` passed all 215 tests and the production build. This is real media-path
 evidence, not production deployment acceptance.
 
-**CP08.5 — revocation/failure matrix (pending).** In the same fixture, exercise permission denial,
-mute/unmute, opt-out, away, office leave, membership/session revocation, office/API lease expiry,
-guard loss, independent-supervisor progress loss, reconnect and an SFU-refreshed JWT. Record each
-input, policy ACK, last active audio sample, process state and outcome. Verify the disconnected
-office/map remains usable after microphone denial. Do not close A07/A08 from token expiry or UI
-state alone.
+**CP08.5 — revocation/failure matrix (in progress).** CP08.5.1 now toggles the production
+`ProximityAudioSession` microphone through the real API-grant/guard/LiveKit/two-Chromium path. On
+2026-11-11, the receiver's last active decoded sample was 59 ms after mute was requested; active
+samples then remained stable for 500 ms. After unmute, decoded audio resumed after 668 ms and
+produced at least six additional active samples. Both transitions stayed within the existing
+eight-second cutoff budget. This validates the media-session mute/unmute path but does not mount the
+full office component. Remaining matrix cases: permission denial with the office/map still usable,
+opt-out, away, office leave, membership/session revocation, office/API lease expiry, guard loss,
+independent-supervisor progress loss, reconnect and an SFU-refreshed JWT. Record each input, policy
+ACK, last active audio sample, process state and outcome. Do not close A07/A08 from token expiry or
+UI state alone.
 
 **CP08.6 — webhook reconciliation (pending).** Add strict raw-body signature verification,
 event-ID deduplication and late-event handling under `apps/api/src/modules/media/`; webhooks observe

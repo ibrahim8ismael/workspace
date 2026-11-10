@@ -10,7 +10,8 @@ type StartMessage = {
   grant: MediaTokenResponse;
 };
 type StopMessage = { kind: 'stop' };
-type FixtureMessage = StartMessage | StopMessage;
+type ToggleMicrophoneMessage = { kind: 'toggle-microphone' };
+type FixtureMessage = StartMessage | StopMessage | ToggleMicrophoneMessage;
 
 declare global {
   interface Window {
@@ -73,6 +74,9 @@ const session = new ProximityAudioSession(
       window.clearInterval(timer);
       track.detach(element);
       element.remove();
+      window.__mediaFixture.remoteIdentities = window.__mediaFixture.remoteIdentities.filter(
+        (candidate) => candidate !== identity,
+      );
       void context.close();
     };
   },
@@ -98,5 +102,7 @@ window.addEventListener('message', (event: MessageEvent<FixtureMessage>) => {
   } else if (message?.kind === 'stop') {
     contextCurrent = false;
     void session.stop();
+  } else if (message?.kind === 'toggle-microphone') {
+    void session.toggleMicrophone();
   }
 });

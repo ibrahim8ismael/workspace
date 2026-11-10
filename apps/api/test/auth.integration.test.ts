@@ -2398,6 +2398,31 @@ describe('office socket admission', () => {
           expect(observations.every(({ activeAudioSamples }) => activeAudioSamples >= 10)).toBe(
             true,
           );
+          applicationMediaClient.send({ kind: 'exercise-mute-unmute' });
+          const mediaControls = await waitForApplicationMediaMessage(
+            applicationMediaClient,
+            (message) => message['kind'] === 'media-controls',
+            'real mute/unmute audio cutoff and recovery',
+          );
+          expect(mediaControls['muteStable']).toBe(true);
+          expect(mediaControls['resumed']).toBe(true);
+          expect(mediaControls['muteCutoffMs']).toEqual(expect.any(Number));
+          expect(mediaControls['unmuteObservedMs']).toEqual(expect.any(Number));
+          expect(mediaControls['muteCutoffMs'] as number).toBeLessThanOrEqual(8000);
+          expect(mediaControls['unmuteObservedMs'] as number).toBeLessThanOrEqual(8000);
+          expect(mediaControls['resumedSampleCount'] as number).toBeGreaterThan(
+            (mediaControls['mutedSampleCount'] as number) + 5,
+          );
+          console.info(
+            `CP08.5 media controls: ${JSON.stringify({
+              muteCutoffMs: mediaControls['muteCutoffMs'],
+              mutedSampleCount: mediaControls['mutedSampleCount'],
+              unmuteObservedMs: mediaControls['unmuteObservedMs'],
+              resumedSampleCount: mediaControls['resumedSampleCount'],
+              muteStable: mediaControls['muteStable'],
+              resumed: mediaControls['resumed'],
+            })}`,
+          );
         } else {
           await vi.waitFor(
             async () => {

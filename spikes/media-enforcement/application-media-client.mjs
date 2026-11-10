@@ -93,6 +93,55 @@ export async function startApplicationMediaClient({ fixtureUrl, grants }) {
     const observations = await Promise.all(pages.map(readObservations));
     return {
       observations,
+      exerciseMuteUnmute: async () => {
+        const sender = pages[0];
+        const receiver = pages[1];
+        const peerIdentity = grants[0].identity;
+        const muteRequestedAt = Date.now();
+        await sender.evaluate(() =>
+          window.postMessage({ kind: 'toggle-microphone' }, location.origin),
+        );
+        await sender.waitForFunction(() => window.__mediaFixture.status === 'muted', null, {
+          timeout: 5000,
+        });
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const muted = await readObservations(receiver);
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const mutedAfterQuiet = await readObservations(receiver);
+        const muteStable = muted.activeAudioSamples === mutedAfterQuiet.activeAudioSamples;
+
+        const unmuteRequestedAt = Date.now();
+        await sender.evaluate(() =>
+          window.postMessage({ kind: 'toggle-microphone' }, location.origin),
+        );
+        await sender.waitForFunction(() => window.__mediaFixture.status === 'live', null, {
+          timeout: 5000,
+        });
+        await receiver.waitForFunction(
+          ({ identity, samples }) =>
+            window.__mediaFixture.remoteIdentities.includes(identity) &&
+            window.__mediaFixture.activeAudioSamples > samples + 5,
+          { identity: peerIdentity, samples: mutedAfterQuiet.activeAudioSamples },
+          { timeout: 8000 },
+        );
+        const resumed = await readObservations(receiver);
+        const result = {
+          muteCutoffMs: Math.max(0, muted.lastActiveAudioAt - muteRequestedAt),
+          mutedSampleCount: mutedAfterQuiet.activeAudioSamples,
+          muteStable,
+          unmuteObservedMs: Math.max(0, resumed.lastActiveAudioAt - unmuteRequestedAt),
+          resumedSampleCount: resumed.activeAudioSamples,
+          resumed: resumed.remoteIdentities.includes(peerIdentity),
+        };
+        if (
+          !result.muteStable ||
+          !result.resumed ||
+          result.muteCutoffMs > 8000 ||
+          result.unmuteObservedMs > 8000
+        )
+          throw new Error(`real media mute/unmute failed: ${JSON.stringify(result)}`);
+        return result;
+      },
       stop: async () => {
         const requestedAt = Date.now();
         await Promise.all(
@@ -151,6 +200,11 @@ export async function runApplicationMediaCutoffCli() {
       try {
         command = JSON.parse(line);
       } catch {
+        continue;
+      }
+      if (command.kind === 'exercise-mute-unmute') {
+        const result = await client.exerciseMuteUnmute();
+        process.stdout.write(JSON.stringify({ kind: 'media-controls', ...result }) + '\n');
         continue;
       }
       if (command.kind !== 'stop') continue;

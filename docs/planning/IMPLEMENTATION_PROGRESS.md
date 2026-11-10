@@ -1008,3 +1008,15 @@ web and API tests, plus the production build. The build retains the existing lar
 warning (about 1.39 MB minified) and the LiveKit client chunk (about 532 kB). The fixture's Vite
 child now receives only the process/runtime variables it needs instead of inheriting the API test
 process environment.
+
+## CP08.5.1 — real mute/unmute cutoff and recovery (2026-11-11)
+
+Extended the opt-in API-grant media fixture to toggle the production `ProximityAudioSession` on one
+of two Chromium participants and measure the other participant's decoded waveform. A LiveKit mute
+keeps the remote subscription present, so the receiver verifies that active samples stop and remain
+stable for 500 ms instead of expecting the track to unsubscribe. In the successful run, mute-to-last-
+active-sample measured **59 ms**, the receiver stayed stable through silence, and unmute-to-resumed-
+audio measured **668 ms** with at least six additional active samples. Both are within the eight-
+second cutoff budget. `pnpm test:media-live` passed the focused real API/guard/SFU/browser test;
+Prettier and lint also passed. Permission denial plus map usability, full UI component wiring,
+opt-out/away and server-side revocation/failure cases remain in CP08.5.

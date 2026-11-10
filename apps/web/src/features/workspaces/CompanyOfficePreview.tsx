@@ -58,28 +58,6 @@ export function CompanyOfficePreview({ account, api, detail, onBack, onOpenSecur
 
   useEffect(() => () => client.close(), [client]);
 
-  const mapId = state.bootstrap?.manifest.mapId ?? 'vivo';
-  const participantCount = state.snapshot?.participants.length ?? 0;
-  const self = state.snapshot?.participants.find(
-    (participant) => participant.participationId === state.ready?.participationId,
-  );
-  const sceneParticipants: Participant[] = (state.snapshot?.participants ?? []).map(
-    (participant) => ({
-      id: participant.participationId,
-      name: participant.displayName,
-      color: '#f6c08f',
-      x: participant.position.x,
-      y: participant.position.y,
-      facing: participant.facing,
-      ...(participant.seatId ? { seatId: participant.seatId } : {}),
-      status: participant.availability,
-      mic: false,
-      camera: false,
-      screen: false,
-    }),
-  );
-  const noOverrides: Overrides = {};
-
   async function runOfficeAction(action: () => Promise<void>) {
     setOfficeActionError('');
     setOfficeActionPending(true);
@@ -95,17 +73,6 @@ export function CompanyOfficePreview({ account, api, detail, onBack, onOpenSecur
       setOfficeActionPending(false);
     }
   }
-
-  const connectionMessage =
-    state.status === 'connected'
-      ? participantCount === 1
-        ? '1 person in the office'
-        : `${participantCount} people in the office`
-      : state.status === 'connecting'
-        ? 'Connecting to the office…'
-        : state.status === 'ended' || state.status === 'error' || state.status === 'disconnected'
-          ? state.message
-          : 'Not connected to the office.';
 
   if (!connected) {
     return (
@@ -196,6 +163,50 @@ export function CompanyOfficePreview({ account, api, detail, onBack, onOpenSecur
       </main>
     );
   }
+
+  if (!state.bootstrap || !state.ready || !state.snapshot) {
+    return (
+      <main className="office-prejoin" data-workspace-id={detail.id}>
+        <section className="office-prejoin-content" aria-labelledby="office-data-error-title">
+          <div className="office-prejoin-form-wrap">
+            <h1 id="office-data-error-title" ref={titleRef} tabIndex={-1}>
+              Office data unavailable
+            </h1>
+            <p role="alert">
+              The office connection is missing its server-provided map or participant state. Return
+              to your companies and try again.
+            </p>
+            <button className="primary" type="button" onClick={onBack}>
+              Back to companies
+            </button>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
+  const { bootstrap, ready, snapshot } = state;
+  const mapId = bootstrap.manifest.mapId;
+  const participantCount = snapshot.participants.length;
+  const self = snapshot.participants.find(
+    (participant) => participant.participationId === ready.participationId,
+  );
+  const sceneParticipants: Participant[] = snapshot.participants.map((participant) => ({
+    id: participant.participationId,
+    name: participant.displayName,
+    color: '#f6c08f',
+    x: participant.position.x,
+    y: participant.position.y,
+    facing: participant.facing,
+    ...(participant.seatId ? { seatId: participant.seatId } : {}),
+    status: participant.availability,
+    mic: false,
+    camera: false,
+    screen: false,
+  }));
+  const noOverrides: Overrides = {};
+  const connectionMessage =
+    participantCount === 1 ? '1 person in the office' : `${participantCount} people in the office`;
 
   return (
     <div className="app-shell office-shell" data-workspace-id={detail.id}>
@@ -355,7 +366,7 @@ export function CompanyOfficePreview({ account, api, detail, onBack, onOpenSecur
 
           <OfficeChatStatus
             connected={connected}
-            participants={state.snapshot?.participants ?? []}
+            participants={snapshot.participants}
           />
 
           <div className="sidebar-foot">

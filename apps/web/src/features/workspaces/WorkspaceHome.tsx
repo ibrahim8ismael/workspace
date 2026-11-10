@@ -4,6 +4,7 @@ import type { AccountDto, WorkspaceDto } from '@gather/contracts';
 import { ApiClient, ApiError } from '../../lib/api';
 import { SubmissionKey } from '../../lib/idempotency';
 import { messageForApi } from '../auth/messages';
+import { PRODUCT_NAME } from '../../brand';
 
 type Props = {
   account: AccountDto;
@@ -220,11 +221,11 @@ export function WorkspaceHome({
         Skip to main content
       </a>
       <header className="dashboard-bar">
-        <a className="dashboard-brand" href="/" aria-label="Open Office home">
+        <a className="dashboard-brand" href="/" aria-label={`${PRODUCT_NAME} home`}>
           <span className="workspace-logo" aria-hidden="true">
             <LayoutGrid size={18} />
           </span>
-          <strong>Open Office</strong>
+          <strong>{PRODUCT_NAME}</strong>
         </a>
         <div className="dashboard-account-actions">
           <span className="dashboard-account-name">{account.displayName}</span>

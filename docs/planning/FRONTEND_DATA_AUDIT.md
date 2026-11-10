@@ -6,8 +6,10 @@ This record follows the production-facing frontend at `apps/web/main.tsx`. Value
 
 ## Completed corrections
 
-- Removed the active `office-preview` fake channel, empty demo message/user arrays, hard-coded preview user ID, and disabled composer. The active office sidebar now renders an explicit unavailable state and, while connected, only the live participant roster from the validated office snapshot. No message API or message event exists yet; chat stays a separately scoped backend feature. See [chat messages](../entities/chat-messages/README.md) and the [completion plan](PROJECT_COMPLETION_PLAN.md#cp06-connect-the-approved-web-ui-to-the-existing-api).
+- Removed the active `office-preview` fake channel, empty demo message/user arrays, hard-coded preview user ID, and disabled composer. The active office sidebar now renders an explicit unavailable state and, while connected, only the live participant roster from the validated office snapshot. No message API or message event exists yet; chat stays a separately scoped backend feature. See [chat messages](../entities/chat-messages/README.md) and the [completion plan](PROJECT_COMPLETION_PLAN.md).
 - Corrected the browser-client README: the current authenticated shell mounts the versioned server-selected map, Vivo in the current environment, rather than Commons.
+- Removed the client-side `vivo` map fallback. The renderer now requires the map ID from the validated office bootstrap and shows a recoverable navigation message if connected state is incomplete.
+- Centralized the active app name as `Open Office` and removed the stale `Gather Lite` title/description from the active browser entry experience.
 
 ## Confirmed live data
 
@@ -20,7 +22,7 @@ This record follows the production-facing frontend at `apps/web/main.tsx`. Value
 - All office participants currently receive the map's single approved `defaultAppearance` from the server. There is no user-profile appearance persistence or picker, and the approved art catalog contains only that appearance. The frontend must not synthesize per-user looks; adding customization requires an approved catalog and the profile API work listed in [CP06](PROJECT_COMPLETION_PLAN.md#cp06-connect-the-approved-web-ui-to-the-existing-api).
 - Microphone, camera, and screen indicators remain off because product media controls are disabled and the browser has no active media session. Do not infer these flags from local UI state; connect them only with the guarded media path in CP08/CP09.
 - Meetings, calendar, object editing, and area renaming have no active API/realtime implementation. Their empty values are feature defaults; corresponding controls must remain unavailable until those contracts are implemented.
-- The active shell brand is `Open Office`. `Gather Lite` was a stale HTML/document title and is being removed from the active entry experience. A different final product brand requires an owner-provided brand choice.
+- The active shell brand is `Open Office`, defined in one frontend constant. A different final product brand requires an owner-provided brand choice.
 - Old localStorage office history and legacy demo workspace names remain in unmounted migration code. `main.tsx` does not import those screens. The Commons preview is available only in development through `?commons-preview=1`.
 
 ## Current implementation limits

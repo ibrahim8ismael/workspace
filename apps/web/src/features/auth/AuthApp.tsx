@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { LayoutGrid } from 'lucide-react';
 import type { AccountDto, WorkspaceDto } from '@gather/contracts';
+import { PRODUCT_NAME } from '../../brand';
 import { ApiClient, ApiError } from '../../lib/api';
 import { clearLegacyAuthStorage } from '../../lib/legacy-storage';
 import { messageForApi } from './messages';
@@ -22,11 +23,11 @@ function Shell({ children }: { children: ReactNode }) {
         Skip to main content
       </a>
       <header className="dashboard-bar">
-        <a className="dashboard-brand" href="/" aria-label="Open Office home">
+        <a className="dashboard-brand" href="/" aria-label={`${PRODUCT_NAME} home`}>
           <span className="workspace-logo" aria-hidden="true">
             <LayoutGrid size={18} />
           </span>
-          <strong>Open Office</strong>
+          <strong>{PRODUCT_NAME}</strong>
         </a>
       </header>
       {children}
@@ -402,8 +403,8 @@ export default function AuthApp() {
   useEffect(() => {
     document.title =
       state === 'signed-in'
-        ? `${screen === 'security' ? 'Account security' : screen === 'company' ? 'Company' : 'Companies'} · Gather Lite`
-        : 'Gather Lite';
+        ? `${screen === 'security' ? 'Account security' : screen === 'company' ? 'Company' : 'Companies'} · ${PRODUCT_NAME}`
+        : PRODUCT_NAME;
   }, [screen, state]);
 
   useEffect(() => {

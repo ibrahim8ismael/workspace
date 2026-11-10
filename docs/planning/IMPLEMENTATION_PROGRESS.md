@@ -752,3 +752,15 @@ rendered `Live Vivo office`, confirmed a Vivo SVG map and authoritative movement
 waiting for a seat claim at `tests/e2e/live-office.spec.ts:276`; the full live scenario is not green
 until that separate seat interaction is fixed and rerun. Other environments still need their own
 backup, dry-run review, explicit apply, API restart and fresh client bootstrap.
+
+## Frontend data audit cleanup (2026-11-10)
+
+The owner requested removal of demo values and correction of frontend defaults. Findings and the remaining backend/API boundaries are tracked in [FRONTEND_DATA_AUDIT.md](FRONTEND_DATA_AUDIT.md).
+
+| Batch | Scope | Status | Evidence / limits |
+| --- | --- | --- | --- |
+| UI-DATA.1 | Remove the mounted fake chat channel, empty demo messages/users and disabled composer; preserve only the live roster and explicit unavailable state | Pushed as `6b4a6c9` | `git diff --check` passed. Text messaging remains deferred because there is no server API/event or approved retention/authorization contract. |
+| UI-DATA.2 | Centralize the active product brand; remove the stale HTML title; require server-selected map state instead of a `vivo` fallback | Pushed as `3486ca3` | `git diff --check` passed. Missing map/participant state now returns a navigation error instead of selecting a client map. |
+| UI-DATA.3 | Render the snapshot's one approved appearance through the mapped base sprite; stop claiming microphone/camera/screen state absent from the snapshot | Pushed as `2a6e31d` | `git diff --check` passed. Profile customization is still unimplemented because the server has no profile endpoint and the approved art catalog has only one appearance. |
+
+No automated test suite or application build was run for these UI cleanup batches. The active UI continues to disable chat, meetings/calendar, editing and media until their API/realtime contracts exist; see the [completion plan](PROJECT_COMPLETION_PLAN.md).

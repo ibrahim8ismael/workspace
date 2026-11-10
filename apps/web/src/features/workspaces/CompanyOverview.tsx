@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import { ArrowLeft, LayoutGrid } from 'lucide-react';
 import type { AccountDto } from '@gather/contracts';
 import type { RefObject } from 'react';
 import { ApiClient, ApiError, type OfficeWorkspaceDetail, type SessionDto } from '../../lib/api';
@@ -171,37 +172,41 @@ export function CompanyOverview({
   }, [mutationLock]);
 
   return (
-    <main className="workspace-shell" data-workspace-id={workspaceId}>
-      <header className="workspace-topbar">
-        <a
-          className="workspace-brand"
-          href="/"
-          aria-label="Gather Lite home"
-          onClick={(event) => {
-            if (mutationPending) event.preventDefault();
-          }}
-        >
-          <span className="account-mark" aria-hidden="true">
-            G
+    <main className="dashboard" data-workspace-id={workspaceId}>
+      <header className="dashboard-bar">
+        <a className="dashboard-brand" href="/" aria-label="Open Office home">
+          <span className="workspace-logo" aria-hidden="true">
+            <LayoutGrid size={18} />
           </span>
-          <strong>Gather Lite</strong>
+          <strong>Open Office</strong>
         </a>
-        <div className="workspace-user">
-          <span>{account.displayName}</span>
-          <button type="button" disabled={mutationPending} onClick={onOpenSecurity}>
+        <div className="dashboard-account-actions">
+          <span className="dashboard-account-name">{account.displayName}</span>
+          <button
+            className="dashboard-secondary"
+            type="button"
+            disabled={mutationPending}
+            onClick={onOpenSecurity}
+          >
             Account security
           </button>
-          <button type="button" disabled={mutationPending} onClick={onBackToCompanies}>
+          <button
+            className="dashboard-secondary"
+            type="button"
+            disabled={mutationPending}
+            onClick={onBackToCompanies}
+          >
+            <ArrowLeft size={15} aria-hidden="true" />
             Back to companies
           </button>
         </div>
       </header>
 
-      <div className="workspace-content company-overview-content">
+      <div className="dashboard-body company-overview-content">
         {previewOpen && detail ? (
           <Suspense
             fallback={
-              <section className="company-panel" role="status">
+              <section className="dashboard-info-panel" role="status">
                 Loading office preview…
               </section>
             }
@@ -214,16 +219,12 @@ export function CompanyOverview({
           </Suspense>
         ) : (
           <>
-            <section className="workspace-heading">
+            <section className="dashboard-heading">
               <div>
-                <p className="account-eyebrow">COMPANY</p>
                 <h1 ref={titleRef} tabIndex={-1}>
                   {detail?.name ?? (loading ? 'Loading company…' : 'Company details')}
                 </h1>
-                {detail && <p className="workspace-lead">gather/{detail.slug}</p>}
-              </div>
-              <div className="workspace-avatar" aria-hidden="true">
-                {(detail?.name ?? account.displayName).trim().slice(0, 1).toUpperCase()}
+                {detail && <p>Company slug: {detail.slug}</p>}
               </div>
             </section>
 
@@ -234,13 +235,13 @@ export function CompanyOverview({
             )}
 
             {loading ? (
-              <section className="company-panel company-overview-panel" role="status">
+              <section className="dashboard-info-panel company-detail-state" role="status">
                 Loading company details…
               </section>
             ) : error ? (
-              <section className="company-panel company-overview-panel">
+              <section className="dashboard-info-panel company-detail-state">
                 <button
-                  className="account-primary"
+                  className="dashboard-create"
                   type="button"
                   disabled={mutationPending}
                   onClick={() => void refresh()}
@@ -250,7 +251,7 @@ export function CompanyOverview({
               </section>
             ) : detail ? (
               <section
-                className="company-panel company-overview-panel"
+                className="dashboard-info-panel company-overview-panel"
                 aria-labelledby="company-details-title"
               >
                 <div className="panel-heading">
@@ -278,8 +279,8 @@ export function CompanyOverview({
                     <dd>{detail.name}</dd>
                   </div>
                   <div>
-                    <dt>Company address</dt>
-                    <dd>gather/{detail.slug}</dd>
+                    <dt>Company slug</dt>
+                    <dd>{detail.slug}</dd>
                   </div>
                   <div>
                     <dt>Your role</dt>
@@ -294,7 +295,7 @@ export function CompanyOverview({
                 </dl>
                 <div className="company-overview-actions">
                   <button
-                    className="account-primary"
+                    className="dashboard-create"
                     type="button"
                     disabled={mutationPending}
                     onClick={() => dispatchView('open-preview')}
@@ -302,7 +303,7 @@ export function CompanyOverview({
                     Open office preview
                   </button>
                   <button
-                    className="account-secondary"
+                    className="dashboard-secondary"
                     type="button"
                     disabled={mutationPending}
                     onClick={onBackToCompanies}

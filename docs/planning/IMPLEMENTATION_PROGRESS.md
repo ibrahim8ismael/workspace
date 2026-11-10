@@ -592,6 +592,12 @@ The authenticated company directory now uses the supplied dashboard layout, sear
 
 Web TypeScript, focused ESLint, production build and `pnpm exec playwright test tests/e2e/company-office-preview.spec.ts` passed (one Chromium test). The production build retains the existing large lazy office-preview chunk warning. Next migrate the company details and account-security views into the upstream visual system, then continue with the supplied office shell and Commons renderer adapter.
 
+## OpenOfficeForAll UI migration — company details (2026-11-10)
+
+The company detail view now uses the OpenOfficeForAll dashboard header, spacing, dashboard buttons and card treatment. Company identity, membership and role continue to come from the current workspace-detail API. The display now names the backend field accurately as a company slug rather than implying a legacy `gather/` route. The Commons office preview remains embedded in the existing integration UI for the next shell migration.
+
+Web TypeScript, focused ESLint, production build and `pnpm exec playwright test tests/e2e/company-office-preview.spec.ts` passed (one Chromium test). The existing large lazy office-preview chunk warning remains. Next migrate account security, then place the current office client and Commons renderer inside the supplied office shell.
+
 ## CP07.20 — Late-policy cutoff and fail-closed cold bootstrap (2026-11-10)
 
 Added authenticated delayed-policy fault (1500ms replies vs 1000ms guard abort). Room retirement is postponed until after cutoff to avoid masking lease-renewal errors. A startup timing failure led to stronger default-deny SFU bootstrap: no LiveKit child starts until a valid request-start lease newer than this boot exists. This replaces the prior three-second startup grace; stale pre-boot allow files cannot bootstrap media.

@@ -4166,7 +4166,9 @@ button .avatar {
 }
 /* Workspace dashboard, laid out like the reference: light page, top bar, tabs, search and map cards. */
 .dashboard {
+  height: 100dvh;
   min-height: 100vh;
+  overflow-y: auto;
   background: #f3f3f3;
   color: #1d1d1f;
   font-family:
@@ -4597,6 +4599,21 @@ button .avatar {
   border-radius: 14px;
   background: #fff;
   box-shadow: 0 1px 2px #0000000a;
+}
+.dashboard-info-panel {
+  min-width: 0;
+  padding: clamp(20px, 3vw, 28px);
+  border: 1px solid #e2e2e2;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 1px 2px #0000000a;
+}
+.dashboard-body.company-overview-content {
+  width: min(100%, 920px);
+  margin: 0 auto;
+}
+.company-detail-state {
+  color: #6b6b72;
 }
 .dashboard-company-art {
   position: relative;

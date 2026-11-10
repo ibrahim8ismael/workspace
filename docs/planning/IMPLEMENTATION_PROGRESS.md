@@ -930,3 +930,27 @@ The owner reaffirmed 90-day office-chat history retention; CP06.11 already imple
 voice slice made no retention changes. This code-and-docs batch is pushed separately. Remaining
 CP08 proof is a real API↔guard deployment and two-browser LiveKit audio/cutoff run with TURN and
 isolation checks; A07/A08 stay open.
+
+## CP08.3c — application policy and separate guard process (2026-11-10)
+
+Extended the proximity media integration test to start the actual CP07 `guard-process.mjs` as a
+separate Node process. The guard polls the running Nest integration-test API over signed localhost
+HTTP using the shared canonical HMAC key, installs the active pair's permits, and sends its signed
+installation acknowledgement. The test takes an application-issued LiveKit JWT and sends the
+pinned `/rtc/v1/validate` signaling shape through the guard. A local mock SFU upstream confirms that
+the current token is forwarded. After `conversation:leave`, the guard installs the next empty
+snapshot and denies the still-unexpired token. The guard then restarts with a fresh epoch, installs
+the API's empty policy and continues to reject that old token. The upstream records only the path,
+never the token query value. Temporary processes, ports and retirement storage are cleaned up.
+
+`guard-process.mjs` now accepts test-scoped listen host/port and fixed upstream overrides while
+retaining its isolated-fixture defaults. This demonstrates the API-to-guard process/network
+boundary, install ACK and current application-token authorization. The upstream is deliberately a
+mock, so this is not a LiveKit join, real browser audio, supervisor progress bridge, forwarding
+cutoff measurement or production deployment. `pnpm --filter @gather/api build` and the focused
+`auth.integration.test.ts` proximity case passed (1 selected test; 68 unrelated cases skipped).
+
+The EGM CP08 audit also found stale contract/entity text describing grant routes as unimplemented
+and `mediaReady` as always false. This docs batch corrects those statuses and records the remaining
+webhook, real-SFU, measured cutoff and deployment gaps. The owner-selected 90-day office chat
+retention remains implemented by CP06.11.

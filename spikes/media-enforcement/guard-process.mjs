@@ -1,4 +1,4 @@
-/** Experimental guard process; optional authenticated fixture policy leases, no application integration. */
+/** Experimental guard process; supports the authenticated application-policy integration fixture. */
 import { TokenVerifier } from '../../apps/api/node_modules/livekit-server-sdk/dist/AccessToken.js';
 import { createSignalingGuard } from './signaling-guard.mjs';
 import { performance } from 'node:perf_hooks';
@@ -67,7 +67,7 @@ if (policyEnabled) {
 }
 
 const guard = createSignalingGuard({
-  upstream: 'http://127.0.0.1:7880',
+  upstream: process.env.CP07_SFU_UPSTREAM ?? 'http://127.0.0.1:7880',
   origin: CP07_ORIGIN,
   authorize: async (token) => {
     const claims = await verifier.verify(token, 0);
@@ -94,7 +94,11 @@ const guard = createSignalingGuard({
     );
   },
 });
-guard.server.listen(7885, '0.0.0.0');
+const guardPort = Number(process.env.CP07_GUARD_PORT ?? 7885);
+const guardHost = process.env.CP07_GUARD_HOST ?? '0.0.0.0';
+if (!Number.isInteger(guardPort) || guardPort < 1 || guardPort > 65535)
+  throw new Error('invalid guard listen port');
+guard.server.listen(guardPort, guardHost);
 for (const signal of ['SIGTERM', 'SIGINT'])
   process.on(signal, () => {
     guard.close();

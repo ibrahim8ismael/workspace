@@ -9,7 +9,11 @@ import { MongoMemoryReplSet } from 'mongodb-memory-server-core';
 import request from 'supertest';
 import type { Response as HttpResponse } from 'supertest';
 import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
-import { resolve } from 'node:path';
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { createServer } from 'node:http';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { decryptMail, type MailPayload } from '@gather/delivery';
 import commonsManifest from '@gather/assets/manifests/commons-map.json' with { type: 'json' };
 import vivoManifest from '@gather/assets/manifests/vivo-map.json' with { type: 'json' };
@@ -116,6 +120,113 @@ function nextSocketEvent<T>(socket: Socket, event: string) {
   return new Promise<T>((resolve, reject) => {
     socket.once(event, (payload: T) => resolve(payload));
     socket.once('connect_error', (error) => reject(error));
+  });
+}
+type GuardOutput = { kind?: string; sequence?: number };
+type ApplicationGuard = {
+  child: ChildProcessWithoutNullStreams;
+  messages: GuardOutput[];
+  getStderr: () => string;
+};
+
+function startApplicationGuard(options: {
+  apiBaseUrl: string;
+  epoch: string;
+  host: string;
+  port: number;
+  retirementDirectory: string;
+  sfuUpstream: string;
+}): ApplicationGuard {
+  const root = resolve(process.cwd(), '../..');
+  const script = resolve(root, 'spikes/media-enforcement/guard-process.mjs');
+  const child = spawn(process.execPath, [script], {
+    cwd: root,
+    env: {
+      ...process.env,
+      CP07_KEY: livekitApiKey,
+      CP07_SECRET: livekitApiSecret,
+      CP07_ORIGIN: origin,
+      CP07_RETIREMENTS: options.retirementDirectory,
+      CP07_GUARD_EPOCH: options.epoch,
+      CP07_APPLICATION_POLICY: '1',
+      CP07_POLICY_ENDPOINT: `${options.apiBaseUrl}/api/media/internal/policy/pull`,
+      CP07_POLICY_ACK_ENDPOINT: `${options.apiBaseUrl}/api/media/internal/policy/ack`,
+      CP07_POLICY_KEY: mediaMachineKey.toString('base64'),
+      CP07_GUARD_HOST: options.host,
+      CP07_GUARD_PORT: String(options.port),
+      CP07_SFU_UPSTREAM: options.sfuUpstream,
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  const messages: GuardOutput[] = [];
+  let stdoutBuffer = '';
+  let stderrBuffer = '';
+  child.stdout.setEncoding('utf8');
+  child.stdout.on('data', (chunk: string) => {
+    stdoutBuffer += chunk;
+    let newline = stdoutBuffer.indexOf('\n');
+    while (newline >= 0) {
+      const line = stdoutBuffer.slice(0, newline);
+      stdoutBuffer = stdoutBuffer.slice(newline + 1);
+      try {
+        messages.push(JSON.parse(line) as GuardOutput);
+      } catch {
+        // Ignore partial/non-protocol diagnostic lines in this test-only harness.
+      }
+      newline = stdoutBuffer.indexOf('\n');
+    }
+  });
+  child.stderr.setEncoding('utf8');
+  child.stderr.on('data', (chunk: string) => {
+    stderrBuffer += chunk;
+  });
+  return { child, messages, getStderr: () => stderrBuffer };
+}
+
+async function waitForGuardMessage(
+  guard: ApplicationGuard,
+  predicate: (message: GuardOutput) => boolean,
+  label: string,
+) {
+  let result: GuardOutput | undefined;
+  await vi.waitFor(
+    () => {
+      if (guard.child.exitCode !== null)
+        throw new Error(`application guard exited before ${label}: ${guard.getStderr()}`);
+      result = guard.messages.find(predicate);
+      if (!result) throw new Error(`application guard has not emitted ${label}`);
+    },
+    { timeout: 5000, interval: 25 },
+  );
+  return result!;
+}
+
+async function stopApplicationGuard(guard: ApplicationGuard) {
+  if (guard.child.exitCode !== null || guard.child.signalCode !== null) return;
+  const stopped = new Promise<void>((resolve) => guard.child.once('exit', () => resolve()));
+  guard.child.kill('SIGTERM');
+  const timeout = new Promise<void>((resolve) => setTimeout(resolve, 1500));
+  await Promise.race([stopped, timeout]);
+  if (guard.child.exitCode === null && guard.child.signalCode === null) {
+    guard.child.kill('SIGKILL');
+    await stopped;
+  }
+}
+
+async function listenLoopback(server: ReturnType<typeof createServer>) {
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const address = server.address() as AddressInfo | null;
+  if (!address) throw new Error('expected loopback server address');
+  return address.port;
+}
+
+async function closeHttpServer(server: ReturnType<typeof createServer>) {
+  if (!server.listening) return;
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => (error ? reject(error) : resolve()));
   });
 }
 class Client {
@@ -1756,6 +1867,10 @@ describe('office socket admission', () => {
     const secondSocket = officeSocket({ ticket: secondTicket, protocolVersion: 1 });
     const observerSocket = officeSocket({ ticket: observerTicket, protocolVersion: 1 });
     const observerNotices: unknown[] = [];
+    let applicationGuard: ApplicationGuard | undefined;
+    let mediaUpstream: ReturnType<typeof createServer> | undefined;
+    let retirementDirectory: string | undefined;
+    const forwardedSignalingPaths: string[] = [];
     observerSocket.on('conversation:update', (notice: unknown) => observerNotices.push(notice));
 
     try {
@@ -1954,6 +2069,50 @@ describe('office socket admission', () => {
       expect(tokenClaims.video).not.toHaveProperty('roomList');
       expect(tokenClaims.video).not.toHaveProperty('roomRecord');
 
+      mediaUpstream = createServer((incoming, response) => {
+        forwardedSignalingPaths.push(
+          new URL(incoming.url ?? '/', 'http://upstream.local').pathname,
+        );
+        response.writeHead(200, { 'Content-Type': 'application/json' });
+        response.end('{}');
+      });
+      const upstreamPort = await listenLoopback(mediaUpstream);
+      const guardPortProbe = createServer();
+      const guardPort = await listenLoopback(guardPortProbe);
+      await closeHttpServer(guardPortProbe);
+      retirementDirectory = await mkdtemp(resolve(tmpdir(), 'gather-cp08-app-guard-'));
+      const apiAddress = app.getHttpServer().address() as AddressInfo;
+      applicationGuard = startApplicationGuard({
+        apiBaseUrl: `http://127.0.0.1:${apiAddress.port}`,
+        epoch: challenge.epoch,
+        host: '127.0.0.1',
+        port: guardPort,
+        retirementDirectory,
+        sfuUpstream: `http://127.0.0.1:${upstreamPort}`,
+      });
+      const firstGuardAck = await waitForGuardMessage(
+        applicationGuard,
+        (message) => message.kind === 'ack' && message.sequence! > snapshot.sequence,
+        'the application-policy installation acknowledgement',
+      );
+      const tokenValidationUrl = new URL(`http://127.0.0.1:${guardPort}/rtc/v1/validate`);
+      tokenValidationUrl.searchParams.set('access_token', mediaGrant.token);
+      tokenValidationUrl.searchParams.set(
+        'join_request',
+        Buffer.from(JSON.stringify({ protocol: 12 })).toString('base64url'),
+      );
+      const validateThroughGuard = () => fetch(tokenValidationUrl, { headers: { Origin: origin } });
+      await vi.waitFor(
+        async () => {
+          const guarded = await validateThroughGuard();
+          if (guarded.status !== 200)
+            throw new Error(`current application grant was not forwarded: ${guarded.status}`);
+        },
+        { timeout: 5000, interval: 50 },
+      );
+      expect(forwardedSignalingPaths).toContain('/rtc/v1/validate');
+      let latestGuardSequence = firstGuardAck.sequence!;
+
       status(
         await observer.client.send('post', tokenPath, {
           participationId: firstReady.participationId,
@@ -1984,6 +2143,11 @@ describe('office socket admission', () => {
       await new Promise((resolve) => setTimeout(resolve, 80));
       expect(observerNotices).toEqual([]);
 
+      latestGuardSequence = Math.max(
+        ...applicationGuard.messages
+          .filter((message) => message.kind === 'ack')
+          .map((message) => message.sequence ?? 0),
+      );
       const firstEndedEvent = nextSocketEvent<unknown>(firstSocket, 'conversation:update');
       const secondEndedEvent = nextSocketEvent<unknown>(secondSocket, 'conversation:update');
       const leave = {
@@ -2007,6 +2171,15 @@ describe('office socket admission', () => {
         participants: [],
       });
       expect(ended).toMatchObject({ state: 'ended', mediaReady: false, participants: [] });
+      const endPolicyAck = await waitForGuardMessage(
+        applicationGuard,
+        (message) => message.kind === 'ack' && message.sequence! > latestGuardSequence,
+        'the empty policy snapshot after the pair ended',
+      );
+      latestGuardSequence = endPolicyAck.sequence!;
+      const forwardedBeforeDeniedReplay = forwardedSignalingPaths.length;
+      expect((await validateThroughGuard()).status).toBe(403);
+      expect(forwardedSignalingPaths).toHaveLength(forwardedBeforeDeniedReplay);
       status(
         await first.client.send('post', tokenPath, {
           participationId: firstReady.participationId,
@@ -2016,7 +2189,30 @@ describe('office socket admission', () => {
       );
       await new Promise((resolve) => setTimeout(resolve, 80));
       expect(observerNotices).toEqual([]);
+
+      await stopApplicationGuard(applicationGuard);
+      applicationGuard = undefined;
+      await new Promise((resolve) => setTimeout(resolve, 5100));
+      const restartedEpoch = randomBytes(32).toString('hex');
+      applicationGuard = startApplicationGuard({
+        apiBaseUrl: `http://127.0.0.1:${apiAddress.port}`,
+        epoch: restartedEpoch,
+        host: '127.0.0.1',
+        port: guardPort,
+        retirementDirectory,
+        sfuUpstream: `http://127.0.0.1:${upstreamPort}`,
+      });
+      await waitForGuardMessage(
+        applicationGuard,
+        (message) => message.kind === 'ack' && message.sequence === 1,
+        'the restarted guard’s fresh-epoch default-deny snapshot',
+      );
+      expect((await validateThroughGuard()).status).toBe(403);
+      expect(forwardedSignalingPaths).toHaveLength(forwardedBeforeDeniedReplay);
     } finally {
+      if (applicationGuard) await stopApplicationGuard(applicationGuard);
+      if (mediaUpstream) await closeHttpServer(mediaUpstream);
+      if (retirementDirectory) await rm(retirementDirectory, { recursive: true, force: true });
       firstSocket.disconnect();
       secondSocket.disconnect();
       observerSocket.disconnect();

@@ -1,6 +1,6 @@
 # Media permits and generations implementation plan
 
-Status: local isolated CP07 spike verified; application/deployment integration pending CP08/CP10 · Updated: 2026-11-10
+Status: local isolated CP07 spike and CP08.3c application-policy process fixture verified; real SFU/deployment integration pending CP08/CP10 · Updated: 2026-11-10
 
 ## Implementation tasks
 

@@ -1,25 +1,30 @@
 # Media grants implementation plan
 
-Status: planned; no implementation or verification evidence · Target: M0 spike; M3 integration
+Status: CP08.3a grant route, CP08.3b browser adapter and CP08.3c process-policy fixture implemented; real SFU acceptance pending · Target: M3 integration
 
 ## Implementation tasks
 
-- [ ] Define publish-source grants and admission error schema.
-- [ ] Build isolated M0 token/guard spike with private fixtures.
-- [ ] Integrate current-generation policy checks and SDK token issuance.
-- [ ] Implement permission denial, source limits, reconnect and bounded recovery budgets.
+- [x] Define strict media-token request/response and source-specific LiveKit grants.
+- [x] Build the isolated CP07 token/guard spike with private fixtures and measured local cutoff evidence.
+- [x] Integrate current session/company/pair/permit checks and short-lived microphone-only SDK token issuance.
+- [x] Connect the supplied office-shell mic action to the API and lazy LiveKit client; capture starts only on click.
+- [x] Verify separate-process application policy pull/ACK and app-token signaling admission against a mock upstream; verify old-token denial after pair end and guard restart.
+- [ ] Run app-issued grants through a real guarded LiveKit server with two browsers and record actual audio publication/subscription and cutoff evidence.
+- [ ] Verify browser permission denial, disconnect/reconnect, refreshed-token replay, policy loss and company isolation through the real media path.
+- [ ] Implement meeting camera/screen scopes and UI under CP09; implement signed webhook verification only with a defined reconciliation event model.
 
 ## Acceptance criteria
 
 The following are future checks, not passing results.
 
-- [ ] Client-supplied room/identity cannot mint arbitrary permissions.
-- [ ] Original and refreshed grants cannot enter retired generations.
-- [ ] No recording/admin capabilities or raw secrets appear in public responses/logs.
+- [x] Client-supplied room/identity cannot mint arbitrary permissions; API tests and the app-policy guard fixture check derived identity/room scope.
+- [ ] Original and refreshed application grants cannot publish into a retired generation on the real SFU path.
+- [x] Proximity grants contain no room-admin/data-publish capabilities and the API response is no-store.
+- [ ] Verify token query parameters and media credentials are redacted from production ingress, SFU logs and telemetry.
 
 ## Dependencies and completion
 
 - Follow the relationships and invariants in the [entity specification](README.md).
-- Resolve: All-LiveKit is accepted. Pin SDK/server and prove guard/supervision behavior in CP07 before production grant implementation.
-- Before starting, freeze relevant runtime DTOs and error behavior in [HTTP](../../contracts/HTTP.md) / [realtime](../../contracts/REALTIME.md) contracts.
+- Resolve: All-LiveKit is accepted; web/server SDK versions are pinned. CP07's isolated guard/SFU proof is separate from the current app-policy integration fixture and does not establish production deployment behavior.
+- Next real-media fixture boundary: `apps/api/test/auth.integration.test.ts`, `spikes/media-enforcement/guard-process.mjs`, and the pinned LiveKit test fixture in `spikes/media-enforcement/media-cutoff.mjs`. Keep the fixture opt-in, use fake browser devices, route signaling only through the guard, and assert decoded audio progresses before retirement and stops by the agreed cutoff after it. Record denied capture, policy end, guard restart and cleanup separately.
 - Completion requires code references, relevant check results and unresolved limitations in the [acceptance register](../../planning/ACCEPTANCE.md). No milestone is complete from documentation alone.

@@ -243,24 +243,45 @@ generations active after an exact installation acknowledgement. CP08.2c adds the
 ACK client and shared canonical base64 key decoding. CP08.3a adds a protected session/company/current-
 pair-bound token endpoint (microphone-only JWT, maximum 60 seconds, bounded by session expiry,
 no-store response) and a CP07 guard mode that validates changing participation IDs against current
-installed permits. Automated API and guard suites pass (88 and 25 tests). The policy remains
-process-local and the application API/guard have not yet been run as one live networked process pair.
-CP08.3b connects the supplied OpenOffice office-shell opt-in/microphone control to the token route
-and lazy pinned `livekit-client`, including remote-audio attachment, microphone-off default and
-cleanup on mute/leave/context change. Client/API tests and mocked Socket.IO/API browser E2E pass;
-they do not prove a LiveKit connection. CP07's isolated cutoff proof still needs integrated
-application and deployment evidence for A07. Next, run the actual two-browser LiveKit audio path
-through the connected API/guard, then measure permission denial, teardown, reconnect and cutoff;
-keep A07/A08 open until those gates pass.
+installed permits. CP08.3b connects the supplied office-shell controls to the token route and lazy
+pinned `livekit-client`, including remote-audio attachment, microphone-off default and teardown on
+mute/leave/context change. CP08.3c starts the real CP07 guard as a separate process against the live
+Nest integration-test server over signed localhost HTTP. The guard installs a current pair's
+permits, authorizes its application-issued JWT to a mock signaling upstream, then denies that token
+after pair end and after a fresh-epoch guard restart. The focused API process-integration test,
+web/type/lint/build checks and mocked office browser flow pass. The policy remains process-local.
+This does not prove actual LiveKit join/audio, SFU forwarding cutoff or production deployment.
 
-1. Implement deterministic pairing, one active conversation per participation, explicit opt-in and availability gates. Freeze ties, suppression after explicit leave and distance/debounce semantics; never debounce security revocation.
-2. Track conversation state/version/member set/generation in office-owner memory. Create isolated rooms per generation; retire the old generation before granting a replacement. Handle boundary churn with bounded recovery budgets.
-3. Add protected HTTP media-token issuance bound to the same session's live participation and current conversation. Resolve identity/room/sources on the server; install the exact permit, recheck policy, then issue a short-lived grant.
-4. Add signed raw-body webhook verification, deduplication and late-event reconciliation. Webhooks observe media state, not authorize callers.
-5. Replace legacy browser P2P/token logic with the selected verified media adapter. Devices begin off; permission denial leaves the office usable. Stop tracks and room bindings on leave, logout, revocation, tenant switch, generation change and component teardown.
-6. Separate network disconnected, permission denied, media unavailable and authorized migration states. Keep grants memory-only/no-store, redact SDK token parameters and never silently fall back to unguarded calls.
+**CP08.4 — actual application-grant media fixture (pending).** Extend
+`apps/api/test/auth.integration.test.ts`, `spikes/media-enforcement/guard-process.mjs` and
+`spikes/media-enforcement/media-cutoff.mjs` to use the pinned LiveKit server with the actual API
+grant and policy pull/ACK path. Keep the fixture opt-in and isolated. Start two browser clients with
+fake audio devices, route signaling only through the guard, assert each receiver subscribes to the
+other current participation, then end the pair and measure the last decoded audio sample against
+the existing eight-second cutoff. Assert the old token is rejected after guard/SFU restart. Clean up
+the fixture SFU, browser pages, guard and temporary policy/retirement data on every exit.
 
-Existing migration inputs: `apps/web/{useMedia.ts,useSfu.ts,MeetingView.tsx}`. Proposed API files under `conversations/{conversation.service,pairing,state-machine}.ts` and `media/{media.controller,media.service,livekit-adapter,permit-client,webhook.controller}.ts`; add browser `src/features/media/` and shared HTTP/conversation schemas. Promote CP07's proven guard/supervision implementation with its tests and deployment requirements.
+**CP08.5 — revocation/failure matrix (pending).** In the same fixture, exercise permission denial,
+mute/unmute, opt-out, away, office leave, membership/session revocation, office/API lease expiry,
+guard loss, independent-supervisor progress loss, reconnect and an SFU-refreshed JWT. Record each
+input, policy ACK, last active audio sample, process state and outcome. Verify the disconnected
+office/map remains usable after microphone denial. Do not close A07/A08 from token expiry or UI
+state alone.
+
+**CP08.6 — webhook reconciliation (pending).** Add strict raw-body signature verification,
+event-ID deduplication and late-event handling under `apps/api/src/modules/media/`; webhooks observe
+SFU state and never authorize admission. Add integration cases for valid, invalid, duplicate and
+late events in `apps/api/test/auth.integration.test.ts`. Keep the webhook listener private and
+document the secret provisioning and replay window.
+
+**CP08.7 — release evidence (pending).** Run denied-capture, TURN-only, weak-network and cross-
+company media tests. Record deployment listener exposure and SDK/SFU digests in
+`docs/planning/MEDIA_ENFORCEMENT_EVIDENCE.md`, link each result to A07/A08 and keep release gated
+until the actual media path passes.
+
+The old `apps/web/{useMedia.ts,useSfu.ts,MeetingView.tsx}` P2P lifecycle is not mounted and must not
+be reconnected. The active adapter is `apps/web/src/features/office/proximity-audio-session.ts`;
+fixed meeting camera/screen controls remain CP09.
 
 Exit: real two-browser audio, denied capture, opt-out/away/leave, boundary churn, logout/reset/removal during calls, expired leases, reconnect, stale original/refreshed grants and isolated companies. Re-run forwarding measurements on the integrated path. TURN-only and weak-network scenarios have recorded outcomes. Record A07/A08/A11.
 

@@ -82,6 +82,8 @@ mounts upstream VivoScene for Vivo offices, connects its movement, seat and pres
 server-authoritative snapshots and commands, and keeps the older Commons renderer for offices that
 already carry an immutable Commons version.
 
-The API unit/integration tests pass against both map versions. Two-browser Vivo collision, seat
-contention and visual/accessibility acceptance remain follow-up checks; earlier two-browser office
-evidence exercised Commons.
+The API tests pass against both map versions. CP02.6c's live Docker run passes two-browser Vivo
+movement, presence, seat sit/stand synchronization, dropped-delta recovery, socket interruption and
+re-entry, and company isolation through Caddy/API/Socket.IO. Vivo wall-collision and concurrent
+seat-contention checks, plus formal visual/accessibility acceptance, remain follow-up work; earlier
+Commons browser tests still provide the wall and seat-race evidence for that map only.

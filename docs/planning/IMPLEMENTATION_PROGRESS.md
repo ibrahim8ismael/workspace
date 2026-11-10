@@ -692,6 +692,24 @@ actions remain unavailable.
 Verification: formatter, ESLint, typecheck, and the targeted Playwright run passed. The browser test
 covers sign-in, direct company entry, Vivo scene mounting, movement intent, sit/stand, availability,
 disconnect/re-entry, keyboard focus and ensuring controls do not trigger movement. It uses mocked
-HTTP and Socket.IO; the live two-browser spec still targets the earlier Commons renderer and needs
-conversion before it can serve as Vivo acceptance. Visual anchor/occlusion review, screen-reader
-review, and Chrome/Edge signoff also remain. This batch is committed and pushed separately.
+HTTP and Socket.IO. Visual anchor/occlusion review, screen-reader review, and Chrome/Edge signoff
+also remain. This batch is committed and pushed separately.
+
+## CP02.6c — live Docker verification of the Vivo office UI (2026-11-10)
+
+Rebuilt and restarted the local API and Caddy images from the pushed Vivo implementation. The app
+remains available at `https://localhost:8443`; both the web root and `/api/health/live` returned
+HTTP 200. Updated the live two-browser scenario to use VivoScene and Vivo seats instead of Commons
+canvas selectors.
+
+`LIVE_OFFICE_E2E=1 pnpm test:e2e:live` passed against local Docker and Mailpit. The test registers
+two verified accounts, creates an owner workspace and invitation, opens its newly created Vivo
+office in two browser contexts, and verifies server-observed movement, presence changes, seat
+sit/stand synchronization, dropped-delta snapshot recovery, silent WebSocket interruption and fresh
+re-entry, then confirms a second company stays isolated. Formatter and ESLint passed.
+
+This does not yet verify Vivo wall collision or simultaneous seat contention in the browser. The
+Commons map still has earlier collision/seat-race browser evidence; that evidence does not transfer
+to Vivo. Formal visual anchor/occlusion, screen-reader and Chrome/Edge acceptance remain open. The
+legacy monolithic upstream `App.tsx` is still unmounted; the current authenticated shell retains the
+supplied OpenOfficeForAll styles and Vivo map with this project's APIs and Socket.IO.

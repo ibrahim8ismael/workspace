@@ -245,10 +245,12 @@ pair-bound token endpoint (microphone-only JWT, maximum 60 seconds, bounded by s
 no-store response) and a CP07 guard mode that validates changing participation IDs against current
 installed permits. Automated API and guard suites pass (88 and 25 tests). The policy remains
 process-local and the application API/guard have not yet been run as one live networked process pair.
-The supplied OpenOffice microphone control is still unwired, and no LiveKit browser join or actual
-audio has been verified. CP07's isolated cutoff proof still needs integrated application and
-deployment evidence for A07. Next, connect the existing OpenOffice microphone control to the token
-route and pinned client, then test real two-browser audio, permission denial, teardown and cutoff;
+CP08.3b connects the supplied OpenOffice office-shell opt-in/microphone control to the token route
+and lazy pinned `livekit-client`, including remote-audio attachment, microphone-off default and
+cleanup on mute/leave/context change. Client/API tests and mocked Socket.IO/API browser E2E pass;
+they do not prove a LiveKit connection. CP07's isolated cutoff proof still needs integrated
+application and deployment evidence for A07. Next, run the actual two-browser LiveKit audio path
+through the connected API/guard, then measure permission denial, teardown, reconnect and cutoff;
 keep A07/A08 open until those gates pass.
 
 1. Implement deterministic pairing, one active conversation per participation, explicit opt-in and availability gates. Freeze ties, suppression after explicit leave and distance/debounce semantics; never debounce security revocation.

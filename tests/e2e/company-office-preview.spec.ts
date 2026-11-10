@@ -15,6 +15,9 @@ const workspace = {
 };
 const officeId = 'df92b3ad-d3e9-430d-82f5-6e91cbe9dfe2';
 const participationId = '8f34d8de-bddb-489d-9cde-f03f1a98b68e';
+const teammateParticipationId = '41bbf5d6-37d7-4468-9892-9776ff19e008';
+const proximityConversationId = 'd65d5a55-c917-448b-a203-1a226bc76319';
+const proximityGeneration = 'a371c42a-aa7d-4082-ad22-74e1816af053';
 const officeEpoch = '668bde07-cc48-4623-a58c-2efbc8ac21d5';
 const mapVersion = 'vivo-v1-0208da25a5cdc4cbb4036ae04a5bb8796962752a3d84de24961ebc15d8038e7b';
 const officeManifest = {
@@ -48,6 +51,8 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   const officeEvents: string[] = [];
   const movementInputs: Array<{ dx: number; dy: number }> = [];
   const sentOfficeMessages: Array<{ clientMessageId: string; text: string }> = [];
+  const mediaTokenRequests: Array<{ participationId: string; conversationVersion: number }> = [];
+  let liveKitSocketAttempts = 0;
   let failNextOfficeMessage = true;
   const officeHistory = [
     {
@@ -134,6 +139,39 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
           text: body.text,
           createdAt: '2026-11-10T17:01:00.000Z',
         },
+      });
+    }
+    if (method === 'POST' && path === `/api/conversations/${proximityConversationId}/media-token`) {
+      const body = request.postDataJSON() as {
+        participationId: string;
+        conversationVersion: number;
+      };
+      mediaTokenRequests.push(body);
+      const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString(
+        'base64url',
+      );
+      const payload = Buffer.from(
+        JSON.stringify({
+          iss: 'e2e-test',
+          sub: participationId,
+          name: account.displayName,
+          exp: Math.floor(Date.now() / 1000) + 60,
+          video: {
+            room: proximityGeneration,
+            roomJoin: true,
+            canPublish: true,
+            canPublishSources: ['microphone'],
+            canSubscribe: true,
+            canPublishData: false,
+          },
+        }),
+      ).toString('base64url');
+      return json({
+        serverUrl: 'wss://media.example.test',
+        token: `${header}.${payload}.e2e-test-signature`,
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        conversationVersion: body.conversationVersion,
+        generation: proximityGeneration,
       });
     }
     if (method === 'GET' && path === `/api/workspaces/${workspace.id}/offices/${officeId}`) {
@@ -244,7 +282,13 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
             string,
             {
               eventId?: string;
-              payload?: { availability?: string; seatId?: string; dx?: number; dy?: number };
+              payload?: {
+                availability?: string;
+                seatId?: string;
+                dx?: number;
+                dy?: number;
+                enabled?: boolean;
+              };
             },
           ];
           officeEvents.push(packet[0]);
@@ -263,6 +307,48 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
           if (packet[0] === 'presence:update' && packet[1].payload?.availability) {
             availability = packet[1].payload.availability;
             emitWorldDelta();
+          } else if (packet[0] === 'proximity:set-opt-in' && packet[1].payload?.enabled) {
+            const participants = [
+              { participationId, displayName: account.displayName },
+              { participationId: teammateParticipationId, displayName: 'Office Teammate' },
+            ];
+            socket.send(
+              `42/office,["conversation:update",${JSON.stringify({
+                officeEpoch,
+                conversationId: proximityConversationId,
+                kind: 'proximity',
+                state: 'joining',
+                version: 1,
+                generation: proximityGeneration,
+                mediaReady: false,
+                participants,
+              })}]`,
+            );
+            socket.send(
+              `42/office,["conversation:update",${JSON.stringify({
+                officeEpoch,
+                conversationId: proximityConversationId,
+                kind: 'proximity',
+                state: 'active',
+                version: 2,
+                generation: proximityGeneration,
+                mediaReady: true,
+                participants,
+              })}]`,
+            );
+          } else if (packet[0] === 'proximity:set-opt-in' && !packet[1].payload?.enabled) {
+            socket.send(
+              `42/office,["conversation:update",${JSON.stringify({
+                officeEpoch,
+                conversationId: proximityConversationId,
+                kind: 'proximity',
+                state: 'ended',
+                version: 3,
+                generation: proximityGeneration,
+                mediaReady: false,
+                participants: [],
+              })}]`,
+            );
           } else if (packet[0] === 'seat:sit' && packet[1].payload?.seatId) {
             sittingAt = packet[1].payload.seatId;
             emitWorldDelta();
@@ -275,6 +361,11 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
         }
       }
     });
+  });
+
+  await page.routeWebSocket('wss://media.example.test/**', (socket) => {
+    liveKitSocketAttempts += 1;
+    socket.close({ code: 1001, reason: 'mock media service unavailable' });
   });
 
   await page.goto('/');
@@ -323,6 +414,22 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await expect(page.locator('#office-map')).toBeFocused();
   await expect(page.getByRole('group', { name: 'Office controls' })).toBeVisible();
   await expect(page.getByRole('group', { name: 'Your availability' })).toBeVisible();
+  const microphoneButton = page.getByRole('button', { name: 'Activate proximity microphone' });
+  await expect(microphoneButton).toBeDisabled();
+  await page.getByRole('button', { name: 'Opt in to nearby voice' }).click();
+  await expect(
+    page.getByText('Paired with Office Teammate. Turn on your microphone when ready.'),
+  ).toBeVisible();
+  await expect(microphoneButton).toBeEnabled();
+  await microphoneButton.click();
+  await expect
+    .poll(() => mediaTokenRequests)
+    .toEqual([{ participationId, conversationVersion: 2 }]);
+  await expect.poll(() => liveKitSocketAttempts).toBeGreaterThan(0);
+  await page.getByRole('button', { name: 'Opt out of nearby voice' }).click();
+  await expect(
+    page.getByText('Nearby voice is off. Your microphone will stay off until you turn it on.'),
+  ).toBeVisible();
   await expect(page.getByRole('group', { name: 'Seats' })).toHaveCount(0);
   await expect(page.getByRole('region', { name: 'People in the office' })).toContainText(
     account.displayName,

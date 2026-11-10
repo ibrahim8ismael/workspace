@@ -545,6 +545,39 @@ describe('same-origin API client', () => {
     });
   });
 
+  it('requests a session-bound proximity token through the no-store protected API path', async () => {
+    const conversationId = 'd65d5a55-c917-448b-a203-1a226bc76319';
+    const participationId = 'cfd1f021-46b8-45f2-b6c8-a60e88d648f8';
+    const generation = 'a371c42a-aa7d-4082-ad22-74e1816af053';
+    const calls: { input: RequestInfo | URL; init?: RequestInit }[] = [];
+    const fetcher: typeof fetch = async (input, init) => {
+      calls.push({ input, init });
+      if (input === '/api/auth/csrf') return csrf();
+      return json({
+        serverUrl: 'wss://media.example.test',
+        token: 'short-lived-signed-token',
+        expiresAt: '2026-11-10T17:00:00.000Z',
+        conversationVersion: 2,
+        generation,
+      });
+    };
+    const client = new ApiClient(fetcher);
+    expect(
+      await client.proximityMediaToken(conversationId, { participationId, conversationVersion: 2 }),
+    ).toMatchObject({ serverUrl: 'wss://media.example.test', generation, conversationVersion: 2 });
+    expect(calls.map(({ input }) => input)).toEqual([
+      '/api/auth/csrf',
+      `/api/conversations/${conversationId}/media-token`,
+    ]);
+    expect(calls[1]?.init).toMatchObject({
+      method: 'POST',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      body: JSON.stringify({ participationId, conversationVersion: 2 }),
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfA },
+    });
+  });
+
   it('does not let a delayed old logout clear a newer login CSRF binding', async () => {
     let finishLogout!: (value: unknown) => void;
     let logoutStarted!: () => void;

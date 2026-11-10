@@ -29,11 +29,18 @@ import {
   officeBootstrapResponseSchema,
   joinTicketRequestSchema,
   joinTicketResponseSchema,
+  mediaTokenRequestSchema,
+  mediaTokenResponseSchema,
   workspaceResponseSchema,
   workspacesResponseSchema,
 } from '@gather/contracts';
 import type { AccountDto, WorkspaceDto } from '@gather/contracts';
-import type { OfficeMessage, SendOfficeMessage } from '@gather/contracts';
+import type {
+  MediaTokenRequest,
+  MediaTokenResponse,
+  OfficeMessage,
+  SendOfficeMessage,
+} from '@gather/contracts';
 import { z } from 'zod';
 
 export type SessionDto = z.infer<typeof sessionDtoSchema>;
@@ -350,6 +357,25 @@ export class ApiClient {
       parsedInput.data,
       joinTicketRequestSchema,
       joinTicketResponseSchema,
+      undefined,
+      signal,
+    );
+  }
+
+  async proximityMediaToken(
+    conversationId: string,
+    input: MediaTokenRequest,
+    signal?: AbortSignal,
+  ): Promise<MediaTokenResponse> {
+    const parsedConversationId = idSchema.safeParse(conversationId);
+    const parsedInput = mediaTokenRequestSchema.safeParse(input);
+    if (!parsedConversationId.success || !parsedInput.success)
+      throw new ApiError('validation_failed', 400);
+    return this.mutate(
+      `/conversations/${encodeURIComponent(parsedConversationId.data)}/media-token`,
+      parsedInput.data,
+      mediaTokenRequestSchema,
+      mediaTokenResponseSchema,
       undefined,
       signal,
     );

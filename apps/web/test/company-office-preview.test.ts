@@ -4,9 +4,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { createCommonsSceneCleanup } from '../commons-preview/scene-lifecycle';
 import type { OfficeWorkspaceDetail } from '../src/lib/api';
 import { canOpenOfficePreview } from '../src/features/workspaces/company-overview-view';
+import { latestProximityConversation } from '../src/features/office/proximity-conversation';
 import { CompanyOfficePreview } from '../src/features/workspaces/CompanyOfficePreview';
 import { ApiClient } from '../src/lib/api';
-import type { AccountDto } from '@gather/contracts';
+import type { AccountDto, ConversationUpdate } from '@gather/contracts';
 import ChatView from '../chat/ChatView';
 import { language, setLanguage } from '../i18n';
 
@@ -40,6 +41,37 @@ describe('company office preview selection', () => {
     expect(canOpenOfficePreview(detail, '0572e96c-f236-4bb1-8d8c-08b8bfda8937', false, '')).toBe(
       false,
     );
+  });
+
+  it('keeps only the latest conversation containing this exact participation', () => {
+    const participationId = '8f34d8de-bddb-489d-9cde-f03f1a98b68e';
+    const otherParticipationId = '41bbf5d6-37d7-4468-9892-9776ff19e008';
+    const joining: ConversationUpdate = {
+      officeEpoch: '668bde07-cc48-4623-a58c-2efbc8ac21d5',
+      conversationId: 'd65d5a55-c917-448b-a203-1a226bc76319',
+      kind: 'proximity',
+      state: 'joining',
+      version: 1,
+      generation: 'a371c42a-aa7d-4082-ad22-74e1816af053',
+      mediaReady: false,
+      participants: [
+        { participationId, displayName: 'Office Person' },
+        { participationId: otherParticipationId, displayName: 'Office Teammate' },
+      ],
+    };
+    const active = { ...joining, state: 'active' as const, version: 2, mediaReady: true };
+    const ended = {
+      ...active,
+      state: 'ended' as const,
+      version: 3,
+      mediaReady: false,
+      participants: [],
+    };
+    expect(latestProximityConversation([joining, active], participationId)).toEqual(active);
+    expect(latestProximityConversation([ended], participationId)).toBeNull();
+    expect(
+      latestProximityConversation([joining], '5f83f099-34df-457c-a3e3-75437fafaf26'),
+    ).toBeNull();
   });
 
   it('renders the authenticated company in the supplied office shell', () => {

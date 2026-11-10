@@ -7,6 +7,7 @@ import {
   Hash,
   LayoutGrid,
   Map as MapIcon,
+  Mic,
   MicOff,
   MessageCircle,
   Settings2,
@@ -22,6 +23,12 @@ import type { Overrides } from '../../../../shared/office-objects.js';
 import ChatView from '../../../chat/ChatView';
 import type { ChatMessage, DirectoryUser, Participant } from '../../../types';
 import { OfficeClient } from '../office/office-client';
+import { latestProximityConversation } from '../office/proximity-conversation';
+import {
+  ProximityAudioSession,
+  type ProximityAudioStatus,
+  type ProximityRemoteAudioTrack,
+} from '../office/proximity-audio-session';
 import './office-preview.css';
 
 const CommonsScene = lazy(() =>
@@ -57,6 +64,23 @@ function sceneAvatarForAppearance(appearance: { bodyId: string; paletteId: strin
   return undefined;
 }
 
+function bindRemoteAudioTrack(
+  track: ProximityRemoteAudioTrack,
+  identity: string,
+  container: HTMLDivElement | null,
+) {
+  const element = track.attach() as HTMLAudioElement;
+  element.autoplay = true;
+  element.dataset.participantId = identity;
+  element.setAttribute('aria-label', `Audio from ${identity}`);
+  container?.appendChild(element);
+  void element.play().catch(() => undefined);
+  return () => {
+    track.detach(element);
+    element.remove();
+  };
+}
+
 type Props = {
   account: AccountDto;
   api: ApiClient;
@@ -73,8 +97,33 @@ export function CompanyOfficePreview({ account, api, detail, onBack, onOpenSecur
   );
   const state = useSyncExternalStore(client.subscribe, client.getSnapshot, client.getSnapshot);
   const connected = state.status === 'connected';
+  const participationId = connected ? (state.ready?.participationId ?? null) : null;
+  const latestConversation = latestProximityConversation(
+    state.conversationUpdates,
+    participationId,
+  );
+  const activeProximityConversation =
+    latestConversation?.state === 'active' && latestConversation.mediaReady
+      ? latestConversation
+      : null;
+  const activeVoiceContextKey = activeProximityConversation
+    ? `${activeProximityConversation.conversationId}:${activeProximityConversation.version}:${activeProximityConversation.generation}:${participationId}`
+    : null;
   const [officeActionError, setOfficeActionError] = useState('');
   const [officeActionPending, setOfficeActionPending] = useState(false);
+  const [proximityOptIn, setProximityOptIn] = useState<{
+    participationId: string;
+    enabled: true;
+  } | null>(null);
+  const [proximityPending, setProximityPending] = useState(false);
+  const [proximityAudioStatus, setProximityAudioStatus] = useState<ProximityAudioStatus>('off');
+  const [proximityAudioError, setProximityAudioError] = useState('');
+  const remoteAudioContainer = useRef<HTMLDivElement>(null);
+  const mediaContextKey = useRef<string | null>(null);
+  const proximityAudio = useRef<ProximityAudioSession | null>(null);
+  const proximityOptedIn = Boolean(
+    connected && proximityOptIn?.participationId === participationId && proximityOptIn.enabled,
+  );
   const [zoom, setZoom] = useState(1.35);
   const [section, setSection] = useState<OfficeSection>('office');
   const [chatMessages, setChatMessages] = useState<OfficeMessage[]>([]);
@@ -90,6 +139,32 @@ export function CompanyOfficePreview({ account, api, detail, onBack, onOpenSecur
   }, [connected]);
 
   useEffect(() => () => client.close(), [client]);
+
+  useEffect(() => {
+    let active = true;
+    const session = new ProximityAudioSession(
+      (status, error) => {
+        if (!active) return;
+        setProximityAudioStatus(status);
+        setProximityAudioError(error ?? '');
+      },
+      (track, identity) => bindRemoteAudioTrack(track, identity, remoteAudioContainer.current),
+    );
+    proximityAudio.current = session;
+    return () => {
+      active = false;
+      void session.stop();
+      proximityAudio.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    mediaContextKey.current = activeVoiceContextKey;
+    return () => {
+      mediaContextKey.current = null;
+      void proximityAudio.current?.stop();
+    };
+  }, [activeVoiceContextKey]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -134,6 +209,60 @@ export function CompanyOfficePreview({ account, api, detail, onBack, onOpenSecur
     } finally {
       setOfficeActionPending(false);
     }
+  }
+
+  async function changeProximityOptIn() {
+    const enabled = !proximityOptedIn;
+    if (!participationId) return;
+    setProximityPending(true);
+    setProximityAudioError('');
+    if (!enabled) await proximityAudio.current?.stop();
+    try {
+      await client.setProximityOptIn(enabled);
+      setProximityOptIn(enabled ? { participationId, enabled: true } : null);
+    } catch {
+      setProximityAudioError('Could not update nearby voice. Check your connection and retry.');
+    } finally {
+      setProximityPending(false);
+    }
+  }
+
+  async function leaveProximityConversation() {
+    if (!activeProximityConversation) return;
+    await proximityAudio.current?.stop();
+    await runOfficeAction(() =>
+      client.leaveConversation(
+        activeProximityConversation.conversationId,
+        activeProximityConversation.version,
+      ),
+    );
+  }
+
+  function toggleProximityMicrophone() {
+    const session = proximityAudio.current;
+    if (!session || !activeProximityConversation || !participationId) return;
+    if (proximityAudioStatus === 'live' || proximityAudioStatus === 'muted') {
+      void session.toggleMicrophone();
+      return;
+    }
+    const contextKey = activeVoiceContextKey;
+    const conversation = activeProximityConversation;
+    const currentParticipationId = participationId;
+    if (!contextKey) return;
+    void session.start(
+      (signal) =>
+        api.proximityMediaToken(
+          conversation.conversationId,
+          {
+            participationId: currentParticipationId,
+            conversationVersion: conversation.version,
+          },
+          signal,
+        ),
+      () => mediaContextKey.current === contextKey,
+      conversation.version,
+      conversation.generation,
+    );
   }
 
   async function sendChatMessage(text: string) {
@@ -292,6 +421,20 @@ export function CompanyOfficePreview({ account, api, detail, onBack, onOpenSecur
   const { bootstrap, ready, snapshot } = state;
   const mapId = bootstrap.manifest.mapId;
   const participantCount = snapshot.participants.length;
+  const pairedName = activeProximityConversation?.participants.find(
+    (participant) => participant.participationId !== ready.participationId,
+  )?.displayName;
+  const nearbyVoiceSummary = activeProximityConversation
+    ? proximityAudioStatus === 'live'
+      ? `Microphone on with ${pairedName ?? 'your teammate'}.`
+      : proximityAudioStatus === 'muted'
+        ? `Connected to ${pairedName ?? 'your teammate'}; microphone is off.`
+        : `Paired with ${pairedName ?? 'your teammate'}. Turn on your microphone when ready.`
+    : latestConversation?.state === 'joining'
+      ? 'Pair found. Preparing guarded voice…'
+      : proximityOptedIn
+        ? 'Looking for a nearby coworker. Your microphone is off.'
+        : 'Nearby voice is off. Your microphone will stay off until you turn it on.';
   const self = snapshot.participants.find(
     (participant) => participant.participationId === ready.participationId,
   );
@@ -451,6 +594,46 @@ export function CompanyOfficePreview({ account, api, detail, onBack, onOpenSecur
                   ))}
                 </div>
               </div>
+              <div role="group" aria-labelledby="office-proximity-title">
+                <h3 id="office-proximity-title">Nearby voice</h3>
+                <p className="office-voice-help">
+                  Opt in to pair with an available coworker nearby. Pairing never turns on your
+                  microphone by itself.
+                </p>
+                <div className="office-world-control-row">
+                  <button
+                    className="dashboard-secondary"
+                    type="button"
+                    aria-pressed={proximityOptedIn}
+                    disabled={proximityPending}
+                    onClick={() => void changeProximityOptIn()}
+                  >
+                    {proximityPending
+                      ? 'Updating…'
+                      : proximityOptedIn
+                        ? 'Opt out of nearby voice'
+                        : 'Opt in to nearby voice'}
+                  </button>
+                  {activeProximityConversation && (
+                    <button
+                      className="dashboard-secondary"
+                      type="button"
+                      disabled={proximityPending || officeActionPending}
+                      onClick={() => void leaveProximityConversation()}
+                    >
+                      Leave conversation
+                    </button>
+                  )}
+                </div>
+                <p className="office-voice-status" role="status" aria-live="polite">
+                  {nearbyVoiceSummary}
+                </p>
+                {proximityAudioError && (
+                  <p className="office-action-error" role="alert">
+                    {proximityAudioError}
+                  </p>
+                )}
+              </div>
               {mapId === 'commons' && (
                 <div role="group" aria-labelledby="office-seats-title">
                   <h3 id="office-seats-title">Seats</h3>
@@ -538,6 +721,11 @@ export function CompanyOfficePreview({ account, api, detail, onBack, onOpenSecur
                   : 'Office activity'
           }
         >
+          <div
+            ref={remoteAudioContainer}
+            className="office-proximity-audio-output"
+            aria-hidden="true"
+          />
           {section === 'office' ? (
             <>
               <div className="office-map-heading">
@@ -608,15 +796,50 @@ export function CompanyOfficePreview({ account, api, detail, onBack, onOpenSecur
                 </span>
                 <span className="control-separator" />
                 {connected ? (
-                  <button
-                    className="icon-button leave-meeting"
-                    type="button"
-                    aria-label="Leave office"
-                    title="Leave office"
-                    onClick={() => client.close()}
-                  >
-                    <ArrowLeft size={19} />
-                  </button>
+                  <>
+                    <button
+                      className={`media-control ${proximityAudioStatus === 'live' ? 'enabled' : 'muted'}`}
+                      type="button"
+                      aria-label={
+                        proximityAudioStatus === 'live'
+                          ? 'Mute proximity microphone'
+                          : proximityAudioStatus === 'muted'
+                            ? 'Unmute proximity microphone'
+                            : 'Activate proximity microphone'
+                      }
+                      title={
+                        activeProximityConversation && proximityOptedIn
+                          ? proximityAudioStatus === 'live'
+                            ? 'Mute microphone'
+                            : proximityAudioStatus === 'muted'
+                              ? 'Unmute microphone'
+                              : 'Activate microphone'
+                          : 'Opt in and wait for a nearby pair to use voice'
+                      }
+                      aria-pressed={proximityAudioStatus === 'live'}
+                      disabled={
+                        !proximityOptedIn ||
+                        !activeProximityConversation ||
+                        proximityPending ||
+                        proximityAudioStatus === 'connecting' ||
+                        proximityAudioStatus === 'reconnecting'
+                      }
+                      onClick={toggleProximityMicrophone}
+                    >
+                      {proximityAudioStatus === 'live' ? <Mic size={19} /> : <MicOff size={19} />}
+                    </button>
+                    <button
+                      className="icon-button leave-meeting"
+                      type="button"
+                      aria-label="Leave office"
+                      title="Leave office"
+                      onClick={() =>
+                        void proximityAudio.current?.stop().finally(() => client.close())
+                      }
+                    >
+                      <ArrowLeft size={19} />
+                    </button>
+                  </>
                 ) : (
                   <button
                     className="primary enter-button"

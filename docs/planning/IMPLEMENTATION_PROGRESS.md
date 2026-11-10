@@ -897,7 +897,36 @@ blocked pre-ACK token requests, outsider/session/company denial and a leave-befo
 media enforcement suite passed (25 tests), including dynamic application identities and source,
 room, retirement and permit rejection. API build, `pnpm lint`, and `pnpm format:check` passed.
 
-This implementation-and-docs batch is pushed separately. Next: connect the supplied OpenOffice
-microphone control to the session-bound token route and pinned `livekit-client`, with capture off by
-default and cleanup on leave/revocation/teardown; then run a real two-browser guarded audio and
-cutoff exercise before treating proximity voice as accepted.
+This implementation-and-docs batch was pushed as `4d7cf45`. The supplied office-shell control
+integration is recorded in CP08.3b below; a real two-browser guarded audio and cutoff exercise is
+still required before treating proximity voice as accepted.
+
+## CP08.3b — supplied office-shell proximity voice controls (2026-11-10)
+
+Connected the authenticated company office shell (`AuthApp` → `CompanyOfficePreview`) to the
+proximity token API and the pinned `livekit-client`. The existing OpenOffice-style control bar now
+has a microphone control and the sidebar has explicit nearby-voice opt-in. Opt-in only enables
+pair matching; it never requests a device. The mic stays off until the user activates it while the
+current socket conversation is active and `mediaReady`. The client rechecks conversation version
+and generation against the token response, loads the SDK only on demand, joins with the scoped
+server URL/token, publishes only microphone audio, attaches subscribed remote audio, and handles
+mute/unmute/reconnecting/disconnect. Mute is configured to stop the local microphone track. Opt-out,
+pair end/generation change, office leave and component teardown abort a pending grant, stop capture,
+detach remote audio and disconnect the room. No camera or screen-share control is enabled for
+proximity; those sources remain CP09 meeting scope.
+
+Added the `ApiClient.proximityMediaToken` protected mutation and tests for its route, body, CSRF and
+no-store behavior; four client-session tests cover explicit start, stale generation rejection,
+abort on conversation end, and remote-track detach. A mocked browser E2E covers opt-in through the
+Socket.IO office boundary, waiting for an active private pair, requesting the correct conversation
+version's media token, and opting out. `pnpm --filter @gather/web typecheck`, `pnpm --filter
+@gather/web build`, `pnpm test:web` (37 tests), and the focused `company-office-preview` E2E (1 test)
+passed, along with repository lint and format checks. The E2E uses mocked API/office Socket.IO, a
+syntactically valid test-only grant, and an intentionally closed fake LiveKit websocket; it asserts
+the browser attempts signaling, but does not prove a successful LiveKit join, device prompt, remote
+sound or media cutoff. The build retains a separate lazy LiveKit chunk (~532 kB minified).
+
+The owner reaffirmed 90-day office-chat history retention; CP06.11 already implements it, so this
+voice slice made no retention changes. This code-and-docs batch is pushed separately. Remaining
+CP08 proof is a real API↔guard deployment and two-browser LiveKit audio/cutoff run with TURN and
+isolation checks; A07/A08 stay open.

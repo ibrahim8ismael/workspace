@@ -37,7 +37,7 @@ Use Engine.IO admission and namespace policy together. Socket.IO documentation e
 | M2 | `office:access-ended` | Server → affected client when transport permits | Safe reason before teardown and disconnect. Server cleanup proceeds independently of delivery |
 | CP06.11 | `chat:message` | Server → admitted office room | Strict message projection emitted only after the tenant-scoped 90-day-retained HTTP write commits; no client-supplied sender or room identity |
 | CP08.1 | `proximity:set-opt-in` | Client → server | Implemented explicit boolean for own live participation; both users must opt in and be Available |
-| CP08.1 | `conversation:update` | Server → two authorized participants | Implemented for pairing `joining`/`ended`, with safe member projection, state version and generation. It always reports `mediaReady: false`; no grant or room connection is implied |
+| CP08.1/08.2b | `conversation:update` | Server → two authorized participants | Pairing reports `joining`/`ended`; after the exact application policy install ACK, a still-current generation reports `active` with `mediaReady: true`. The CP07 guard is not yet wired to the API, and this state is not proof of a browser LiveKit connection or media grant |
 | CP08.1 | `conversation:leave` | Client → server | Implemented against current conversation ID/version; ends the pair and suppresses rematching until eligibility or distance resets |
 | M4 | `meeting:join`, `meeting:leave` | Client → server | Fixed zone ID and current version where applicable. Enforce physical/access/capacity policy. Membership and media readiness arrive via `conversation:update` |
 

@@ -30,6 +30,7 @@ interface VoicePair {
   ];
   version: number;
   outsideSince: number | null;
+  mediaState: 'joining' | 'active';
 }
 
 interface PairCandidate {
@@ -147,6 +148,26 @@ export class ProximityPairing {
     return { notices: [this.endPair(key, pair)] };
   }
 
+  mediaPermits() {
+    return [...this.pairs.values()].flatMap((pair) =>
+      pair.memberIds.map((identity) => ({
+        generation: pair.generation,
+        identity,
+        room: pair.generation,
+        version: 1,
+        sources: ['microphone'] as const,
+      })),
+    );
+  }
+
+  activateGeneration(generation: string): PrivateConversationNotice[] {
+    const pair = [...this.pairs.values()].find((candidate) => candidate.generation === generation);
+    if (!pair || pair.mediaState === 'active') return [];
+    pair.mediaState = 'active';
+    pair.version += 1;
+    return [this.notice(pair, 'active', pair.version)];
+  }
+
   private startPair(candidate: PairCandidate): VoicePair {
     const [left, right] = [candidate.left, candidate.right];
     return {
@@ -160,6 +181,7 @@ export class ProximityPairing {
       ],
       version: 1,
       outsideSince: null,
+      mediaState: 'joining',
     };
   }
 
@@ -171,7 +193,7 @@ export class ProximityPairing {
     return this.notice(pair, 'ended', pair.version);
   }
 
-  private notice(pair: VoicePair, state: 'joining' | 'ended', version: number) {
+  private notice(pair: VoicePair, state: 'joining' | 'active' | 'ended', version: number) {
     return {
       socketIds: pair.socketIds,
       update: conversationUpdateSchema.parse({
@@ -181,7 +203,7 @@ export class ProximityPairing {
         state,
         version,
         generation: pair.generation,
-        mediaReady: false,
+        mediaReady: state === 'active',
         participants: state === 'ended' ? [] : pair.participants,
       }),
     };

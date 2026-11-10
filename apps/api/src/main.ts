@@ -7,7 +7,10 @@ import { AppModule } from './app.module.js';
 import type { ApiEnvironment } from './platform/config/environment.js';
 import { OfficeSocketAdapter } from './modules/office/realtime/office-socket.adapter.js';
 
-const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
+const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+  bodyParser: false,
+  rawBody: true,
+});
 app.useBodyParser('json', { limit: '4kb' });
 const config = app.get(ConfigService<ApiEnvironment, true>);
 configureHttp(app);

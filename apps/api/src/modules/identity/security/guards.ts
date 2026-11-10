@@ -11,6 +11,7 @@ import { invariant } from '../../../platform/http/errors.js';
 import type { ApiEnvironment } from '../../../platform/config/environment.js';
 
 export const PUBLIC_ROUTE = 'gather:public';
+export const MACHINE_AUTH_ROUTE = 'gather:machine-auth';
 export const Public = () => SetMetadata(PUBLIC_ROUTE, true);
 export type AuthRequest = Request & { authContext?: BrowserContext | null };
 @Injectable()
@@ -36,11 +37,19 @@ export class AuthenticationGuard implements CanActivate {
 @Injectable()
 export class CsrfGuard implements CanActivate {
   constructor(
+    @Inject(Reflector) private readonly reflector: Reflector,
     @Inject(ConfigService) private readonly config: ConfigService<ApiEnvironment, true>,
   ) {}
   canActivate(context: ExecutionContext) {
     const request = context.switchToHttp().getRequest<AuthRequest>();
     if (['GET', 'HEAD', 'OPTIONS'].includes(request.method)) return true;
+    if (
+      this.reflector.getAllAndOverride<boolean>(MACHINE_AUTH_ROUTE, [
+        context.getHandler(),
+        context.getClass(),
+      ])
+    )
+      return true;
     invariant(
       request.get('origin') === this.config.get('APP_ORIGIN', { infer: true }),
       403,

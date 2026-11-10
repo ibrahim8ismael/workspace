@@ -1,5 +1,18 @@
 import { z } from 'zod';
 
+const optionalMachineKey = z.preprocess(
+  (value) => (value === '' || value == null ? undefined : value),
+  z
+    .string()
+    .refine(
+      (value) =>
+        Buffer.from(value, 'base64').length === 32 &&
+        Buffer.from(value, 'base64').toString('base64') === value,
+      'Provide 32 random bytes encoded as canonical base64',
+    )
+    .optional(),
+);
+
 export const environmentSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -18,6 +31,7 @@ export const environmentSchema = z
           Buffer.from(value, 'base64').toString('base64') === value,
         'Provide 32 random bytes encoded as canonical base64',
       ),
+    MEDIA_MACHINE_KEY: optionalMachineKey,
     DB_AUTO_INDEX: z.enum(['true', 'false']).default('false'),
   })
   .superRefine((value, ctx) => {

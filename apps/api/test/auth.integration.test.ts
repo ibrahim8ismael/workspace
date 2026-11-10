@@ -8,7 +8,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import { MongoMemoryReplSet } from 'mongodb-memory-server-core';
 import request from 'supertest';
 import type { Response as HttpResponse } from 'supertest';
-import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { decryptMail, type MailPayload } from '@gather/delivery';
 import commonsManifest from '@gather/assets/manifests/commons-map.json' with { type: 'json' };
@@ -40,6 +40,7 @@ import {
   officeChatMessageEventSchema,
   OFFICE_CHAT_RETENTION_DAYS,
   conversationUpdateSchema,
+  mediaPolicySnapshotSchema,
 } from '@gather/contracts';
 import { IdentityModels } from '../dist/modules/identity/identity.models.js';
 import { TenancyModels } from '../dist/modules/tenancy/tenancy.models.js';
@@ -70,6 +71,7 @@ const origin = 'https://api.gather.test';
 const password = 'a quartz river beneath the lantern';
 const newPassword = 'a copper forest beyond the telescope';
 const encryption = randomBytes(32);
+const mediaMachineKey = randomBytes(32);
 let app: NestExpressApplication;
 let mongo: MongoMemoryReplSet;
 let identities: IdentityModels;
@@ -235,6 +237,7 @@ beforeAll(async () => {
   process.env['APP_ORIGIN'] = origin;
   process.env['DB_AUTO_INDEX'] = 'true';
   process.env['OUTBOX_ENCRYPTION_KEY'] = encryption.toString('base64');
+  process.env['MEDIA_MACHINE_KEY'] = mediaMachineKey.toString('base64');
   process.env['MONGOMS_DOWNLOAD_DIR'] = resolve(process.cwd(), '../../.cache/mongodb-binaries');
   mongo = await MongoMemoryReplSet.create({
     binary: { version: '8.2.6' },
@@ -244,7 +247,11 @@ beforeAll(async () => {
   process.env['MONGODB_URI'] = mongo.getUri('gather_auth_tests');
   const { AppModule } = await import('../dist/app.module.js');
   const module = await Test.createTestingModule({ imports: [AppModule] }).compile();
-  app = module.createNestApplication<NestExpressApplication>({ bodyParser: false, logger: false });
+  app = module.createNestApplication<NestExpressApplication>({
+    bodyParser: false,
+    rawBody: true,
+    logger: false,
+  });
   app.useBodyParser('json', { limit: '4kb' });
   configureHttp(app);
   app.useWebSocketAdapter(new OfficeSocketAdapter(app, origin));
@@ -1803,11 +1810,101 @@ describe('office socket admission', () => {
         state: 'joining',
         version: 1,
         mediaReady: false,
-        participants: [
-          { participationId: firstReady.participationId },
-          { participationId: secondReady.participationId },
-        ],
       });
+      expect(joining.participants.map(({ participationId }) => participationId).sort()).toEqual(
+        [firstReady.participationId, secondReady.participationId].sort(),
+      );
+
+      const challenge = {
+        epoch: 'a'.repeat(64),
+        nonce: randomBytes(32).toString('hex'),
+      };
+      const pullBody = JSON.stringify(challenge);
+      const unsignedPull = await request(app.getHttpServer())
+        .post('/api/media/internal/policy/pull')
+        .set('Content-Type', 'application/json')
+        .send(pullBody);
+      status(unsignedPull, 401);
+
+      const alteredPullBody = JSON.stringify({ ...challenge, nonce: randomBytes(32).toString('hex') });
+      const alteredPull = await request(app.getHttpServer())
+        .post('/api/media/internal/policy/pull')
+        .set(
+          'X-CP07-Signature',
+          createHmac('sha256', mediaMachineKey).update(pullBody).digest('hex'),
+        )
+        .set('Content-Type', 'application/json')
+        .send(alteredPullBody);
+      status(alteredPull, 401);
+
+      const signedPull = await request(app.getHttpServer())
+        .post('/api/media/internal/policy/pull')
+        .set(
+          'X-CP07-Signature',
+          createHmac('sha256', mediaMachineKey).update(pullBody).digest('hex'),
+        )
+        .set('Content-Type', 'application/json')
+        .send(pullBody);
+      status(signedPull, 200);
+      const snapshot = mediaPolicySnapshotSchema.parse(JSON.parse(signedPull.text));
+      expect(snapshot).toMatchObject({
+        epoch: challenge.epoch,
+        nonce: challenge.nonce,
+        sequence: 1,
+      });
+      expect(snapshot.permits).toHaveLength(2);
+      expect(snapshot.permits.map(({ identity }) => identity).sort()).toEqual(
+        [firstReady.participationId, secondReady.participationId].sort(),
+      );
+      for (const permit of snapshot.permits) {
+        expect(permit).toMatchObject({
+          generation: joining.generation,
+          room: joining.generation,
+          version: 1,
+          sources: ['microphone'],
+        });
+      }
+      expect(signedPull.headers['x-cp07-signature']).toBe(
+        createHmac('sha256', mediaMachineKey).update(signedPull.text).digest('hex'),
+      );
+
+      const firstActiveNotice = nextSocketEvent<unknown>(firstSocket, 'conversation:update');
+      const secondActiveNotice = nextSocketEvent<unknown>(secondSocket, 'conversation:update');
+      const acknowledgement = {
+        epoch: snapshot.epoch,
+        nonce: snapshot.nonce,
+        sequence: snapshot.sequence,
+      };
+      const acknowledgementBody = JSON.stringify(acknowledgement);
+      const installed = await request(app.getHttpServer())
+        .post('/api/media/internal/policy/ack')
+        .set(
+          'X-CP07-Signature',
+          createHmac('sha256', mediaMachineKey).update(acknowledgementBody).digest('hex'),
+        )
+        .set('Content-Type', 'application/json')
+        .send(acknowledgementBody);
+      status(installed, 200);
+      expect(installed.body).toEqual({ acknowledged: true, sequence: 1 });
+      const active = conversationUpdateSchema.parse(await firstActiveNotice);
+      expect(conversationUpdateSchema.parse(await secondActiveNotice)).toEqual(active);
+      expect(active).toMatchObject({
+        conversationId: joining.conversationId,
+        generation: joining.generation,
+        state: 'active',
+        version: 2,
+        mediaReady: true,
+      });
+      const replayedAck = await request(app.getHttpServer())
+        .post('/api/media/internal/policy/ack')
+        .set(
+          'X-CP07-Signature',
+          createHmac('sha256', mediaMachineKey).update(acknowledgementBody).digest('hex'),
+        )
+        .set('Content-Type', 'application/json')
+        .send(acknowledgementBody);
+      status(replayedAck, 409);
+
       await new Promise((resolve) => setTimeout(resolve, 80));
       expect(observerNotices).toEqual([]);
 
@@ -1818,7 +1915,7 @@ describe('office socket admission', () => {
         officeEpoch: firstReady.snapshot.officeEpoch,
         payload: {
           conversationId: joining.conversationId,
-          conversationVersion: joining.version,
+          conversationVersion: active.version,
         },
       };
       const leaveAck = await new Promise<unknown>((resolve) => {
@@ -1829,7 +1926,7 @@ describe('office socket admission', () => {
       expect(conversationUpdateSchema.parse(await secondEndedEvent)).toMatchObject({
         conversationId: joining.conversationId,
         state: 'ended',
-        version: joining.version + 1,
+        version: active.version + 1,
         mediaReady: false,
         participants: [],
       });

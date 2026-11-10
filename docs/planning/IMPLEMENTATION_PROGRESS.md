@@ -822,3 +822,28 @@ zero versions, duplicate permits/sources, and malformed policy challenges; contr
 typecheck and `pnpm lint` passed. The contract batch is committed and pushed separately. Next:
 implement the private signed policy pull/ack API, connect it to current office conversation state,
 and test that no token can be issued before the exact permit-install acknowledgement.
+
+## CP08.2b — signed application policy pull and install acknowledgement (2026-11-10)
+
+Added machine-authenticated `POST /api/media/internal/policy/pull` and `/ack` routes for the CP07 guard protocol.
+Each request authenticates the exact raw JSON bytes with HMAC-SHA256 using a separately provisioned
+32-byte `MEDIA_MACHINE_KEY`; malformed keys are rejected and an unconfigured key fails closed.
+Challenges are bounded, nonce-replay protected and tied to one current guard epoch/monotonic
+sequence. Pull replies contain only current proximity-generation microphone permits and are signed
+over the exact response bytes. The API accepts only a matching, unexpired, single-use installation
+acknowledgement. Only then does it mark still-current pairs active and privately publish
+`mediaReady: true`; stale generations and replayed acknowledgements cannot activate a pair.
+
+The API integration test verifies the signed snapshot, exact pair membership, private active notices,
+outsider exclusion and replay rejection. The full API suite passed (88 tests across four files),
+`pnpm --filter @gather/api build`, `pnpm test:contracts` (24 tests), and `pnpm lint` passed. This is
+the application-side protocol endpoint only: the CP07 guard process is not yet wired to these
+routes, application policy state is process-local, and no LiveKit token, browser media connection
+or real-audio result exists. Docker/LiveKit could not be exercised because the local container
+engine is unavailable. HMAC authenticates payloads but does not encrypt them or make the routes
+network-private; authenticated TLS and ingress restriction remain deployment requirements. A07/A08 remain open.
+
+This code-and-docs batch is committed and pushed separately. Next: connect the existing CP07 guard
+pull/install loop to the signed API endpoints over an authenticated private transport, verify that
+the real guard emits its ACK only after installation, and keep media-token issuance disabled until
+that integration is proven.

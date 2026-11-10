@@ -236,14 +236,15 @@ Exit: reproducible pinned-stack evidence for A07 with observed cutoffs and failu
 
 Depends on: CP05/CP06 and passing CP07. Deliverable: authorized one-to-one proximity audio in the real office.
 
-Progress: CP08.1 implements only the application-side deterministic pairing and private realtime
-state (`joining`/`ended`). It reports `mediaReady: false` and does not grant media. CP07's isolated
-cutoff proof still needs application/deployment integration for release A07. Continue with the
-guarded grant and LiveKit path before exposing microphone controls; keep this phase's real-audio
-acceptance open until that path passes.
-
-CP08.2a now defines strict shared media-token, policy-pull, permit-snapshot and install-ack schemas.
-The routes, application-state bridge, and token signer remain to be implemented.
+Progress: CP08.1 implements deterministic application-side pairing and private realtime state.
+CP08.2a defines strict shared media-token, policy-pull, permit-snapshot and install-ack schemas;
+CP08.2b implements HMAC-authenticated application pull/ack routes and marks only still-current
+generations active after an exact install acknowledgement. The CP07 guard process is not yet
+connected to these routes, and application policy state is process-local. No media token, LiveKit
+browser join or actual audio has been enabled. CP07's isolated cutoff proof still needs application
+and deployment integration for release A07. Continue with the real guard connection and guarded
+grant path before exposing microphone controls; keep real-audio acceptance open until that path
+passes.
 
 1. Implement deterministic pairing, one active conversation per participation, explicit opt-in and availability gates. Freeze ties, suppression after explicit leave and distance/debounce semantics; never debounce security revocation.
 2. Track conversation state/version/member set/generation in office-owner memory. Create isolated rooms per generation; retire the old generation before granting a replacement. Handle boundary churn with bounded recovery budgets.

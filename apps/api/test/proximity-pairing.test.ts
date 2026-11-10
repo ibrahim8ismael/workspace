@@ -99,4 +99,40 @@ describe('proximity voice pairing', () => {
     expect(pairing.reconcile(separated, 13)).toEqual([]);
     expect(pairing.reconcile(people, 14)[0]?.update.state).toBe('joining');
   });
+
+  it('reports a media permit only for the current generation and activates after installation', () => {
+    const pairing = new ProximityPairing(officeEpoch, 32);
+    const people = [candidate(a, 'socket-a', 64), candidate(b, 'socket-b', 128)];
+    pairing.setOptIn(a, true, people, 10);
+    const joining = pairing.setOptIn(b, true, people, 11)[0]?.update;
+    expect(joining?.mediaReady).toBe(false);
+
+    const permits = pairing.mediaPermits();
+    expect(permits).toEqual([
+      {
+        generation: joining?.generation,
+        identity: a,
+        room: joining?.generation,
+        version: 1,
+        sources: ['microphone'],
+      },
+      {
+        generation: joining?.generation,
+        identity: b,
+        room: joining?.generation,
+        version: 1,
+        sources: ['microphone'],
+      },
+    ]);
+
+    const active = pairing.activateGeneration(joining!.generation);
+    expect(active[0]?.update).toMatchObject({
+      conversationId: joining?.conversationId,
+      generation: joining?.generation,
+      state: 'active',
+      version: 2,
+      mediaReady: true,
+    });
+    expect(pairing.activateGeneration(joining!.generation)).toEqual([]);
+  });
 });

@@ -472,6 +472,18 @@ export class OfficeRuntimeService {
     return office.proximity.reconcile(this.proximityCandidates(office), now);
   }
 
+  proximityMediaPermits() {
+    return [...this.offices.values()].flatMap((office) => office.proximity.mediaPermits());
+  }
+
+  activateProximityGeneration(generation: string): PrivateConversationNotice[] {
+    for (const office of this.offices.values()) {
+      const notices = office.proximity.activateGeneration(generation);
+      if (notices.length > 0) return notices;
+    }
+    return [];
+  }
+
   resync(
     officeId: string,
     workspaceId: string,

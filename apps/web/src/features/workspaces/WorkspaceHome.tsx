@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { ArrowRight, Building2, LayoutGrid, Plus, Search, Users, X } from 'lucide-react';
 import type { AccountDto, WorkspaceDto } from '@gather/contracts';
 import { ApiClient, ApiError, type SessionDto } from '../../lib/api';
 import { SubmissionKey } from '../../lib/idempotency';
@@ -79,12 +80,15 @@ export function WorkspaceHome({
   const [companyName, setCompanyName] = useState('');
   const [slug, setSlug] = useState('');
   const [inviteCode, setInviteCode] = useState('');
+  const [companyQuery, setCompanyQuery] = useState('');
+  const [dialog, setDialog] = useState<'create' | 'join' | null>(null);
   const [creating, setCreating] = useState(false);
   const [accepting, setAccepting] = useState(false);
   const [createUncertain, setCreateUncertain] = useState(false);
   const [acceptUncertain, setAcceptUncertain] = useState(false);
   const createKey = useRef(new SubmissionKey());
   const acceptKey = useRef(new SubmissionKey());
+  const dialogElement = useRef<HTMLElement>(null);
   const lifecycle = useRef(0);
   const controllers = useRef(new Set<AbortController>());
   const mutating =
@@ -99,6 +103,29 @@ export function WorkspaceHome({
     },
     [],
   );
+
+  useEffect(() => {
+    if (!dialog) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !creating && !accepting && !mutationPending) setDialog(null);
+      if (event.key !== 'Tab') return;
+      const focusable = dialogElement.current?.querySelectorAll<HTMLElement>(
+        'button:not(:disabled), input:not(:disabled), [href], [tabindex]:not([tabindex="-1"])',
+      );
+      if (!focusable?.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [accepting, creating, dialog, mutationPending]);
 
   function expireSession() {
     lifecycle.current += 1;
@@ -127,6 +154,7 @@ export function WorkspaceHome({
       setCreateUncertain(false);
       setCompanyName('');
       setSlug('');
+      setDialog(null);
       onWorkspaces((rows) => [
         result.workspace,
         ...rows.filter((row) => row.id !== result.workspace.id),
@@ -171,6 +199,7 @@ export function WorkspaceHome({
       acceptKey.current.clear();
       setAcceptUncertain(false);
       setInviteCode('');
+      setDialog(null);
       onWorkspaces((rows) => [
         result.workspace,
         ...rows.filter((row) => row.id !== result.workspace.id),
@@ -196,47 +225,63 @@ export function WorkspaceHome({
     }
   }
 
+  const visibleWorkspaces = workspaces.filter((workspace) =>
+    workspace.name.toLocaleLowerCase().includes(companyQuery.trim().toLocaleLowerCase()),
+  );
+
   return (
-    <main className="workspace-shell">
-      <header className="workspace-topbar">
-        <a
-          className="workspace-brand"
-          href="/"
-          aria-label="Gather Lite home"
-          onClick={(event) => {
-            if (mutationPending) event.preventDefault();
-          }}
-        >
-          <span className="account-mark" aria-hidden="true">
-            G
+    <main className="dashboard">
+      <header className="dashboard-bar">
+        <a className="dashboard-brand" href="/" aria-label="Open Office home">
+          <span className="workspace-logo" aria-hidden="true">
+            <LayoutGrid size={18} />
           </span>
-          <strong>Gather Lite</strong>
+          <strong>Open Office</strong>
         </a>
-        <div className="workspace-user">
-          <span>{account.displayName}</span>
-          <button type="button" disabled={mutating} onClick={onOpenSecurity}>
+        <div className="dashboard-account-actions">
+          <span className="dashboard-account-name">{account.displayName}</span>
+          <button
+            className="dashboard-secondary"
+            type="button"
+            disabled={mutating}
+            onClick={onOpenSecurity}
+          >
             Account security
           </button>
           <button
+            className="dashboard-secondary"
             type="button"
             disabled={creating || accepting || loggingOut || mutationPending}
             onClick={onLogout}
           >
             {loggingOut ? 'Signing out…' : 'Sign out'}
           </button>
+          <button
+            type="button"
+            className="dashboard-create"
+            disabled={mutating}
+            onClick={() => setDialog('create')}
+          >
+            <Plus size={17} />
+            Create company
+          </button>
         </div>
       </header>
 
-      <div className="workspace-content">
-        <section className="workspace-heading">
+      <div className="dashboard-body">
+        <section className="dashboard-heading">
           <div>
-            <p className="account-eyebrow">YOUR TEAM</p>
-            <h1>Companies</h1>
-            <p className="workspace-lead">Create a company or join one with an invitation code.</p>
+            <h1>Your companies</h1>
+            <p>Choose a company office or join a team with an invitation.</p>
           </div>
-          <div className="workspace-avatar" aria-hidden="true">
-            {account.displayName.trim().slice(0, 1).toUpperCase()}
-          </div>
+          <button
+            type="button"
+            className="dashboard-secondary"
+            disabled={mutating}
+            onClick={() => setDialog('join')}
+          >
+            Join with invitation
+          </button>
         </section>
 
         <SessionLifetimeNotice
@@ -256,145 +301,261 @@ export function WorkspaceHome({
             {status}
           </p>
         )}
-        {error && !loadError && (
+        {error && !loadError && !dialog && (
           <p className="account-message is-error" role="alert">
             {error}
           </p>
         )}
 
-        <section className="company-panel" aria-labelledby="companies-title">
-          <div className="panel-heading">
-            <div>
-              <h2 id="companies-title">Your companies</h2>
-              <p>Each company has its own membership and role.</p>
-            </div>
-            <span className="company-count">{workspaces.length}</span>
+        <div className="dashboard-toolbar">
+          <div className="dashboard-tabs">
+            <span className="active">
+              All companies <span>{workspaces.length}</span>
+            </span>
           </div>
-          {loading ? (
-            <p className="workspace-empty" role="status">
-              Loading companies…
-            </p>
-          ) : loadError ? (
-            <div className="workspace-empty" role="alert">
-              <p>{loadError}</p>
-              <button
-                className="account-secondary"
-                type="button"
-                disabled={retryDisabled}
-                onClick={onRetryWorkspaces}
+          <label className="dashboard-search">
+            <Search size={15} aria-hidden="true" />
+            <input
+              value={companyQuery}
+              onChange={(event) => setCompanyQuery(event.target.value)}
+              placeholder="Search companies"
+              aria-label="Search companies"
+            />
+          </label>
+        </div>
+
+        {loading ? (
+          <div className="dashboard-empty" role="status">
+            <p>Loading companies…</p>
+          </div>
+        ) : loadError ? (
+          <div className="dashboard-empty" role="alert">
+            <p>{loadError}</p>
+            <button
+              className="dashboard-create"
+              type="button"
+              disabled={retryDisabled}
+              onClick={onRetryWorkspaces}
+            >
+              Retry loading companies
+            </button>
+          </div>
+        ) : visibleWorkspaces.length > 0 ? (
+          <div className="dashboard-grid">
+            {visibleWorkspaces.map((workspace) => (
+              <article
+                className="dashboard-company-card"
+                data-workspace-id={workspace.id}
+                key={workspace.id}
               >
-                Retry loading companies
-              </button>
-            </div>
-          ) : workspaces.length === 0 ? (
-            <p className="workspace-empty">You have not joined a company yet.</p>
-          ) : (
-            <ul className="company-list">
-              {workspaces.map((workspace) => (
-                <li className="company-row" data-workspace-id={workspace.id} key={workspace.id}>
-                  <span className="company-avatar" aria-hidden="true">
-                    {workspace.name.slice(0, 1).toUpperCase()}
-                  </span>
-                  <div className="company-name">
-                    <strong>{workspace.name}</strong>
-                    <span>
-                      {workspace.memberCount} {workspace.memberCount === 1 ? 'member' : 'members'}
+                <div className="dashboard-company-art" aria-hidden="true">
+                  <Building2 size={32} />
+                  <span>{workspace.name.slice(0, 1).toUpperCase()}</span>
+                </div>
+                <div className="dashboard-company-meta">
+                  <div className="dashboard-company-title">
+                    <span className="dashboard-company-logo" aria-hidden="true">
+                      <Building2 size={16} />
                     </span>
+                    <div>
+                      <strong>{workspace.name}</strong>
+                      <span>{workspace.role === 'owner' ? 'Owner' : 'Member'}</span>
+                    </div>
                   </div>
-                  <span className={`role-pill role-${workspace.role}`}>{workspace.role}</span>
+                  <span className="dashboard-company-members">
+                    <Users size={14} aria-hidden="true" />
+                    {workspace.memberCount} {workspace.memberCount === 1 ? 'member' : 'members'}
+                  </span>
                   <button
-                    className="account-secondary workspace-row-view"
+                    className="dashboard-company-open"
                     type="button"
                     disabled={mutationPending}
                     onClick={() => onViewCompany(workspace.id)}
                   >
-                    View company
+                    Open office <ArrowRight size={15} aria-hidden="true" />
                   </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <div className="workspace-actions">
-          <section className="workspace-panel" aria-labelledby="create-company-title">
-            <p className="account-eyebrow">START A TEAM</p>
-            <h2 id="create-company-title">Create a company</h2>
-            <p>Choose a name and a short company address.</p>
-            <form className="workspace-form" onSubmit={(event) => void createCompany(event)}>
-              <label className="account-field">
-                <span>Company name</span>
-                <input
-                  autoComplete="organization"
-                  maxLength={80}
-                  minLength={2}
-                  disabled={mutating}
-                  onChange={(event) => {
-                    setCompanyName(event.target.value);
-                    if (!slug || slug === slugFromName(companyName))
-                      setSlug(slugFromName(event.target.value));
-                    setCreateUncertain(false);
-                  }}
-                  required
-                  value={companyName}
-                />
-              </label>
-              <label className="account-field">
-                <span>Company address</span>
-                <div className="slug-input">
-                  <span aria-hidden="true">gather/</span>
-                  <input
-                    autoComplete="off"
-                    maxLength={60}
-                    minLength={3}
-                    disabled={mutating}
-                    onChange={(event) => {
-                      setSlug(event.target.value);
-                      setCreateUncertain(false);
-                    }}
-                    pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
-                    required
-                    value={slug}
-                  />
                 </div>
-              </label>
-              <button className="account-primary" disabled={mutating} type="submit">
-                {creating
-                  ? 'Creating…'
-                  : createUncertain
-                    ? 'Retry company creation'
-                    : 'Create company'}
-              </button>
-            </form>
-          </section>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="dashboard-empty">
+            <span className="workspace-logo" aria-hidden="true">
+              <Building2 size={22} />
+            </span>
+            <p>
+              {companyQuery
+                ? 'No companies match your search.'
+                : 'You have not joined a company yet.'}
+            </p>
+            {!companyQuery && (
+              <div className="dashboard-empty-actions">
+                <button
+                  type="button"
+                  className="dashboard-create"
+                  onClick={() => setDialog('create')}
+                >
+                  <Plus size={17} />
+                  Create company
+                </button>
+                <button
+                  type="button"
+                  className="dashboard-secondary"
+                  onClick={() => setDialog('join')}
+                >
+                  Join with invitation
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
-          <section className="workspace-panel" aria-labelledby="join-company-title">
-            <p className="account-eyebrow">HAVE AN INVITATION?</p>
-            <h2 id="join-company-title">Join a company</h2>
-            <p>Enter the invitation code sent to your email.</p>
-            <form className="workspace-form" onSubmit={(event) => void acceptInvite(event)}>
-              <label className="account-field">
-                <span>Invitation code</span>
-                <input
-                  autoComplete="one-time-code"
-                  maxLength={43}
-                  minLength={43}
-                  disabled={mutating}
-                  onChange={(event) => {
-                    setInviteCode(event.target.value);
-                    setAcceptUncertain(false);
-                  }}
-                  required
-                  value={inviteCode}
-                />
-              </label>
-              <button className="account-secondary" disabled={mutating} type="submit">
-                {accepting ? 'Joining…' : acceptUncertain ? 'Retry joining' : 'Join company'}
-              </button>
-            </form>
+      {dialog && (
+        <div
+          className="dashboard-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !creating && !accepting && !mutationPending)
+              setDialog(null);
+          }}
+        >
+          <section
+            className="dashboard-dialog"
+            ref={dialogElement}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="company-action-title"
+          >
+            <button
+              className="dashboard-dialog-close"
+              type="button"
+              aria-label="Close dialog"
+              disabled={creating || accepting || mutationPending}
+              onClick={() => setDialog(null)}
+            >
+              <X size={17} />
+            </button>
+            {dialog === 'create' ? (
+              <>
+                <h2 id="company-action-title">Create a company</h2>
+                <p className="dashboard-dialog-lead">
+                  Set up a company workspace and its first office.
+                </p>
+                <form
+                  className="dashboard-company-form"
+                  onSubmit={(event) => void createCompany(event)}
+                >
+                  <label className="dashboard-label">
+                    Company name
+                    <input
+                      autoFocus
+                      autoComplete="organization"
+                      maxLength={80}
+                      minLength={2}
+                      disabled={mutating}
+                      onChange={(event) => {
+                        setCompanyName(event.target.value);
+                        if (!slug || slug === slugFromName(companyName))
+                          setSlug(slugFromName(event.target.value));
+                        setCreateUncertain(false);
+                      }}
+                      required
+                      value={companyName}
+                    />
+                  </label>
+                  <label className="dashboard-label">
+                    Company slug
+                    <span className="dashboard-address-field">
+                      <input
+                        autoComplete="off"
+                        maxLength={60}
+                        minLength={3}
+                        disabled={mutating}
+                        onChange={(event) => {
+                          setSlug(event.target.value);
+                          setCreateUncertain(false);
+                        }}
+                        pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
+                        required
+                        value={slug}
+                      />
+                    </span>
+                  </label>
+                  {error && !loadError && (
+                    <p className="form-error" role="alert">
+                      {error}
+                    </p>
+                  )}
+                  <div className="dashboard-dialog-actions">
+                    <button
+                      className="dashboard-secondary"
+                      type="button"
+                      disabled={creating || mutationPending}
+                      onClick={() => setDialog(null)}
+                    >
+                      Cancel
+                    </button>
+                    <button className="dashboard-create" disabled={mutating} type="submit">
+                      <Plus size={16} />
+                      {creating
+                        ? 'Creating…'
+                        : createUncertain
+                          ? 'Retry creation'
+                          : 'Create company'}
+                    </button>
+                  </div>
+                </form>
+              </>
+            ) : (
+              <>
+                <h2 id="company-action-title">Join a company</h2>
+                <p className="dashboard-dialog-lead">
+                  Enter the invitation code sent to your email.
+                </p>
+                <form
+                  className="dashboard-company-form"
+                  onSubmit={(event) => void acceptInvite(event)}
+                >
+                  <label className="dashboard-label">
+                    Invitation code
+                    <input
+                      autoFocus
+                      autoComplete="one-time-code"
+                      maxLength={43}
+                      minLength={43}
+                      disabled={mutating}
+                      onChange={(event) => {
+                        setInviteCode(event.target.value);
+                        setAcceptUncertain(false);
+                      }}
+                      required
+                      value={inviteCode}
+                    />
+                  </label>
+                  {error && !loadError && (
+                    <p className="form-error" role="alert">
+                      {error}
+                    </p>
+                  )}
+                  <div className="dashboard-dialog-actions">
+                    <button
+                      className="dashboard-secondary"
+                      type="button"
+                      disabled={accepting || mutationPending}
+                      onClick={() => setDialog(null)}
+                    >
+                      Cancel
+                    </button>
+                    <button className="dashboard-create" disabled={mutating} type="submit">
+                      {accepting ? 'Joining…' : acceptUncertain ? 'Retry joining' : 'Join company'}
+                    </button>
+                  </div>
+                </form>
+              </>
+            )}
           </section>
         </div>
-      </div>
+      )}
     </main>
   );
 }

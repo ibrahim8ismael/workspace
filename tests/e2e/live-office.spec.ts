@@ -199,7 +199,7 @@ async function companyPage(browser: Browser, client: APIRequestContext, workspac
   });
   await page
     .locator(`[data-workspace-id="${workspaceId}"]`)
-    .getByRole('button', { name: 'View company' })
+    .getByRole('button', { name: 'Open office' })
     .click();
   await expect(page.getByRole('button', { name: 'Open office preview' })).toBeVisible();
   await page.getByRole('button', { name: 'Open office preview' }).click();

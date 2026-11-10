@@ -584,7 +584,13 @@ Stage 1 inventory is complete. Next is restoring the supplied shell and moving t
 
 The authenticated account flow keeps the existing secure API logic for login, registration, verification, resend and password recovery, while its entry screen now uses OpenOfficeForAll's dashboard header, welcome modal, labels, primary buttons and links. The login, loading and retry states remain on the same app entry. This is the first visible migration slice; the company list/details, office shell/map placement and unsupported feature controls still use the newer integration UI.
 
-Web TypeScript, focused ESLint, production build and `pnpm exec playwright test tests/e2e/company-office-preview.spec.ts` passed (one Chromium test). The next step reuses the upstream workspace dashboard and dialog styles for the current company list/create/invitation APIs.
+Web TypeScript, focused ESLint, production build and `pnpm exec playwright test tests/e2e/company-office-preview.spec.ts` passed (one Chromium test). The next migration batch reuses the upstream workspace dashboard and dialog styles for the current company list/create/invitation APIs.
+
+## OpenOfficeForAll UI migration — company directory (2026-11-10)
+
+The authenticated company directory now uses the supplied dashboard layout, search, company-card grid and create/join dialogs. Company data still comes from the current workspace DTOs; create and invitation acceptance continue through `ApiClient`, with existing idempotency, retry, session-expiry and error handling retained. No upstream legacy workspace APIs, map thumbnails or browser storage were brought back. E2E navigation uses the new “Open office” action label.
+
+Web TypeScript, focused ESLint, production build and `pnpm exec playwright test tests/e2e/company-office-preview.spec.ts` passed (one Chromium test). The production build retains the existing large lazy office-preview chunk warning. Next migrate the company details and account-security views into the upstream visual system, then continue with the supplied office shell and Commons renderer adapter.
 
 ## CP07.20 — Late-policy cutoff and fail-closed cold bootstrap (2026-11-10)
 

@@ -1,6 +1,6 @@
 # OpenOfficeForAll UI integration
 
-Status: owner-approved direction; source inventory complete; upstream auth styling restored; company/office UI migration in progress · Updated: 2026-11-10
+Status: owner-approved direction; account entry and company directory use upstream dashboard styling; company details and office shell remain to migrate · Updated: 2026-11-10
 
 ## Product direction
 
@@ -27,7 +27,7 @@ Existing new-side integration points include `apps/web/src/lib/api.ts`, `src/fea
 ## Ordered implementation steps
 
 1. **Inventory and lock the boundary — complete.** Pin upstream source and notices; identify current and obsolete entry points, routes, storage, and service calls. Keep this audit current as screens move.
-2. **Restore the supplied shell — in progress.** The sign-in, verification and recovery views now use the upstream dashboard header, welcome modal, form, button and link styles. Next move the authenticated company directory/create/join flows into the upstream workspace dashboard and dialog styles. Keep a migration route until the new default can complete login and company selection.
+2. **Restore the supplied shell — in progress.** Sign-in, verification and recovery use the upstream dashboard header, welcome modal, form, button and link styles. The authenticated company directory now uses the upstream dashboard header, search, card grid, and create/join dialogs, backed by the current workspace APIs. Next migrate company details and account security into the same visual system, then move the office shell. Keep a migration route until the new default can complete login and company selection.
 3. **Adapt identity and company data.** Replace legacy account/workspace service calls with `ApiClient`; map UUID workspace DTOs and role-based membership into the supplied views. Add owner invitations and member acceptance using current APIs. Remove guest login and secret-bearing `localStorage` paths.
 4. **Adapt office admission and live world.** Replace `useOffice` raw WebSocket with `OfficeClient`; embed the version-checked Commons renderer in the supplied office layout. Connect movement, availability, seats, deltas, resync, leave and fresh-ticket re-entry to server state.
 5. **Gate unsupported features.** Keep supplied styling and recognizable controls where helpful, while disabling service actions that have no backend. Do not show mock chat, calendar, editing or P2P media as live features.

@@ -2,7 +2,7 @@
 
 Run `pnpm dev:web` at the repository root, then open http://localhost:5173. Use `pnpm dev` to start the web client and existing NestJS starter together. No Docker service starts automatically.
 
-The entrypoint is `main.tsx`. It currently loads the authenticated account/company integration under `src/features/{auth,workspaces}`. Account entry now reuses OpenOfficeForAll's dashboard header, welcome modal, and form/button/link styles. The full upstream office shell and original React/SVG renderer remain unreachable until their legacy services are replaced. The owner-approved migration steps are in the [UI integration plan](../../docs/migration/OPENOFFICE_UI_INTEGRATION.md).
+The entrypoint is `main.tsx`. It currently loads the authenticated account/company integration under `src/features/{auth,workspaces}`. Account entry and the company directory now reuse OpenOfficeForAll's dashboard header, card grid, search, dialogs, and form/button styles while calling the existing API. Company details and the live office shell are still on the integration UI; the original React/SVG renderer remains unreachable until its legacy services are replaced. The owner-approved migration steps are in the [UI integration plan](../../docs/migration/OPENOFFICE_UI_INTEGRATION.md).
 
 ## Current integration boundary
 

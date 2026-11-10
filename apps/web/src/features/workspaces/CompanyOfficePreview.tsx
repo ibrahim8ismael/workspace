@@ -17,7 +17,7 @@ import { ApiClient } from '../../lib/api';
 import VivoScene from '../../../VivoScene';
 import type { Participant } from '../../../types';
 import type { Overrides } from '../../../../shared/office-objects.js';
-import { OfficePreviewChat } from './OfficePreviewChat';
+import { OfficeChatStatus } from './OfficeChatStatus';
 import { OfficeClient } from '../office/office-client';
 import './office-preview.css';
 
@@ -353,8 +353,7 @@ export function CompanyOfficePreview({ account, api, detail, onBack, onOpenSecur
             <p className="empty-small">Enter the office to update your status or use a seat.</p>
           )}
 
-          <OfficePreviewChat
-            companyName={detail.name}
+          <OfficeChatStatus
             connected={connected}
             participants={state.snapshot?.participants ?? []}
           />

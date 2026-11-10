@@ -85,6 +85,7 @@ const livekitApiSecret = randomBytes(32).toString('base64url');
 const runLiveMediaFixture = process.env['CP08_REAL_MEDIA'] === '1';
 const runMediaReconnect = process.env['CP08_MEDIA_RECONNECT'] === '1';
 const runMediaTokenRefresh = process.env['CP08_MEDIA_TOKEN_REFRESH'] === '1';
+const runMediaPermissionDenied = process.env['CP08_MEDIA_PERMISSION_DENIED'] === '1';
 const configuredMediaEnd = process.env['CP08_MEDIA_END'] ?? 'leave';
 const mediaEndScenario = runLiveMediaFixture
   ? ['opt-out', 'away', 'session-revoke', 'membership-revoke'].includes(configuredMediaEnd)
@@ -234,6 +235,7 @@ type ApplicationMediaClient = {
 
 function startApplicationMediaClient(config: {
   fixtureUrl: string;
+  denyMicrophoneIndex?: 0 | 1;
   grants: Array<{
     serverUrl: string;
     token: string;
@@ -2370,6 +2372,7 @@ describe('office socket admission', () => {
           validateTokenThroughGuard(mediaGrant.token, stage);
         let secondMediaGrantToken: string | undefined;
         let refreshedMediaGrantToken: string | undefined;
+        let permissionScenarioRoomService: RoomServiceClient | undefined;
         if (runLiveMediaFixture) {
           const secondIssued = await second.client.send('post', tokenPath, {
             participationId: secondReady.participationId,
@@ -2385,6 +2388,7 @@ describe('office socket admission', () => {
           applicationTokenExpiries.push(secondTokenClaims.exp);
           applicationMediaClient = startApplicationMediaClient({
             fixtureUrl: mediaFixture!.url,
+            ...(runMediaPermissionDenied ? { denyMicrophoneIndex: 1 } : {}),
             grants: [
               { ...mediaGrant, identity: firstReady.participationId },
               { ...secondMediaGrant, identity: secondReady.participationId },
@@ -2409,132 +2413,180 @@ describe('office socket admission', () => {
           }
           const observations = connected['observations'] as Array<{
             status: string;
+            error: string;
             remoteIdentities: string[];
             activeAudioSamples: number;
           }>;
           expect(observations).toHaveLength(2);
-          expect(observations[0]).toMatchObject({
-            status: 'live',
-            remoteIdentities: [secondReady.participationId],
-          });
-          expect(observations[1]).toMatchObject({
-            status: 'live',
-            remoteIdentities: [firstReady.participationId],
-          });
-          expect(observations.every(({ activeAudioSamples }) => activeAudioSamples >= 10)).toBe(
-            true,
-          );
-          applicationMediaClient.send({ kind: 'exercise-mute-unmute' });
-          const mediaControls = await waitForApplicationMediaMessage(
-            applicationMediaClient,
-            (message) => message['kind'] === 'media-controls',
-            'real mute/unmute audio cutoff and recovery',
-          );
-          expect(mediaControls['muteStable']).toBe(true);
-          expect(mediaControls['resumed']).toBe(true);
-          expect(mediaControls['muteCutoffMs']).toEqual(expect.any(Number));
-          expect(mediaControls['unmuteObservedMs']).toEqual(expect.any(Number));
-          expect(mediaControls['muteCutoffMs'] as number).toBeLessThanOrEqual(8000);
-          expect(mediaControls['unmuteObservedMs'] as number).toBeLessThanOrEqual(8000);
-          expect(mediaControls['resumedSampleCount'] as number).toBeGreaterThan(
-            (mediaControls['mutedSampleCount'] as number) + 5,
-          );
-          console.info(
-            `CP08.5 media controls: ${JSON.stringify({
-              muteCutoffMs: mediaControls['muteCutoffMs'],
-              mutedSampleCount: mediaControls['mutedSampleCount'],
-              unmuteObservedMs: mediaControls['unmuteObservedMs'],
-              resumedSampleCount: mediaControls['resumedSampleCount'],
-              muteStable: mediaControls['muteStable'],
-              resumed: mediaControls['resumed'],
-            })}`,
-          );
-          if (runMediaTokenRefresh) {
-            const roomService = new RoomServiceClient(
+          if (runMediaPermissionDenied) {
+            permissionScenarioRoomService = new RoomServiceClient(
               `http://127.0.0.1:${liveKitFixture!.signalingPort}`,
               livekitApiKey,
               livekitApiSecret,
             );
-            await roomService.updateParticipant(active.generation, secondReady.participationId, {
-              metadata: JSON.stringify({ refresh: randomUUID() }),
-            });
-            applicationMediaClient.send({ kind: 'read-refreshed-token' });
-            const tokenMessage = await waitForApplicationMediaMessage(
-              applicationMediaClient,
-              (message) => message['kind'] === 'refreshed-token',
-              'the SFU-refreshed production SDK token',
+            await vi.waitFor(
+              async () => {
+                const participants = await permissionScenarioRoomService!.listParticipants(
+                  active.generation,
+                );
+                expect(participants.map(({ identity }) => identity)).toEqual([
+                  firstReady.participationId,
+                ]);
+              },
+              { timeout: 5000, interval: 50 },
             );
-            refreshedMediaGrantToken = tokenMessage['token'] as string;
-            expect(typeof refreshedMediaGrantToken).toBe('string');
-            expect(refreshedMediaGrantToken).not.toBe(secondMediaGrantToken);
-            const refreshedClaims = await new TokenVerifier(livekitApiKey, livekitApiSecret).verify(
-              refreshedMediaGrantToken,
-              0,
-            );
-            expect(refreshedClaims.sub).toBe(secondReady.participationId);
-            expect(refreshedClaims.exp).toBeGreaterThan(Date.now() / 1000);
-            expect(refreshedClaims.video).toMatchObject({
-              room: active.generation,
-              roomJoin: true,
-              canPublish: true,
-              canPublishSources: ['microphone'],
-              canSubscribe: true,
-              canPublishData: false,
-              canUpdateOwnMetadata: false,
-            });
-            expect(refreshedClaims.video?.roomAdmin ?? false).toBe(false);
-            applicationMediaClient.send({
-              kind: 'exercise-token-reconnect',
-              token: refreshedMediaGrantToken,
-            });
-            const refreshedReconnect = await waitForApplicationMediaMessage(
-              applicationMediaClient,
-              (message) => message['kind'] === 'token-reconnect',
-              'a production LiveKit session reconnecting with the refreshed token',
-            );
-            expect(refreshedReconnect['live']).toBe(true);
-            expect(refreshedReconnect['remoteIdentityPresent']).toBe(true);
-            expect(refreshedReconnect['resumedSamples'] as number).toBeGreaterThan(5);
+            expect(observations[0]?.status).toBe('live');
+            expect(observations[1]?.status).toBe('error');
+            expect(observations[1]?.error).toContain('Microphone access was denied');
+            expect(observations[0]?.remoteIdentities).not.toContain(secondReady.participationId);
             console.info(
-              `CP08.5 SFU token refresh: ${JSON.stringify({
-                originalExp: (
-                  await new TokenVerifier(livekitApiKey, livekitApiSecret).verify(
-                    secondMediaGrantToken!,
-                    0,
-                  )
-                ).exp,
-                refreshedExp: refreshedClaims.exp,
-                acceptedByGuardAndSfu: refreshedReconnect['live'] === true,
-                resumedSamples: refreshedReconnect['resumedSamples'],
-                roomAndMicrophoneGrantsPreserved: true,
+              `CP08.5 microphone permission denial: ${JSON.stringify({
+                allowedParticipantLive: observations[0]?.status === 'live',
+                deniedParticipantStatus: observations[1]?.status,
+                denialMappedToRecoveryMessage: observations[1]?.error.includes(
+                  'Microphone access was denied',
+                ),
+                deniedParticipantAbsentFromPeerRemoteTracks:
+                  !observations[0]?.remoteIdentities.includes(secondReady.participationId),
+                sfuParticipants: [firstReady.participationId],
+                officeSocketStillConnected: secondSocket.connected,
               })}`,
             );
-          }
-          if (runMediaReconnect) {
-            applicationMediaClient.send({ kind: 'exercise-reconnect' });
-            await waitForApplicationMediaMessage(
-              applicationMediaClient,
-              (message) => message['kind'] === 'reconnect-armed',
-              'the LiveKit reconnect observer',
+          } else {
+            expect(observations[0]).toMatchObject({
+              status: 'live',
+              remoteIdentities: [secondReady.participationId],
+            });
+            expect(observations[1]).toMatchObject({
+              status: 'live',
+              remoteIdentities: [firstReady.participationId],
+            });
+            expect(observations.every(({ activeAudioSamples }) => activeAudioSamples >= 10)).toBe(
+              true,
             );
-            const restartRequestedAt = Date.now();
-            await liveKitFixture!.restartInPlace();
-            const reconnect = await waitForApplicationMediaMessage(
+            applicationMediaClient.send({ kind: 'exercise-mute-unmute' });
+            const mediaControls = await waitForApplicationMediaMessage(
               applicationMediaClient,
-              (message) => message['kind'] === 'media-reconnect',
-              'both production media sessions to reconnect and resume audio',
+              (message) => message['kind'] === 'media-controls',
+              'real mute/unmute audio cutoff and recovery',
+            );
+            expect(mediaControls['muteStable']).toBe(true);
+            expect(mediaControls['resumed']).toBe(true);
+            expect(mediaControls['muteCutoffMs']).toEqual(expect.any(Number));
+            expect(mediaControls['unmuteObservedMs']).toEqual(expect.any(Number));
+            expect(mediaControls['muteCutoffMs'] as number).toBeLessThanOrEqual(8000);
+            expect(mediaControls['unmuteObservedMs'] as number).toBeLessThanOrEqual(8000);
+            expect(mediaControls['resumedSampleCount'] as number).toBeGreaterThan(
+              (mediaControls['mutedSampleCount'] as number) + 5,
             );
             console.info(
-              `CP08.5 SFU reconnect: ${JSON.stringify({
-                restartToRecoveredAudioMs: Date.now() - restartRequestedAt,
-                reconnecting: reconnect['reconnecting'],
-                live: reconnect['live'],
-                activeAudioSamples: reconnect['activeAudioSamples'],
-                statuses: reconnect['statuses'],
+              `CP08.5 media controls: ${JSON.stringify({
+                muteCutoffMs: mediaControls['muteCutoffMs'],
+                mutedSampleCount: mediaControls['mutedSampleCount'],
+                unmuteObservedMs: mediaControls['unmuteObservedMs'],
+                resumedSampleCount: mediaControls['resumedSampleCount'],
+                muteStable: mediaControls['muteStable'],
+                resumed: mediaControls['resumed'],
               })}`,
             );
-            expect(reconnect['reconnecting']).toBe(true);
-            expect(reconnect['live']).toBe(true);
+            if (runMediaTokenRefresh) {
+              applicationMediaClient.send({ kind: 'token-refresh-count' });
+              const refreshBaselineMessage = await waitForApplicationMediaMessage(
+                applicationMediaClient,
+                (message) => message['kind'] === 'token-refresh-count',
+                'the current SDK token-refresh event count',
+              );
+              const refreshBaseline = refreshBaselineMessage['count'] as number;
+              const roomService = new RoomServiceClient(
+                `http://127.0.0.1:${liveKitFixture!.signalingPort}`,
+                livekitApiKey,
+                livekitApiSecret,
+              );
+              await roomService.updateParticipant(active.generation, secondReady.participationId, {
+                metadata: JSON.stringify({ refresh: randomUUID() }),
+              });
+              applicationMediaClient.send({
+                kind: 'read-refreshed-token',
+                afterCount: refreshBaseline,
+              });
+              const tokenMessage = await waitForApplicationMediaMessage(
+                applicationMediaClient,
+                (message) => message['kind'] === 'refreshed-token',
+                'the SFU-refreshed production SDK token',
+              );
+              refreshedMediaGrantToken = tokenMessage['token'] as string;
+              expect(typeof refreshedMediaGrantToken).toBe('string');
+              expect(refreshedMediaGrantToken !== secondMediaGrantToken).toBe(true);
+              expect(tokenMessage['count'] as number).toBeGreaterThan(refreshBaseline);
+              const refreshedClaims = await new TokenVerifier(
+                livekitApiKey,
+                livekitApiSecret,
+              ).verify(refreshedMediaGrantToken, 0);
+              expect(refreshedClaims.sub).toBe(secondReady.participationId);
+              expect(refreshedClaims.exp).toBeGreaterThan(Date.now() / 1000);
+              expect(refreshedClaims.video).toMatchObject({
+                room: active.generation,
+                roomJoin: true,
+                canPublish: true,
+                canPublishSources: ['microphone'],
+                canSubscribe: true,
+                canPublishData: false,
+                canUpdateOwnMetadata: false,
+              });
+              expect(refreshedClaims.video?.roomAdmin ?? false).toBe(false);
+              applicationMediaClient.send({
+                kind: 'exercise-token-reconnect',
+                token: refreshedMediaGrantToken,
+              });
+              const refreshedReconnect = await waitForApplicationMediaMessage(
+                applicationMediaClient,
+                (message) => message['kind'] === 'token-reconnect',
+                'a production LiveKit session reconnecting with the refreshed token',
+              );
+              expect(refreshedReconnect['live']).toBe(true);
+              expect(refreshedReconnect['remoteIdentityPresent']).toBe(true);
+              expect(refreshedReconnect['resumedSamples'] as number).toBeGreaterThan(5);
+              console.info(
+                `CP08.5 SFU token refresh: ${JSON.stringify({
+                  originalExp: (
+                    await new TokenVerifier(livekitApiKey, livekitApiSecret).verify(
+                      secondMediaGrantToken!,
+                      0,
+                    )
+                  ).exp,
+                  refreshedExp: refreshedClaims.exp,
+                  acceptedByGuardAndSfu: refreshedReconnect['live'] === true,
+                  resumedSamples: refreshedReconnect['resumedSamples'],
+                  roomAndMicrophoneGrantsPreserved: true,
+                })}`,
+              );
+            }
+            if (runMediaReconnect) {
+              applicationMediaClient.send({ kind: 'exercise-reconnect' });
+              await waitForApplicationMediaMessage(
+                applicationMediaClient,
+                (message) => message['kind'] === 'reconnect-armed',
+                'the LiveKit reconnect observer',
+              );
+              const restartRequestedAt = Date.now();
+              await liveKitFixture!.restartInPlace();
+              const reconnect = await waitForApplicationMediaMessage(
+                applicationMediaClient,
+                (message) => message['kind'] === 'media-reconnect',
+                'both production media sessions to reconnect and resume audio',
+              );
+              console.info(
+                `CP08.5 SFU reconnect: ${JSON.stringify({
+                  restartToRecoveredAudioMs: Date.now() - restartRequestedAt,
+                  reconnecting: reconnect['reconnecting'],
+                  live: reconnect['live'],
+                  activeAudioSamples: reconnect['activeAudioSamples'],
+                  statuses: reconnect['statuses'],
+                })}`,
+              );
+              expect(reconnect['reconnecting']).toBe(true);
+              expect(reconnect['live']).toBe(true);
+            }
           }
         } else {
           await vi.waitFor(
@@ -2693,17 +2745,35 @@ describe('office socket admission', () => {
             'the measured real audio cutoff after conversation leave',
           );
           expect(measured['stable']).toBe(true);
-          expect(measured['cutoffMs']).toEqual(expect.any(Number));
-          expect(measured['cutoffMs'] as number).toBeLessThanOrEqual(8000);
-          console.info(
-            `CP08.4 media cutoff: ${JSON.stringify({
-              cutoffMs: measured['cutoffMs'],
-              activeSamples: (
-                measured['observations'] as Array<{ activeAudioSamples: number }>
-              ).map(({ activeAudioSamples }) => activeAudioSamples),
-              stable: measured['stable'],
-            })}`,
-          );
+          if (runMediaPermissionDenied) {
+            expect(
+              (measured['observations'] as Array<{ status: string }>).every(
+                ({ status: mediaStatus }) => mediaStatus === 'off',
+              ),
+            ).toBe(true);
+            const participants = await permissionScenarioRoomService!.listParticipants(
+              active.generation,
+            );
+            expect(participants).toHaveLength(0);
+            console.info(
+              `CP08.5 denied-media cleanup: ${JSON.stringify({
+                bothSessionsStopped: true,
+                remainingSfuParticipants: participants.length,
+              })}`,
+            );
+          } else {
+            expect(measured['cutoffMs']).toEqual(expect.any(Number));
+            expect(measured['cutoffMs'] as number).toBeLessThanOrEqual(8000);
+            console.info(
+              `CP08.4 media cutoff: ${JSON.stringify({
+                cutoffMs: measured['cutoffMs'],
+                activeSamples: (
+                  measured['observations'] as Array<{ activeAudioSamples: number }>
+                ).map(({ activeAudioSamples }) => activeAudioSamples),
+                stable: measured['stable'],
+              })}`,
+            );
+          }
         }
         const forwardedBeforeDeniedReplay = forwardedSignalingPaths.length;
         expect((await validateThroughGuard('after-policy-revoke')).status).toBe(403);
@@ -2750,7 +2820,15 @@ describe('office socket admission', () => {
           expect(refreshedClaims.exp).toEqual(expect.any(Number));
           expect(refreshedClaims.exp!).toBeGreaterThan(Date.now() / 1000);
         }
-        expect((await validateThroughGuard('after-guard-restart')).status).toBe(403);
+        const restartedGuardResponse = await vi.waitFor(
+          async () => {
+            const response = await validateThroughGuard('after-guard-restart');
+            expect(response.status).toBe(403);
+            return response;
+          },
+          { timeout: 5000, interval: 50 },
+        );
+        expect(restartedGuardResponse.status).toBe(403);
         if (runMediaTokenRefresh && refreshedMediaGrantToken) {
           const refreshedAfterRestart = await validateTokenThroughGuard(
             refreshedMediaGrantToken,

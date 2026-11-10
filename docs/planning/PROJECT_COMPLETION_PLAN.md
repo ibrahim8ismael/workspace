@@ -299,20 +299,26 @@ then forced a real LiveKit participant update, captured the production SDK's SFU
 verified its identity/room/microphone-only claims, and reconnected the production media session
 through the live guard with audio recovery. After conversation revocation plus fresh guard/SFU
 restart, the still-unexpired refreshed JWT and original application JWT were both denied by the
-guard. This covers refresh and replay within the pinned local fixture; mounted UI teardown, browser
-permission denial, lease/process loss and deployment ingress remain open.
+guard. This covers refresh and replay within the pinned local fixture; mounted UI teardown, the
+actual browser permission prompt/map flow, lease/process loss and deployment ingress remain open.
 
 CP08.5.7 adds a mounted-office E2E where the mocked media WebSocket fails, the user leaves the
 conversation through the UI, and the Vivo map continues to render and accept movement. It verifies
 the UI's session-stop/ended-state path under media failure. A real audio cutoff caused by leaving an
-active media call, capture-permission denial, active-call membership/session teardown and
+active media call, browser permission prompt/map flow, active-call membership/session teardown and
 lease/process faults remain open.
 
 CP08.5.8 extends the mocked E2E to hold a LiveKit signaling socket during connection, deliver
 `office:access-ended` with `authorization_ended`, and verify the mounted preview closes that socket
 and returns to the re-entry state. This proves UI cleanup for a pending connection, not live audio
-forwarding cutoff or a particular backend revocation trigger. Active-call teardown, permission
-denial and lease/guard/supervisor fault cases remain open.
+forwarding cutoff or a particular backend revocation trigger. CP08.5.9 runs a real API/guard/pinned-
+LiveKit pair while Chromium makes one production media session's `getUserMedia` reject with
+`NotAllowedError`: the peer remains in the SFU, the denied participant is removed, the office
+socket stays connected, the production UI-facing session reports its recovery message, and both
+sessions leave the SFU cleanly after conversation termination. This verifies deterministic media
+API denial handling, not the browser's operating-system permission prompt or map usability in the
+same mounted UI scenario. Active-call leave cutoff, mounted-UI permission/map behavior, active-call
+session/membership revocation through the UI, and lease/guard/supervisor fault cases remain open.
 
 **CP08.6 — webhook reconciliation (pending).** Add strict raw-body signature verification,
 event-ID deduplication and late-event handling under `apps/api/src/modules/media/`; webhooks observe

@@ -1,4 +1,4 @@
-/* global window, location */
+/* global DOMException, navigator, window, location */
 import { createInterface } from 'node:readline';
 import { chromium } from '@playwright/test';
 
@@ -8,12 +8,19 @@ async function readObservations(page) {
   return page.evaluate(() => ({ ...window.__mediaFixture }));
 }
 
-export async function startApplicationMediaClient({ fixtureUrl, grants }) {
+function withoutRefreshedToken(observation) {
+  const safe = { ...observation };
+  delete safe.refreshedToken;
+  return safe;
+}
+
+export async function startApplicationMediaClient({ fixtureUrl, grants, denyMicrophoneIndex }) {
   if (
     typeof fixtureUrl !== 'string' ||
     !fixtureUrl.startsWith('http://127.0.0.1:') ||
     !Array.isArray(grants) ||
     grants.length !== 2 ||
+    (denyMicrophoneIndex !== undefined && ![0, 1].includes(denyMicrophoneIndex)) ||
     grants.some(
       (grant) =>
         !grant ||
@@ -33,6 +40,23 @@ export async function startApplicationMediaClient({ fixtureUrl, grants }) {
   });
   try {
     const pages = await Promise.all([browser.newPage(), browser.newPage()]);
+    if (denyMicrophoneIndex !== undefined) {
+      await pages[denyMicrophoneIndex].addInitScript(() => {
+        const mediaDevices = navigator.mediaDevices;
+        const getUserMedia = mediaDevices.getUserMedia.bind(mediaDevices);
+        Object.defineProperty(mediaDevices, 'getUserMedia', {
+          configurable: true,
+          value: async (constraints) => {
+            if (constraints?.audio)
+              throw new DOMException(
+                'Microphone permission denied by the browser',
+                'NotAllowedError',
+              );
+            return getUserMedia(constraints);
+          },
+        });
+      });
+    }
     const browserErrors = [];
     for (const page of pages) {
       page.on('pageerror', (error) => browserErrors.push(error.message));
@@ -67,30 +91,45 @@ export async function startApplicationMediaClient({ fixtureUrl, grants }) {
       ),
     );
     const initial = await Promise.all(pages.map(readObservations));
-    if (initial.some(({ status }) => status !== 'live'))
+    if (denyMicrophoneIndex !== undefined) {
+      const denied = initial[denyMicrophoneIndex];
+      const allowed = initial[denyMicrophoneIndex === 0 ? 1 : 0];
+      if (
+        denied?.status !== 'error' ||
+        !denied.error.includes('Microphone access was denied') ||
+        allowed?.status !== 'live'
+      )
+        throw new Error(
+          `microphone denial did not isolate the affected session: ${JSON.stringify({ initial: initial.map(withoutRefreshedToken), browserErrors })}`,
+        );
+    } else if (initial.some(({ status }) => status !== 'live'))
       throw new Error(
-        `application grant failed to join LiveKit: ${JSON.stringify({ initial, browserErrors })}`,
+        `application grant failed to join LiveKit: ${JSON.stringify({ initial: initial.map(withoutRefreshedToken), browserErrors })}`,
       );
-    try {
-      await Promise.all(
-        pages.map((page, index) =>
-          page.waitForFunction(
-            (peerIdentity) =>
-              window.__mediaFixture.status === 'live' &&
-              window.__mediaFixture.remoteIdentities.includes(peerIdentity) &&
-              window.__mediaFixture.activeAudioSamples >= 10,
-            grants[index === 0 ? 1 : 0].identity,
-            { timeout: 15000 },
+    if (denyMicrophoneIndex === undefined) {
+      try {
+        await Promise.all(
+          pages.map((page, index) =>
+            page.waitForFunction(
+              (peerIdentity) =>
+                window.__mediaFixture.status === 'live' &&
+                window.__mediaFixture.remoteIdentities.includes(peerIdentity) &&
+                window.__mediaFixture.activeAudioSamples >= 10,
+              grants[index === 0 ? 1 : 0].identity,
+              { timeout: 15000 },
+            ),
           ),
-        ),
-      );
-    } catch {
-      const observations = await Promise.all(pages.map(readObservations));
-      throw new Error(
-        `application LiveKit audio was not mutual and active: ${JSON.stringify({ observations, browserErrors })}`,
-      );
+        );
+      } catch {
+        const observations = await Promise.all(pages.map(readObservations));
+        throw new Error(
+          `application LiveKit audio was not mutual and active: ${JSON.stringify({ observations: observations.map(withoutRefreshedToken), browserErrors })}`,
+        );
+      }
     }
-    const observations = await Promise.all(pages.map(readObservations));
+    const observations = (await Promise.all(pages.map(readObservations))).map(
+      withoutRefreshedToken,
+    );
     return {
       observations,
       pages,
@@ -196,7 +235,7 @@ export async function startApplicationMediaClient({ fixtureUrl, grants }) {
         const final = await Promise.all(pages.map(readObservations));
         return {
           requestedAt,
-          observations: final,
+          observations: final.map(withoutRefreshedToken),
           lastActiveAudioAt: Math.max(...final.map(({ lastActiveAudioAt }) => lastActiveAudioAt)),
           cutoffMs: Math.max(
             0,
@@ -248,12 +287,25 @@ export async function runApplicationMediaCutoffCli() {
         continue;
       }
       if (command.kind === 'read-refreshed-token') {
+        if (!Number.isInteger(command.afterCount) || command.afterCount < 0)
+          throw new Error('invalid token refresh baseline');
         const page = client.pages[1];
-        await page.waitForFunction(() => window.__mediaFixture.refreshedToken.length > 0, null, {
-          timeout: 10000,
-        });
-        const token = await page.evaluate(() => window.__mediaFixture.refreshedToken);
-        process.stdout.write(JSON.stringify({ kind: 'refreshed-token', token }) + '\n');
+        await page.waitForFunction(
+          (afterCount) => window.__mediaFixture.tokenRefreshCount > afterCount,
+          command.afterCount,
+          { timeout: 10000 },
+        );
+        const refreshed = await page.evaluate(() => ({
+          token: window.__mediaFixture.refreshedToken,
+          count: window.__mediaFixture.tokenRefreshCount,
+        }));
+        process.stdout.write(JSON.stringify({ kind: 'refreshed-token', ...refreshed }) + '\n');
+        continue;
+      }
+      if (command.kind === 'token-refresh-count') {
+        const page = client.pages[1];
+        const count = await page.evaluate(() => window.__mediaFixture.tokenRefreshCount);
+        process.stdout.write(JSON.stringify({ kind: 'token-refresh-count', count }) + '\n');
         continue;
       }
       if (command.kind === 'exercise-token-reconnect') {

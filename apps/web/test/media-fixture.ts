@@ -25,6 +25,7 @@ declare global {
       startedAt: number;
       disconnectReason: string;
       refreshedToken: string;
+      tokenRefreshCount: number;
     };
   }
 }
@@ -39,6 +40,7 @@ window.__mediaFixture = {
   startedAt: 0,
   disconnectReason: '',
   refreshedToken: '',
+  tokenRefreshCount: 0,
 };
 
 const session = new ProximityAudioSession(
@@ -92,6 +94,7 @@ const session = new ProximityAudioSession(
       },
       (token) => {
         window.__mediaFixture.refreshedToken = token;
+        window.__mediaFixture.tokenRefreshCount += 1;
       },
     ),
 );

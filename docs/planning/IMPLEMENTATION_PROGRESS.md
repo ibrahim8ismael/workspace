@@ -1107,3 +1107,18 @@ map and leave normally afterward. The E2E passed (one test). This proves the UI 
 pending media connection after the same access-ended event used for session/membership revocation;
 it does not prove media cutoff when an active audio track is forwarding or identify which backend
 revocation produced the event. Active-call teardown and measured forwarding cutoff remain open.
+
+## CP08.5.9 — microphone permission denial against the real media path (2026-11-11)
+
+Added `pnpm test:media-permission-denied`. The local Chromium fixture makes one page's
+`navigator.mediaDevices.getUserMedia` reject with the browser-standard `NotAllowedError` while the
+other page uses its real fake-device microphone and both API-issued grants pass through the
+application guard to the pinned LiveKit SFU. The production `ProximityAudioSession` maps the denied
+capture to its recovery message and disconnects that participant. LiveKit's room service showed
+only the allowed participant in the room, while the denied participant's office Socket.IO connection
+remained active. After the conversation ended, both browser sessions stopped and the SFU room had
+zero participants. The focused integration test passed (one passed, 68 unrelated tests skipped), as
+did API test typecheck, ESLint and formatting checks. This deterministically exercises the browser
+media API denial path; it does not automate the operating-system/browser permission prompt, mount
+the office UI in this same test, or measure active-call forwarding cutoff. Those acceptance cases
+remain open.

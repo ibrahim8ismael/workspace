@@ -2,7 +2,10 @@
   "extends": "@gather/tooling/typescript/node.json",
   "compilerOptions": {
     "rootDir": "src",
-    "outDir": "dist"
+    "outDir": "dist",
+    "paths": {
+      "@gather/legacy-shared/*": ["../../apps/shared/*"]
+    }
   },
   "include": ["src/**/*.ts"],
   "exclude": ["dist", "node_modules", "src/**/*.test.ts"]

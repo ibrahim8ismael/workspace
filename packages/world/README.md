@@ -1,7 +1,7 @@
 # Pure world rules
 
 Deterministic, engine-independent tile rules shared by the authoritative server and browser
-renderer. The package has no framework, database, network, browser or legacy-map dependencies.
+renderer. The package has no framework, database, network or browser dependencies.
 
 ## Scope
 
@@ -50,8 +50,7 @@ canStep(from, { tx: 1, ty: 0 }, bounds, collision); // false: wall
 ## Status and provenance
 
 The discrete wall/diagonal rule was adapted from the pinned upstream shared geometry helpers;
-retain [the upstream MIT notice](LICENSE.upstream). No upstream map coordinates or artwork are
-included in this package.
+retain [the upstream MIT notice](LICENSE.upstream).
 
 `COMMONS_GEOMETRY` is the original static floor plan for the `commons` map. It contains
 the spawn, walls, object blockers, chairs and zones as deeply frozen JSON data. The room
@@ -62,12 +61,13 @@ a tile reachability query. It throws a `RangeError` on the first invalid field. 
 of untrusted JSON needs a separate structural decoder before calling it. The catalog, immutable
 export and Phaser sample are the remaining CP02 batches.
 
-The imported Vivo files remain historical migration material only. Their measured Gather 2.0
-reference geometry and art provenance are unresolved and must not be promoted into an approved map
-or asset registry. The repository's upstream MIT notice alone does not approve that material, and
-no legacy map data is imported here.
+By owner direction, `VIVO_GEOMETRY` now derives authoritative bounds, wall edges, blockers, seats
+and meeting zones from the imported OpenOfficeForAll Vivo files. The upstream map header identifies
+its measured reference as Gather 2.0; preserve that provenance and the upstream notice. Geometry
+validation passes, but the API registry and active browser renderer still use Commons until their
+coordinated migration is complete.
 
 ## Verification
 
-`pnpm test:world` builds the package, typechecks the tests and exercises collision rules and the
-original floor plan. The root `pnpm check` includes this command.
+`pnpm test:world` builds the package, typechecks the tests and exercises collision rules, the
+original floor plan and the derived Vivo geometry. The root `pnpm check` includes this command.

@@ -297,6 +297,10 @@ importers:
   packages/tooling: {}
 
   packages/world:
+    dependencies:
+      '@gather/legacy-shared':
+        specifier: workspace:*
+        version: link:../../apps/shared
     devDependencies:
       '@gather/tooling':
         specifier: workspace:*

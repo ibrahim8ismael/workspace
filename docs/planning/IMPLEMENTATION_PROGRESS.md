@@ -636,9 +636,15 @@ Web typecheck, focused ESLint/format checks, production build and all 32 current
 
 ## OpenOfficeForAll migration — owner reselects supplied Vivo map (2026-11-10)
 
-The owner directed using the same Vivo map and UI styles from OpenOfficeForAll, with this project's APIs. This supersedes the earlier D04 decision to replace Vivo with original Commons geometry. Source review confirms `apps/shared/maps/vivo.js` declares its geometry as measurements from Gather 2.0; this source note is preserved in the migration plan. No runtime change is claimed in this entry. The current client still mounts the Commons Phaser renderer and the API registry accepts Commons only.
+The owner directed using the same Vivo map and UI styles from OpenOfficeForAll, with this project's APIs. This supersedes the earlier D04 decision to replace Vivo with original Commons geometry. Source review confirms `apps/shared/maps/vivo.js` declares its geometry as measurements from Gather 2.0; this source note is preserved in the migration plan. The active client still mounts the Commons Phaser renderer and the API registry accepts Commons only.
 
 Implementation order: establish the imported map's versioned server manifest and authoritative collision/seat geometry; add a safe office-map version backfill plan; connect the upstream `VivoScene` and office UI to `OfficeClient`; replace account/workspace legacy service calls with `ApiClient`; then verify map movement, collision, seats, reconnect and company isolation in two browsers. Preserve the imported MIT notices and make the Gather-derived geometry provenance explicit in release evidence.
+
+## OpenOfficeForAll migration — derive server Vivo geometry (2026-11-10)
+
+Added `VIVO_GEOMETRY` in `packages/world`, derived from the imported upstream map, wall collision, blocked-tile and seat sources. It validates as a 52 × 50 tile world (1664 × 1600 pixels), with 203 map objects, 58 seats and five meeting zones. Reverse-duplicate wall edges are canonicalized; map-boundary edges are enforced by world bounds. The package now declares the imported shared source as a workspace dependency; Docker's API image includes that runtime dependency. `pnpm --filter @gather/world test` passed all 31 tests, the API passed all 79 tests, its build passed, and `docker compose build api` completed successfully.
+
+This is the first runtime data adapter only. The API's trusted map registry, workspace defaults/backfill, office runtime's `COMMONS_GEOMETRY` constants, ticket version schema, active frontend renderer and upstream screen components still need coordinated migration before the Vivo map or full UI appears in the app.
 
 ## CP07.20 — Late-policy cutoff and fail-closed cold bootstrap (2026-11-10)
 

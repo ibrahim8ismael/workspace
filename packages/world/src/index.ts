@@ -22,4 +22,5 @@ export {
   pixelToTile,
 } from './collision.js';
 export { COMMONS_GEOMETRY } from './commons.js';
+export { VIVO_GEOMETRY, VIVO_BLOCKED_TILES } from './vivo.js';
 export { validateOfficeGeometry } from './geometry.js';

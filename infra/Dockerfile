@@ -23,6 +23,7 @@ ENV NODE_ENV=production
 FROM node-runtime AS api-runtime
 COPY --from=build --chown=node:node /workspace/node_modules ./node_modules
 COPY --from=build --chown=node:node /workspace/packages ./packages
+COPY --from=build --chown=node:node /workspace/apps/shared ./apps/shared
 COPY --from=build --chown=node:node /workspace/apps/api/package.json ./apps/api/package.json
 COPY --from=build --chown=node:node /workspace/apps/api/node_modules ./apps/api/node_modules
 COPY --from=build --chown=node:node /workspace/apps/api/dist ./apps/api/dist

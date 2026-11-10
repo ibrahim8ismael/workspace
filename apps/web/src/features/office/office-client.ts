@@ -4,7 +4,10 @@ import {
   officeSocketAuthSchema,
   officeCommandAckSchema,
   officeChatMessageEventSchema,
+  conversationLeaveEventSchema,
+  conversationUpdateSchema,
   presenceUpdateEventSchema,
+  proximityOptInEventSchema,
   seatSitEventSchema,
   seatStandEventSchema,
   worldInputEventSchema,
@@ -12,6 +15,7 @@ import {
   type OfficeBootstrapResponse,
   type OfficeReady,
   type OfficeMessage,
+  type ConversationUpdate,
   type WorldSnapshot,
 } from '@gather/contracts';
 import { io, type Socket } from 'socket.io-client';
@@ -28,6 +32,7 @@ export type OfficeClientState = {
   snapshot: WorldSnapshot | null;
   message: string;
   chatEvents: OfficeMessage[];
+  conversationUpdates: ConversationUpdate[];
 };
 
 const EMPTY_STATE: OfficeClientState = {
@@ -37,6 +42,7 @@ const EMPTY_STATE: OfficeClientState = {
   snapshot: null,
   message: '',
   chatEvents: [],
+  conversationUpdates: [],
 };
 
 /** Cookie-authenticated HTTP bootstrap followed by a one-use-ticket Socket.IO session. */
@@ -81,6 +87,7 @@ export class OfficeClient {
       snapshot: null,
       message: '',
       chatEvents: [],
+      conversationUpdates: [],
     });
     try {
       const bootstrap = await this.api.officeBootstrap(this.workspaceId, this.officeId);
@@ -136,6 +143,18 @@ export class OfficeClient {
         const parsed = officeChatMessageEventSchema.safeParse(raw);
         if (!parsed.success) return;
         this.update({ chatEvents: mergeChatMessage(this.state.chatEvents, parsed.data) });
+      });
+      socket.on('conversation:update', (raw: unknown) => {
+        const parsed = conversationUpdateSchema.safeParse(raw);
+        if (!parsed.success) return;
+        this.update({
+          conversationUpdates: [
+            ...this.state.conversationUpdates.filter(
+              (candidate) => candidate.conversationId !== parsed.data.conversationId,
+            ),
+            parsed.data,
+          ].slice(-5),
+        });
       });
       socket.on('world:snapshot', (raw: unknown) => {
         const parsed = worldSnapshotSchema.safeParse(raw);
@@ -240,6 +259,17 @@ export class OfficeClient {
   setAvailability(availability: 'available' | 'busy' | 'away') {
     return this.sendCommand('presence:update', presenceUpdateEventSchema, {
       availability,
+    });
+  }
+
+  setProximityOptIn(enabled: boolean) {
+    return this.sendCommand('proximity:set-opt-in', proximityOptInEventSchema, { enabled });
+  }
+
+  leaveConversation(conversationId: string, conversationVersion: number) {
+    return this.sendCommand('conversation:leave', conversationLeaveEventSchema, {
+      conversationId,
+      conversationVersion,
     });
   }
 

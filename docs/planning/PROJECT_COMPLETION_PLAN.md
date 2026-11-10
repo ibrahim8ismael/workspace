@@ -236,6 +236,12 @@ Exit: reproducible pinned-stack evidence for A07 with observed cutoffs and failu
 
 Depends on: CP05/CP06 and passing CP07. Deliverable: authorized one-to-one proximity audio in the real office.
 
+Progress: CP08.1 implements only the application-side deterministic pairing and private realtime
+state (`joining`/`ended`). It reports `mediaReady: false` and does not grant media. CP07's isolated
+cutoff proof still needs application/deployment integration for release A07. Continue with the
+guarded grant and LiveKit path before exposing microphone controls; keep this phase's real-audio
+acceptance open until that path passes.
+
 1. Implement deterministic pairing, one active conversation per participation, explicit opt-in and availability gates. Freeze ties, suppression after explicit leave and distance/debounce semantics; never debounce security revocation.
 2. Track conversation state/version/member set/generation in office-owner memory. Create isolated rooms per generation; retire the old generation before granting a replacement. Handle boundary churn with bounded recovery budgets.
 3. Add protected HTTP media-token issuance bound to the same session's live participation and current conversation. Resolve identity/room/sources on the server; install the exact permit, recheck policy, then issue a short-lived grant.

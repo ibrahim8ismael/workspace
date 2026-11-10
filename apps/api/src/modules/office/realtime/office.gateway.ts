@@ -19,6 +19,9 @@ import {
   worldResyncEventSchema,
   worldDeltaSchema,
   worldSnapshotSchema,
+  conversationLeaveEventSchema,
+  conversationUpdateSchema,
+  proximityOptInEventSchema,
 } from '@gather/contracts';
 import { OfficeAdmissionService } from '../office-admission.service.js';
 import type { ConsumedOfficeTicket, OfficeReservation } from '../runtime/office-runtime.service.js';
@@ -171,6 +174,7 @@ export class OfficeGateway
       this.namespace
         .to(released.roomId)
         .emit('world:delta', worldDeltaSchema.parse(released.delta));
+      this.publishConversationNotices(this.runtime.reconcileProximity(ticket.officeId));
       if (!this.runtime.hasOffice(ticket.officeId)) this.stopSimulation(ticket.officeId);
     }
   }
@@ -349,6 +353,66 @@ export class OfficeGateway
         return;
       }
       if (result) this.namespace.to(result.roomId).emit('world:delta', result.delta);
+      this.publishConversationNotices(this.runtime.reconcileProximity(ticket.officeId));
+      this.reply(acknowledge, parsed.data.eventId, null);
+    });
+    socket.on('proximity:set-opt-in', (raw: unknown, acknowledge?: unknown) => {
+      if (!this.allowOfficeCommand(socket)) {
+        this.reply(acknowledge, this.eventId(raw), 'rate_limited');
+        return;
+      }
+      const parsed = proximityOptInEventSchema.safeParse(raw);
+      if (!parsed.success) {
+        this.reply(acknowledge, this.eventId(raw), 'validation_failed');
+        return;
+      }
+      const ticket = socket.data.officeAdmission;
+      const reservation = socket.data.officeReservation;
+      if (!ticket || !reservation) return;
+      const notices = this.runtime.setProximityOptIn(
+        ticket.officeId,
+        ticket.workspaceId,
+        ticket.userId,
+        socket.id,
+        reservation.participationId,
+        parsed.data.officeEpoch,
+        parsed.data.payload.enabled,
+      );
+      if (typeof notices === 'string') {
+        this.reply(acknowledge, parsed.data.eventId, notices);
+        return;
+      }
+      this.publishConversationNotices(notices);
+      this.reply(acknowledge, parsed.data.eventId, null);
+    });
+    socket.on('conversation:leave', (raw: unknown, acknowledge?: unknown) => {
+      if (!this.allowOfficeCommand(socket)) {
+        this.reply(acknowledge, this.eventId(raw), 'rate_limited');
+        return;
+      }
+      const parsed = conversationLeaveEventSchema.safeParse(raw);
+      if (!parsed.success) {
+        this.reply(acknowledge, this.eventId(raw), 'validation_failed');
+        return;
+      }
+      const ticket = socket.data.officeAdmission;
+      const reservation = socket.data.officeReservation;
+      if (!ticket || !reservation) return;
+      const result = this.runtime.leaveProximityConversation(
+        ticket.officeId,
+        ticket.workspaceId,
+        ticket.userId,
+        socket.id,
+        reservation.participationId,
+        parsed.data.officeEpoch,
+        parsed.data.payload.conversationId,
+        parsed.data.payload.conversationVersion,
+      );
+      if (typeof result === 'string') {
+        this.reply(acknowledge, parsed.data.eventId, result);
+        return;
+      }
+      this.publishConversationNotices(result.notices);
       this.reply(acknowledge, parsed.data.eventId, null);
     });
     socket.on('seat:sit', (raw: unknown, acknowledge?: unknown) => {
@@ -436,6 +500,18 @@ export class OfficeGateway
     return typeof raw === 'object' && raw !== null && 'eventId' in raw ? raw.eventId : undefined;
   }
 
+  private publishConversationNotices(
+    notices: ReturnType<OfficeRuntimeService['reconcileProximity']>,
+  ) {
+    for (const notice of notices) {
+      const update = conversationUpdateSchema.parse(notice.update);
+      for (const socketId of new Set(notice.socketIds)) {
+        const recipient = this.namespace.sockets.get(socketId);
+        if (recipient?.connected) recipient.emit('conversation:update', update);
+      }
+    }
+  }
+
   private allowOfficeCommand(socket: OfficeSocket) {
     const now = performance.now();
     const attempts = (socket.data.officeCommandAttemptTimestamps ?? []).filter(
@@ -471,6 +547,7 @@ export class OfficeGateway
       if (update) {
         this.namespace.to(update.roomId).emit('world:delta', worldDeltaSchema.parse(update.delta));
       }
+      this.publishConversationNotices(this.runtime.reconcileProximity(officeId));
       if (!this.runtime.hasOffice(officeId)) this.stopSimulation(officeId);
     }, 1000 / OFFICE_LIMITS.simulationHz);
     this.simulationTimers.set(officeId, timer);

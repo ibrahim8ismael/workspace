@@ -4,6 +4,8 @@ The owner-accepted D02 topology (2026-11-08) uses self-hosted LiveKit for opt-in
 
 CP01 public opt-in/conversation/meeting shapes are defined in [OFFICE_V1.md](OFFICE_V1.md). Their strict validation does not authorize recipients or install media permits. Pin-dependent grant/permit/webhook/supervision contracts still require the D03/CP07 proof before production media.
 
+CP08.1 now implements the application-side opt-in/availability pairing state and private `conversation:update` delivery. It still reports `mediaReady: false`; there is no media-token endpoint or usable LiveKit join path yet. The OpenOfficeForAll audio/video controls must remain unavailable until the application checks current membership/session/conversation policy, installs and acknowledges the proven generation permit, rechecks policy, and issues a scoped token.
+
 ## Libraries and network boundaries
 
 | Component | Responsibility |

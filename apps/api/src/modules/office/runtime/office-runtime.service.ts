@@ -13,6 +13,8 @@ import { invariant } from '../../../platform/http/errors.js';
 import { digest, newSecret } from '../../identity/security/secrets.js';
 import { trustedOfficeMap } from '../office-map-registry.js';
 import type { TrustedOfficeMap } from '../office-map-registry.js';
+import { ProximityPairing } from './proximity-pairing.js';
+import type { PrivateConversationNotice, ProximityCandidate } from './proximity-pairing.js';
 
 export interface ConsumedOfficeTicket {
   userId: string;
@@ -50,6 +52,7 @@ interface OfficeRuntime {
   readonly participants: Map<string, RuntimeParticipant>;
   readonly participationByActor: Map<string, string>;
   readonly seats: Map<string, string | null>;
+  readonly proximity: ProximityPairing;
   lastSimulationAt: number;
   lastBroadcastAt: number;
   readonly dirtyParticipants: Set<string>;
@@ -198,6 +201,7 @@ export class OfficeRuntimeService {
             participants: new Map(),
             participationByActor: new Map(),
             seats: this.emptySeats(map),
+            proximity: new ProximityPairing(ticket.officeEpoch, map.geometry.tileSize),
             lastSimulationAt: performance.now(),
             lastBroadcastAt: performance.now(),
             dirtyParticipants: new Set(),
@@ -416,6 +420,56 @@ export class OfficeRuntimeService {
     if (participant.publicState.availability === availability) return null;
     participant.publicState.availability = availability;
     return this.change(office, [participant.publicState]);
+  }
+
+  setProximityOptIn(
+    officeId: string,
+    workspaceId: string,
+    userId: string,
+    socketId: string,
+    participationId: string,
+    officeEpoch: string,
+    enabled: boolean,
+    now = performance.now(),
+  ): PrivateConversationNotice[] | 'stale_epoch' | 'unauthorized' {
+    const office = this.offices.get(officeId);
+    const participant = office?.participants.get(participationId);
+    if (!office || office.workspaceId !== workspaceId || office.officeEpoch !== officeEpoch)
+      return 'stale_epoch';
+    if (!participant || participant.userId !== userId || participant.socketId !== socketId)
+      return 'unauthorized';
+    return office.proximity.setOptIn(
+      participationId,
+      enabled,
+      this.proximityCandidates(office),
+      now,
+    );
+  }
+
+  leaveProximityConversation(
+    officeId: string,
+    workspaceId: string,
+    userId: string,
+    socketId: string,
+    participationId: string,
+    officeEpoch: string,
+    conversationId: string,
+    conversationVersion: number,
+  ): { notices: PrivateConversationNotice[] } | 'stale_epoch' | 'stale_version' | 'unauthorized' {
+    const office = this.offices.get(officeId);
+    const participant = office?.participants.get(participationId);
+    if (!office || office.workspaceId !== workspaceId || office.officeEpoch !== officeEpoch)
+      return 'stale_epoch';
+    if (!participant || participant.userId !== userId || participant.socketId !== socketId)
+      return 'unauthorized';
+    const result = office.proximity.leave(participationId, conversationId, conversationVersion);
+    return 'error' in result ? result.error : result;
+  }
+
+  reconcileProximity(officeId: string, now = performance.now()): PrivateConversationNotice[] {
+    const office = this.offices.get(officeId);
+    if (!office) return [];
+    return office.proximity.reconcile(this.proximityCandidates(office), now);
   }
 
   resync(
@@ -680,6 +734,16 @@ export class OfficeRuntimeService {
 
   private emptySeats(map: TrustedOfficeMap) {
     return new Map(map.seats.map((seat) => [seat.seatId, null] as const));
+  }
+
+  private proximityCandidates(office: OfficeRuntime): ProximityCandidate[] {
+    return [...office.participants.entries()].map(([participationId, participant]) => ({
+      participationId,
+      socketId: participant.socketId,
+      displayName: participant.publicState.displayName,
+      availability: participant.publicState.availability,
+      position: participant.publicState.position,
+    }));
   }
 
   private pruneTakeoverReferences() {

@@ -774,3 +774,32 @@ Restored working OpenOfficeForAll-style navigation for Office and Messages. Cale
 Verification: `pnpm test:contracts` passed (22 tests), `pnpm test:api` passed (82 tests across 3 files, including Mongo/HTTP/Socket.IO persistence, retention, retry conflict, office/company isolation and live room broadcast), `pnpm test:web` passed (31 tests), `pnpm lint` passed, `pnpm --filter @gather/web build` passed, and the mocked Chromium `company-office-preview.spec.ts` passed with chat navigation, history, send failure/same-ID retry and reconnect history refresh. `git diff --check` passed. Docker verification could not run because the local Docker API socket was unavailable. The live composed-browser chat flow therefore remains open in A12; see the [acceptance register](ACCEPTANCE.md) and [chat plan](../entities/chat-messages/PLAN.md).
 
 This batch is committed and pushed; Git history records the implementation commit. The next product checkpoint is CP08 guarded LiveKit media UI/integration, with visual/accessibility and Chrome/Edge review still open.
+
+## CP08.1 — proximity pairing state and private realtime updates (2026-11-10)
+
+Implemented the first application-policy slice for proximity audio. Each office runtime now owns an
+in-memory pairing manager. Pairing requires both participants to opt in and be Available, selects
+the nearest eligible pair with a stable participation-ID tie-break, allows at most one pair per
+participation, joins within two map tiles, and ends after leaving three tiles for 500 ms. Opt-out,
+Away/Busy, disconnect, and authorization cleanup end a pair immediately. Explicit leave suppresses
+that pair until eligibility or distance resets. Conversation updates are emitted only to the two
+admitted sockets and carry a version/generation; the initial state explicitly says
+`mediaReady: false`.
+
+This implements pairing and conversation state only. It does not issue media grants, install CP07
+permits, start LiveKit, or enable microphone controls. CP07's local enforcement proof is not yet
+the application's live grant path, and release acceptance A07 still has deployment/TURN/privilege
+gates. The supplied UI therefore must keep real audio controls unavailable until that guarded path
+is connected; there is no P2P or unguarded fallback.
+
+Verification: `pnpm --filter @gather/api test` passed (87 tests across four files), including a new
+Socket.IO integration scenario proving pair updates reach the two opted-in members but not another
+admitted office member, and that explicit leave sends a versioned end to the pair only. The pure
+pairing suite passed (4 tests), `pnpm --filter @gather/web typecheck` passed, `pnpm test:web` passed
+(31 tests), `pnpm test:contracts` passed (22 tests), and `pnpm lint` passed. Docker/LiveKit media
+verification remains unavailable because the local container-engine app bundle is not executable;
+no real audio cutoff or media UX acceptance is claimed.
+
+This CP08.1 batch is committed and pushed separately. Next: wire the proved CP07 guard/supervisor to
+real application membership and the LiveKit adapter; only then expose the upstream microphone
+controls and run two-browser audio, cutoff, revocation, reconnect, and company-isolation checks.

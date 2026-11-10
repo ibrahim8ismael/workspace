@@ -39,6 +39,7 @@ import {
   officeMessagesResponseSchema,
   officeChatMessageEventSchema,
   OFFICE_CHAT_RETENTION_DAYS,
+  conversationUpdateSchema,
 } from '@gather/contracts';
 import { IdentityModels } from '../dist/modules/identity/identity.models.js';
 import { TenancyModels } from '../dist/modules/tenancy/tenancy.models.js';
@@ -1718,6 +1719,127 @@ describe('office socket admission', () => {
       });
     } finally {
       client.disconnect();
+    }
+  });
+
+  it('keeps proximity conversation state private and ends it on explicit leave', async () => {
+    const owner = await account();
+    const first = await account();
+    const second = await account();
+    const observer = await account();
+    const workspaceId = await workspace(owner);
+    await join(owner, workspaceId, first);
+    await join(owner, workspaceId, second);
+    await join(owner, workspaceId, observer);
+
+    const [{ ticket: firstTicket }, { ticket: secondTicket }, { ticket: observerTicket }] =
+      await Promise.all([
+        issueTicket(first, workspaceId),
+        issueTicket(second, workspaceId),
+        issueTicket(observer, workspaceId),
+      ]);
+    const firstSocket = officeSocket({ ticket: firstTicket, protocolVersion: 1 });
+    const secondSocket = officeSocket({ ticket: secondTicket, protocolVersion: 1 });
+    const observerSocket = officeSocket({ ticket: observerTicket, protocolVersion: 1 });
+    const observerNotices: unknown[] = [];
+    observerSocket.on('conversation:update', (notice: unknown) => observerNotices.push(notice));
+
+    try {
+      const firstReadyEvent = nextSocketEvent<unknown>(firstSocket, 'office:ready');
+      await connectSocket(firstSocket);
+      const firstReady = officeReadySchema.parse(await firstReadyEvent);
+      const secondReadyEvent = nextSocketEvent<unknown>(secondSocket, 'office:ready');
+      await connectSocket(secondSocket);
+      const secondReady = officeReadySchema.parse(await secondReadyEvent);
+      const observerReadyEvent = nextSocketEvent<unknown>(observerSocket, 'office:ready');
+      await connectSocket(observerSocket);
+      await observerReadyEvent;
+
+      const firstParticipant = firstReady.snapshot.participants.find(
+        (participant) => participant.participationId === firstReady.participationId,
+      )!;
+      const secondParticipant = secondReady.snapshot.participants.find(
+        (participant) => participant.participationId === secondReady.participationId,
+      )!;
+      expect(
+        Math.hypot(
+          firstParticipant.position.x - secondParticipant.position.x,
+          firstParticipant.position.y - secondParticipant.position.y,
+        ) / 32,
+      ).toBeLessThanOrEqual(2);
+
+      const firstJoinNotice = nextSocketEvent<unknown>(firstSocket, 'conversation:update');
+      const secondJoinNotice = nextSocketEvent<unknown>(secondSocket, 'conversation:update');
+      const firstOptIn = {
+        eventId: randomUUID(),
+        officeEpoch: firstReady.snapshot.officeEpoch,
+        payload: { enabled: true },
+      };
+      const firstOptInAck = await new Promise<unknown>((resolve) => {
+        firstSocket.emit('proximity:set-opt-in', firstOptIn, resolve);
+      });
+      expect(officeCommandAckSchema.parse(firstOptInAck)).toEqual({
+        eventId: firstOptIn.eventId,
+        ok: true,
+      });
+
+      const secondOptIn = {
+        eventId: randomUUID(),
+        officeEpoch: secondReady.snapshot.officeEpoch,
+        payload: { enabled: true },
+      };
+      const secondOptInAck = await new Promise<unknown>((resolve) => {
+        secondSocket.emit('proximity:set-opt-in', secondOptIn, resolve);
+      });
+      expect(officeCommandAckSchema.parse(secondOptInAck)).toEqual({
+        eventId: secondOptIn.eventId,
+        ok: true,
+      });
+      const joining = conversationUpdateSchema.parse(await firstJoinNotice);
+      expect(conversationUpdateSchema.parse(await secondJoinNotice)).toEqual(joining);
+      expect(joining).toMatchObject({
+        officeEpoch: firstReady.snapshot.officeEpoch,
+        kind: 'proximity',
+        state: 'joining',
+        version: 1,
+        mediaReady: false,
+        participants: [
+          { participationId: firstReady.participationId },
+          { participationId: secondReady.participationId },
+        ],
+      });
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      expect(observerNotices).toEqual([]);
+
+      const firstEndedEvent = nextSocketEvent<unknown>(firstSocket, 'conversation:update');
+      const secondEndedEvent = nextSocketEvent<unknown>(secondSocket, 'conversation:update');
+      const leave = {
+        eventId: randomUUID(),
+        officeEpoch: firstReady.snapshot.officeEpoch,
+        payload: {
+          conversationId: joining.conversationId,
+          conversationVersion: joining.version,
+        },
+      };
+      const leaveAck = await new Promise<unknown>((resolve) => {
+        firstSocket.emit('conversation:leave', leave, resolve);
+      });
+      expect(officeCommandAckSchema.parse(leaveAck)).toEqual({ eventId: leave.eventId, ok: true });
+      const ended = conversationUpdateSchema.parse(await firstEndedEvent);
+      expect(conversationUpdateSchema.parse(await secondEndedEvent)).toMatchObject({
+        conversationId: joining.conversationId,
+        state: 'ended',
+        version: joining.version + 1,
+        mediaReady: false,
+        participants: [],
+      });
+      expect(ended).toMatchObject({ state: 'ended', mediaReady: false, participants: [] });
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      expect(observerNotices).toEqual([]);
+    } finally {
+      firstSocket.disconnect();
+      secondSocket.disconnect();
+      observerSocket.disconnect();
     }
   });
 

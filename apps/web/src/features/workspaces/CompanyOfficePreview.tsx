@@ -14,6 +14,7 @@ import {
 import type { AccountDto } from '@gather/contracts';
 import type { OfficeWorkspaceDetail } from '../../lib/api';
 import { ApiClient } from '../../lib/api';
+import { DEFAULT_LOOK } from '../../../avatarLook';
 import VivoScene from '../../../VivoScene';
 import type { Participant } from '../../../types';
 import type { Overrides } from '../../../../shared/office-objects.js';
@@ -31,6 +32,12 @@ const LiveCommonsScene = lazy(() =>
     default: module.LiveCommonsScene,
   })),
 );
+
+function sceneAvatarForAppearance(appearance: { bodyId: string; paletteId: string }) {
+  if (appearance.bodyId === 'commons-worker' && appearance.paletteId === 'teal')
+    return DEFAULT_LOOK;
+  return undefined;
+}
 
 type Props = {
   account: AccountDto;
@@ -164,7 +171,14 @@ export function CompanyOfficePreview({ account, api, detail, onBack, onOpenSecur
     );
   }
 
-  if (!state.bootstrap || !state.ready || !state.snapshot) {
+  if (
+    !state.bootstrap ||
+    !state.ready ||
+    !state.snapshot ||
+    state.snapshot.participants.some(
+      (participant) => !sceneAvatarForAppearance(participant.appearance),
+    )
+  ) {
     return (
       <main className="office-prejoin" data-workspace-id={detail.id}>
         <section className="office-prejoin-content" aria-labelledby="office-data-error-title">
@@ -173,8 +187,8 @@ export function CompanyOfficePreview({ account, api, detail, onBack, onOpenSecur
               Office data unavailable
             </h1>
             <p role="alert">
-              The office connection is missing its server-provided map or participant state. Return
-              to your companies and try again.
+              The office map or participant appearance is missing or unsupported in this frontend.
+              Return to your companies and try again.
             </p>
             <button className="primary" type="button" onClick={onBack}>
               Back to companies
@@ -195,14 +209,12 @@ export function CompanyOfficePreview({ account, api, detail, onBack, onOpenSecur
     id: participant.participationId,
     name: participant.displayName,
     color: '#f6c08f',
+    avatar: sceneAvatarForAppearance(participant.appearance),
     x: participant.position.x,
     y: participant.position.y,
     facing: participant.facing,
     ...(participant.seatId ? { seatId: participant.seatId } : {}),
     status: participant.availability,
-    mic: false,
-    camera: false,
-    screen: false,
   }));
   const noOverrides: Overrides = {};
   const connectionMessage =

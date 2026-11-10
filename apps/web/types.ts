@@ -25,9 +25,9 @@ export type Participant = {
   facing?: Facing;
   seatId?: string;
   status: Status;
-  mic: boolean;
-  camera: boolean;
-  screen: boolean;
+  mic?: boolean;
+  camera?: boolean;
+  screen?: boolean;
 };
 export type OfficeObject = {
   id: string;

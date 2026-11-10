@@ -41,6 +41,7 @@ import {
   OFFICE_CHAT_RETENTION_DAYS,
   conversationUpdateSchema,
   mediaPolicySnapshotSchema,
+  mediaTokenResponseSchema,
 } from '@gather/contracts';
 import { IdentityModels } from '../dist/modules/identity/identity.models.js';
 import { TenancyModels } from '../dist/modules/tenancy/tenancy.models.js';
@@ -66,12 +67,15 @@ import { OfficeSocketAdapter } from '../dist/modules/office/realtime/office-sock
 import { io } from 'socket.io-client';
 import type { Socket } from 'socket.io-client';
 import type { AddressInfo } from 'node:net';
+import { TokenVerifier } from 'livekit-server-sdk';
 
 const origin = 'https://api.gather.test';
 const password = 'a quartz river beneath the lantern';
 const newPassword = 'a copper forest beyond the telescope';
 const encryption = randomBytes(32);
 const mediaMachineKey = randomBytes(32);
+const livekitApiKey = 'gather-test-key';
+const livekitApiSecret = randomBytes(32).toString('base64url');
 let app: NestExpressApplication;
 let mongo: MongoMemoryReplSet;
 let identities: IdentityModels;
@@ -238,6 +242,9 @@ beforeAll(async () => {
   process.env['DB_AUTO_INDEX'] = 'true';
   process.env['OUTBOX_ENCRYPTION_KEY'] = encryption.toString('base64');
   process.env['MEDIA_MACHINE_KEY'] = mediaMachineKey.toString('base64');
+  process.env['LIVEKIT_URL'] = 'wss://livekit.gather.test';
+  process.env['LIVEKIT_API_KEY'] = livekitApiKey;
+  process.env['LIVEKIT_API_SECRET'] = livekitApiSecret;
   process.env['MONGOMS_DOWNLOAD_DIR'] = resolve(process.cwd(), '../../.cache/mongodb-binaries');
   mongo = await MongoMemoryReplSet.create({
     binary: { version: '8.2.6' },
@@ -1871,6 +1878,18 @@ describe('office socket admission', () => {
         createHmac('sha256', mediaMachineKey).update(signedPull.text).digest('hex'),
       );
 
+      status(
+        await first.client.send(
+          'post',
+          `/api/conversations/${joining.conversationId}/media-token`,
+          {
+            participationId: firstReady.participationId,
+            conversationVersion: joining.version,
+          },
+        ),
+        409,
+      );
+
       const firstActiveNotice = nextSocketEvent<unknown>(firstSocket, 'conversation:update');
       const secondActiveNotice = nextSocketEvent<unknown>(secondSocket, 'conversation:update');
       const acknowledgement = {
@@ -1901,6 +1920,57 @@ describe('office socket admission', () => {
         version: 2,
         mediaReady: true,
       });
+
+      const tokenPath = `/api/conversations/${joining.conversationId}/media-token`;
+      const issued = await first.client.send('post', tokenPath, {
+        participationId: firstReady.participationId,
+        conversationVersion: active.version,
+      });
+      status(issued, 200);
+      const mediaGrant = mediaTokenResponseSchema.parse(issued.body);
+      expect(issued.headers['cache-control']).toBe('no-store');
+      expect(mediaGrant).toMatchObject({
+        serverUrl: 'wss://livekit.gather.test',
+        conversationVersion: active.version,
+        generation: active.generation,
+      });
+      const tokenClaims = await new TokenVerifier(livekitApiKey, livekitApiSecret).verify(
+        mediaGrant.token,
+        0,
+      );
+      expect(tokenClaims.sub).toBe(firstReady.participationId);
+      expect(tokenClaims.exp).toBe(Date.parse(mediaGrant.expiresAt) / 1000);
+      expect(tokenClaims.video).toMatchObject({
+        room: active.generation,
+        roomJoin: true,
+        roomAdmin: false,
+        canPublish: true,
+        canPublishSources: ['microphone'],
+        canSubscribe: true,
+        canPublishData: false,
+        canUpdateOwnMetadata: false,
+      });
+      expect(tokenClaims.video).not.toHaveProperty('roomCreate');
+      expect(tokenClaims.video).not.toHaveProperty('roomList');
+      expect(tokenClaims.video).not.toHaveProperty('roomRecord');
+
+      status(
+        await observer.client.send('post', tokenPath, {
+          participationId: firstReady.participationId,
+          conversationVersion: active.version,
+        }),
+        404,
+      );
+      const foreignOwner = await account();
+      await workspace(foreignOwner);
+      status(
+        await foreignOwner.client.send('post', tokenPath, {
+          participationId: firstReady.participationId,
+          conversationVersion: active.version,
+        }),
+        404,
+      );
+
       const replayedAck = await request(app.getHttpServer())
         .post('/api/media/internal/policy/ack')
         .set(
@@ -1937,6 +2007,13 @@ describe('office socket admission', () => {
         participants: [],
       });
       expect(ended).toMatchObject({ state: 'ended', mediaReady: false, participants: [] });
+      status(
+        await first.client.send('post', tokenPath, {
+          participationId: firstReady.participationId,
+          conversationVersion: active.version,
+        }),
+        409,
+      );
       await new Promise((resolve) => setTimeout(resolve, 80));
       expect(observerNotices).toEqual([]);
     } finally {

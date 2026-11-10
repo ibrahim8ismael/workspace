@@ -160,6 +160,25 @@ export class ProximityPairing {
     );
   }
 
+  mediaConversation(participationId: string, conversationId: string, version: number) {
+    const key = this.pairByParticipant.get(participationId);
+    const pair = key ? this.pairs.get(key) : undefined;
+    if (
+      !pair ||
+      pair.mediaState !== 'active' ||
+      !pair.memberIds.includes(participationId) ||
+      pair.conversationId !== conversationId ||
+      pair.version !== version
+    )
+      return null;
+    return {
+      conversationId: pair.conversationId,
+      conversationVersion: pair.version,
+      generation: pair.generation,
+      room: pair.generation,
+    };
+  }
+
   activateGeneration(generation: string): PrivateConversationNotice[] {
     const pair = [...this.pairs.values()].find((candidate) => candidate.generation === generation);
     if (!pair || pair.mediaState === 'active') return [];

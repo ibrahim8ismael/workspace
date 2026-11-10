@@ -12,6 +12,27 @@ const optionalMachineKey = z.preprocess(
     )
     .optional(),
 );
+const optionalLiveKitUrl = z.preprocess(
+  (value) => (value === '' || value == null ? undefined : value),
+  z
+    .url()
+    .refine((value) => {
+      const url = new URL(value);
+      return (
+        ['ws:', 'wss:'].includes(url.protocol) &&
+        !url.username &&
+        !url.password &&
+        url.pathname === '/' &&
+        !url.search &&
+        !url.hash
+      );
+    }, 'Provide a bare ws:// or wss:// LiveKit server URL')
+    .optional(),
+);
+const optionalLiveKitCredential = z.preprocess(
+  (value) => (value === '' || value == null ? undefined : value),
+  z.string().min(1).optional(),
+);
 
 export const environmentSchema = z
   .object({
@@ -32,6 +53,9 @@ export const environmentSchema = z
         'Provide 32 random bytes encoded as canonical base64',
       ),
     MEDIA_MACHINE_KEY: optionalMachineKey,
+    LIVEKIT_URL: optionalLiveKitUrl,
+    LIVEKIT_API_KEY: optionalLiveKitCredential,
+    LIVEKIT_API_SECRET: optionalLiveKitCredential,
     DB_AUTO_INDEX: z.enum(['true', 'false']).default('false'),
   })
   .superRefine((value, ctx) => {
@@ -42,6 +66,27 @@ export const environmentSchema = z
         code: 'custom',
         path: ['DB_AUTO_INDEX'],
         message: 'Use explicit production index provisioning',
+      });
+    const liveKitConfigured = [
+      value.LIVEKIT_URL,
+      value.LIVEKIT_API_KEY,
+      value.LIVEKIT_API_SECRET,
+    ].filter(Boolean).length;
+    if (liveKitConfigured !== 0 && liveKitConfigured !== 3)
+      ctx.addIssue({
+        code: 'custom',
+        path: ['LIVEKIT_URL'],
+        message: 'Configure the LiveKit URL, API key and API secret together',
+      });
+    if (
+      value.NODE_ENV === 'production' &&
+      value.LIVEKIT_URL &&
+      !value.LIVEKIT_URL.startsWith('wss://')
+    )
+      ctx.addIssue({
+        code: 'custom',
+        path: ['LIVEKIT_URL'],
+        message: 'Production LiveKit URLs require WSS',
       });
   });
 export type ApiEnvironment = z.infer<typeof environmentSchema>;

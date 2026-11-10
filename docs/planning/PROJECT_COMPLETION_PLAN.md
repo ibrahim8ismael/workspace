@@ -240,12 +240,16 @@ Progress: CP08.1 implements deterministic application-side pairing and private r
 CP08.2a defines strict shared media-token, policy-pull, permit-snapshot and install-ack schemas;
 CP08.2b implements HMAC-authenticated application pull/ack routes and marks only still-current
 generations active after an exact installation acknowledgement. CP08.2c adds the guard-side signed
-ACK client and shared canonical base64 key decoding, but the API and guard have not yet been exercised
-as one live networked process pair. Application policy state is process-local. No media token,
-LiveKit browser join or actual audio has been enabled. CP07's isolated cutoff proof still needs
-application and deployment integration for release A07. Continue with a real API-to-guard transport
-exercise and the guarded grant path before exposing microphone controls; keep real-audio acceptance
-open until that path passes.
+ACK client and shared canonical base64 key decoding. CP08.3a adds a protected session/company/current-
+pair-bound token endpoint (microphone-only JWT, maximum 60 seconds, bounded by session expiry,
+no-store response) and a CP07 guard mode that validates changing participation IDs against current
+installed permits. Automated API and guard suites pass (88 and 25 tests). The policy remains
+process-local and the application API/guard have not yet been run as one live networked process pair.
+The supplied OpenOffice microphone control is still unwired, and no LiveKit browser join or actual
+audio has been verified. CP07's isolated cutoff proof still needs integrated application and
+deployment evidence for A07. Next, connect the existing OpenOffice microphone control to the token
+route and pinned client, then test real two-browser audio, permission denial, teardown and cutoff;
+keep A07/A08 open until those gates pass.
 
 1. Implement deterministic pairing, one active conversation per participation, explicit opt-in and availability gates. Freeze ties, suppression after explicit leave and distance/debounce semantics; never debounce security revocation.
 2. Track conversation state/version/member set/generation in office-owner memory. Create isolated rooms per generation; retire the old generation before granting a replacement. Handle boundary churn with bounded recovery budgets.

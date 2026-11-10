@@ -872,3 +872,32 @@ so production transport and ingress restrictions remain required. A07/A08 remain
 This code-and-docs slice is committed and pushed separately. Next: exercise the app API and guard
 adapter against each other over the local authenticated transport, then add a session-bound media
 token route that requires a currently installed permit before any browser can join LiveKit.
+
+## CP08.3a — session-bound proximity LiveKit grant and dynamic guard identity (2026-11-10)
+
+Added `POST /api/conversations/:conversationId/media-token`. The API derives room, identity and
+microphone scope from the current server-owned proximity pair; it rejects a different account or
+session, stale conversation version, revoked/mismatched membership, changed map version, missing
+LiveKit configuration, or a generation without an installed current microphone permit. It checks
+authorization again after signing. The LiveKit JWT is limited to the current generation room, allows
+microphone publication and subscription, denies data publishing and administrative/metadata grants,
+and expires within 60 seconds or the earlier session deadline. Responses set `Cache-Control:
+no-store`; the API returns the expiry encoded in the signed JWT rather than estimating it.
+
+The CP07 application-policy guard mode now accepts participation IDs that change per office join,
+but only when the signed JWT identity and room match a currently installed microphone permit and
+the room generation is not retired. It requires both the application policy pull and signed ACK
+endpoints; the older fixed fixture identity path remains separate. This code does not yet wire the
+OpenOffice microphone control to the endpoint, join a LiveKit server from the browser, or exercise
+the API/guard pair over Docker. No real audio, device permission or integrated media-cutoff result
+is claimed; application policy state remains process-local and A07/A08 remain open.
+
+Verification: the full API integration suite passed (88 tests), including signed-token claim checks,
+blocked pre-ACK token requests, outsider/session/company denial and a leave-before-issue race. The
+media enforcement suite passed (25 tests), including dynamic application identities and source,
+room, retirement and permit rejection. API build, `pnpm lint`, and `pnpm format:check` passed.
+
+This implementation-and-docs batch is pushed separately. Next: connect the supplied OpenOffice
+microphone control to the session-bound token route and pinned `livekit-client`, with capture off by
+default and cleanup on leave/revocation/teardown; then run a real two-browser guarded audio and
+cutoff exercise before treating proximity voice as accepted.

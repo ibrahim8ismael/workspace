@@ -476,6 +476,35 @@ export class OfficeRuntimeService {
     return [...this.offices.values()].flatMap((office) => office.proximity.mediaPermits());
   }
 
+  proximityMediaParticipation(
+    participationId: string,
+    conversationId: string,
+    conversationVersion: number,
+  ) {
+    for (const office of this.offices.values()) {
+      const participant = office.participants.get(participationId);
+      const conversation = office.proximity.mediaConversation(
+        participationId,
+        conversationId,
+        conversationVersion,
+      );
+      if (!participant || !conversation) continue;
+      return {
+        participationId,
+        userId: participant.userId,
+        sessionId: participant.sessionId,
+        membershipGrantId: participant.membershipGrantId,
+        displayName: participant.publicState.displayName,
+        workspaceId: office.workspaceId,
+        officeId: office.officeId,
+        officeEpoch: office.officeEpoch,
+        mapVersion: office.mapVersion,
+        ...conversation,
+      };
+    }
+    return null;
+  }
+
   activateProximityGeneration(generation: string): PrivateConversationNotice[] {
     for (const office of this.offices.values()) {
       const notices = office.proximity.activateGeneration(generation);

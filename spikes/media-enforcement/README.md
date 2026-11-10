@@ -224,6 +224,15 @@ handling. After installing a signed policy snapshot, the guard sends the exact a
 verifies the API's signed response before it emits supervisor progress. The CP07 synthetic policy
 fixture does not configure this endpoint, and no live application API/guard transport is claimed.
 
+CP08.3a adds opt-in `CP07_APPLICATION_POLICY=1` authorization for application-issued LiveKit JWTs.
+It accepts the short-lived participation identity only when the verified token room, identity and
+microphone scope match a currently installed permit and the room has not been retired. Application
+mode requires both signed policy-pull and signed install-ACK endpoints at process startup; it does
+not fall back to the fixed synthetic fixture identity allowlist. Unit tests cover the dynamic-ID
+permit path and stale, substituted, retired, empty-permit and overbroad-source rejection. This is
+still separate-process unit evidence: this README does not claim the Nest API and guard have run
+connected together, nor does it prove a browser media connection or integrated cutoff.
+
 ## CP07.11 real authenticated controller loss
 
 `--run-local --isolated --policy-loss` starts a separate restricted policy container

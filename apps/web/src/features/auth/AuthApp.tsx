@@ -17,6 +17,9 @@ type AppScreen = 'companies' | 'company' | 'security';
 function Shell({ children }: { children: ReactNode }) {
   return (
     <main className="dashboard">
+      <a className="skip-link" href="#main-content">
+        Skip to main content
+      </a>
       <header className="dashboard-bar">
         <a className="dashboard-brand" href="/" aria-label="Open Office home">
           <span className="workspace-logo" aria-hidden="true">
@@ -53,6 +56,7 @@ function Field({
       <input
         name={name}
         type={type}
+        spellCheck={type === 'email' || name === 'token' ? false : undefined}
         autoComplete={autoComplete}
         required={required}
         minLength={minLength}
@@ -105,6 +109,7 @@ function AuthFlow({
     action: (values: FormData) => Promise<void>,
   ) {
     event.preventDefault();
+    const form = event.currentTarget;
     const current = generation.current;
     setBusy(true);
     setError('');
@@ -113,7 +118,10 @@ function AuthFlow({
       await action(new FormData(event.currentTarget));
       if (generation.current !== current) return;
     } catch (caught) {
-      if (generation.current === current) setError(messageForApi(caught));
+      if (generation.current === current) {
+        setError(messageForApi(caught));
+        form.querySelector<HTMLInputElement>('input')?.focus();
+      }
     } finally {
       if (generation.current === current) setBusy(false);
     }
@@ -296,7 +304,12 @@ function AuthFlow({
         </div>
       </div>
       <div className="modal-backdrop welcome-backdrop">
-        <section className="modal welcome-modal" aria-labelledby="auth-title">
+        <section
+          id="main-content"
+          className="modal welcome-modal"
+          tabIndex={-1}
+          aria-labelledby="auth-title"
+        >
           <div className="welcome-art" aria-hidden="true">
             <span className="workspace-logo">
               <LayoutGrid size={22} />
@@ -657,7 +670,7 @@ export default function AuthApp() {
   if (state === 'loading')
     return (
       <Shell>
-        <div className="dashboard-body">
+        <div id="main-content" className="dashboard-body" tabIndex={-1}>
           <div className="dashboard-empty">
             <p role="status">Checking your account…</p>
           </div>

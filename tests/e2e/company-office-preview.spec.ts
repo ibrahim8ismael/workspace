@@ -251,6 +251,15 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   });
 
   await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeFocused();
+  const accountSkipLink = page.getByRole('link', { name: 'Skip to main content' });
+  await page.keyboard.press('Shift+Tab');
+  await expect(page.getByRole('link', { name: 'Open Office home' })).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(accountSkipLink).toBeFocused();
+  await expect(accountSkipLink).toBeVisible();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#main-content')).toBeFocused();
   await page.getByLabel('Email').fill(account.email);
   await page.getByLabel('Password').fill('a long e2e-only password');
   await page.getByRole('button', { name: 'Sign in' }).click();
@@ -275,6 +284,10 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await expect(page.getByText('Pending', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Revoke invitation for employee@example.test' }).click();
   await expect(
+    page.getByRole('group', { name: 'Confirm revocation for employee@example.test' }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Confirm revoke' }).click();
+  await expect(
     page.getByText('Invitation for employee@example.test was revoked.', { exact: true }),
   ).toBeVisible();
   await expect(page.getByText('Revoked', { exact: true })).toBeVisible();
@@ -295,6 +308,10 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await expect(page.getByText('Live office map. Use arrow keys or WASD to move.')).toBeVisible();
   await expect(page.locator('.live-commons-scene canvas')).toHaveCount(1);
   await expect(page.getByRole('group', { name: 'Office connection controls' })).toBeVisible();
+  const officeSkipLink = page.getByRole('link', { name: 'Skip to office map' });
+  await officeSkipLink.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#office-map')).toBeFocused();
   await expect(page.getByRole('group', { name: 'Office controls' })).toBeVisible();
   await expect(page.getByRole('group', { name: 'Your availability' })).toBeVisible();
   await expect(page.getByRole('group', { name: 'Seats' })).toBeVisible();

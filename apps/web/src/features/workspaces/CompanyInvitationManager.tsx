@@ -39,6 +39,7 @@ export function CompanyInvitationManager({
   const [creating, setCreating] = useState(false);
   const [createUncertain, setCreateUncertain] = useState(false);
   const [revokingId, setRevokingId] = useState('');
+  const [confirmRevokeId, setConfirmRevokeId] = useState('');
   const [revokeUncertainId, setRevokeUncertainId] = useState('');
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
@@ -47,6 +48,7 @@ export function CompanyInvitationManager({
   const createKey = useRef(new SubmissionKey());
   const revokeKeys = useRef(new Map<string, SubmissionKey>());
   const unauthorized = useRef(onUnauthorized);
+  const emailInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     unauthorized.current = onUnauthorized;
@@ -135,6 +137,7 @@ export function CompanyInvitationManager({
       setCreateUncertain(uncertain);
       if (!uncertain) createKey.current.clear();
       handleMutationError(caught);
+      emailInput.current?.focus();
     } finally {
       controllers.current.delete(controller);
       if (current === generation.current) setCreating(false);
@@ -161,6 +164,7 @@ export function CompanyInvitationManager({
       if (current !== generation.current) return;
       keyStore.clear();
       revokeKeys.current.delete(invitation.id);
+      setConfirmRevokeId('');
       setRevokeUncertainId('');
       setInvitations((rows) =>
         rows.map((row) => (row.id === invitation.id ? { ...row, status: 'revoked' } : row)),
@@ -207,29 +211,33 @@ export function CompanyInvitationManager({
           {status}
         </p>
       )}
-      {error && (
-        <p className="account-message is-error" role="alert">
-          {error}
-        </p>
-      )}
-
       <form className="dashboard-company-form invitation-create-form" onSubmit={createInvitation}>
         <label className="dashboard-label">
           Employee email
           <input
+            ref={emailInput}
+            name="email"
             type="email"
             autoComplete="email"
+            spellCheck={false}
             maxLength={254}
             required
             value={email}
             disabled={creating || mutationPending}
+            aria-describedby={error ? 'invitation-email-error' : 'invitation-help'}
             onChange={(event) => {
               setEmail(event.target.value);
               setCreateUncertain(false);
+              setError('');
             }}
           />
         </label>
-        <p className="invitation-help">
+        {error && (
+          <p id="invitation-email-error" className="form-error" role="alert">
+            {error}
+          </p>
+        )}
+        <p id="invitation-help" className="invitation-help">
           An invitation code will be sent to this address. The code can only be used by its matching
           verified account.
         </p>
@@ -279,26 +287,47 @@ export function CompanyInvitationManager({
                 <span className={`invitation-status invitation-status-${invitation.status}`}>
                   {invitationStatus(invitation.status)}
                 </span>
-                {invitation.status === 'pending' && (
-                  <button
-                    className="dashboard-secondary invitation-revoke"
-                    type="button"
-                    disabled={Boolean(revokingId) || mutationPending}
-                    aria-label={`Revoke invitation for ${invitation.email}`}
-                    onClick={() => void revokeInvitation(invitation)}
-                  >
-                    {revokingId === invitation.id ? (
-                      'Revoking…'
-                    ) : revokeUncertainId === invitation.id ? (
-                      'Retry revoke'
-                    ) : (
-                      <>
-                        <X size={14} aria-hidden="true" />
-                        Revoke
-                      </>
-                    )}
-                  </button>
-                )}
+                {invitation.status === 'pending' &&
+                  (confirmRevokeId === invitation.id ? (
+                    <div
+                      className="invitation-confirm"
+                      role="group"
+                      aria-label={`Confirm revocation for ${invitation.email}`}
+                    >
+                      <span>Revoke this invitation?</span>
+                      <button
+                        className="dashboard-secondary invitation-revoke"
+                        type="button"
+                        disabled={Boolean(revokingId) || mutationPending}
+                        onClick={() => void revokeInvitation(invitation)}
+                      >
+                        {revokingId === invitation.id
+                          ? 'Revoking…'
+                          : revokeUncertainId === invitation.id
+                            ? 'Retry revoke'
+                            : 'Confirm revoke'}
+                      </button>
+                      <button
+                        className="invitation-cancel-revoke"
+                        type="button"
+                        disabled={Boolean(revokingId) || mutationPending}
+                        onClick={() => setConfirmRevokeId('')}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      className="dashboard-secondary invitation-revoke"
+                      type="button"
+                      disabled={Boolean(revokingId) || mutationPending}
+                      aria-label={`Revoke invitation for ${invitation.email}`}
+                      onClick={() => setConfirmRevokeId(invitation.id)}
+                    >
+                      <X size={14} aria-hidden="true" />
+                      Revoke
+                    </button>
+                  ))}
               </div>
             </li>
           ))}

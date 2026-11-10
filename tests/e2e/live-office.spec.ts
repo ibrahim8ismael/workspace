@@ -218,6 +218,10 @@ async function companyPage(
     await expect(page.getByText('Pending', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: `Revoke invitation for ${inviteEmail}` }).click();
     await expect(
+      page.getByRole('group', { name: `Confirm revocation for ${inviteEmail}` }),
+    ).toBeVisible();
+    await page.getByRole('button', { name: 'Confirm revoke' }).click();
+    await expect(
       page.getByText(`Invitation for ${inviteEmail} was revoked.`, { exact: true }),
     ).toBeVisible();
     await expect(page.getByText('Revoked', { exact: true })).toBeVisible();

@@ -543,6 +543,9 @@
 .invitation-create-form {
   max-width: 560px;
 }
+.invitation-create-form .form-error {
+  margin: 0;
+}
 .invitation-help {
   margin: -5px 0 0;
   color: #6b6b72;
@@ -641,6 +644,21 @@
   padding: 0 10px;
   font-size: 12px;
 }
+.invitation-confirm {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #5a4545;
+  font-size: 11px;
+}
+.invitation-cancel-revoke {
+  min-height: 32px;
+  padding: 0 6px;
+  color: #55555c;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+}
 @media (max-width: 720px) {
   .workspace-actions {
     grid-template-columns: 1fr;
@@ -665,6 +683,9 @@
   }
   .invitation-row-actions {
     padding-left: 44px;
+  }
+  .invitation-confirm {
+    flex-wrap: wrap;
   }
   .invitation-manager .panel-heading {
     align-items: flex-start;

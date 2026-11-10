@@ -204,6 +204,9 @@ export function CompanyOverview({
 
   return (
     <main className="dashboard" data-workspace-id={workspaceId}>
+      <a className="skip-link" href="#main-content">
+        Skip to main content
+      </a>
       <header className="dashboard-bar">
         <a className="dashboard-brand" href="/" aria-label="Open Office home">
           <span className="workspace-logo" aria-hidden="true">
@@ -233,7 +236,7 @@ export function CompanyOverview({
         </div>
       </header>
 
-      <div className="dashboard-body company-overview-content">
+      <div id="main-content" className="dashboard-body company-overview-content" tabIndex={-1}>
         <section className="dashboard-heading">
           <div>
             <h1 ref={titleRef} tabIndex={-1}>

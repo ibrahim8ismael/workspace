@@ -173,6 +173,7 @@ export function WorkspaceHome({
         setCreateUncertain(uncertain);
         if (!uncertain) createKey.current.clear();
         onError(displayError(caught));
+        dialogElement.current?.querySelector<HTMLInputElement>('input')?.focus();
       }
     } finally {
       controllers.current.delete(controller);
@@ -218,6 +219,7 @@ export function WorkspaceHome({
         setAcceptUncertain(uncertain);
         if (!uncertain) acceptKey.current.clear();
         onError(displayError(caught));
+        dialogElement.current?.querySelector<HTMLInputElement>('input')?.focus();
       }
     } finally {
       controllers.current.delete(controller);
@@ -231,6 +233,9 @@ export function WorkspaceHome({
 
   return (
     <main className="dashboard">
+      <a className="skip-link" href="#main-content">
+        Skip to main content
+      </a>
       <header className="dashboard-bar">
         <a className="dashboard-brand" href="/" aria-label="Open Office home">
           <span className="workspace-logo" aria-hidden="true">
@@ -268,7 +273,7 @@ export function WorkspaceHome({
         </div>
       </header>
 
-      <div className="dashboard-body">
+      <div id="main-content" className="dashboard-body" tabIndex={-1}>
         <section className="dashboard-heading">
           <div>
             <h1>Your companies</h1>
@@ -317,6 +322,7 @@ export function WorkspaceHome({
             <Search size={15} aria-hidden="true" />
             <input
               value={companyQuery}
+              name="companySearch"
               onChange={(event) => setCompanyQuery(event.target.value)}
               placeholder="Search companies"
               aria-label="Search companies"
@@ -452,6 +458,7 @@ export function WorkspaceHome({
                       autoComplete="organization"
                       maxLength={80}
                       minLength={2}
+                      name="companyName"
                       disabled={mutating}
                       onChange={(event) => {
                         setCompanyName(event.target.value);
@@ -470,6 +477,7 @@ export function WorkspaceHome({
                         autoComplete="off"
                         maxLength={60}
                         minLength={3}
+                        name="companySlug"
                         disabled={mutating}
                         onChange={(event) => {
                           setSlug(event.target.value);
@@ -523,6 +531,8 @@ export function WorkspaceHome({
                       autoComplete="one-time-code"
                       maxLength={43}
                       minLength={43}
+                      name="token"
+                      spellCheck={false}
                       disabled={mutating}
                       onChange={(event) => {
                         setInviteCode(event.target.value);

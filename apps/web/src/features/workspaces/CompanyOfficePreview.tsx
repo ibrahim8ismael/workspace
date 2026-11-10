@@ -98,6 +98,9 @@ export function CompanyOfficePreview({
 
   return (
     <div className="app-shell office-shell" data-workspace-id={detail.id}>
+      <a className="skip-link" href="#office-map">
+        Skip to office map
+      </a>
       <nav className="rail" aria-label="Office navigation">
         <div className="brand" aria-hidden="true">
           <span />
@@ -275,7 +278,12 @@ export function CompanyOfficePreview({
           </div>
         </aside>
 
-        <main className="map-area office-shell-map" aria-label="Approved Commons office map">
+        <main
+          id="office-map"
+          className="map-area office-shell-map"
+          tabIndex={-1}
+          aria-label="Approved Commons office map"
+        >
           <div className="office-map-heading">
             <strong>{connected ? 'Live Commons office' : 'Commons office'}</strong>
             <span className="office-preview-badge">{connected ? 'Live' : 'Read only'}</span>

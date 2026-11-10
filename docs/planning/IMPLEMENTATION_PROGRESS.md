@@ -616,6 +616,12 @@ Added strict browser API methods for listing, creating and revoking scoped compa
 
 Web typecheck, ESLint, formatting, production build, 33 web tests and mocked Chromium E2E passed. The rebuilt local Docker stack then passed `pnpm test:e2e:live`: the owner created and revoked an invitation in the browser against the real authenticated API, followed by two-browser Socket.IO admission, movement/recovery, reconnect, seat contention and company isolation. Visual/accessibility review in Chrome and Edge and obsolete presentation cleanup remain before declaring the supplied UI migration complete.
 
+## OpenOfficeForAll UI migration — Chromium visual and keyboard review (2026-11-10)
+
+At 1280×720, the company invitation panel and full-screen Commons office were visually inspected in Playwright Chromium. The dashboard card/form hierarchy and office rail/sidebar/map/controlbar fit the supplied design; the session panel remains scrollable in the office sidebar. Added skip links for the account, company, security and office landmarks; keyboard focus moves to each target. The invitation form now has a named, spellcheck-disabled email input and associates/focuses its inline error. Revocation now requires a separate confirmation action. The shared styles respect reduced motion and the office shell accounts for safe-area insets.
+
+The updated mocked Chromium E2E covers keyboard-only skip links and invitation confirmation. The rebuilt two-browser local Docker E2E passed with invitation create/confirm/revoke, member controls hidden, and the existing Socket.IO suite. Playwright currently has only bundled Chromium; no installed Chrome or Edge executable was found. Installing those browsers required an interactive sudo password, unavailable in this session. The in-app browser also could not open the local HTTPS site because its development certificate is untrusted. Chrome/Edge manual acceptance and obsolete presentation cleanup remain open; Chromium review does not claim cross-browser or screen-reader acceptance.
+
 ## CP07.20 — Late-policy cutoff and fail-closed cold bootstrap (2026-11-10)
 
 Added authenticated delayed-policy fault (1500ms replies vs 1000ms guard abort). Room retirement is postponed until after cutoff to avoid masking lease-renewal errors. A startup timing failure led to stronger default-deny SFU bootstrap: no LiveKit child starts until a valid request-start lease newer than this boot exists. This replaces the prior three-second startup grace; stale pre-boot allow files cannot bootstrap media.

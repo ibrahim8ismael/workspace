@@ -1,6 +1,6 @@
 # OpenOfficeForAll UI integration
 
-Status: owner-approved direction; account, company, security, office and owner invitation screens use the supplied OpenOfficeForAll visual system; final visual/accessibility review and obsolete presentation cleanup remain · Updated: 2026-11-10
+Status: owner-approved direction; account, company, security, office and owner invitation screens use the supplied OpenOfficeForAll visual system; Chromium review is recorded; Chrome/Edge review and obsolete presentation cleanup remain · Updated: 2026-11-10
 
 ## Product direction
 
@@ -31,7 +31,7 @@ Existing integration points include `apps/web/src/lib/api.ts`, `src/features/off
 3. **Adapt identity and company data — complete for account/company/invitation flows.** The current cookie-authenticated account flows, UUID company list/create/detail, member invitation-code acceptance and owner invitation listing/creation/revocation use `ApiClient`; guest access and secret-bearing `localStorage` paths remain disconnected. Strict response validation, owner-only rendering and uncertain-result retries are covered.
 4. **Adapt office admission and live world — integrated.** The office shell mounts the version-checked Commons renderer and `OfficeClient`, replacing legacy raw WebSocket admission. Movement, availability, seats, snapshots/deltas, disconnect recovery, leave and fresh-ticket re-entry continue to use server-authoritative Socket.IO state.
 5. **Gate unsupported features.** Keep supplied styling and recognizable controls where helpful, while disabling service actions that have no backend. Do not show mock chat, calendar, editing or P2P media as live features.
-6. **Review and cut over — in progress.** The current authenticated app is already the default. Mocked E2E covers the complete UI invitation and office journey; a two-browser local Docker E2E creates and revokes an invitation through the owner UI, then covers Socket.IO office behavior. Finish visual/accessibility review in Chrome and Edge. Remove duplicate account/preview presentation code only after its needed API/client logic is covered by the integrated screens.
+6. **Review and cut over — in progress.** The current authenticated app is already the default. Mocked E2E covers the complete UI invitation and office journey; the final two-browser local Docker E2E passed with owner invitation creation/confirmation/revocation, member control hiding and Socket.IO office behavior. Chromium review at 1280×720 covered layout, visible focus, keyboard skip links and invitation confirmation. Chrome/Edge browser acceptance and obsolete presentation cleanup remain. Playwright browser installation requires an interactive sudo password unavailable in this test session.
 
 ## Completion checks
 

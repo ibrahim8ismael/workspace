@@ -149,6 +149,9 @@ export function AccountSecurity({
 
   return (
     <main className="dashboard">
+      <a className="skip-link" href="#main-content">
+        Skip to main content
+      </a>
       <header className="dashboard-bar">
         <a className="dashboard-brand" href="/" aria-label="Open Office home">
           <span className="workspace-logo" aria-hidden="true">
@@ -170,7 +173,7 @@ export function AccountSecurity({
         </div>
       </header>
 
-      <div className="dashboard-body dashboard-security-body">
+      <div id="main-content" className="dashboard-body dashboard-security-body" tabIndex={-1}>
         <section className="dashboard-heading">
           <div>
             <h1 ref={titleRef} tabIndex={-1}>

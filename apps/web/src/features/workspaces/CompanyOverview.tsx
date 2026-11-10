@@ -1,12 +1,10 @@
-import { lazy, Suspense, useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, LayoutGrid } from 'lucide-react';
 import type { AccountDto } from '@gather/contracts';
 import type { RefObject } from 'react';
-import { ApiClient, ApiError, type OfficeWorkspaceDetail, type SessionDto } from '../../lib/api';
+import { ApiClient, ApiError, type OfficeWorkspaceDetail } from '../../lib/api';
 import { messageForApi } from '../auth/messages';
-import { SessionLifetimeNotice } from '../auth/SessionLifetimeNotice';
-import { canOpenOfficePreview, companyOverviewViewReducer } from './company-overview-view';
-import { CompanyInvitationManager } from './CompanyInvitationManager';
+import { canOpenOfficePreview } from './company-overview-view';
 
 const LazyCompanyOfficePreview = lazy(() =>
   import('./CompanyOfficePreview').then(({ CompanyOfficePreview }) => ({
@@ -26,48 +24,25 @@ type Props = {
   api: ApiClient;
   workspaceId: string;
   mutationPending: boolean;
-  runMutation: <T>(action: () => Promise<T>, refreshMetadata?: boolean) => Promise<T>;
   mutationLock: RefObject<boolean>;
-  currentSession: SessionDto | null;
-  sessionsLoading: boolean;
-  sessionsError: string;
-  sessionActionStatus: string;
-  sessionActionError: string;
-  onRefreshSessions: () => void;
-  onKeepWorking: () => void;
-  onSessionExpire: () => void;
   onBackToCompanies: () => void;
   onOpenSecurity: () => void;
   onUnauthorized: (notice?: string) => void;
   onLostAccess: (workspaceId: string) => void;
 };
 
-function formatRole(role: OfficeWorkspaceDetail['role']) {
-  return role === 'owner' ? 'Owner' : 'Member';
-}
-
 export function CompanyOverview({
   account,
   api,
   workspaceId,
   mutationPending,
-  runMutation,
   mutationLock,
-  currentSession,
-  sessionsLoading,
-  sessionsError,
-  sessionActionStatus,
-  sessionActionError,
-  onRefreshSessions,
-  onKeepWorking,
-  onSessionExpire,
   onBackToCompanies,
   onOpenSecurity,
   onUnauthorized,
   onLostAccess,
 }: Props) {
   const [snapshot, setSnapshot] = useState<DetailSnapshot | null>(null);
-  const [view, dispatchView] = useReducer(companyOverviewViewReducer, 'details');
   const requestGeneration = useRef(0);
   const requestController = useRef<AbortController | null>(null);
   const lastRefreshAt = useRef(0);
@@ -79,20 +54,6 @@ export function CompanyOverview({
   const detail = visibleSnapshot?.detail ?? null;
   const loading = visibleSnapshot?.loading ?? true;
   const error = visibleSnapshot?.error ?? '';
-  const previewOpen = view === 'preview' && canOpenOfficePreview(detail, workspaceId, false, error);
-
-  useEffect(() => {
-    titleRef.current?.focus();
-  }, [view]);
-
-  useEffect(() => {
-    dispatchView('reset');
-  }, [workspaceId]);
-
-  useEffect(() => {
-    if (!canOpenOfficePreview(detail, workspaceId, false, error)) dispatchView('back-to-details');
-  }, [detail, error, workspaceId]);
-
   useEffect(() => {
     unauthorizedRef.current = onUnauthorized;
     lostAccessRef.current = onLostAccess;
@@ -174,7 +135,7 @@ export function CompanyOverview({
     };
   }, [mutationLock]);
 
-  if (previewOpen && detail) {
+  if (detail && canOpenOfficePreview(detail, workspaceId, false, error)) {
     return (
       <Suspense
         fallback={
@@ -186,17 +147,8 @@ export function CompanyOverview({
         <LazyCompanyOfficePreview
           api={api}
           detail={detail}
-          onBack={() => dispatchView('back-to-details')}
+          onBack={onBackToCompanies}
           onOpenSecurity={onOpenSecurity}
-          currentSession={currentSession}
-          sessionsLoading={sessionsLoading}
-          sessionsError={sessionsError}
-          sessionActionStatus={sessionActionStatus}
-          sessionActionError={sessionActionError}
-          mutationPending={mutationPending}
-          onRefreshSessions={onRefreshSessions}
-          onKeepWorking={onKeepWorking}
-          onSessionExpire={onSessionExpire}
         />
       </Suspense>
     );
@@ -237,14 +189,9 @@ export function CompanyOverview({
       </header>
 
       <div id="main-content" className="dashboard-body company-overview-content" tabIndex={-1}>
-        <section className="dashboard-heading">
-          <div>
-            <h1 ref={titleRef} tabIndex={-1}>
-              {detail?.name ?? (loading ? 'Loading company…' : 'Company details')}
-            </h1>
-            {detail && <p>Company slug: {detail.slug}</p>}
-          </div>
-        </section>
+        <h1 ref={titleRef} tabIndex={-1}>
+          {loading ? 'Opening office…' : 'Could not open office'}
+        </h1>
 
         {error && (
           <p className="account-message is-error" role="alert">
@@ -254,7 +201,7 @@ export function CompanyOverview({
 
         {loading ? (
           <section className="dashboard-info-panel company-detail-state" role="status">
-            Loading company details…
+            Opening office…
           </section>
         ) : error ? (
           <section className="dashboard-info-panel company-detail-state">
@@ -264,91 +211,10 @@ export function CompanyOverview({
               disabled={mutationPending}
               onClick={() => void refresh()}
             >
-              Refresh company
+              Try again
             </button>
           </section>
-        ) : detail ? (
-          <section
-            className="dashboard-info-panel company-overview-panel"
-            aria-labelledby="company-details-title"
-          >
-            <div className="panel-heading">
-              <div>
-                <h2 id="company-details-title">Company details</h2>
-                <p>This view is based on your current company membership.</p>
-              </div>
-              <div className="company-overview-tools">
-                <span className={`role-pill role-${detail.role}`}>{formatRole(detail.role)}</span>
-                <button
-                  className="account-secondary"
-                  type="button"
-                  disabled={loading || mutationPending}
-                  onClick={() => void refresh()}
-                >
-                  Refresh company
-                </button>
-              </div>
-            </div>
-            <dl className="company-detail-list">
-              <div>
-                <dt>Company name</dt>
-                <dd>{detail.name}</dd>
-              </div>
-              <div>
-                <dt>Company slug</dt>
-                <dd>{detail.slug}</dd>
-              </div>
-              <div>
-                <dt>Your role</dt>
-                <dd>{formatRole(detail.role)}</dd>
-              </div>
-              <div>
-                <dt>Members</dt>
-                <dd>
-                  {detail.memberCount} {detail.memberCount === 1 ? 'member' : 'members'}
-                </dd>
-              </div>
-            </dl>
-            <div className="company-overview-actions">
-              <button
-                className="dashboard-create"
-                type="button"
-                disabled={mutationPending}
-                onClick={() => dispatchView('open-preview')}
-              >
-                Open office preview
-              </button>
-              <button
-                className="dashboard-secondary"
-                type="button"
-                disabled={mutationPending}
-                onClick={onBackToCompanies}
-              >
-                Switch company
-              </button>
-            </div>
-          </section>
         ) : null}
-        {detail?.role === 'owner' && !previewOpen && (
-          <CompanyInvitationManager
-            api={api}
-            company={detail}
-            mutationPending={mutationPending}
-            runMutation={runMutation}
-            onUnauthorized={onUnauthorized}
-          />
-        )}
-        <SessionLifetimeNotice
-          session={currentSession}
-          loading={sessionsLoading}
-          error={sessionsError}
-          actionStatus={sessionActionStatus}
-          actionError={sessionActionError}
-          mutationPending={mutationPending}
-          onRefresh={onRefreshSessions}
-          onExtend={onKeepWorking}
-          onExpire={onSessionExpire}
-        />
       </div>
     </main>
   );

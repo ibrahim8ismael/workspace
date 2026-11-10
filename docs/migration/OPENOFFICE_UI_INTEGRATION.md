@@ -1,12 +1,16 @@
 # OpenOfficeForAll UI integration
 
-Status: owner-approved direction; account, company, security, office and owner invitation screens use the supplied OpenOfficeForAll visual system; Chromium review is recorded; Chrome/Edge review and obsolete presentation cleanup remain · Updated: 2026-11-10
+Status: owner-approved direction; account, company directory, security and office screens use the supplied OpenOfficeForAll visual system; Chromium review is recorded; Chrome/Edge review and obsolete presentation cleanup remain · Updated: 2026-11-10
 
 ## Product direction
 
 Use the owner-supplied [OpenOfficeForAll](https://github.com/VictorSandovalDev/OpenOfficeForAll) React interface and styles as the product UI. Keep its visual system, navigation, layout and reusable controls. Replace its backend assumptions with this repository's authenticated HTTP APIs and Socket.IO client. Do not create another parallel account/company/office shell.
 
 The source is pinned to commit `23d6b8999396f9e9d51291bf85bd7b72161f833f`; preserve its MIT and asset notices. This decision reuses the frontend, not its old server contract or map data. The separately approved original `commons` geometry and its versioned Phaser renderer remain the map and world source.
+
+## Owner-requested UI simplification (2026-11-10)
+
+Company selection opens the office shell directly after authorized detail loading. The intermediate company-details page, owner invitation panel and repeated sign-in status cards are removed from the active UI. The office Back action returns to the company directory. Session expiry checks run invisibly at the account root. Dedicated account-security session management remains available. Owner invitation APIs and their unmounted component are retained; this plan no longer requires their panel in the main journey. Historical test results below describe the UI before this simplification; current regression coverage asserts direct office navigation and absence of those panels.
 
 ## Repository inventory
 
@@ -27,11 +31,11 @@ Existing integration points include `apps/web/src/lib/api.ts`, `src/features/off
 ## Ordered implementation steps
 
 1. **Inventory and lock the boundary — complete.** Pin upstream source and notices; identify current and obsolete entry points, routes, storage, and service calls. Keep this audit current as screens move.
-2. **Restore the supplied shell — complete for current screens.** Sign-in, verification and recovery use the upstream dashboard header, welcome modal, form, button and link styles. The company directory uses its dashboard, search, card grid and create/join dialogs. Company details, security, owner invitation management and the full-screen office now use the supplied dashboard/office visual structures. Keep the authenticated entry as the default while final visual/accessibility review and obsolete presentation cleanup proceed.
-3. **Adapt identity and company data — complete for account/company/invitation flows.** The current cookie-authenticated account flows, UUID company list/create/detail, member invitation-code acceptance and owner invitation listing/creation/revocation use `ApiClient`; guest access and secret-bearing `localStorage` paths remain disconnected. Strict response validation, owner-only rendering and uncertain-result retries are covered.
+2. **Restore the supplied shell — complete for current screens.** Sign-in, verification and recovery use the upstream dashboard header, welcome modal, form, button and link styles. The company directory uses its dashboard, search, card grid and create/join dialogs. Security and the full-screen office use the supplied dashboard/office visual structures. Company selection now opens the office shell directly; company-detail and owner-invitation panels are unmounted. Keep the authenticated entry as the default while final visual/accessibility review and obsolete presentation cleanup proceed.
+3. **Adapt identity and company data — complete for account/company/invitation flows.** The current cookie-authenticated account flows, UUID company list/create/detail, and member invitation-code acceptance use `ApiClient`; owner invitation methods remain available without a mounted panel; guest access and secret-bearing `localStorage` paths remain disconnected. Strict response validation and uncertain-result retries are covered.
 4. **Adapt office admission and live world — integrated.** The office shell mounts the version-checked Commons renderer and `OfficeClient`, replacing legacy raw WebSocket admission. Movement, availability, seats, snapshots/deltas, disconnect recovery, leave and fresh-ticket re-entry continue to use server-authoritative Socket.IO state.
 5. **Gate unsupported features.** Keep supplied styling and recognizable controls where helpful, while disabling service actions that have no backend. Do not show mock chat, calendar, editing or P2P media as live features.
-6. **Review and cut over — in progress.** The current authenticated app is already the default. Mocked E2E covers the complete UI invitation and office journey; the final two-browser local Docker E2E passed with owner invitation creation/confirmation/revocation, member control hiding and Socket.IO office behavior. Chromium review at 1280×720 covered layout, visible focus, keyboard skip links and invitation confirmation. Chrome/Edge browser acceptance and obsolete presentation cleanup remain. Playwright browser installation requires an interactive sudo password unavailable in this test session.
+6. **Review and cut over — in progress.** The current authenticated app is already the default. Mocked E2E now covers direct office navigation, absence of the removed panels, session expiry and Socket.IO office behavior. Earlier two-browser local Docker evidence included the invitation panel before its removal. Chromium review at 1280×720 covered layout, visible focus, keyboard skip links and invitation confirmation. Chrome/Edge browser acceptance and obsolete presentation cleanup remain. Playwright browser installation requires an interactive sudo password unavailable in this test session.
 
 ## Completion checks
 
@@ -39,7 +43,7 @@ Existing integration points include `apps/web/src/lib/api.ts`, `src/features/off
 - Registration, verification, login, session security, company creation, invitations and membership use current cookie-authenticated APIs.
 - Office discovery/admission uses the current workspace and office IDs, bootstrap and one-use tickets. No legacy `/ws` connection is opened.
 - Two browsers observe authoritative movement, presence, seat contention, company isolation, dropped-delta recovery and re-entry through Socket.IO.
-- Owners can list, create and revoke invitations; members can accept a valid invitation through the current API flow.
+- Owner invitation management stays outside the active UI per the owner decision above; members can accept a valid invitation through the current API flow.
 - No account/session/access secret is read from or written to `localStorage`; unsupported chat/calendar/editor/media features do not pretend to work.
 - Existing licensing/provenance, accessibility, and English-first Chrome/Edge checks remain in the release evidence.
 

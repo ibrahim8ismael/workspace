@@ -368,7 +368,6 @@
 .security-content {
   width: min(100%, 1040px);
 }
-.session-lifetime,
 .security-panel {
   margin-top: 16px;
   padding: clamp(20px, 3vw, 28px);
@@ -377,13 +376,11 @@
   background: var(--panel);
   box-shadow: 0 8px 24px #15223c08;
 }
-.session-lifetime h2,
 .security-panel h2 {
   margin-bottom: 6px;
   font-size: 17px;
   letter-spacing: -0.025em;
 }
-.session-lifetime-heading,
 .security-panel-heading,
 .security-logout-all {
   display: flex;
@@ -391,38 +388,15 @@
   justify-content: space-between;
   gap: 18px;
 }
-.session-lifetime-heading .account-eyebrow {
-  margin-bottom: 7px;
-}
-.session-lifetime-state,
-.session-lifetime-meta,
-.session-lifetime-note,
 .security-panel > p:not(.account-eyebrow),
 .security-logout-all p {
   color: var(--muted);
   font-size: 13px;
   line-height: 1.5;
 }
-.session-lifetime-state {
-  margin: 18px 0 5px;
-  color: var(--text);
-  font-weight: 650;
-}
-.session-lifetime-state.is-warning {
-  color: #8a4c0c;
-}
-.session-lifetime-meta,
-.session-lifetime-note,
 .security-panel > p:not(.account-eyebrow),
 .security-logout-all p {
   margin: 0 0 13px;
-}
-.session-lifetime-note {
-  max-width: 68ch;
-  font-size: 12px;
-}
-.session-lifetime > .dashboard-secondary {
-  margin-top: 3px;
 }
 .security-panel-heading {
   margin-bottom: 14px;

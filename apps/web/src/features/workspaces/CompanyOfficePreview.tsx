@@ -8,13 +8,12 @@ import {
   MessageCircle,
   Settings2,
 } from 'lucide-react';
-import type { OfficeWorkspaceDetail, SessionDto } from '../../lib/api';
+import type { OfficeWorkspaceDetail } from '../../lib/api';
 import { ApiClient } from '../../lib/api';
 import { CommonsScene } from '../../../commons-preview/CommonsScene';
 import { LiveCommonsScene } from '../../../commons-preview/LiveCommonsScene';
 import { OfficePreviewChat } from './OfficePreviewChat';
 import { OfficeClient } from '../office/office-client';
-import { SessionLifetimeNotice } from '../auth/SessionLifetimeNotice';
 import './office-preview.css';
 
 type Props = {
@@ -22,32 +21,9 @@ type Props = {
   detail: OfficeWorkspaceDetail;
   onBack: () => void;
   onOpenSecurity: () => void;
-  currentSession: SessionDto | null;
-  sessionsLoading: boolean;
-  sessionsError: string;
-  sessionActionStatus: string;
-  sessionActionError: string;
-  mutationPending: boolean;
-  onRefreshSessions: () => void;
-  onKeepWorking: () => void;
-  onSessionExpire: () => void;
 };
 
-export function CompanyOfficePreview({
-  api,
-  detail,
-  onBack,
-  onOpenSecurity,
-  currentSession,
-  sessionsLoading,
-  sessionsError,
-  sessionActionStatus,
-  sessionActionError,
-  mutationPending,
-  onRefreshSessions,
-  onKeepWorking,
-  onSessionExpire,
-}: Props) {
+export function CompanyOfficePreview({ api, detail, onBack, onOpenSecurity }: Props) {
   const titleRef = useRef<HTMLHeadingElement>(null);
   const client = useMemo(
     () => new OfficeClient(api, detail.id, detail.officeId),
@@ -150,8 +126,8 @@ export function CompanyOfficePreview({
           <button
             className="icon-button"
             type="button"
-            aria-label="Back to company details"
-            title="Back to company details"
+            aria-label="Back to companies"
+            title="Back to companies"
             onClick={onBack}
           >
             <ArrowLeft size={19} />
@@ -182,9 +158,7 @@ export function CompanyOfficePreview({
             <span className="office-preview-badge">Office</span>
           </div>
 
-          <p className="office-sidebar-summary">
-            Company slug: {detail.slug}. Text chat is unavailable in this release.
-          </p>
+          <p className="office-sidebar-summary">Text chat is unavailable in this release.</p>
 
           {connected && state.snapshot && self ? (
             <div className="office-world-controls" role="group" aria-label="Office controls">
@@ -246,18 +220,6 @@ export function CompanyOfficePreview({
           ) : (
             <p className="empty-small">Enter the office to update your status or use a seat.</p>
           )}
-
-          <SessionLifetimeNotice
-            session={currentSession}
-            loading={sessionsLoading}
-            error={sessionsError}
-            actionStatus={sessionActionStatus}
-            actionError={sessionActionError}
-            mutationPending={mutationPending}
-            onRefresh={onRefreshSessions}
-            onExtend={onKeepWorking}
-            onExpire={onSessionExpire}
-          />
 
           <OfficePreviewChat
             companyName={detail.name}

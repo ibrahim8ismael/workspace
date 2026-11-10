@@ -3,7 +3,6 @@ import { ArrowLeft, LayoutGrid } from 'lucide-react';
 import type { AccountDto } from '@gather/contracts';
 import { ApiClient, ApiError, type SessionDto } from '../../lib/api';
 import { messageForApi } from './messages';
-import { SessionLifetimeNotice } from './SessionLifetimeNotice';
 
 type Props = {
   account: AccountDto;
@@ -12,13 +11,9 @@ type Props = {
   currentSession: SessionDto | null;
   sessionsLoading: boolean;
   sessionsError: string;
-  actionStatus: string;
-  actionError: string;
   mutationPending: boolean;
   runMutation: <T>(action: () => Promise<T>, refreshMetadata?: boolean) => Promise<T>;
   onRefreshSessions: () => void;
-  onKeepWorking: () => void;
-  onExpire: () => void;
   onBack: () => void;
   onReauthenticate: (password: string) => Promise<AccountDto | null>;
   onSignedOut: (notice: string) => void;
@@ -38,13 +33,9 @@ export function AccountSecurity({
   currentSession,
   sessionsLoading,
   sessionsError,
-  actionStatus,
-  actionError,
   mutationPending,
   runMutation,
   onRefreshSessions,
-  onKeepWorking,
-  onExpire,
   onBack,
   onReauthenticate,
   onSignedOut,
@@ -194,25 +185,26 @@ export function AccountSecurity({
           </p>
         )}
 
-        <SessionLifetimeNotice
-          session={currentSession}
-          loading={sessionsLoading}
-          error={sessionsError}
-          actionStatus={actionStatus}
-          actionError={actionError}
-          mutationPending={mutationPending}
-          onRefresh={onRefreshSessions}
-          onExtend={onKeepWorking}
-          onExpire={onExpire}
-        />
-
         <section className="security-panel dashboard-info-panel" aria-labelledby="sessions-title">
           <div className="security-panel-heading">
             <div>
               <h2 id="sessions-title">Signed-in sessions</h2>
               <p>Sign out a session you no longer use.</p>
             </div>
+            <button
+              className="dashboard-secondary"
+              type="button"
+              disabled={sessionsLoading || mutationPending}
+              onClick={onRefreshSessions}
+            >
+              Refresh sessions
+            </button>
           </div>
+          {sessionsError && (
+            <p className="account-message is-error" role="alert">
+              {sessionsError}
+            </p>
+          )}
           {sessionsLoading && sessions.length === 0 ? (
             <p className="workspace-empty" role="status">
               Loading sessions…

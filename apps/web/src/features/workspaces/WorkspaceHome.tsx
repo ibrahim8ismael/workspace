@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { ArrowRight, Building2, LayoutGrid, Plus, Search, Users, X } from 'lucide-react';
 import type { AccountDto, WorkspaceDto } from '@gather/contracts';
-import { ApiClient, ApiError, type SessionDto } from '../../lib/api';
+import { ApiClient, ApiError } from '../../lib/api';
 import { SubmissionKey } from '../../lib/idempotency';
 import { messageForApi } from '../auth/messages';
-import { SessionLifetimeNotice } from '../auth/SessionLifetimeNotice';
 
 type Props = {
   account: AccountDto;
@@ -25,14 +24,6 @@ type Props = {
   onViewCompany: (workspaceId: string) => void;
   mutationPending: boolean;
   runMutation: <T>(action: () => Promise<T>, refreshMetadata?: boolean) => Promise<T>;
-  currentSession: SessionDto | null;
-  sessionsLoading: boolean;
-  sessionsError: string;
-  sessionActionStatus: string;
-  sessionActionError: string;
-  onRefreshSessions: () => void;
-  onKeepWorking: () => void;
-  onSessionExpire: () => void;
 };
 
 function slugFromName(value: string) {
@@ -68,14 +59,6 @@ export function WorkspaceHome({
   onViewCompany,
   mutationPending,
   runMutation,
-  currentSession,
-  sessionsLoading,
-  sessionsError,
-  sessionActionStatus,
-  sessionActionError,
-  onRefreshSessions,
-  onKeepWorking,
-  onSessionExpire,
 }: Props) {
   const [companyName, setCompanyName] = useState('');
   const [slug, setSlug] = useState('');
@@ -288,18 +271,6 @@ export function WorkspaceHome({
             Join with invitation
           </button>
         </section>
-
-        <SessionLifetimeNotice
-          session={currentSession}
-          loading={sessionsLoading}
-          error={sessionsError}
-          actionStatus={sessionActionStatus}
-          actionError={sessionActionError}
-          mutationPending={mutationPending}
-          onRefresh={onRefreshSessions}
-          onExtend={onKeepWorking}
-          onExpire={onSessionExpire}
-        />
 
         {status && (
           <p className="account-message" role="status">

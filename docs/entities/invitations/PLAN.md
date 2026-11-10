@@ -10,7 +10,7 @@ Implementation boundary: [current API and limitations](../../contracts/AUTH_AND_
 - [x] Create unique digest, workspace/email lookup and expiry TTL indexes.
 - [x] Implement recipient-bound transactional capacity/policy writes.
 - [x] Queue encrypted expiring invitation codes through the transactional outbox.
-- [x] Integrate owner invitation listing/creation/revocation and member code acceptance into the account UI.
+- [x] Integrate member code acceptance into the account UI. Owner invitation management is unmounted by owner request (2026-11-10); API and component are retained.
 - [ ] Verify external-provider delivery and outage handling under CP04.
 
 ## Acceptance criteria
@@ -24,6 +24,6 @@ These are full acceptance checks. Local backend subsets are recorded in [auth ev
 ## Dependencies and completion
 
 - Follow the relationships and invariants in the [entity specification](README.md).
-- Resolve: Implemented defaults: seven-day lifetime, fifty pending invites/workspace, no slot reservation. Account invitation UI is integrated; external-provider delivery remains pending.
+- Resolve: Implemented defaults: seven-day lifetime, fifty pending invites/workspace, no slot reservation. Member acceptance is integrated; owner invitation UI is unmounted by request; external-provider delivery remains pending.
 - Before starting, freeze relevant runtime DTOs and error behavior in [HTTP](../../contracts/HTTP.md) / [realtime](../../contracts/REALTIME.md) contracts.
 - Completion requires code references, relevant check results and unresolved limitations in the [acceptance register](../../planning/ACCEPTANCE.md). No milestone is complete from documentation alone.

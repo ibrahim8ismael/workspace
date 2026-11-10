@@ -39,7 +39,6 @@ const session = {
   idleExpiresAt: new Date(sessionStart + 60 * 60_000).toISOString(),
 };
 const requestId = 'dbe6efea-048d-4b34-9111-d43880daf189';
-const invitationId = '16ab92cd-cbd4-44b6-b827-196ae6044937';
 
 test('mocked-API UI E2E: sign in, open the company preview, and return cleanly', async ({
   page,
@@ -52,13 +51,6 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   let officeTicketRequests = 0;
   let officeConnections = 0;
   let interruptOfficeConnection: (() => Promise<void>) | undefined;
-  let invitations: {
-    id: string;
-    email: string;
-    expiresAt: string;
-    status: 'pending' | 'accepted' | 'revoked' | 'expired';
-  }[] = [];
-
   await page.route('**/api/**', async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
@@ -85,25 +77,6 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
       return authenticated ? json({ workspaces: [workspace] }) : json({}, 401);
     if (method === 'GET' && path === `/api/workspaces/${workspace.id}`)
       return authenticated ? json({ workspace: { ...workspace, officeId } }) : json({}, 401);
-    if (method === 'GET' && path === `/api/workspaces/${workspace.id}/invitations`)
-      return authenticated ? json({ invitations }) : json({}, 401);
-    if (method === 'POST' && path === `/api/workspaces/${workspace.id}/invitations`) {
-      const body = request.postDataJSON() as { email: string };
-      const invitation = {
-        id: invitationId,
-        email: body.email,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60_000).toISOString(),
-      };
-      invitations = [{ ...invitation, status: 'pending' }];
-      return json({ invitation }, 201);
-    }
-    if (
-      method === 'DELETE' &&
-      path === `/api/workspaces/${workspace.id}/invitations/${invitationId}`
-    ) {
-      invitations = invitations.map((invitation) => ({ ...invitation, status: 'revoked' }));
-      return json({ message: 'Invitation revoked.' });
-    }
     if (method === 'GET' && path === `/api/workspaces/${workspace.id}/offices/${officeId}`) {
       officeBootstrapRequests += 1;
       return json({
@@ -265,34 +238,18 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await page.getByRole('button', { name: 'Sign in' }).click();
 
   await expect(page.getByText('E2E Company', { exact: true })).toBeVisible();
+  await expect(page.getByText('SIGN-IN STATUS', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Account security' }).click();
   await expect(page.getByRole('heading', { name: 'Account security' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Signed-in sessions' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Verify password' })).toBeVisible();
   await page.getByRole('button', { name: 'Back to companies' }).click();
   await expect(page.getByText('E2E Company', { exact: true })).toBeVisible();
+  await expect(page.getByText('SIGN-IN STATUS', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Open office' }).click();
-  await expect(page.getByRole('heading', { name: 'Company details' })).toBeVisible();
-  await expect(page.getByRole('definition').filter({ hasText: 'e2e-company' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Employee invitations' })).toBeVisible();
-  await expect(page.getByText('No invitations have been created for this company.')).toBeVisible();
-  await page.getByLabel('Employee email').fill('employee@example.test');
-  await page.getByRole('button', { name: 'Send invitation' }).click();
-  await expect(
-    page.getByText('Invitation created for employee@example.test.', { exact: true }),
-  ).toBeVisible();
-  await expect(page.getByText('Pending', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Revoke invitation for employee@example.test' }).click();
-  await expect(
-    page.getByRole('group', { name: 'Confirm revocation for employee@example.test' }),
-  ).toBeVisible();
-  await page.getByRole('button', { name: 'Confirm revoke' }).click();
-  await expect(
-    page.getByText('Invitation for employee@example.test was revoked.', { exact: true }),
-  ).toBeVisible();
-  await expect(page.getByText('Revoked', { exact: true })).toBeVisible();
-
-  await page.getByRole('button', { name: 'Open office preview' }).click();
+  await expect(page.getByRole('heading', { name: 'Company details' })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Employee invitations' })).toHaveCount(0);
+  await expect(page.getByText('SIGN-IN STATUS', { exact: true })).toHaveCount(0);
   await expect(page.getByText('Not connected to the office.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Enter office' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Text chat is unavailable' })).toBeVisible();
@@ -318,7 +275,7 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await expect(page.getByRole('list', { name: 'People in the office' })).toContainText(
     account.displayName,
   );
-  await page.getByRole('button', { name: 'Back to company details' }).focus();
+  await page.getByRole('button', { name: 'Back to companies' }).focus();
   await page.keyboard.press('Tab');
   await page.keyboard.press('Tab');
   await expect(page.getByRole('button', { name: 'Busy' })).toBeFocused();
@@ -362,8 +319,8 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await expect(page.getByText('Not connected to the office.')).toBeVisible();
   await expect.poll(() => officeEvents.filter((event) => event === 'disconnect').length).toBe(2);
 
-  await page.getByRole('button', { name: 'Back to company details' }).click();
-  await expect(page.getByRole('heading', { name: 'Company details' })).toBeVisible();
+  await page.getByRole('button', { name: 'Back to companies' }).click();
+  await expect(page.getByRole('heading', { name: 'Your companies' })).toBeVisible();
   await expect(page.locator('.commons-scene canvas')).toHaveCount(0);
   expect(unexpectedApiCalls).toEqual([]);
   expect(officeEvents).toContain('connect');
@@ -371,4 +328,11 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   expect(officeEvents).toContain('seat:sit');
   expect(officeEvents).toContain('seat:stand');
   expect(officeEvents).toContain('world:input');
+  // Removing the status card must not remove expiry cleanup.
+  await page.clock.install({ time: new Date(session.idleExpiresAt) });
+  await page.clock.fastForward(1_100);
+  await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible();
+  await expect(
+    page.getByText('Your session has expired. Sign in again to continue.'),
+  ).toBeVisible();
 });

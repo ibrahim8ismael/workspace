@@ -8,6 +8,7 @@ import { WorkspaceHome } from '../workspaces/WorkspaceHome';
 import { CompanyOverview } from '../workspaces/CompanyOverview';
 import { AccountSecurity } from './AccountSecurity';
 import { useSessionGuard } from './use-session-guard';
+import { useSessionExpiry } from './use-session-expiry';
 import './account.css';
 
 type AuthView = 'login' | 'register' | 'verify' | 'resend' | 'forgot' | 'reset';
@@ -375,8 +376,6 @@ export default function AuthApp() {
   const [screen, setScreen] = useState<AppScreen>('companies');
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
   const [mutationPending, setMutationPending] = useState(false);
-  const [sessionActionStatus, setSessionActionStatus] = useState('');
-  const [sessionActionError, setSessionActionError] = useState('');
   const mutationLock = useRef(false);
   const mutationGeneration = useRef(0);
   const sessionGuard = useSessionGuard(
@@ -385,6 +384,10 @@ export default function AuthApp() {
     api,
     signedOut,
     mutationLock,
+  );
+
+  useSessionExpiry(sessionGuard.currentSession, () =>
+    signedOut('Your session has expired. Sign in again to continue.'),
   );
 
   useEffect(
@@ -460,8 +463,6 @@ export default function AuthApp() {
     setStatus('');
     setWorkspaceError('');
     setWorkspaceLoadError('');
-    setSessionActionStatus('');
-    setSessionActionError('');
     try {
       const rows = await api.workspaces();
       if (current === generation.current) setWorkspaces(rows);
@@ -496,8 +497,6 @@ export default function AuthApp() {
     setCanRetryBoot(false);
     setLoggingOut(false);
     setMutationPending(false);
-    setSessionActionStatus('');
-    setSessionActionError('');
     setScreen('companies');
     setSelectedCompanyId(null);
     setState('signed-out');
@@ -556,33 +555,6 @@ export default function AuthApp() {
       )
         signedOut('Your session changed. Sign in again to continue.');
       throw caught;
-    }
-  }
-
-  async function keepWorking() {
-    const current = generation.current;
-    sessionGuard.invalidatePendingReads();
-    setSessionActionStatus('');
-    setSessionActionError('');
-    try {
-      const refreshed = await runMutation(async () => {
-        await api.extendSession();
-        return sessionGuard.refresh();
-      });
-      if (current !== generation.current) return;
-      if (refreshed) setSessionActionStatus('Your session was extended.');
-    } catch (caught) {
-      if (
-        current !== generation.current ||
-        (caught instanceof ApiError && caught.code === 'stale_response')
-      )
-        return;
-      if (
-        caught instanceof ApiError &&
-        (caught.status === 401 || caught.code === 'csrf_rejected')
-      ) {
-        signedOut('Your session changed. Sign in again to continue.');
-      } else setSessionActionError(messageForApi(caught));
     }
   }
 
@@ -697,18 +669,7 @@ export default function AuthApp() {
         api={api}
         workspaceId={selectedCompanyId}
         mutationPending={mutationPending}
-        runMutation={runMutation}
         mutationLock={mutationLock}
-        currentSession={sessionGuard.currentSession}
-        sessionsLoading={sessionGuard.loading}
-        sessionsError={sessionGuard.error}
-        sessionActionStatus={sessionActionStatus}
-        sessionActionError={sessionActionError}
-        onRefreshSessions={() => void sessionGuard.refresh()}
-        onKeepWorking={() => void keepWorking()}
-        onSessionExpire={() =>
-          signedOut('Your session has reached its estimated expiry. Sign in again to continue.')
-        }
         onBackToCompanies={backToCompanies}
         onOpenSecurity={openSecurity}
         onUnauthorized={signedOut}
@@ -725,15 +686,9 @@ export default function AuthApp() {
         currentSession={sessionGuard.currentSession}
         sessionsLoading={sessionGuard.loading}
         sessionsError={sessionGuard.error}
-        actionStatus={sessionActionStatus}
-        actionError={sessionActionError}
         mutationPending={mutationPending}
         runMutation={runMutation}
         onRefreshSessions={() => void sessionGuard.refresh()}
-        onKeepWorking={() => void keepWorking()}
-        onExpire={() =>
-          signedOut('Your session has reached its estimated expiry. Sign in again to continue.')
-        }
         onBack={backToCompanies}
         onReauthenticate={reauthenticate}
         onSignedOut={signedOut}
@@ -761,16 +716,6 @@ export default function AuthApp() {
       onViewCompany={openCompany}
       mutationPending={mutationPending}
       runMutation={runMutation}
-      currentSession={sessionGuard.currentSession}
-      sessionsLoading={sessionGuard.loading}
-      sessionsError={sessionGuard.error}
-      sessionActionStatus={sessionActionStatus}
-      sessionActionError={sessionActionError}
-      onRefreshSessions={() => void sessionGuard.refresh()}
-      onKeepWorking={() => void keepWorking()}
-      onSessionExpire={() =>
-        signedOut('Your session has reached its estimated expiry. Sign in again to continue.')
-      }
     />
   );
 }

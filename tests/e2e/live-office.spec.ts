@@ -191,14 +191,15 @@ async function companyPage(
   browser: Browser,
   client: APIRequestContext,
   workspaceId: string,
-  inviteEmail?: string,
-  isOwner = false,
+  withGapProbe = false,
 ) {
   const context = await browser.newContext({
     storageState: await client.storageState(),
     ignoreHTTPSErrors: true,
   });
   const page = await context.newPage();
+  // Register before navigation: Socket.IO captures WebSocket when its module loads.
+  const gapProbe = withGapProbe ? await interceptWorldVersionGap(page) : null;
   await page.goto(appOrigin);
   await expect(page.locator(`[data-workspace-id="${workspaceId}"]`)).toBeVisible({
     timeout: 15_000,
@@ -207,29 +208,11 @@ async function companyPage(
     .locator(`[data-workspace-id="${workspaceId}"]`)
     .getByRole('button', { name: 'Open office' })
     .click();
-  await expect(page.getByRole('button', { name: 'Open office preview' })).toBeVisible();
-  if (inviteEmail) {
-    await expect(page.getByRole('heading', { name: 'Employee invitations' })).toBeVisible();
-    await page.getByLabel('Employee email').fill(inviteEmail);
-    await page.getByRole('button', { name: 'Send invitation' }).click();
-    await expect(
-      page.getByText(`Invitation created for ${inviteEmail}.`, { exact: true }),
-    ).toBeVisible();
-    await expect(page.getByText('Pending', { exact: true })).toBeVisible();
-    await page.getByRole('button', { name: `Revoke invitation for ${inviteEmail}` }).click();
-    await expect(
-      page.getByRole('group', { name: `Confirm revocation for ${inviteEmail}` }),
-    ).toBeVisible();
-    await page.getByRole('button', { name: 'Confirm revoke' }).click();
-    await expect(
-      page.getByText(`Invitation for ${inviteEmail} was revoked.`, { exact: true }),
-    ).toBeVisible();
-    await expect(page.getByText('Revoked', { exact: true })).toBeVisible();
-  } else if (!isOwner) {
-    await expect(page.getByRole('heading', { name: 'Employee invitations' })).toHaveCount(0);
-  }
-  await page.getByRole('button', { name: 'Open office preview' }).click();
-  return { context, page };
+  await expect(page.getByRole('button', { name: 'Enter office' })).toBeVisible();
+  await expect(page.getByText('SIGN-IN STATUS', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Company details' })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Employee invitations' })).toHaveCount(0);
+  return { context, page, gapProbe };
 }
 
 test('live two-browser admission, movement, collision, and seat contention', async ({
@@ -240,7 +223,6 @@ test('live two-browser admission, movement, collision, and seat contention', asy
 
   const ownerEmail = `cp065-owner-${randomUUID()}@example.test`;
   const memberEmail = `cp065-member-${randomUUID()}@example.test`;
-  const revokedInviteEmail = `cp065-revoked-${randomUUID()}@example.test`;
   const owner = await createAccount(ownerEmail);
   const member = await createAccount(memberEmail);
   let ownerContext: Awaited<ReturnType<typeof companyPage>>['context'] | undefined;
@@ -280,13 +262,14 @@ test('live two-browser admission, movement, collision, and seat contention', asy
       throw new Error(`Invitation acceptance failed (${accepted.status()}: ${body.error?.code}).`);
     }
 
-    const ownerOffice = await companyPage(browser, owner.client, workspaceId, revokedInviteEmail);
+    const ownerOffice = await companyPage(browser, owner.client, workspaceId);
     ownerContext = ownerOffice.context;
-    const memberOffice = await companyPage(browser, member.client, workspaceId);
+    const memberOffice = await companyPage(browser, member.client, workspaceId, true);
     memberContext = memberOffice.context;
     const ownerPage = ownerOffice.page;
     const memberPage = memberOffice.page;
-    const gapProbe = await interceptWorldVersionGap(memberPage);
+    const gapProbe = memberOffice.gapProbe;
+    if (!gapProbe) throw new Error('The member WebSocket probe was not installed.');
 
     await ownerPage.getByRole('button', { name: 'Enter office' }).click();
     await expect(ownerPage.getByText('1 person in the office')).toBeVisible();
@@ -428,8 +411,6 @@ test('live two-browser admission, movement, collision, and seat contention', asy
       browser,
       owner.client,
       secondWorkspaceBody.workspace.id,
-      undefined,
-      true,
     );
     ownerSecondContext = ownerSecondOffice.context;
     const ownerSecondPage = ownerSecondOffice.page;
@@ -444,12 +425,13 @@ test('live two-browser admission, movement, collision, and seat contention', asy
     await expect(ownerRoster).toContainText(ownerName);
     await expect(ownerRoster).not.toContainText(memberName);
 
-    await ownerSecondPage.getByRole('button', { name: 'Back to company details' }).click();
-    await expect(
-      ownerSecondPage.getByRole('button', { name: 'Open office preview' }),
-    ).toBeVisible();
+    await ownerSecondPage.getByRole('button', { name: 'Back to companies' }).click();
+    await expect(ownerSecondPage.getByRole('heading', { name: 'Your companies' })).toBeVisible();
     await expect(ownerSecondPage.locator('.live-commons-scene canvas')).toHaveCount(0);
-    await ownerSecondPage.getByRole('button', { name: 'Open office preview' }).click();
+    await ownerSecondPage
+      .locator(`[data-workspace-id="${secondWorkspaceBody.workspace.id}"]`)
+      .getByRole('button', { name: 'Open office' })
+      .click();
     await ownerSecondPage.getByRole('button', { name: 'Enter office' }).click();
     await expect(ownerSecondPage.getByText('1 person in the office')).toBeVisible();
     await expect(ownerSecondPage.locator('.live-commons-scene canvas')).toHaveCount(1);

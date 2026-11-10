@@ -3,10 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { createCommonsSceneCleanup } from '../commons-preview/scene-lifecycle';
 import type { OfficeWorkspaceDetail } from '../src/lib/api';
-import {
-  canOpenOfficePreview,
-  companyOverviewViewReducer,
-} from '../src/features/workspaces/company-overview-view';
+import { canOpenOfficePreview } from '../src/features/workspaces/company-overview-view';
 import { OfficePreviewChat } from '../src/features/workspaces/OfficePreviewChat';
 import { CompanyOfficePreview } from '../src/features/workspaces/CompanyOfficePreview';
 import { ApiClient } from '../src/lib/api';
@@ -42,14 +39,6 @@ describe('company office preview selection', () => {
     );
   });
 
-  it('opens and returns to company details, resetting on company teardown', () => {
-    const preview = companyOverviewViewReducer('details', 'open-preview');
-    expect(preview).toBe('preview');
-    expect(companyOverviewViewReducer(preview, 'open-preview')).toBe('preview');
-    expect(companyOverviewViewReducer(preview, 'back-to-details')).toBe('details');
-    expect(companyOverviewViewReducer(preview, 'reset')).toBe('details');
-  });
-
   it('renders the authenticated company in the supplied office shell', () => {
     const html = renderToStaticMarkup(
       createElement(CompanyOfficePreview, {
@@ -57,21 +46,14 @@ describe('company office preview selection', () => {
         detail,
         onBack: () => undefined,
         onOpenSecurity: () => undefined,
-        currentSession: null,
-        sessionsLoading: false,
-        sessionsError: '',
-        sessionActionStatus: '',
-        sessionActionError: '',
-        mutationPending: false,
-        onRefreshSessions: () => undefined,
-        onKeepWorking: () => undefined,
-        onSessionExpire: () => undefined,
       }),
     );
     expect(html).toContain('Example Company');
-    expect(html).toContain('Company slug: example-company');
+    expect(html).not.toContain('Company slug:');
+    expect(html).not.toContain('SIGN-IN STATUS');
+    expect(html).not.toContain('Employee invitations');
     expect(html).toContain('Commons office');
-    expect(html).toContain('Back to company details');
+    expect(html).toContain('Back to companies');
     expect(html).toContain('Not connected to the office.');
     expect(html).toContain('Enter office');
     expect(html).toContain('Text chat is unavailable');

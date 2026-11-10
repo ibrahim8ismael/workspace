@@ -330,36 +330,6 @@
   font-size: 11px;
 }
 
-.office-shell .session-lifetime {
-  flex: 0 0 auto;
-  margin: 8px 0 0;
-  padding: 12px;
-  border-radius: 10px;
-  box-shadow: none;
-}
-
-.office-shell .session-lifetime-heading {
-  align-items: flex-start;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.office-shell .session-lifetime-heading .account-eyebrow {
-  margin-bottom: 5px;
-  font-size: 9px;
-}
-
-.office-shell .session-lifetime h2 {
-  font-size: 13px;
-}
-
-.office-shell .session-lifetime > .dashboard-secondary {
-  min-height: 32px;
-  padding: 0 10px;
-  white-space: nowrap;
-  font-size: 11px;
-}
-
 .office-shell .office-preview-chat {
   min-height: 320px;
   flex: 0 0 auto;

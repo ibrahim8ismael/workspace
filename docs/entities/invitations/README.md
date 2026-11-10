@@ -28,7 +28,7 @@ Source: [owning model](../../../apps/api/src/modules/tenancy/tenancy.models.ts).
 - `revokedAt`
 - `createdAt`
 
-`email` and `consumedAt` implement the proposed intendedNormalizedEmail/acceptedAt concepts. Durable command idempotency is in operations, not an invitation operationId field. Current defaults are seven-day expiry, fifty pending invites and no slot reservation. The account UI now supports member code acceptance and owner invitation listing, creation and revocation using safe metadata only. Local browser evidence uses Mailpit; external-provider delivery and outage acceptance remain separate.
+`email` and `consumedAt` implement the proposed intendedNormalizedEmail/acceptedAt concepts. Durable command idempotency is in operations, not an invitation operationId field. Current defaults are seven-day expiry, fifty pending invites and no slot reservation. The account UI supports member code acceptance. Owner invitation listing, creation and revocation were removed from the active UI by owner request on 2026-11-10; their API and unmounted component remain. Local browser evidence uses Mailpit; external-provider delivery and outage acceptance remain separate.
 
 ## Relationships
 
@@ -52,7 +52,7 @@ Source: [owning model](../../../apps/api/src/modules/tenancy/tenancy.models.ts).
 
 ## Planning question
 
-Current lifetime/quota/reservation behavior is recorded above. Invitation UI integration is complete; verify real provider delivery and outage behavior under the remaining CP04 work.
+Current lifetime/quota/reservation behavior is recorded above. Member invitation acceptance is integrated; the owner panel is deliberately unmounted; verify real provider delivery and outage behavior under the remaining CP04 work.
 
 ## Next work
 

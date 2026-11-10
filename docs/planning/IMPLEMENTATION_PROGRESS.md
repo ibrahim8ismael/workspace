@@ -622,6 +622,10 @@ At 1280×720, the company invitation panel and full-screen Commons office were v
 
 The updated mocked Chromium E2E covers keyboard-only skip links and invitation confirmation. The rebuilt two-browser local Docker E2E passed with invitation create/confirm/revoke, member controls hidden, and the existing Socket.IO suite. Playwright currently has only bundled Chromium; no installed Chrome or Edge executable was found. Installing those browsers required an interactive sudo password, unavailable in this session. The in-app browser also could not open the local HTTPS site because its development certificate is untrusted. Chrome/Edge manual acceptance and obsolete presentation cleanup remain open; Chromium review does not claim cross-browser or screen-reader acceptance.
 
+## OpenOfficeForAll UI migration — local app and live E2E recheck (2026-11-10)
+
+Restarted the local Docker app stack; `https://localhost:8443/` returned HTTP 200 and the API, Caddy, Mailpit, MongoDB and Redis queue reported healthy (worker running). The current `pnpm test:e2e:live` passed against that stack: two browser clients completed office admission, movement, collision and seat contention through the current API and Socket.IO path. The first sandboxed browser launch was blocked by macOS MachPort permissions; the same test passed when run with the locally authorized browser process permissions. This confirms the local Chromium path only; Chrome/Edge acceptance and obsolete presentation cleanup remain open.
+
 ## CP07.20 — Late-policy cutoff and fail-closed cold bootstrap (2026-11-10)
 
 Added authenticated delayed-policy fault (1500ms replies vs 1000ms guard abort). Room retirement is postponed until after cutoff to avoid masking lease-renewal errors. A startup timing failure led to stronger default-deny SFU bootstrap: no LiveKit child starts until a valid request-start lease newer than this boot exists. This replaces the prior three-second startup grace; stale pre-boot allow files cannot bootstrap media.

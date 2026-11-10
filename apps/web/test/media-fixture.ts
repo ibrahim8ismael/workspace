@@ -17,6 +17,7 @@ declare global {
   interface Window {
     __mediaFixture: {
       status: string;
+      statusHistory: string[];
       error: string;
       remoteIdentities: string[];
       activeAudioSamples: number;
@@ -29,6 +30,7 @@ declare global {
 
 window.__mediaFixture = {
   status: 'off',
+  statusHistory: [],
   error: '',
   remoteIdentities: [],
   activeAudioSamples: 0,
@@ -40,6 +42,7 @@ window.__mediaFixture = {
 const session = new ProximityAudioSession(
   (status, error) => {
     window.__mediaFixture.status = status;
+    window.__mediaFixture.statusHistory.push(status);
     window.__mediaFixture.error = error ?? '';
   },
   (track, identity) => {

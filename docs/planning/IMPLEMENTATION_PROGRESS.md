@@ -1059,3 +1059,14 @@ ACK. Both grants remained unexpired and were rejected by the fresh-epoch guard a
 The selected API integration case passed for each trigger (68 unrelated tests skipped). These runs do
 not mount `CompanyOfficePreview`, so its automatic browser teardown on auth/membership Socket.IO
 closure remains to be verified in the UI.
+
+## CP08.5.5 — real client reconnect after SFU restart (2026-11-11)
+
+Added `pnpm test:media-reconnect`. With a real API-grant pair actively publishing and receiving
+audio, it restarts the pinned LiveKit container in place while leaving the application policy guard
+and office conversation alive. Both production browser `ProximityAudioSession` instances observed
+`reconnecting`, returned to `live`, and resumed decoded audio under their existing, still-valid
+application JWTs. Recovery measured **14,024 ms** from the restart request; the two receiver counters
+reached 193 and 185 active samples. The real API/guard/SFU/two-browser test passed (one selected API
+integration case; 68 unrelated tests skipped). This exercises SDK reconnect before the token's
+60-second expiry, not an SFU-refreshed JWT; fresh/expired token behavior remains a separate case.

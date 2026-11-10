@@ -142,6 +142,38 @@ export async function startApplicationMediaClient({ fixtureUrl, grants }) {
           throw new Error(`real media mute/unmute failed: ${JSON.stringify(result)}`);
         return result;
       },
+      exerciseReconnect: async () => {
+        const baseline = await Promise.all(pages.map(readObservations));
+        await Promise.all(
+          pages.map((page) =>
+            page.waitForFunction(
+              () => window.__mediaFixture.statusHistory.includes('reconnecting'),
+              null,
+              { timeout: 15000 },
+            ),
+          ),
+        );
+        await Promise.all(
+          pages.map((page, index) =>
+            page.waitForFunction(
+              (sampleCount) =>
+                window.__mediaFixture.status === 'live' &&
+                window.__mediaFixture.activeAudioSamples > sampleCount + 5,
+              baseline[index].activeAudioSamples,
+              { timeout: 20000 },
+            ),
+          ),
+        );
+        const observations = await Promise.all(pages.map(readObservations));
+        return {
+          reconnecting: observations.every(({ statusHistory }) =>
+            statusHistory.includes('reconnecting'),
+          ),
+          live: observations.every(({ status }) => status === 'live'),
+          activeAudioSamples: observations.map(({ activeAudioSamples }) => activeAudioSamples),
+          statuses: observations.map(({ status }) => status),
+        };
+      },
       stop: async () => {
         const requestedAt = Date.now();
         await Promise.all(
@@ -205,6 +237,12 @@ export async function runApplicationMediaCutoffCli() {
       if (command.kind === 'exercise-mute-unmute') {
         const result = await client.exerciseMuteUnmute();
         process.stdout.write(JSON.stringify({ kind: 'media-controls', ...result }) + '\n');
+        continue;
+      }
+      if (command.kind === 'exercise-reconnect') {
+        process.stdout.write(JSON.stringify({ kind: 'reconnect-armed' }) + '\n');
+        const result = await client.exerciseReconnect();
+        process.stdout.write(JSON.stringify({ kind: 'media-reconnect', ...result }) + '\n');
         continue;
       }
       if (command.kind !== 'stop') continue;

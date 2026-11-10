@@ -83,6 +83,7 @@ const mediaMachineKey = randomBytes(32);
 const livekitApiKey = 'gather-test-key';
 const livekitApiSecret = randomBytes(32).toString('base64url');
 const runLiveMediaFixture = process.env['CP08_REAL_MEDIA'] === '1';
+const runMediaReconnect = process.env['CP08_MEDIA_RECONNECT'] === '1';
 const configuredMediaEnd = process.env['CP08_MEDIA_END'] ?? 'leave';
 const mediaEndScenario = runLiveMediaFixture
   ? ['opt-out', 'away', 'session-revoke', 'membership-revoke'].includes(configuredMediaEnd)
@@ -210,6 +211,9 @@ async function startLiveKitFixture() {
     containerId,
     signalingPort,
     docker,
+    restartInPlace: async () => {
+      await docker('restart', containerId);
+    },
     restart: async () => {
       await docker('rm', '-f', containerId);
       return startLiveKitFixture();
@@ -2439,6 +2443,32 @@ describe('office socket admission', () => {
               resumed: mediaControls['resumed'],
             })}`,
           );
+          if (runMediaReconnect) {
+            applicationMediaClient.send({ kind: 'exercise-reconnect' });
+            await waitForApplicationMediaMessage(
+              applicationMediaClient,
+              (message) => message['kind'] === 'reconnect-armed',
+              'the LiveKit reconnect observer',
+            );
+            const restartRequestedAt = Date.now();
+            await liveKitFixture!.restartInPlace();
+            const reconnect = await waitForApplicationMediaMessage(
+              applicationMediaClient,
+              (message) => message['kind'] === 'media-reconnect',
+              'both production media sessions to reconnect and resume audio',
+            );
+            console.info(
+              `CP08.5 SFU reconnect: ${JSON.stringify({
+                restartToRecoveredAudioMs: Date.now() - restartRequestedAt,
+                reconnecting: reconnect['reconnecting'],
+                live: reconnect['live'],
+                activeAudioSamples: reconnect['activeAudioSamples'],
+                statuses: reconnect['statuses'],
+              })}`,
+            );
+            expect(reconnect['reconnecting']).toBe(true);
+            expect(reconnect['live']).toBe(true);
+          }
         } else {
           await vi.waitFor(
             async () => {

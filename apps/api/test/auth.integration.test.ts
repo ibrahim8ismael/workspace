@@ -83,6 +83,11 @@ const mediaMachineKey = randomBytes(32);
 const livekitApiKey = 'gather-test-key';
 const livekitApiSecret = randomBytes(32).toString('base64url');
 const runLiveMediaFixture = process.env['CP08_REAL_MEDIA'] === '1';
+const mediaEndScenario = runLiveMediaFixture
+  ? process.env['CP08_MEDIA_END'] === 'opt-out' || process.env['CP08_MEDIA_END'] === 'away'
+    ? process.env['CP08_MEDIA_END']
+    : 'leave'
+  : 'leave';
 const liveKitFixtureImage =
   'livekit/livekit-server@sha256:25cd902de7cacbd5f1f779f6a6ac1eae20ba8f56b0935934ce6b0ab80d1e3d20';
 const execFileAsync = promisify(execFileCallback);
@@ -2073,7 +2078,7 @@ describe('office socket admission', () => {
   });
 
   it(
-    'keeps proximity conversation state private and ends it on explicit leave',
+    `keeps proximity conversation state private and ends it on ${mediaEndScenario}`,
     async () => {
       const owner = await account();
       const first = await account();
@@ -2473,21 +2478,49 @@ describe('office socket admission', () => {
         );
         const firstEndedEvent = nextSocketEvent<unknown>(firstSocket, 'conversation:update');
         const secondEndedEvent = nextSocketEvent<unknown>(secondSocket, 'conversation:update');
-        const leave = {
-          eventId: randomUUID(),
-          officeEpoch: firstReady.snapshot.officeEpoch,
-          payload: {
-            conversationId: joining.conversationId,
-            conversationVersion: active.version,
-          },
-        };
-        const leaveAck = await new Promise<unknown>((resolve) => {
-          firstSocket.emit('conversation:leave', leave, resolve);
-        });
-        expect(officeCommandAckSchema.parse(leaveAck)).toEqual({
-          eventId: leave.eventId,
-          ok: true,
-        });
+        if (mediaEndScenario === 'opt-out') {
+          const optOut = {
+            eventId: randomUUID(),
+            officeEpoch: firstReady.snapshot.officeEpoch,
+            payload: { enabled: false },
+          };
+          const optOutAck = await new Promise<unknown>((resolve) => {
+            firstSocket.emit('proximity:set-opt-in', optOut, resolve);
+          });
+          expect(officeCommandAckSchema.parse(optOutAck)).toEqual({
+            eventId: optOut.eventId,
+            ok: true,
+          });
+        } else if (mediaEndScenario === 'away') {
+          const away = {
+            eventId: randomUUID(),
+            officeEpoch: firstReady.snapshot.officeEpoch,
+            payload: { availability: 'away' },
+          };
+          const awayAck = await new Promise<unknown>((resolve) => {
+            firstSocket.emit('presence:update', away, resolve);
+          });
+          expect(officeCommandAckSchema.parse(awayAck)).toEqual({
+            eventId: away.eventId,
+            ok: true,
+          });
+        } else {
+          const leave = {
+            eventId: randomUUID(),
+            officeEpoch: firstReady.snapshot.officeEpoch,
+            payload: {
+              conversationId: joining.conversationId,
+              conversationVersion: active.version,
+            },
+          };
+          const leaveAck = await new Promise<unknown>((resolve) => {
+            firstSocket.emit('conversation:leave', leave, resolve);
+          });
+          expect(officeCommandAckSchema.parse(leaveAck)).toEqual({
+            eventId: leave.eventId,
+            ok: true,
+          });
+        }
         const ended = conversationUpdateSchema.parse(await firstEndedEvent);
         expect(conversationUpdateSchema.parse(await secondEndedEvent)).toMatchObject({
           conversationId: joining.conversationId,
@@ -2503,6 +2536,15 @@ describe('office socket admission', () => {
           'the empty policy snapshot after the pair ended',
         );
         latestGuardSequence = endPolicyAck.sequence!;
+        if (runLiveMediaFixture) {
+          console.info(
+            `CP08.5 policy revocation: ${JSON.stringify({
+              trigger: mediaEndScenario,
+              emptyPolicyAckSequence: endPolicyAck.sequence,
+              guardAlive: applicationGuard.child.exitCode === null,
+            })}`,
+          );
+        }
         if (applicationMediaClient) {
           applicationMediaClient.send({ kind: 'stop' });
           const measured = await waitForApplicationMediaMessage(

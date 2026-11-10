@@ -275,10 +275,14 @@ produced at least six additional active samples. Both transitions stayed within 
 eight-second cutoff budget. This validates the media-session mute/unmute path but does not mount the
 full office component. CP08.5.2 extends the supplied UI E2E: when the mocked media WebSocket closes,
 the live map stays mounted and keyboard movement still reaches the office socket. This checks UI
-resilience to media-service failure, not browser permission denial. Remaining matrix cases:
-permission denial with the office/map still usable, opt-out, away, office leave, membership/session
-revocation, office/API lease expiry, guard loss, independent-supervisor progress loss, reconnect and
-an SFU-refreshed JWT. Record each input, policy ACK, last active audio sample, process state and
+resilience to media-service failure, not browser permission denial. CP08.5.3 runs the same
+two-browser actual-grant fixture with opt-out and Away triggers: the API emits an empty-policy
+install ACK while the guard remains alive, and measured final decoded audio cutoff was **0 ms** in
+both runs. The fixture explicitly stops the production `ProximityAudioSession` after the server
+policy ACK; it does not yet prove `CompanyOfficePreview` reacts to these Socket.IO events itself.
+Permission denial, office leave through the mounted UI, membership/session revocation, office/API
+lease expiry, guard loss, independent-supervisor progress loss, reconnect and an SFU-refreshed JWT
+remain in the matrix. Record each input, policy ACK, last active audio sample, process state and
 outcome. Do not close A07/A08 from token expiry or UI state alone.
 
 **CP08.6 — webhook reconciliation (pending).** Add strict raw-body signature verification,

@@ -1019,7 +1019,7 @@ active-sample measured **59 ms**, the receiver stayed stable through silence, an
 audio measured **668 ms** with at least six additional active samples. Both are within the eight-
 second cutoff budget. `pnpm test:media-live` passed the focused real API/guard/SFU/browser test;
 Prettier and lint also passed. Permission denial plus map usability, full UI component wiring,
-opt-out/away and server-side revocation/failure cases remain in CP08.5.
+office leave and server-side revocation/failure cases remain in CP08.5.
 
 ## CP08.5.2 — office map survives a media-service failure (2026-11-11)
 
@@ -1029,3 +1029,18 @@ keeps the live Vivo map mounted and connected, and continues sending keyboard mo
 Socket.IO server. This is a mocked-API/UI E2E resilience check, not microphone permission-denial or
 real-SFU evidence. `pnpm test:e2e` is the targeted verification for this step; permission denial with
 the full UI and the remaining CP08.5 server-side revocation/failure cases remain open.
+
+## CP08.5.3 — real opt-out and Away policy revocation (2026-11-11)
+
+Made the real two-browser fixture configurable with `CP08_MEDIA_END=opt-out` or `away`; convenience
+commands are `pnpm test:media-opt-out` and `pnpm test:media-away`. Each run publishes real audio
+through API-issued grants and the separate policy guard, then sends the selected command over the
+actual office Socket.IO connection. Opt-out installed an empty policy at sequence **16**; Away did
+so at sequence **15**. The guard remained running in both cases. Both runs confirmed the API emitted
+the ended conversation, waited for the signed empty-policy ACK, stopped the production
+`ProximityAudioSession`, and measured stable final audio samples with **0 ms** cutoff at the 20 ms
+sampling interval. Each focused run passed (one selected integration test; 68 unrelated tests
+skipped). The fixture currently stops the browser session explicitly after the API/guard policy
+transition; it does not claim mounted `CompanyOfficePreview` event wiring for these two triggers.
+Permission denial, leave-driven UI teardown, membership/session revocation and process/lease failures
+remain open.

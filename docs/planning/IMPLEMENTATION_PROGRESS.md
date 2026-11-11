@@ -1131,7 +1131,7 @@ LiveKit signaling through the app's same-origin Caddy endpoint, and keeps separa
 production CP07 supervisor/SFU-lease topology. With two Chromium pages in the actual supplied Vivo
 office UI, the owner and member join a real nearby conversation, publish and decode audio through
 API-issued grants, then the member leaves from the mounted UI. The receiver's decoded-audio probe
-reported a **26 ms cutoff upper bound** (no active sample after the leave marker); the remote
+reported a **26–38 ms cutoff upper bound across two runs** (no active sample after the leave marker); the remote
 audio element was removed and the Vivo map remained mounted. The focused test passed.
 
 The same Docker-backed two-browser UI scenario now passes movement, seat sit/stand synchronization,
@@ -1149,3 +1149,21 @@ This is local E2E evidence with Playwright's synthetic microphone, not physical-
 permission-prompt, Chrome/Edge release signoff, TURN/UDP, production supervisor/lease, deployment,
 cross-company media-load, or A07/A08 release evidence. Mounted-UI active-call session/membership
 revocation and the other CP08.6/CP08.7 gates remain open.
+
+## CP08.5.11 — mounted Vivo audio cutoff after membership revocation (2026-11-11)
+
+Added a second real-media case to `pnpm test:e2e:live-media`. During an active nearby conversation,
+the owner removes the member through the company API. The member's mounted office receives
+`office:access-ended`, drops its Vivo map, and loses API access; the surviving owner receives the
+ended conversation update, keeps the map mounted, and loses the remote audio element. Two decoded
+audio probes measured cutoff upper bounds of **933 ms for the owner** and **917 ms for the revoked
+member**, with 20 ms sampling; both UI audio elements were removed and the post-revocation workspace
+request returned 403. The focused two-browser test passed.
+
+The combined media command was also attempted after repeated local test-account setup had exhausted
+the API's per-IP CSRF rate limit: CP08.5.10 passed, then CP08.5.11 stopped before its scenario at
+`GET /api/auth/csrf` with 429. Both media tests now share one temporary owner/member/company fixture
+within a Playwright run to avoid repeated account creation; rerun the combined command after the
+local rate-limit window resets. This does not change or disable the API rate limit. Active-call
+session logout through the mounted UI, physical-device/browser permission prompt, and remaining
+CP08.6/CP08.7 and deployment evidence are still open.

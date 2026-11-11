@@ -320,16 +320,22 @@ sessions leave the SFU cleanly after conversation termination. This verifies det
 API denial handling, not the browser's operating-system permission prompt or map usability in the
 same mounted UI scenario. CP08.5.10 adds a real local two-browser run through the mounted Vivo UI:
 the user leaves an active nearby-audio conversation, the remote audio element is removed, the map
-remains mounted, and the last decoded audio sample has a 26 ms cutoff upper bound (20 ms sampling;
-no active sample after the leave marker). The same run covers office movement, seat
+remains mounted, and decoded-audio cutoff upper bounds were 26–38 ms across two runs (20 ms
+sampling; no active sample after the leave marker). The same run covers office movement, seat
 sit/stand, dropped-delta resync, socket re-entry and company isolation. It exposed a mismatch between
 connected client prediction speed and the authoritative API speed; the connected scene now uses
 shared movement limits, and the standalone legacy scene retains its local-only movement pace. Sprint
 input remains local-only until the movement contract supports a second speed. The full test passed.
 This is local synthetic-microphone/TCP-only evidence, not production deployment or the independent
-CP07 lease/supervisor path. Mounted-UI permission/map
-behavior, active-call session/membership revocation through the UI, and lease/guard/supervisor fault
-cases remain open.
+CP07 lease/supervisor path. CP08.5.11 additionally removes a member during the active UI call: the
+revoked browser receives `office:access-ended`, loses the office map and API access, while the owner
+keeps the map and both pages remove their audio elements. Measured cutoff upper bounds were 933 ms
+and 917 ms from the two real Chromium decoded-audio probes. The focused test passed. The combined
+media command then hit the local API's per-IP CSRF limit before the second scenario began, following
+repeated test-account creation during development; both tests now reuse one owner/member/company
+fixture per run, and the combined command still needs a rerun after the local throttle expires.
+Mounted-UI active-call logout, permission/map behavior, lease/guard/supervisor fault cases, and
+deployment evidence remain open.
 
 **CP08.6 — webhook reconciliation (pending).** Add strict raw-body signature verification,
 event-ID deduplication and late-event handling under `apps/api/src/modules/media/`; webhooks observe

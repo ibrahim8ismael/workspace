@@ -3,7 +3,10 @@ name: gather-lite-pilot
 services:
   mongo:
     image: mongo:8.2.6@sha256:9690b268c50317b2988a7f84f514a2cdcf4de6836e12c295b48f3a203731fce1
+    user: '999:999'
     command: [mongod, --replSet, rs0, --bind_ip_all]
+    environment:
+      HOME: /tmp
     healthcheck:
       test:
         [
@@ -25,7 +28,6 @@ services:
     read_only: true
     tmpfs: [/tmp]
     cap_drop: [ALL]
-    cap_add: [CHOWN, SETGID, SETUID]
     security_opt: [no-new-privileges:true]
     deploy:
       resources:
@@ -102,6 +104,23 @@ services:
           cpus: '0.5'
           memory: 384M
 
+  caddy-data-init:
+    image: ${GATHER_WEB_IMAGE:?set GATHER_WEB_IMAGE in infra/deploy/.env}
+    profiles: [setup]
+    user: '0:0'
+    entrypoint: [/bin/sh, -ec]
+    command: ['chown -R 10001:10001 /data /config']
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    networks: [edge]
+    restart: 'no'
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    cap_add: [CHOWN]
+    security_opt: [no-new-privileges:true]
+
   api:
     image: ${GATHER_API_IMAGE:?set GATHER_API_IMAGE in infra/deploy/.env}
     build:
@@ -162,6 +181,7 @@ services:
         CADDYFILE: infra/deploy/Caddyfile
     environment:
       APP_DOMAIN: ${APP_DOMAIN:?set APP_DOMAIN in infra/deploy/.env}
+    user: '10001:10001'
     depends_on:
       api:
         condition: service_healthy
@@ -171,7 +191,7 @@ services:
       test:
         [
           CMD-SHELL,
-          'curl --fail --silent --show-error --insecure --output /dev/null https://localhost:8443/ && curl --fail --silent --show-error --insecure --output /dev/null https://localhost:8443/api/health/live',
+          'curl --fail --silent --show-error --insecure --output /dev/null --resolve ${APP_DOMAIN}:8443:127.0.0.1 https://${APP_DOMAIN}:8443/ && curl --fail --silent --show-error --insecure --output /dev/null --resolve ${APP_DOMAIN}:8443:127.0.0.1 https://${APP_DOMAIN}:8443/api/health/live',
         ]
       interval: 10s
       timeout: 5s

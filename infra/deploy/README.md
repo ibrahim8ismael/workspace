@@ -36,12 +36,14 @@ explicit one-shot `indexes` job provisions declared indexes after replica-set in
 
 ## Build and start
 
-Run from the repository root. Create the host Nginx HTTP-only challenge site from
-`nginx-site.conf.template`, obtain the public certificate with Certbot webroot mode, then start the
-Compose stack. Copy Caddy's public internal CA root from its data volume to
-`/etc/nginx/ssl/gather-lite-caddy-root.pem`; install the complete HTTP/HTTPS Nginx site, run
-`nginx -t`, and reload Nginx. The HTTP challenge directory is `/var/www/letsencrypt`; the HTTP
-vhost redirects all other paths to HTTPS.
+Run from the repository root. Install `nginx-bootstrap.conf` as the temporary port-80 site, create
+`/var/www/letsencrypt/.well-known/acme-challenge`, test/reload Nginx, and obtain the public
+certificate with Certbot webroot mode. Then start the Compose stack. Copy Caddy's public internal
+CA root from its data volume to `/etc/nginx/ssl/gather-lite-caddy-root.pem`. For this pilot, install
+`gather.imtelak.com.nginx.conf` as the complete HTTP/HTTPS site; it is rendered for
+`gather.imtelak.com` and loopback port `18443`. The generic
+`nginx-site.conf.template` is for another approved hostname/port. Run `nginx -t` and reload Nginx.
+The HTTP challenge directory is `/var/www/letsencrypt`; all other HTTP requests redirect to HTTPS.
 
 Build pinned images serially to stay within the shared server's resource budget:
 
@@ -55,6 +57,13 @@ target. This command does not reset an existing database:
 
 ```sh
 docker compose --env-file infra/deploy/.env -f infra/deploy/compose.yaml --profile setup run --rm indexes
+```
+
+Initialize Caddy's persistent certificate/config volume ownership before starting its unprivileged
+UID:
+
+```sh
+docker compose --env-file infra/deploy/.env -f infra/deploy/compose.yaml --profile setup run --rm caddy-data-init
 ```
 
 Start the core profile:
@@ -79,14 +88,23 @@ Mongo-backed registration/session/company operations, mail delivery, office Sock
 and browser-origin protections separately.
 
 Take a protected compressed database dump with `infra/deploy/backup.sh`. It writes mode-0600
-archives under `/var/backups/gather-lite`, validates the gzip stream, and retains the DB and queue
-volumes. Copy backup artifacts to an independent protected destination before relying on them for
-recovery. Test a restore into an isolated database before declaring recovery verified.
+archives under `/var/backups/gather-lite` and validates the gzip stream. Redis uses AOF with
+`appendfsync everysec` on its own persistent volume. Mail queue items reference durable Mongo outbox
+records; if Redis needs rebuilding, the worker dispatcher re-enqueues pending and queued outbox
+records from Mongo. Keep the Mongo archive protected because it contains authentication/session
+state. Copy it to an independent protected destination before relying on recovery. Test a restore
+into an isolated database before declaring recovery verified; do not restore older auth state over
+newer revocations.
 
 Routine restart: `docker compose ... restart`. Graceful stop retaining data: `docker compose ...
 down`. Never add `-v` to shutdown or remove either persistent volume. To roll back code, deploy the
 recorded previous image tags and matching Compose/configuration revision, then restart the stack;
-keep the current database and queue. Recheck revoked sessions and tickets after rollback.
+keep the current database and queue. For this pilot the running application images use tag
+`1e57915406cf`; previous images tagged `3cf0de42b98e` are retained locally. To roll back only
+application code, set the three image variables in the protected `.env` to the prior tag and run
+`docker compose ... up -d --no-build api caddy` (add `--profile mail ... worker` only if SMTP is
+configured). Keep the current Mongo/Redis volumes and deployment security settings. Recheck revoked
+sessions and tickets after rollback.
 
 ## Current pilot boundary
 
@@ -95,3 +113,8 @@ nearby voice is unavailable. The API's LiveKit settings remain blank, so media g
 closed. The local media E2E configuration is not used here. Enable media only after deploying the
 independent guard/supervisor profile, TURN/ICE/firewall policy and production revocation/failure
 tests documented in `docs/planning/ACCEPTANCE.md` and `MEDIA_ENFORCEMENT_EVIDENCE.md`.
+
+No TLS SMTP provider is configured in this environment, so email verification, password recovery,
+and invitation delivery are not verified or ready for real onboarding. Configure the protected
+`worker.env` with the provider's TLS endpoint, sender, and credentials, start the `mail` profile,
+and verify delivery before inviting users. Mailpit is intentionally not deployed.

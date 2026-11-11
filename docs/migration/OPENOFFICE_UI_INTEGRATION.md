@@ -77,3 +77,21 @@ Existing integration points include `apps/web/src/lib/api.ts`, `src/features/off
 - Existing licensing/provenance, accessibility, and English-first Chrome/Edge checks remain in the release evidence.
 
 Ship each completed implementation step with its documentation, focused verification and a separate pushed commit. Full rollout and CP08 media acceptance remain separate gates.
+
+
+## Nearby microphone discoverability (2026-11-11)
+
+The office controlbar now exposes **Enable nearby voice** / **Disable nearby voice**, rather
+than requiring users to find opt-in in the sidebar. Inline microphone help explains that both
+accounts must opt in and move close together. It then shows waiting, ready, capture, mute,
+connection and error states. The microphone references this help through `aria-describedby`.
+An office headcount alone does not authorize audio: the microphone remains unavailable until
+the server reports an active, media-ready proximity conversation. Opt-in does not request device
+capture; users click the microphone after pairing and grant browser permission themselves.
+
+Manual test: refresh `https://localhost:8443`, join with two distinct verified accounts, keep
+both Available, enable nearby voice on both, and move close together. When the ready message
+appears, activate the microphone on each browser and allow microphone access. Use headphones
+or separate devices to avoid feedback. Local browser automation checks bottom-bar opt-in,
+no signaling before consent/pairing, and microphone activation once the mocked pair is ready;
+it does not establish physical-device permission or audio quality.

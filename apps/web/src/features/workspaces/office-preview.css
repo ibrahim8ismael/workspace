@@ -876,3 +876,26 @@
   flex-wrap: wrap;
   gap: 12px;
 }
+
+.office-controlbar .office-voice-toggle {
+  border: 1px solid #575757;
+  border-radius: 8px;
+  background: transparent;
+  color: #fff;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.office-controlbar .office-voice-toggle[aria-pressed='true'] {
+  border-color: #73c9a6;
+  color: #73c9a6;
+}
+.office-controlbar .office-voice-toggle:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.office-controlbar #office-microphone-help {
+  max-width: 320px;
+  white-space: normal;
+}

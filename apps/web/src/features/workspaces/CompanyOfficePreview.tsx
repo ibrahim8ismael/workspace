@@ -449,6 +449,21 @@ export function CompanyOfficePreview({
       : proximityOptedIn
         ? 'Looking for a nearby coworker. Your microphone is off.'
         : 'Nearby voice is off. Your microphone will stay off until you turn it on.';
+  const microphoneHelp =
+    proximityAudioError ||
+    (proximityAudioStatus === 'connecting'
+      ? 'Connecting microphone…'
+      : proximityAudioStatus === 'reconnecting'
+        ? 'Reconnecting voice…'
+        : proximityAudioStatus === 'live'
+          ? 'Your microphone is on.'
+          : proximityAudioStatus === 'muted'
+            ? 'Your microphone is muted. Click to unmute.'
+            : activeProximityConversation
+              ? 'Ready to talk. Click the microphone and allow browser access.'
+              : proximityOptedIn
+                ? 'Waiting for a nearby coworker who has also enabled voice.'
+                : 'Enable nearby voice on both accounts, then move close together.');
   const self = snapshot.participants.find(
     (participant) => participant.participationId === ready.participationId,
   );
@@ -833,10 +848,24 @@ export function CompanyOfficePreview({
                       ? 'Use arrow keys or WASD to move.'
                       : 'Enter the office to move and interact.'}
                   </small>
+                  {connected && <small id="office-microphone-help">{microphoneHelp}</small>}
                 </span>
                 <span className="control-separator" />
                 {connected ? (
                   <>
+                    <button
+                      className="office-voice-toggle"
+                      type="button"
+                      aria-pressed={proximityOptedIn}
+                      disabled={proximityPending}
+                      onClick={() => void changeProximityOptIn()}
+                    >
+                      {proximityPending
+                        ? 'Updating voice…'
+                        : proximityOptedIn
+                          ? 'Disable nearby voice'
+                          : 'Enable nearby voice'}
+                    </button>
                     <button
                       className={`media-control ${proximityAudioStatus === 'live' ? 'enabled' : 'muted'}`}
                       type="button"
@@ -856,6 +885,7 @@ export function CompanyOfficePreview({
                               : 'Activate microphone'
                           : 'Opt in and wait for a nearby pair to use voice'
                       }
+                      aria-describedby="office-microphone-help"
                       aria-pressed={proximityAudioStatus === 'live'}
                       disabled={
                         !proximityOptedIn ||

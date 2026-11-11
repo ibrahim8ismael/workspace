@@ -1249,3 +1249,16 @@ port 8025; external email-provider rollout remains deferred.
 Web typecheck, focused unit tests (25/25) and the mocked-API office E2E (1/1) pass, including
 create, refresh and confirmed revoke, idempotency headers and return to the same office connection.
 See `docs/migration/OPENOFFICE_UI_INTEGRATION.md` for the updated product direction and manual steps.
+
+
+### Nearby microphone controlbar usability (2026-11-11)
+
+Added a visible nearby-voice opt-in/out control beside the microphone in the OpenOffice controlbar.
+Inline accessible help explains the two-user opt-in/proximity requirement and displays readiness,
+microphone state, connecting/reconnecting and errors. Server-side media-ready pairing and explicit
+microphone activation remain required. This addresses the ambiguous disabled microphone despite
+an office headcount of two. Focused browser coverage now opts in from the controlbar and checks
+that no media signaling occurs before opt-in, then exercises activation after the mocked pair.
+
+Validation: web TypeScript checks and focused ESLint pass; the office mocked-API browser E2E
+passes (1/1). Device capture and actual audio are outside this UI regression test.

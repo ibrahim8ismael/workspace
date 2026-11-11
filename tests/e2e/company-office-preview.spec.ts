@@ -485,7 +485,11 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await expect(page.getByRole('group', { name: 'Your availability' })).toBeVisible();
   const microphoneButton = page.getByRole('button', { name: 'Activate proximity microphone' });
   await expect(microphoneButton).toBeDisabled();
-  await page.getByRole('button', { name: 'Opt in to nearby voice' }).click();
+  await expect(page.locator('#office-microphone-help')).toContainText(
+    'Enable nearby voice on both accounts',
+  );
+  await expect.poll(() => liveKitSocketAttempts).toBe(0);
+  await page.getByRole('button', { name: 'Enable nearby voice', exact: true }).click();
   await expect(
     page.getByText('Paired with Office Teammate. Turn on your microphone when ready.'),
   ).toBeVisible();

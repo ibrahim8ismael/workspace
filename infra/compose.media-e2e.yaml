@@ -29,7 +29,9 @@ services:
     expose: ['7880']
     ports:
       - 127.0.0.1:17881:17881/tcp
-    networks: [edge]
+    # Docker's internal edge network alone cannot publish the host media port.
+    # The local browser must reach the advertised 127.0.0.1:17881 ICE candidate.
+    networks: [edge, host-access]
     restart: 'no'
 
   media-retirements-init:

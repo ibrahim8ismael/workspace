@@ -607,29 +607,26 @@ test('mounted Vivo office carries and cuts off live nearby audio on conversation
     await memberPage.getByRole('button', { name: 'Join' }).click();
     await expect(ownerPage.getByText('2 people in the office')).toBeVisible();
     await expect(memberPage.getByText('2 people in the office')).toBeVisible();
-    const ownerName = owner.account.displayName;
-    const memberName = member.account.displayName;
     const ownerMap = ownerPage.locator('.office-scene svg.office-map');
     const memberMap = memberPage.locator('.office-scene svg.office-map');
     await expect(ownerPage.locator('.office-map-heading strong')).toHaveText('Live Vivo office');
     await expect(ownerMap).toHaveCount(1);
     await expect(memberMap).toHaveCount(1);
 
-    await ownerPage.getByRole('button', { name: 'Opt in to nearby voice' }).click();
-    await memberPage.getByRole('button', { name: 'Opt in to nearby voice' }).click();
-    await expect(
-      ownerPage.getByText(`Paired with ${memberName}. Turn on your microphone when ready.`),
-    ).toBeVisible({ timeout: 15_000 });
-    await expect(
-      memberPage.getByText(`Paired with ${ownerName}. Turn on your microphone when ready.`),
-    ).toBeVisible({ timeout: 15_000 });
+    // The single microphone action opts in and starts capture once the pair is ready.
     await ownerPage.getByRole('button', { name: 'Activate proximity microphone' }).click();
     await memberPage.getByRole('button', { name: 'Activate proximity microphone' }).click();
-    await expect(ownerPage.getByRole('button', { name: 'Mute proximity microphone' })).toBeVisible({
-      timeout: 15_000,
-    });
-    await expect(memberPage.getByRole('button', { name: 'Mute proximity microphone' })).toBeVisible(
-      { timeout: 15_000 },
+    await expect(ownerPage.locator('#office-microphone-help')).toHaveText(
+      'Your microphone is on.',
+      {
+        timeout: 20_000,
+      },
+    );
+    await expect(memberPage.locator('#office-microphone-help')).toHaveText(
+      'Your microphone is on.',
+      {
+        timeout: 20_000,
+      },
     );
 
     const ownerRemoteAudio = ownerPage.locator('.office-proximity-audio-output audio');

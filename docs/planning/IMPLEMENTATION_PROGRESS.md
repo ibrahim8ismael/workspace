@@ -1274,3 +1274,19 @@ help distinguish waiting without capture from a live microphone; no token is req
 Sidebar-only opt-in still requires a microphone click to capture. Typecheck, focused ESLint and
 the office mocked-API browser E2E (1/1) pass, including icon on/off without a peer and automatic
 signaling after explicit microphone consent and subsequent pairing.
+
+
+### Local browser audio connectivity fix (2026-11-11)
+
+Investigated the reported silent microphones: signaling reached LiveKit, but ICE failed because
+LiveKit joined only Docker's internal `edge` network. Docker retained the requested port in
+HostConfig while NetworkSettings showed null and host TCP 17881 refused connections. Added
+`host-access` to the local media overlay and recreated LiveKit; host TCP 17881 then connected.
+The SDK requests microphone capture only after room connection, explaining the absent browser
+permission prompt during the failed ICE connection. This fixture is scoped to the local machine.
+
+The real mounted-office browser regression now uses one microphone click per account, waits for
+actual live-microphone state, and measures decoded remote audio. It passed (1/1) with synthetic
+microphones against the running Docker API, guard and LiveKit: 19 active probe samples before
+leave, 116 ms cutoff upper bound, remote audio removed, and the map remained mounted. This proves
+local real media transport; physical microphone permissions and sound quality remain manual.

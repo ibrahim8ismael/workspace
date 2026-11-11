@@ -14,7 +14,7 @@ CP04.3a configuration is complete. The owner explicitly authorized local Docker 
 | Worker      | Outbox dispatch and SMTP delivery                                    | Explicit `worker` profile |
 | Mailpit     | Local message capture and persistent inbox                           | `http://localhost:8025`   |
 
-The `edge` and `data` networks are internal. Only Caddy and Mailpit also join the standard `host-access` bridge so their published ports work on the host. That bridge permits outbound connectivity for those two services; the API, worker, MongoDB and Redis remain on internal networks. Published ports bind to host loopback. The API uses `API_HOST=0.0.0.0` inside its container, with `APP_ORIGIN=https://localhost:8443`. Caddy routes API requests before its static-file fallback and removes forwarding headers before proxying. The API retains its existing proxy policy.
+The `edge` and `data` networks are internal. Caddy and Mailpit also join the standard `host-access` bridge so their published ports work on the host. The optional local media fixture also joins LiveKit to `host-access` so its loopback ICE port is actually reachable. That bridge permits outbound connectivity for attached services; the API, worker, MongoDB and Redis remain on internal networks. Published ports bind to host loopback. The API uses `API_HOST=0.0.0.0` inside its container, with `APP_ORIGIN=https://localhost:8443`. Caddy routes API requests before its static-file fallback and removes forwarding headers before proxying. The API retains its existing proxy policy.
 
 MongoDB, queue Redis, the inbox and Caddy certificates use named volumes. The cache profile is optional and disposable. The local worker delivers to Mailpit. SMTP TLS is disabled in that development profile. The application’s production SMTP validation requires TLS.
 
@@ -119,7 +119,13 @@ LIVE_OFFICE_E2E=1 pnpm exec playwright test tests/e2e/live-office.spec.ts \
 The overlay routes signaling through `https://localhost:8443/rtc` and publishes only TCP ICE on
 `127.0.0.1:17881`. Playwright uses a synthetic microphone, so the test exercises the actual browser
 audio track, API grant, local policy guard, LiveKit server and mounted Vivo UI without requesting a
-physical microphone. The profile is a local integration fixture; it does not include CP07's
+physical microphone. LiveKit must join both `edge` and `host-access`: an internal-only network
+can leave Docker's configured port binding inactive (`NetworkSettings.Ports` is null), causing
+host `127.0.0.1:17881` connections to be refused. Signaling can still reach LiveKit through Caddy,
+but ICE fails and the SDK never reaches the subsequent microphone permission request. After
+changing networks, recreate LiveKit using the same Compose command and confirm
+`nc -vz 127.0.0.1 17881` succeeds. Refresh both office tabs and re-enable their microphones.
+The profile is a local integration fixture; it does not include CP07's
 independent supervisor/SFU lease deployment, TURN/UDP, public ingress or production secrets.
 
 The overlay also configures LiveKit to POST signed events directly to

@@ -88,6 +88,73 @@ describe('session-bound proximity audio client', () => {
     expect(statuses.at(-1)).toBe('off');
   });
 
+  it('requests microphone consent before connecting and does not connect after denial', async () => {
+    const fake = createRoom();
+    const order: string[] = [];
+    fake.room.prepareMicrophone = vi.fn(async () => {
+      order.push('capture');
+    });
+    vi.mocked(fake.room.connect).mockImplementation(async () => {
+      order.push('connect');
+    });
+    const statuses: Array<{ status: ProximityAudioStatus; error?: string }> = [];
+    const session = new ProximityAudioSession(
+      (status, error) => statuses.push({ status, error }),
+      () => vi.fn(),
+      async () => fake.room,
+    );
+    await session.start(
+      async () => grant,
+      () => true,
+      2,
+      grant.generation,
+    );
+    expect(order).toEqual(['capture', 'connect']);
+    await session.stop();
+    vi.mocked(fake.room.connect).mockClear();
+    fake.room.prepareMicrophone = vi.fn(async () => {
+      throw new DOMException('Denied', 'NotAllowedError');
+    });
+    await session.start(
+      async () => grant,
+      () => true,
+      2,
+      grant.generation,
+    );
+    expect(fake.room.connect).not.toHaveBeenCalled();
+    expect(statuses.at(-1)).toEqual({
+      status: 'error',
+      error: 'Microphone access was denied. Allow microphone access in your browser and try again.',
+    });
+  });
+
+  it('cancels a pending capture request without connecting after it resolves', async () => {
+    const fake = createRoom();
+    let resolveCapture!: () => void;
+    fake.room.prepareMicrophone = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveCapture = resolve;
+        }),
+    );
+    const session = new ProximityAudioSession(
+      () => undefined,
+      () => vi.fn(),
+      async () => fake.room,
+    );
+    const start = session.start(
+      async () => grant,
+      () => true,
+      2,
+      grant.generation,
+    );
+    await vi.waitFor(() => expect(fake.room.prepareMicrophone).toHaveBeenCalled());
+    await session.stop();
+    resolveCapture();
+    await start;
+    expect(fake.room.connect).not.toHaveBeenCalled();
+  });
+
   it('rejects a grant from a replaced conversation and never connects it', async () => {
     const statuses: Array<{ status: ProximityAudioStatus; error?: string }> = [];
     const fake = createRoom();

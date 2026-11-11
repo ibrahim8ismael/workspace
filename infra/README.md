@@ -116,17 +116,55 @@ LIVE_OFFICE_E2E=1 pnpm exec playwright test tests/e2e/live-office.spec.ts \
   -g 'live two-browser Vivo admission'
 ```
 
-The overlay routes signaling through `https://localhost:8443/rtc` and publishes only TCP ICE on
-`127.0.0.1:17881`. Playwright uses a synthetic microphone, so the test exercises the actual browser
-audio track, API grant, local policy guard, LiveKit server and mounted Vivo UI without requesting a
-physical microphone. LiveKit must join both `edge` and `host-access`: an internal-only network
-can leave Docker's configured port binding inactive (`NetworkSettings.Ports` is null), causing
-host `127.0.0.1:17881` connections to be refused. Signaling can still reach LiveKit through Caddy,
-but ICE fails and the SDK never reaches the subsequent microphone permission request. After
-changing networks, recreate LiveKit using the same Compose command and confirm
-`nc -vz 127.0.0.1 17881` succeeds. Refresh both office tabs and re-enable their microphones.
-The profile is a local integration fixture; it does not include CP07's
-independent supervisor/SFU lease deployment, TURN/UDP, public ingress or production secrets.
+The overlay routes signaling through `https://localhost:8443/rtc`. Its media listeners default to
+loopback: ICE TCP `17881`, ICE UDP `17882`, TURN UDP `17883` and TURN relay UDP `17884–17899`.
+LiveKit joins both `edge` and `host-access`; an internal-only network can leave Docker's published
+ports inactive even while signaling succeeds. This is a local integration fixture, not CP07's
+production supervisor/SFU lease deployment or public ingress.
+
+For Firefox testing, use a private IPv4 address assigned to the host. The owner authorized this
+LAN media binding on 2026-11-11; the frontend and API still bind to localhost. Firefox retains its
+normal ICE loopback restrictions. The SFU advertises both the host address and its private Docker
+candidates. Advertising the LAN address alone still failed ICE in the mixed-browser test; adding private
+SFU candidates and exact TURN peers passed both direct UDP and forced Firefox relay tests. Restrict TURN's private peer allowlist to the exact
+host and SFU addresses rather than allowing the whole LAN or Docker subnet.
+
+After starting the stack above, configure the ignored env file with the network helper:
+
+```sh
+# macOS example: use the interface containing your active private LAN IPv4 address.
+MEDIA_TEST_IP="$(ipconfig getifaddr en0)"
+node infra/configure-media-e2e-network.mjs "$MEDIA_TEST_IP"
+docker --context orbstack compose --env-file infra/.env.media-e2e \
+  -f infra/compose.yaml -f infra/compose.media-e2e.yaml \
+  --profile app --profile media-e2e up -d media-livekit
+node infra/configure-media-e2e-network.mjs "$MEDIA_TEST_IP" --check
+```
+
+The helper accepts only a private IPv4 address assigned to this machine, reads the running SFU's
+Docker addresses and writes only `MEDIA_BIND_IP` and `MEDIA_TURN_PEER_CIDRS`. It preserves the test
+credentials. An optional second argument selects another Docker context (default `orbstack`).
+Rerun it after the host IP or Docker addresses change; `--check` detects stale settings. The
+listeners are reachable from the selected LAN interface and still require LiveKit authorization;
+signaling, administrative APIs and the guard's machine routes remain private. Refresh office tabs
+after reconfiguration and enable both microphones again.
+
+To reproduce Chrome↔Firefox audio, install Firefox and run:
+
+```sh
+pnpm exec playwright install firefox
+LIVE_OFFICE_E2E=1 LIVE_OFFICE_MEDIA_E2E=1 LIVE_OFFICE_MIXED_BROWSERS=1 \
+  pnpm exec playwright test tests/e2e/live-office.spec.ts \
+  -g 'carries and cuts off live nearby audio' --output=/tmp/gather-mixed-browser-media
+```
+
+Use `LIVE_OFFICE_FORCE_PLAYBACK_BLOCK=1` on that command to exercise the speaker retry button.
+Use `LIVE_OFFICE_FIREFOX_RELAY_ONLY=1` to require a successful Firefox TURN relay pair.
+Use `PLAYWRIGHT_BROWSER=firefox` without `LIVE_OFFICE_MIXED_BROWSERS` for Firefox↔Firefox.
+Automation uses synthetic microphones and tests decoded audio in both directions; it does not
+grant access to the real microphone or change the user's browser preferences. Firefox test
+preferences bypass the capture prompt only for synthetic input. Real microphone selection,
+permissions and sound quality still require manual testing.
 
 The overlay also configures LiveKit to POST signed events directly to
 `http://api:3000/api/internal/media/livekit/webhook` over the private Docker network. The API uses

@@ -1290,3 +1290,51 @@ actual live-microphone state, and measures decoded remote audio. It passed (1/1)
 microphones against the running Docker API, guard and LiveKit: 19 active probe samples before
 leave, 116 ms cutoff upper bound, remote audio removed, and the map remained mounted. This proves
 local real media transport; physical microphone permissions and sound quality remain manual.
+
+### Microphone prompt, speaker playback and Firefox follow-up (2026-11-11)
+
+The full client path showed two separate browser behaviors. The old session requested microphone
+capture only after ICE connected, so an ICE failure prevented the browser permission prompt. It now
+requests capture after obtaining the current guarded grant but before connecting to LiveKit; it
+publishes the prepared track only after the guarded room connection, and stops the track when the
+attempt is cancelled. A unit test covers capture ordering, denial and cancellation. Remote audio
+elements now explicitly unmute and attempt playback. Rejected autoplay is surfaced as an accessible
+speaker button that retries `play()` directly from a user click rather than silently ignoring the
+browser rejection.
+
+The mounted Chrome-to-Chrome run passed with decoded audio in both directions. A forced-autoplay
+block/retry run also passed: both speakers resumed, audio decoded at both receivers, and conversation
+leave cut off the measured stream within 81 ms. Initial Chrome↔Firefox tests failed ICE despite
+successful HTTPS grants, WebSocket signaling and TURN relay allocation. The loopback test-profile
+preference did not resolve that failure and has been removed.
+
+### Firefox local media network correction (2026-11-11)
+
+The owner explicitly authorized moving media listeners beyond localhost while retaining local
+hosting. The first test bound ICE and TURN to the host's private LAN IPv4 address, with all web/API
+traffic still on `https://localhost:8443`. Firefox gathered relay candidates but ICE still failed.
+The passing correction adds `rtc.advertise_internal_ip: true` and allows TURN to reach the SFU's
+exact Docker interface addresses as well as the advertised host address. The mixed-browser run
+then decoded audio in both directions, removed the remote audio on conversation leave and retained
+both maps, with a measured cutoff upper bound of 190 ms (20 ms probe sampling). This is evidence
+for the local Docker media path; it does not prove that loopback was the sole cause.
+
+`infra/configure-media-e2e-network.mjs` validates a private IPv4 address assigned to the host and
+writes only the two network settings in the ignored media env file. TURN peer permissions are
+exact `/32` entries, not whole private subnets. Its `--check` mode detects stale host/container
+addresses after recreation. The committed Compose defaults remain loopback; LAN use requires an
+explicit local setting. The tests keep Firefox's normal ICE policy and use synthetic microphones,
+so real-device permission prompts and physical sound quality remain manual checks.
+
+Verification completed with normal Firefox ICE policy and synthetic input:
+
+- Chrome↔Firefox decoded audio in both directions: 190 ms leave cutoff upper bound.
+- Forced playback rejection recovered through the speaker button: 211 ms cutoff; connected UDP ICE.
+- Firefox forced to relay-only ICE: selected successful relay pair, decoded audio in both directions,
+  518 ms cutoff. This separately verifies the TURN fallback rather than inferring it from allocation.
+- Firefox↔Firefox decoded audio in both directions: 226 ms cutoff. An earlier run reached all media
+  assertions but failed while Playwright wrote its trace archive; rerunning with `--trace off` passed.
+- Eight audio lifecycle/playback unit tests, web typecheck, focused ESLint, formatting and the mocked
+  office UI regression passed. The network helper rejects wildcard binds and its check mode confirms
+  current Docker addresses and all TCP/UDP host port bindings. The running web/API/guard/SFU stack is
+  retained for physical microphone testing at `https://localhost:8443`.

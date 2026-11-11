@@ -18,8 +18,17 @@ services:
         bind_addresses: [0.0.0.0]
         rtc:
           tcp_port: 17881
-          node_ip: 127.0.0.1
+          udp_port: 17882
+          node_ip: ${MEDIA_BIND_IP:-127.0.0.1}
           use_external_ip: false
+          advertise_internal_ip: true
+        turn:
+          enabled: true
+          domain: ${MEDIA_BIND_IP:-127.0.0.1}
+          udp_port: 17883
+          relay_range_start: 17884
+          relay_range_end: 17899
+          allow_restricted_peer_cidrs: [${MEDIA_TURN_PEER_CIDRS:-127.0.0.1/32}]
         keys:
           "${LIVEKIT_API_KEY:?Run node infra/init-media-e2e-env.mjs first}": "${LIVEKIT_API_SECRET:?Run node infra/init-media-e2e-env.mjs first}"
         webhook:
@@ -28,9 +37,12 @@ services:
             - http://api:3000/api/internal/media/livekit/webhook
     expose: ['7880']
     ports:
-      - 127.0.0.1:17881:17881/tcp
+      - ${MEDIA_BIND_IP:-127.0.0.1}:17881:17881/tcp
+      - ${MEDIA_BIND_IP:-127.0.0.1}:17882:17882/udp
+      - ${MEDIA_BIND_IP:-127.0.0.1}:17883:17883/udp
+      - ${MEDIA_BIND_IP:-127.0.0.1}:17884-17899:17884-17899/udp
     # Docker's internal edge network alone cannot publish the host media port.
-    # The local browser must reach the advertised 127.0.0.1:17881 ICE candidate.
+    # Defaults to loopback. MEDIA_BIND_IP opts media listeners into one host interface.
     networks: [edge, host-access]
     restart: 'no'
 

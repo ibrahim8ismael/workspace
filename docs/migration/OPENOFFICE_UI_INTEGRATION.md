@@ -1,6 +1,6 @@
 # OpenOfficeForAll UI integration
 
-Status: owner-approved direction; account/company/office screens use the supplied OpenOfficeForAll visual system. The office-message view uses the project API and Socket.IO room event with 90-day retention. CP08.3b connects nearby-voice controls to the guarded token route and lazy LiveKit browser client; CP08.3c tests the separate API/guard process boundary with a mock SFU upstream. Real media and deployment acceptance remain open. Calendar/activity and meeting media remain unconnected; final browser/accessibility review and obsolete presentation cleanup remain · Updated: 2026-11-10
+Status: owner-approved direction; account/company/office screens use the supplied OpenOfficeForAll visual system. The office-message view uses this project's API and Socket.IO room event with 90-day retention. Nearby voice uses the guarded token route and lazy LiveKit client. Local real audio and measured cutoff pass in Chrome and Chrome↔Firefox on the owner-authorized LAN media fixture with private SFU candidates; browser-blocked speaker playback has a verified retry control. Deployment acceptance remains open. Calendar/activity and fixed-meeting media remain unconnected; final browser/accessibility review and obsolete presentation cleanup remain · Updated: 2026-11-11
 
 ## Product direction
 

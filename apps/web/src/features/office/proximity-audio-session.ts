@@ -10,6 +10,7 @@ export type ProximityRemoteAudioTrack = {
 };
 
 export interface ProximityRoom {
+  prepareMicrophone?(): Promise<void>;
   connect(serverUrl: string, token: string): Promise<void>;
   disconnect(): Promise<void>;
   setMicrophoneEnabled(enabled: boolean): Promise<void>;
@@ -39,24 +40,49 @@ export async function createLiveKitProximityRoom(
   onTokenRefreshed?: (token: string) => void,
   rtcConfig?: RTCConfiguration,
 ): Promise<ProximityRoom> {
-  const { EngineEvent, Room, RoomEvent, Track } = await import('livekit-client');
+  const { EngineEvent, Room, RoomEvent, Track, createLocalAudioTrack } =
+    await import('livekit-client');
   const room = new Room({
     adaptiveStream: false,
     dynacast: false,
     publishDefaults: { stopMicTrackOnMute: true, preConnectBuffer: false },
   });
+  let preparedMicrophone: import('livekit-client').LocalAudioTrack | undefined;
+  let closed = false;
   if (onTokenRefreshed) {
     room.engine.on(EngineEvent.TokenRefreshed, onTokenRefreshed);
   }
   return {
+    prepareMicrophone: async () => {
+      const track = await createLocalAudioTrack();
+      if (closed) {
+        track.stop();
+        throw new Error('capture_cancelled');
+      }
+      preparedMicrophone = track;
+    },
     connect: async (serverUrl, token) => {
       await room.connect(serverUrl, token, rtcConfig ? { rtcConfig } : undefined);
     },
     disconnect: async () => {
+      closed = true;
+      preparedMicrophone?.stop();
+      preparedMicrophone = undefined;
       await room.disconnect();
     },
     setMicrophoneEnabled: async (enabled) => {
-      await room.localParticipant.setMicrophoneEnabled(enabled);
+      if (enabled && preparedMicrophone) {
+        await room.localParticipant.publishTrack(preparedMicrophone, {
+          source: Track.Source.Microphone,
+        });
+        preparedMicrophone = undefined;
+      } else {
+        if (!enabled) {
+          preparedMicrophone?.stop();
+          preparedMicrophone = undefined;
+        }
+        await room.localParticipant.setMicrophoneEnabled(enabled);
+      }
     },
     onTrackSubscribed: (listener) => {
       const handler = (
@@ -136,6 +162,13 @@ export class ProximityAudioSession {
       }
       this.room = nextRoom;
       this.bindRoom(nextRoom, attempt);
+      // Request capture before ICE: Firefox can withhold local candidates without device consent.
+      // Publication still waits for the authorized guarded room connection.
+      await nextRoom.prepareMicrophone?.();
+      if (!this.isCurrent(attempt, isCurrent)) {
+        await this.releaseRoom(nextRoom);
+        return;
+      }
       await nextRoom.connect(grant.serverUrl, grant.token);
       if (!this.isCurrent(attempt, isCurrent)) {
         await this.releaseRoom(nextRoom);

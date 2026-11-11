@@ -46,6 +46,13 @@ const requestId = 'dbe6efea-048d-4b34-9111-d43880daf189';
 test('mocked-API UI E2E: sign in, open the company preview, and return cleanly', async ({
   page,
 }) => {
+  // This test mocks signaling; supply a silent synthetic capture track without device access.
+  await page.addInitScript(() => {
+    navigator.mediaDevices.getUserMedia = async () => {
+      const context = new AudioContext();
+      return context.createMediaStreamDestination().stream;
+    };
+  });
   let authenticated = false;
   const invitation = {
     id: '16ab92cd-cbd4-44b6-b827-196ae6044937',

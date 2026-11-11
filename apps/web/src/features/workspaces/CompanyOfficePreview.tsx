@@ -13,6 +13,7 @@ import {
   Settings2,
   VideoOff,
   UserPlus,
+  Volume2,
 } from 'lucide-react';
 import type { AccountDto } from '@gather/contracts';
 import type { OfficeMessage } from '@gather/contracts';
@@ -28,8 +29,8 @@ import { latestProximityConversation } from '../office/proximity-conversation';
 import {
   ProximityAudioSession,
   type ProximityAudioStatus,
-  type ProximityRemoteAudioTrack,
 } from '../office/proximity-audio-session';
+import { RemoteAudioPlayback } from '../office/remote-audio-playback';
 import { CompanyInvitationManager } from './CompanyInvitationManager';
 import './office-preview.css';
 
@@ -64,23 +65,6 @@ function sceneAvatarForAppearance(appearance: { bodyId: string; paletteId: strin
   if (appearance.bodyId === 'commons-worker' && appearance.paletteId === 'teal')
     return DEFAULT_LOOK;
   return undefined;
-}
-
-function bindRemoteAudioTrack(
-  track: ProximityRemoteAudioTrack,
-  identity: string,
-  container: HTMLDivElement | null,
-) {
-  const element = track.attach() as HTMLAudioElement;
-  element.autoplay = true;
-  element.dataset.participantId = identity;
-  element.setAttribute('aria-label', `Audio from ${identity}`);
-  container?.appendChild(element);
-  void element.play().catch(() => undefined);
-  return () => {
-    track.detach(element);
-    element.remove();
-  };
 }
 
 type Props = {
@@ -132,6 +116,8 @@ export function CompanyOfficePreview({
   const [proximityPending, setProximityPending] = useState(false);
   const [proximityAudioStatus, setProximityAudioStatus] = useState<ProximityAudioStatus>('off');
   const [proximityAudioError, setProximityAudioError] = useState('');
+  const [audioPlaybackBlocked, setAudioPlaybackBlocked] = useState(false);
+  const [audioPlayback] = useState(() => new RemoteAudioPlayback(setAudioPlaybackBlocked));
   const [microphoneIntent, setMicrophoneIntent] = useState<string | null>(null);
   const [microphoneAttempt, setMicrophoneAttempt] = useState(0);
   const remoteAudioContainer = useRef<HTMLDivElement>(null);
@@ -164,7 +150,7 @@ export function CompanyOfficePreview({
         setProximityAudioStatus(status);
         setProximityAudioError(error ?? '');
       },
-      (track, identity) => bindRemoteAudioTrack(track, identity, remoteAudioContainer.current),
+      (track, identity) => audioPlayback.attach(track, identity, remoteAudioContainer.current),
     );
     proximityAudio.current = session;
     return () => {
@@ -172,7 +158,7 @@ export function CompanyOfficePreview({
       void session.stop();
       proximityAudio.current = null;
     };
-  }, []);
+  }, [audioPlayback]);
 
   useEffect(() => {
     mediaContextKey.current = activeVoiceContextKey;
@@ -895,6 +881,17 @@ export function CompanyOfficePreview({
                 <span className="control-separator" />
                 {connected ? (
                   <>
+                    {audioPlaybackBlocked && (
+                      <button
+                        className="media-control muted"
+                        type="button"
+                        aria-label="Enable speaker audio"
+                        title="Your browser blocked sound. Click to hear your coworkers."
+                        onClick={() => void audioPlayback.resume()}
+                      >
+                        <Volume2 size={19} />
+                      </button>
+                    )}
                     <button
                       className={`media-control ${microphoneEnabled ? 'enabled' : 'muted'}`}
                       type="button"

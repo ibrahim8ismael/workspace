@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import {
   expect,
+  devices,
+  firefox as firefoxBrowser,
   request,
   test,
   type APIRequestContext,
@@ -35,9 +37,17 @@ type OfficeAudioProbe = {
   samples: Float32Array;
 };
 
+type OfficeRtcDiagnostic = {
+  iceServers: string[];
+  gatheredCandidates: Array<{ type: string | null; protocol: string | null }>;
+  candidateErrors: Array<{ code: number; text: string }>;
+  peerConnection: RTCPeerConnection;
+};
+
 declare global {
   interface Window {
     __officeAudioProbe?: OfficeAudioProbe;
+    __officeRtcDiagnostics?: { peers: OfficeRtcDiagnostic[] };
   }
 }
 
@@ -365,11 +375,63 @@ async function companyPage(
   client: APIRequestContext,
   workspaceId: string,
   withGapProbe = false,
+  traceRtc = false,
 ) {
   const context = await browser.newContext({
     storageState: await client.storageState(),
     ignoreHTTPSErrors: true,
+    ...(browser.browserType().name() === 'firefox'
+      ? { userAgent: devices['Desktop Firefox'].userAgent }
+      : {}),
   });
+  if (traceRtc) {
+    await context.addInitScript(
+      ({ forceRelay }) => {
+        const diagnostics: { peers: OfficeRtcDiagnostic[] } = { peers: [] };
+        const NativePeerConnection = window.RTCPeerConnection;
+        window.__officeRtcDiagnostics = diagnostics;
+        window.RTCPeerConnection = new Proxy(NativePeerConnection, {
+          construct(target, args, newTarget) {
+            if (forceRelay) args[0] = { ...args[0], iceTransportPolicy: 'relay' };
+            const peerConnection = Reflect.construct(target, args, newTarget) as RTCPeerConnection;
+            if (forceRelay) {
+              const setConfiguration = peerConnection.setConfiguration.bind(peerConnection);
+              peerConnection.setConfiguration = (configuration) =>
+                setConfiguration({ ...configuration, iceTransportPolicy: 'relay' });
+            }
+            const report: OfficeRtcDiagnostic = {
+              iceServers: (peerConnection.getConfiguration().iceServers ?? []).flatMap((server) =>
+                typeof server.urls === 'string' ? [server.urls] : server.urls,
+              ),
+              gatheredCandidates: [],
+              candidateErrors: [],
+              peerConnection,
+            };
+            peerConnection.addEventListener('icecandidate', (event) => {
+              if (!event.candidate) return;
+              report.gatheredCandidates.push({
+                type: event.candidate.type,
+                protocol: event.candidate.protocol,
+              });
+            });
+            peerConnection.addEventListener('icecandidateerror', (event) => {
+              report.candidateErrors.push({
+                code: event.errorCode,
+                text: event.errorText,
+              });
+            });
+            diagnostics.peers.push(report);
+            return peerConnection;
+          },
+        });
+      },
+      {
+        forceRelay:
+          browser.browserType().name() === 'firefox' &&
+          process.env['LIVE_OFFICE_FIREFOX_RELAY_ONLY'] === '1',
+      },
+    );
+  }
   const page = await context.newPage();
   // Register before navigation: Socket.IO captures WebSocket when its module loads.
   const gapProbe = withGapProbe ? await interceptWorldVersionGap(page) : null;
@@ -386,6 +448,56 @@ async function companyPage(
   await expect(page.getByRole('heading', { name: 'Company details' })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Employee invitations' })).toHaveCount(0);
   return { context, page, gapProbe };
+}
+
+async function readOfficeRtcDiagnostics(page: Page) {
+  return page.evaluate(async () => {
+    const peers = window.__officeRtcDiagnostics?.peers ?? [];
+    return Promise.all(
+      peers.map(async (entry) => {
+        const stats = await entry.peerConnection.getStats();
+        const candidates = Array.from(stats.values())
+          .filter(
+            (report) => report.type === 'local-candidate' || report.type === 'remote-candidate',
+          )
+          .map((candidate) => ({
+            type: candidate.type === 'local-candidate' ? 'local' : 'remote',
+            candidateType: candidate.candidateType,
+            protocol: candidate.protocol,
+          }));
+        const pairs = Array.from(stats.values())
+          .filter(
+            (report) =>
+              report.type === 'candidate-pair' &&
+              (report.state === 'failed' || report.nominated || report.selected),
+          )
+          .map((pair) => {
+            const local = stats.get(pair.localCandidateId);
+            const remote = stats.get(pair.remoteCandidateId);
+            return {
+              state: pair.state,
+              nominated: pair.nominated,
+              selected: pair.selected,
+              localType: local?.candidateType,
+              localProtocol: local?.protocol,
+              remoteType: remote?.candidateType,
+              remoteProtocol: remote?.protocol,
+              bytesSent: pair.bytesSent,
+              bytesReceived: pair.bytesReceived,
+            };
+          });
+        return {
+          iceServers: entry.iceServers,
+          iceState: entry.peerConnection.iceConnectionState,
+          connectionState: entry.peerConnection.connectionState,
+          gatheredCandidates: entry.gatheredCandidates,
+          candidateErrors: entry.candidateErrors,
+          candidates,
+          pairs,
+        };
+      }),
+    );
+  });
 }
 
 test('live two-browser Vivo admission, movement, seats, recovery, and company isolation', async ({
@@ -590,17 +702,46 @@ test('mounted Vivo office carries and cuts off live nearby audio on conversation
   test.setTimeout(120_000);
 
   const { owner, member, workspaceId } = await getLiveMediaOfficeFixture();
+  let mixedBrowser: Browser | undefined;
   let ownerContext: Awaited<ReturnType<typeof companyPage>>['context'] | undefined;
   let memberContext: Awaited<ReturnType<typeof companyPage>>['context'] | undefined;
   try {
-    const ownerOffice = await companyPage(browser, owner.client, workspaceId);
+    const useMixedBrowser = process.env['LIVE_OFFICE_MIXED_BROWSERS'] === '1';
+    const ownerOffice = await companyPage(
+      browser,
+      owner.client,
+      workspaceId,
+      false,
+      useMixedBrowser,
+    );
     ownerContext = ownerOffice.context;
-    const memberOffice = await companyPage(browser, member.client, workspaceId);
+    if (useMixedBrowser) {
+      mixedBrowser = await firefoxBrowser.launch({
+        headless: true,
+        firefoxUserPrefs: {
+          'media.navigator.streams.fake': true,
+          'media.navigator.permission.disabled': true,
+          'media.autoplay.default': 1,
+        },
+      });
+    }
+    const memberBrowser = mixedBrowser ?? browser;
+    const memberOffice = await companyPage(
+      memberBrowser,
+      member.client,
+      workspaceId,
+      false,
+      useMixedBrowser,
+    );
     memberContext = memberOffice.context;
     const ownerPage = ownerOffice.page;
     const memberPage = memberOffice.page;
-    await ownerContext.grantPermissions(['microphone'], { origin: appOrigin });
-    await memberContext.grantPermissions(['microphone'], { origin: appOrigin });
+    if (browser.browserType().name() !== 'firefox') {
+      await ownerContext.grantPermissions(['microphone'], { origin: appOrigin });
+    }
+    if (memberBrowser.browserType().name() !== 'firefox') {
+      await memberContext.grantPermissions(['microphone'], { origin: appOrigin });
+    }
 
     await ownerPage.getByRole('button', { name: 'Join' }).click();
     await expect(ownerPage.getByText('1 person in the office')).toBeVisible();
@@ -613,24 +754,95 @@ test('mounted Vivo office carries and cuts off live nearby audio on conversation
     await expect(ownerMap).toHaveCount(1);
     await expect(memberMap).toHaveCount(1);
 
+    if (process.env['LIVE_OFFICE_FORCE_PLAYBACK_BLOCK'] === '1') {
+      for (const page of [ownerPage, memberPage]) {
+        await page.evaluate(() => {
+          const play = HTMLMediaElement.prototype.play;
+          HTMLMediaElement.prototype.play = function () {
+            if (
+              this instanceof HTMLAudioElement &&
+              this.srcObject instanceof MediaStream &&
+              document.documentElement.dataset['officePlaybackAllowed'] !== 'true'
+            ) {
+              return Promise.reject(
+                new DOMException('Playback requires a click', 'NotAllowedError'),
+              );
+            }
+            return play.call(this);
+          };
+        });
+      }
+    }
+
     // The single microphone action opts in and starts capture once the pair is ready.
     await ownerPage.getByRole('button', { name: 'Activate proximity microphone' }).click();
     await memberPage.getByRole('button', { name: 'Activate proximity microphone' }).click();
-    await expect(ownerPage.locator('#office-microphone-help')).toHaveText(
-      'Your microphone is on.',
-      {
-        timeout: 20_000,
-      },
-    );
-    await expect(memberPage.locator('#office-microphone-help')).toHaveText(
-      'Your microphone is on.',
-      {
-        timeout: 20_000,
-      },
-    );
+    try {
+      await expect(ownerPage.locator('#office-microphone-help')).toHaveText(
+        'Your microphone is on.',
+        { timeout: 20_000 },
+      );
+      await expect(memberPage.locator('#office-microphone-help')).toHaveText(
+        'Your microphone is on.',
+        { timeout: 20_000 },
+      );
+    } catch (error) {
+      if (useMixedBrowser) {
+        console.info(
+          `Mixed-browser ICE diagnostics: ${JSON.stringify({
+            owner: await readOfficeRtcDiagnostics(ownerPage),
+            member: await readOfficeRtcDiagnostics(memberPage),
+          })}`,
+        );
+      }
+      throw error;
+    }
 
     const ownerRemoteAudio = ownerPage.locator('.office-proximity-audio-output audio');
     await expect(ownerRemoteAudio).toHaveCount(1, { timeout: 15_000 });
+    const memberRemoteAudio = memberPage.locator('.office-proximity-audio-output audio');
+    await expect(memberRemoteAudio).toHaveCount(1, { timeout: 15_000 });
+    if (process.env['LIVE_OFFICE_FORCE_PLAYBACK_BLOCK'] === '1') {
+      for (const page of [ownerPage, memberPage]) {
+        const unblock = page.getByRole('button', { name: 'Enable speaker audio' });
+        await expect(unblock).toBeVisible();
+        await page.evaluate(() => {
+          document.documentElement.dataset['officePlaybackAllowed'] = 'true';
+        });
+        await unblock.click();
+        await expect(unblock).toHaveCount(0);
+      }
+    }
+    for (const page of [ownerPage, memberPage]) {
+      const unblock = page.getByRole('button', { name: 'Enable speaker audio' });
+      const audio = page.locator('.office-proximity-audio-output audio');
+      await expect
+        .poll(
+          async () =>
+            (await unblock.isVisible()) ||
+            (await audio.evaluate((node: HTMLAudioElement) => !node.paused)),
+          { timeout: 10_000 },
+        )
+        .toBe(true);
+      if (await unblock.isVisible()) await unblock.click();
+    }
+    for (const element of [ownerRemoteAudio, memberRemoteAudio]) {
+      await expect
+        .poll(
+          () =>
+            element.evaluate(
+              (node: HTMLAudioElement) => !node.paused && !node.muted && node.currentTime > 0,
+            ),
+          { timeout: 10_000 },
+        )
+        .toBe(true);
+    }
+    await startRemoteAudioProbe(memberPage);
+    await expect
+      .poll(async () => (await readRemoteAudioProbe(memberPage)).activeSamples, {
+        timeout: 15_000,
+      })
+      .toBeGreaterThan(10);
     await startRemoteAudioProbe(ownerPage);
     await expect
       .poll(async () => (await readRemoteAudioProbe(ownerPage)).activeSamples, { timeout: 15_000 })
@@ -640,6 +852,27 @@ test('mounted Vivo office carries and cuts off live nearby audio on conversation
         timeout: 5000,
       })
       .toBeLessThan(250);
+
+    if (useMixedBrowser) {
+      const peers = await readOfficeRtcDiagnostics(memberPage);
+      expect(peers.length).toBeGreaterThan(0);
+      expect(peers.every((peer) => peer.connectionState === 'connected')).toBe(true);
+      if (process.env['LIVE_OFFICE_FIREFOX_RELAY_ONLY'] === '1') {
+        expect(
+          peers.every((peer) =>
+            peer.pairs.some((pair) => pair.state === 'succeeded' && pair.localType === 'relay'),
+          ),
+        ).toBe(true);
+      }
+      console.info(
+        `Firefox live media ICE: ${JSON.stringify(
+          peers.map((peer) => ({
+            iceState: peer.iceState,
+            pairs: peer.pairs.filter((pair) => pair.state === 'succeeded'),
+          })),
+        )}`,
+      );
+    }
 
     const activeAudioBeforeLeave = await readRemoteAudioProbe(ownerPage);
     const leaveRequestedAt = await markRemoteAudioStopRequested(ownerPage);
@@ -685,12 +918,14 @@ test('mounted Vivo office carries and cuts off live nearby audio on conversation
       `Measured audio cutoff: ${cutoffUpperBoundMs}ms`,
     ).toBeLessThanOrEqual(8000);
     await stopRemoteAudioProbe(ownerPage);
+    await stopRemoteAudioProbe(memberPage);
 
     await ownerPage.getByRole('button', { name: 'Leave office' }).click();
     await memberPage.getByRole('button', { name: 'Leave office' }).click();
   } finally {
     await ownerContext?.close();
     await memberContext?.close();
+    await mixedBrowser?.close();
   }
 });
 

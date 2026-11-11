@@ -31,6 +31,7 @@ export const httpErrorCodeSchema = z.enum([
   'service_unavailable',
   'target_unavailable_or_quota',
   'unauthorized',
+  'unsupported_media_type',
   'validation_failed',
   'verified_member_required',
   'weak_password',

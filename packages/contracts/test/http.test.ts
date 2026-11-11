@@ -81,6 +81,11 @@ describe('existing HTTP public projections', () => {
   it('accepts only safe error codes without raw exception messages or trace fields', () => {
     const error = { code: 'unauthorized', message: 'unauthorized', requestId: id };
     expect(apiErrorResponseSchema.safeParse({ error }).success).toBe(true);
+    expect(
+      apiErrorResponseSchema.safeParse({
+        error: { code: 'unsupported_media_type', message: 'unsupported_media_type', requestId: id },
+      }).success,
+    ).toBe(true);
     for (const body of [
       { error: { ...error, message: 'MongoDB credentials in internal error' } },
       { error: { ...error, message: 'not_found' } },

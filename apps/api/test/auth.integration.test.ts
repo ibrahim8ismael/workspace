@@ -57,6 +57,7 @@ import { OfficeAdmissionService } from '../dist/modules/office/office-admission.
 import { OfficeEpochRegistry } from '../dist/modules/office/office-epoch.registry.js';
 import { OfficeJoinTicketModels } from '../dist/modules/office/join-ticket.models.js';
 import { ConversationModels } from '../dist/modules/conversations/conversation.models.js';
+import { MediaWebhookModels } from '../dist/modules/media/media-webhook.models.js';
 import { OfficeRuntimeService } from '../dist/modules/office/runtime/office-runtime.service.js';
 import { OutboxService } from '../dist/modules/identity/delivery/outbox.service.js';
 import { AuditService } from '../dist/modules/audit/audit.service.js';
@@ -73,7 +74,7 @@ import { OfficeSocketAdapter } from '../dist/modules/office/realtime/office-sock
 import { io } from 'socket.io-client';
 import type { Socket } from 'socket.io-client';
 import type { AddressInfo } from 'node:net';
-import { RoomServiceClient, TokenVerifier } from 'livekit-server-sdk';
+import { AccessToken, RoomServiceClient, TokenVerifier } from 'livekit-server-sdk';
 
 const origin = 'https://api.gather.test';
 const password = 'a quartz river beneath the lantern';
@@ -319,8 +320,22 @@ async function stopApplicationMediaClient(client: ApplicationMediaClient) {
 }
 
 function status(response: HttpResponse, expected: number) {
-  expect(response.status, response.body.error?.code).toBe(expected);
+  expect(response.status, response.body?.error?.code).toBe(expected);
   if (response.status >= 400) apiErrorResponseSchema.parse(response.body);
+}
+
+async function liveKitWebhookAuthorization(body: string, sha256?: string) {
+  const token = new AccessToken(livekitApiKey, livekitApiSecret, { ttl: '1m' });
+  token.sha256 = sha256 ?? createHash('sha256').update(body).digest('base64');
+  return token.toJwt();
+}
+
+async function postLiveKitWebhook(body: string, authorization: string) {
+  return request(app.getHttpServer())
+    .post('/api/internal/media/livekit/webhook')
+    .set('Content-Type', 'application/webhook+json')
+    .set('Authorization', authorization)
+    .send(body);
 }
 function socketOriginUrl() {
   const address = app.getHttpServer().address() as AddressInfo;
@@ -608,6 +623,7 @@ beforeAll(async () => {
     rawBody: true,
     logger: false,
   });
+  app.useBodyParser('raw', { type: 'application/webhook+json', limit: '64kb' });
   app.useBodyParser('json', { limit: '4kb' });
   configureHttp(app);
   app.useWebSocketAdapter(new OfficeSocketAdapter(app, origin));
@@ -622,6 +638,87 @@ afterAll(async () => {
 });
 beforeEach(async () => {
   await identities.rateLimits.deleteMany({});
+});
+
+describe('LiveKit webhook observations', () => {
+  it('verifies signed raw bodies, deduplicates event IDs, and ignores late events', async () => {
+    const roomName = randomUUID();
+    const firstEventId = randomUUID();
+    const baseTime = Math.floor(Date.now() / 1000) - 5;
+    const firstBody = JSON.stringify({
+      id: firstEventId,
+      event: 'room_started',
+      createdAt: String(baseTime),
+      room: { name: roomName },
+    });
+    const firstAuthorization = await liveKitWebhookAuthorization(firstBody);
+
+    status(await postLiveKitWebhook(firstBody, firstAuthorization), 204);
+    status(await postLiveKitWebhook(firstBody, firstAuthorization), 204);
+
+    const models = app.get(MediaWebhookModels);
+    expect(await models.events.countDocuments({ _id: firstEventId })).toBe(1);
+    expect(await models.roomCursors.findById(roomName).lean()).toMatchObject({
+      eventId: firstEventId,
+      eventName: 'room_started',
+    });
+
+    const sameTimeEventId = randomUUID();
+    const sameTimeBody = JSON.stringify({
+      id: sameTimeEventId,
+      event: 'participant_joined',
+      createdAt: String(baseTime),
+      room: { name: roomName },
+      participant: { identity: randomUUID() },
+    });
+    status(
+      await postLiveKitWebhook(sameTimeBody, await liveKitWebhookAuthorization(sameTimeBody)),
+      204,
+    );
+    expect(await models.events.findById(sameTimeEventId).lean()).toMatchObject({
+      disposition: 'same_time',
+      roomName,
+    });
+    expect(await models.roomCursors.findById(roomName).lean()).toMatchObject({
+      eventId: firstEventId,
+      eventName: 'room_started',
+    });
+
+    const lateEventId = randomUUID();
+    const lateBody = JSON.stringify({
+      id: lateEventId,
+      event: 'participant_left',
+      createdAt: String(baseTime - 10),
+      room: { name: roomName },
+      participant: { identity: randomUUID() },
+    });
+    status(await postLiveKitWebhook(lateBody, await liveKitWebhookAuthorization(lateBody)), 204);
+    expect(await models.events.findById(lateEventId).lean()).toMatchObject({
+      disposition: 'late',
+      roomName,
+    });
+    expect(await models.roomCursors.findById(roomName).lean()).toMatchObject({
+      eventId: firstEventId,
+      eventName: 'room_started',
+    });
+  });
+
+  it('rejects invalid webhook signatures and non-webhook content types', async () => {
+    const body = JSON.stringify({
+      id: randomUUID(),
+      event: 'room_started',
+      createdAt: String(Math.floor(Date.now() / 1000)),
+      room: { name: randomUUID() },
+    });
+    const invalidAuthorization = await liveKitWebhookAuthorization(body, 'not-the-body-digest');
+    status(await postLiveKitWebhook(body, invalidAuthorization), 401);
+
+    const wrongContentType = await request(app.getHttpServer())
+      .post('/api/internal/media/livekit/webhook')
+      .set('Content-Type', 'text/plain')
+      .send(body);
+    status(wrongContentType, 415);
+  });
 });
 
 describe('backend account authentication', () => {

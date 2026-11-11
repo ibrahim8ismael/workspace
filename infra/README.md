@@ -122,6 +122,14 @@ audio track, API grant, local policy guard, LiveKit server and mounted Vivo UI w
 physical microphone. The profile is a local integration fixture; it does not include CP07's
 independent supervisor/SFU lease deployment, TURN/UDP, public ingress or production secrets.
 
+The overlay also configures LiveKit to POST signed events directly to
+`http://api:3000/api/internal/media/livekit/webhook` over the private Docker network. The API uses
+the same `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` values as the local LiveKit server. Caddy
+returns 404 for `/api/internal/*` and `/api/media/internal/*`, so browser traffic cannot reach the
+webhook or media-policy machine routes. The receiver checks the signed JWT and exact raw-body
+digest; the SDK's default clock tolerance is 10 seconds, and event IDs are retained for dedupe for
+30 days. Never put those credentials in browser configuration or a public webhook URL.
+
 Stop the composed app and media fixture when finished; named volumes and both ignored env files are
 retained.
 

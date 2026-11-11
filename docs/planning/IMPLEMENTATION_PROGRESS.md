@@ -1166,4 +1166,30 @@ the API's per-IP CSRF rate limit: CP08.5.10 passed, then CP08.5.11 stopped befor
 within a Playwright run to avoid repeated account creation; rerun the combined command after the
 local rate-limit window resets. This does not change or disable the API rate limit. Active-call
 session logout through the mounted UI, physical-device/browser permission prompt, and remaining
-CP08.6/CP08.7 and deployment evidence are still open.
+CP08.7 and deployment evidence are still open.
+
+## CP08.6 — signed LiveKit webhook observations (2026-11-11)
+
+Added `POST /api/internal/media/livekit/webhook` with a dedicated 64 KiB raw-body parser for
+`application/webhook+json`. The pinned SDK `WebhookReceiver` verifies the exact signed request body
+and the configured LiveKit JWT; the handler is marked public/machine-auth so browser CSRF and
+session checks do not apply, while cryptographic webhook verification remains mandatory. It only
+stores supported room/participant/track lifecycle observations. It never changes `MediaPolicyService`,
+installs permits or authorizes admission.
+
+Mongo persists a minimal event journal and per-room cursor in one transaction. Event IDs are unique
+and retained for 30 days; the cursor advances only when `createdAt` is strictly newer. Replays are
+acknowledged without a second record, older events are marked late, and same-second events are
+recorded without replacing the cursor. Full LiveKit event payloads are discarded to avoid retaining
+room secrets or unrelated metadata. The required TTL index is included in both explicit and automatic
+index provisioning. Caddy blocks `/api/internal/*` and `/api/media/internal/*`; the media-e2e LiveKit
+posts directly to the API service on the private Docker network with the same generated API key and
+secret.
+
+Focused integration tests pass for valid and invalid signatures, duplicate IDs, older and same-second
+events, and an incorrect content type. API build, API test typecheck and the focused integration
+selection passed (`2 passed`, `69 skipped`). The first sandboxed test attempt could not bind the
+MongoMemoryServer helper; the local integration run then passed with the previously approved loopback
+test execution. This closes the CP08.6 receiver/dedup/ordering slice. It does not add a periodic SFU
+reconciliation job, durable conversation-generation registry/tombstones, or production webhook
+routing/secret rotation. Those and CP08.7 network/deployment acceptance remain open.

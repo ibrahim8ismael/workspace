@@ -1,6 +1,6 @@
 # Conversations
 
-Status: CP08.1–CP08.3c proximity pairing, guarded token issuance, UI control and process-level API/guard fixture implemented; real SFU/media acceptance pending · Updated: 2026-11-10 · Target: M3–M4
+Status: CP08.1–CP08.6 proximity pairing, guarded token issuance, UI control, real-SFU local tests and signed webhook observation implemented; release acceptance pending · Updated: 2026-11-11 · Target: M3–M4
 
 ## Responsibility
 
@@ -37,7 +37,7 @@ Own the current authorized set for proximity pairs and fixed-zone group calls.
 - Busy/away prevents automatic pairing; microphone and camera start off.
 - Implemented thresholds: join at 2 tiles, leave at 3 tiles, 500 ms exit debounce; availability loss/opt-out/disconnect is immediate and never debounced.
 - Proximity notices cover `joining`, `active`, and `ended`. `mediaReady` becomes true only after an exact, unexpired, single-use policy installation ACK for the still-current generation.
-- Pair end removes its members from subsequent policy snapshots. The process-level integration test confirms the guard rejects the prior token after installing the empty snapshot and after a fresh-epoch guard restart. The application does not yet publish durable retirement tombstones or signed media webhooks; no actual LiveKit cutoff is claimed.
+- Pair end removes its members from subsequent policy snapshots. The process-level integration test confirms the guard rejects the prior token after installing the empty snapshot and after a fresh-epoch guard restart. CP08.5 measures real local LiveKit audio cutoff for leave and membership revocation. CP08.6 records signed SFU observations with event-ID dedupe and a monotonic per-room cursor; webhooks never authorize admission or alter permits.
 - Each conversation receives a random generation and a new pair receives a new generation. Membership/session changes reconcile through current runtime permits; persistent room-retirement records and restart recovery remain open.
 
 ## Interface outline
@@ -47,7 +47,7 @@ Own the current authorized set for proximity pairs and fixed-zone group calls.
 
 ## Planning question
 
-D02 is accepted all-LiveKit. CP08.1–3c implement deterministic pairing, private state, exact install-ACK activation, scoped token grants, the nearby-voice UI and a separate guard process that pulls real API policy over HTTP. The integration fixture ends a pair and checks that an old token is rejected before and after guard restart, using a mock signaling upstream. Real LiveKit audio, device denial, supervised forwarding cutoff, signed webhook reconciliation, durable generation retirement and measured media behavior remain open.
+D02 is accepted all-LiveKit. CP08.1–3c implement deterministic pairing, private state, exact install-ACK activation, scoped token grants, the nearby-voice UI and a separate guard process that pulls real API policy over HTTP. CP08.5 now verifies real local LiveKit audio and measured leave/revocation cutoffs; CP08.6 verifies signed webhook ingestion, duplicate handling and late-event ordering. Device/production deployment evidence, independent supervisor progress and durable generation retirement remain open.
 
 ## Next work
 

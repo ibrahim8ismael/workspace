@@ -11,6 +11,7 @@ const app = await NestFactory.create<NestExpressApplication>(AppModule, {
   bodyParser: false,
   rawBody: true,
 });
+app.useBodyParser('raw', { type: 'application/webhook+json', limit: '64kb' });
 app.useBodyParser('json', { limit: '4kb' });
 const config = app.get(ConfigService<ApiEnvironment, true>);
 configureHttp(app);

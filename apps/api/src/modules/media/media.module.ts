@@ -7,11 +7,20 @@ import { MediaController } from './media.controller.js';
 import { MediaPolicyService } from './media-policy.service.js';
 import { MediaTokenController } from './media-token.controller.js';
 import { MediaTokenService } from './media-token.service.js';
+import { MediaWebhookController } from './media-webhook.controller.js';
+import { MediaWebhookModels } from './media-webhook.models.js';
+import { MediaWebhookService } from './media-webhook.service.js';
 
 @Module({
   imports: [IdentityModule, TenancyModule, OfficeModule],
-  controllers: [MediaController, MediaTokenController],
-  providers: [MediaMachineGuard, MediaPolicyService, MediaTokenService],
-  exports: [MediaPolicyService],
+  controllers: [MediaController, MediaTokenController, MediaWebhookController],
+  providers: [
+    MediaMachineGuard,
+    MediaPolicyService,
+    MediaTokenService,
+    MediaWebhookModels,
+    MediaWebhookService,
+  ],
+  exports: [MediaPolicyService, MediaWebhookModels],
 })
 export class MediaModule {}

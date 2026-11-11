@@ -337,11 +337,20 @@ fixture per run, and the combined command still needs a rerun after the local th
 Mounted-UI active-call logout, permission/map behavior, lease/guard/supervisor fault cases, and
 deployment evidence remain open.
 
-**CP08.6 — webhook reconciliation (pending).** Add strict raw-body signature verification,
-event-ID deduplication and late-event handling under `apps/api/src/modules/media/`; webhooks observe
-SFU state and never authorize admission. Add integration cases for valid, invalid, duplicate and
-late events in `apps/api/test/auth.integration.test.ts`. Keep the webhook listener private and
-document the secret provisioning and replay window.
+**CP08.6 — signed LiveKit webhook observation (implemented; locally verified).** The private
+`POST /api/internal/media/livekit/webhook` route verifies the exact raw body with the pinned
+LiveKit `WebhookReceiver`, accepts only `application/webhook+json` up to 64 KiB, and stores a
+minimal event record with a unique event ID and 30-day TTL. A durable per-room cursor advances
+only for a strictly newer event timestamp; duplicate, same-second and older events never replace
+the cursor. The webhook is observational only and cannot install permits, authorize admission or
+change the media policy. Caddy returns 404 for `/api/internal/*` and `/api/media/internal/*`;
+the local media fixture sends directly over its private Docker network. API and LiveKit share the
+same generated `LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET`; the SDK validates the signed JWT expiry with
+its default 10-second clock tolerance, while event-ID dedupe records are retained for 30 days.
+Focused integration cases pass for valid signature, invalid signature, duplicate, late, same-second
+and wrong content type. This is an authenticated observation journal, not a periodic SFU
+reconciliation job or durable generation-retirement/tombstone mechanism; those remain outside this
+slice and do not authorize release.
 
 **CP08.7 — release evidence (pending).** Run denied-capture, TURN-only, weak-network and cross-
 company media tests. Record deployment listener exposure and SDK/SFU digests in

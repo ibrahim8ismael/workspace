@@ -22,6 +22,10 @@ services:
           use_external_ip: false
         keys:
           "${LIVEKIT_API_KEY:?Run node infra/init-media-e2e-env.mjs first}": "${LIVEKIT_API_SECRET:?Run node infra/init-media-e2e-env.mjs first}"
+        webhook:
+          api_key: "${LIVEKIT_API_KEY:?Run node infra/init-media-e2e-env.mjs first}"
+          urls:
+            - http://api:3000/api/internal/media/livekit/webhook
     expose: ['7880']
     ports:
       - 127.0.0.1:17881:17881/tcp

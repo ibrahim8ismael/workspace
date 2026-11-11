@@ -19,6 +19,12 @@ Documentation review is not implementation verification. Add an evidence record 
 | A10 | M5 operations | Fresh epochs on restart, no unguarded fallback, alerting, declared 20-user workload, measured join targets, safe restore with old credentials/access blocked | Pending |
 | A11 | M1–M5 B2B SaaS | Cross-company API/socket/invite/media/job isolation; independent multi-company roles; clear current-company context; specified tenant suspension/offboarding; noisy-neighbor limits and shared-media shutdown blast radius | Pending |
 
+CP08.6 webhook integration locally verifies signed raw-body acceptance/rejection, deduplication,
+late and same-second event ordering, and strict content type. The signed observation journal is not
+an authorization source and cannot update media permits. Production private routing/secret rotation,
+durable generation retirement, and the TURN-only, weak-network and cross-company release scenarios
+remain open under A07/A08.
+
 ## A06 CP02.5 local renderer sample
 
 On 2026-11-08, Codex verified the development preview with Phaser 4.2.1 and Headless Chrome 152.0.7977.42 on macOS 26.6.1 arm64. The test compared avatar pixels against the catalog, confirmed the shared `(80,80)` anchor and verified 94 pixels where the chair foreground covered the seated sprite. It observed nearest-neighbor drawing and used keyboard controls through three clean close/reopen cycles. A blocked sprite displayed an error in the live status region, disabled Sit and recovered after reopening. The production bundle excluded the preview. See the [CP02.5 evidence](CP02_WORLD_AND_MAP.md#cp025-renderer-sample).

@@ -1,6 +1,7 @@
 import { Injectable, Inject } from '@nestjs/common';
 import type { OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type { Model } from 'mongoose';
 import { DatabaseService } from './database.service.js';
 import { IdentityModels } from '../../modules/identity/identity.models.js';
 import { TenancyModels } from '../../modules/tenancy/tenancy.models.js';
@@ -8,6 +9,7 @@ import { AuditService } from '../../modules/audit/audit.service.js';
 import { OutboxService } from '../../modules/identity/delivery/outbox.service.js';
 import { OfficeJoinTicketModels } from '../../modules/office/join-ticket.models.js';
 import { ConversationModels } from '../../modules/conversations/conversation.models.js';
+import { MediaWebhookModels } from '../../modules/media/media-webhook.models.js';
 import type { ApiEnvironment } from '../config/environment.js';
 
 @Injectable()
@@ -21,6 +23,7 @@ export class IndexesService implements OnApplicationBootstrap {
     @Inject(OutboxService) private readonly outbox: OutboxService,
     @Inject(OfficeJoinTicketModels) private readonly officeTickets: OfficeJoinTicketModels,
     @Inject(ConversationModels) private readonly conversations: ConversationModels,
+    @Inject(MediaWebhookModels) private readonly mediaWebhooks: MediaWebhookModels,
   ) {}
   async create() {
     await this.identity.createIndexes();
@@ -30,6 +33,7 @@ export class IndexesService implements OnApplicationBootstrap {
     await this.outbox.model.createIndexes();
     await this.officeTickets.createIndexes();
     await this.conversations.createIndexes();
+    await this.mediaWebhooks.createIndexes();
   }
   async onApplicationBootstrap() {
     const hello = await this.db.connection.db!.admin().command({ hello: 1 });
@@ -124,5 +128,23 @@ export class IndexesService implements OnApplicationBootstrap {
       throw new Error('Missing exact office message history index. Run db:indexes.');
     if (!exactIndex({ expiresAt: 1 }, (index) => index.expireAfterSeconds === 0))
       throw new Error('Missing exact office message TTL index. Run db:indexes.');
+
+    await this.requireExactTtlIndex(this.mediaWebhooks.events, 'expiresAt', 'media webhook dedupe');
+  }
+
+  private async requireExactTtlIndex<T>(model: Model<T>, field: string, label: string) {
+    const indexes = await model.collection.indexes();
+    if (
+      !indexes.some(
+        (index) =>
+          index.expireAfterSeconds === 0 &&
+          !index.sparse &&
+          !index.partialFilterExpression &&
+          (!index.collation || index.collation.locale === 'simple') &&
+          Object.keys(index.key).length === 1 &&
+          index.key[field] === 1,
+      )
+    )
+      throw new Error(`Missing exact ${label} TTL index. Run db:indexes.`);
   }
 }

@@ -73,7 +73,7 @@ Company switching uses the existing workspace list and scoped requests, with the
 
 | Surface | Boundary |
 | --- | --- |
-| LiveKit webhook | Proposed private `POST /internal/media/livekit/webhook`. Validate the original raw body and LiveKit signature, deduplicate event IDs and use events for reconciliation only. Apply a dedicated machine-auth path and keep it outside the public Caddy routes |
+| LiveKit webhook | Private `POST /api/internal/media/livekit/webhook`. Validate the original raw body and LiveKit signature, deduplicate event IDs and use events for reconciliation only. The API route is machine-authenticated; Caddy rejects `/api/internal/*` and `/api/media/internal/*` before its public API proxy |
 | Guard and supervisor | Private machine-auth policy pull, installed-version acknowledgement and revoke/shutdown controls. Contract and failure behavior are in the [media plan](MEDIA.md) |
 | Mail, jobs, audit | Transactional MongoDB outbox and restricted audit writes, stable BullMQ job IDs and private operational metrics/recovery. No generic browser CRUD for credentials, tokens, jobs, audit evidence or media permits |
 | Static resources | Approved immutable map/asset versions are served through manifest references. Live presence, seats, meetings and conversations use [Socket.IO](REALTIME.md) |

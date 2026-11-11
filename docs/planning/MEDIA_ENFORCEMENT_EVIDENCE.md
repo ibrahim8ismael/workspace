@@ -65,13 +65,15 @@ the workspace pins `livekit-client` 2.23.0 and `livekit-server-sdk` 2.19.2, with
 | TURN-only | LiveKit embedded TURN is enabled; test clients force `iceTransportPolicy: 'relay'`. Instrumented browser RTCPeerConnections report candidate types. Both pages reported only `relay`, connected ICE, and decoded audio samples (11 and 10 in the recorded rerun). | Passed; no direct candidate observed |
 | Weak network | A disposable Alpine sidecar applies 120 ms delay, ±40 ms jitter and 3% random packet loss to SFU egress using `tc netem`. `tc -s` recorded 29 dropped packets. Both clients remained live with connected ICE and peer audio; sample deltas were 105 and 112, with no reconnect. | Passed under this injected profile |
 | Cross-company media | Four Chromium clients join two API-authorized company conversations in separate LiveKit rooms through the same guard/SFU. Each room contains its two authorized identities; neither company receives a remote track from the other. Company B ends; its media reaches stable cutoff while Company's A two-person room continues. | Passed locally; SFU rosters 2/2 before leave, 0 cross-company tracks |
+| Mounted-office logout during audio | While both users publish and decode audio in the mounted Vivo UI, a second tab using the same session opens Account security and clicks `Sign out this session`. That tab returns to sign-in; the mounted office receives Socket.IO authorization-ended, removes the member's map and ends the conversation. Both remote audio elements disappear, the owner's map and office stay live, and `/api/auth/me` returns 401 for the revoked cookie from both API and browser contexts. | Passed; 20 ms decoded-audio sampling measured 991/998 ms cutoff upper bounds in the focused run and 1320/1321 ms in the complete suite |
 
 Commands: `pnpm test:media-permission-denied`, `pnpm test:media-turn-only`,
-`pnpm test:media-weak-network`, and `pnpm test:media-cross-company`. The TURN-only rerun logs the
-observed candidate types, ICE connection and decoded audio counts. Weak-network shaping occurs only
-inside the disposable fixture network namespace and is cleared during cleanup. Cross-company
-evidence proves these two isolated application conversations in one local SFU process; it is not a
-multi-tenant load, account lifecycle or production routing test.
+`pnpm test:media-weak-network`, `pnpm test:media-cross-company`, and
+`pnpm test:e2e:live-media`. The TURN-only rerun logs the observed candidate types, ICE connection
+and decoded audio counts. Weak-network shaping occurs only inside the disposable fixture network
+namespace and is cleared during cleanup. Cross-company and logout evidence proves these application
+conversations in one local SFU process; it is not a multi-tenant load, account lifecycle or
+production routing test.
 
 This closes only the named CP08.7 local scenarios. A07/A08 remain release gates pending deployed
 listener/ICE/TURN exposure and credentials, production guard/supervisor/SFU failure-domain tests,

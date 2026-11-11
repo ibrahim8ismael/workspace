@@ -330,12 +330,11 @@ This is local synthetic-microphone/TCP-only evidence, not production deployment 
 CP07 lease/supervisor path. CP08.5.11 additionally removes a member during the active UI call: the
 revoked browser receives `office:access-ended`, loses the office map and API access, while the owner
 keeps the map and both pages remove their audio elements. Measured cutoff upper bounds were 933 ms
-and 917 ms from the two real Chromium decoded-audio probes. The focused test passed. The combined
-media command then hit the local API's per-IP CSRF limit before the second scenario began, following
-repeated test-account creation during development; both tests now reuse one owner/member/company
-fixture per run, and the combined command still needs a rerun after the local throttle expires.
-Mounted-UI active-call logout, permission/map behavior, lease/guard/supervisor fault cases, and
-deployment evidence remain open.
+and 917 ms from the two real Chromium decoded-audio probes. The focused test passed. An earlier
+combined run hit the local API's per-IP CSRF limit before its second scenario; the later complete
+three-test mounted-media suite passed using one owner/member/company fixture per run. CP08.7 now
+also verifies active-call session logout through the mounted office; permission-prompt/map behavior,
+lease/guard/supervisor fault cases, and deployment evidence remain open.
 
 **CP08.6 — signed LiveKit webhook observation (implemented; locally verified).** The private
 `POST /api/internal/media/livekit/webhook` route verifies the exact raw body with the pinned
@@ -354,8 +353,13 @@ slice and do not authorize release.
 
 **CP08.7 — local scenario evidence complete; release evidence remains open (2026-11-11).** The
 application-grant/guard/LiveKit path now passes browser capture denial, TURN-only relay candidates,
-injected weak-network loss and two-company room/track isolation. The exact profile and observations
-are in [`MEDIA_ENFORCEMENT_EVIDENCE.md`](MEDIA_ENFORCEMENT_EVIDENCE.md#cp087--application-integrated-media-evidence).
+injected weak-network loss, two-company room/track isolation and mounted-office logout during an
+active audio conversation. The member signs out through Account security in a second tab. Both
+browser receivers stop and remove audio, the member's map clears, the owner's map remains, and
+requests with the revoked session return 401. The focused logout cutoff upper bounds were
+991/998 ms; in the complete three-scenario rerun they were 1320/1321 ms.
+The exact profile and observations are in
+[`MEDIA_ENFORCEMENT_EVIDENCE.md`](MEDIA_ENFORCEMENT_EVIDENCE.md#cp087--application-integrated-media-evidence).
 These Docker/Chromium results do not verify production listener exposure, reachable UDP/TURN
 configuration, production process failure domains, physical-device prompts, screen sharing, fixed
 meetings, migration interruption or capacity; A07/A08 remain release gates for those items.

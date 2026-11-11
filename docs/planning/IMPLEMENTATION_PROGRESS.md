@@ -1217,3 +1217,20 @@ guard/supervisor/SFU failure domains, physical-device/browser permission prompts
 fixed meetings, migration interruption, browser signoff, capacity/load and release-profile cutoff
 reruns. Detailed method and bounds are recorded in
 [`MEDIA_ENFORCEMENT_EVIDENCE.md`](MEDIA_ENFORCEMENT_EVIDENCE.md#cp087--application-integrated-media-evidence).
+
+### CP08.7 addendum — mounted-office logout during active audio (2026-11-11)
+
+Added a mounted-office session-logout scenario to `pnpm test:e2e:live-media`. It starts an actual
+two-browser nearby-audio call, signs out the member through the current-session button in a second Account security tab, and observes
+the server's `office:access-ended` propagation. Both browser audio elements are removed and decoded
+audio stops, the revoked member's office map clears, and the owner's map and office remain mounted
+with one participant. Both API and page requests using the logged-out session return 401.
+
+Measured 20 ms decoded-audio cutoff upper bounds were **991 ms and 998 ms** in the focused run and
+**1320 ms and 1321 ms** in the complete mounted-media suite. The full three-scenario suite passed
+(3/3); it includes conversation leave, membership revocation and logout, and re-invites the removed
+member before the final scenario without creating another account. The E2E file typecheck, web
+typecheck, API build/test typecheck, Prettier and `git diff --check` passed. These are local
+Chromium synthetic-microphone and Docker results; they prove bounded app-integrated session
+revocation for this fixture, not the deployment supervisor path, physical-device permissions or
+production service topology.

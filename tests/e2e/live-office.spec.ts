@@ -108,7 +108,7 @@ async function createAccount(email: string) {
   const loginBody = await json(login);
   csrf = String(loginBody.csrfToken);
   const account = loginBody.account as { id: string; displayName: string };
-  return { client, csrf, account };
+  return { client, csrf, account, email };
 }
 
 async function postJson(
@@ -214,7 +214,8 @@ async function participantPosition(page: import('@playwright/test').Page, displa
 }
 
 async function nearestVisibleOpenSeatId(map: Locator) {
-  return map.evaluate((svg) => {
+  return map.evaluate((element) => {
+    const svg = element as SVGSVGElement;
     const self = svg.querySelector<SVGGElement>('.scene-avatar.is-self');
     const transform = self?.parentElement?.getAttribute('transform') ?? '';
     const position = transform.match(/translate\((-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\)/);
@@ -844,5 +845,186 @@ test('mounted Vivo office cuts off active audio when company membership is revok
   } finally {
     await ownerContext?.close();
     await memberContext?.close();
+  }
+});
+
+test('mounted Vivo office cuts off active audio when the member session logs out', async ({
+  browser,
+}) => {
+  test.skip(
+    !enabled || !mediaEnabled,
+    'Run pnpm test:e2e:live-media against the local media-e2e Compose profile.',
+  );
+  test.setTimeout(120_000);
+
+  const { owner, member, workspaceId } = await getLiveMediaOfficeFixture();
+  let ownerContext: Awaited<ReturnType<typeof companyPage>>['context'] | undefined;
+  let memberContext: Awaited<ReturnType<typeof companyPage>>['context'] | undefined;
+  let sessionSecurityContext: Awaited<ReturnType<typeof companyPage>>['context'] | undefined;
+  try {
+    const currentMembership = await member.client.get(`/api/workspaces/${workspaceId}`);
+    if (currentMembership.status() === 403) {
+      const invitedAt = Date.now();
+      const invitation = await postJson(
+        owner.client,
+        `/api/workspaces/${workspaceId}/invitations`,
+        { email: member.email },
+        owner.csrf,
+        true,
+      );
+      expect(invitation.status()).toBe(201);
+      const invitationToken = await mailToken(member.email, 'Join a company', invitedAt);
+      const accepted = await postJson(
+        member.client,
+        '/api/invitations/accept',
+        { token: invitationToken },
+        member.csrf,
+        true,
+      );
+      expect(accepted.status()).toBe(200);
+    } else {
+      expect(currentMembership.status()).toBe(200);
+    }
+
+    const ownerOffice = await companyPage(browser, owner.client, workspaceId);
+    ownerContext = ownerOffice.context;
+    const memberOffice = await companyPage(browser, member.client, workspaceId);
+    memberContext = memberOffice.context;
+    const ownerPage = ownerOffice.page;
+    const memberPage = memberOffice.page;
+    await ownerContext.grantPermissions(['microphone'], { origin: appOrigin });
+    await memberContext.grantPermissions(['microphone'], { origin: appOrigin });
+
+    await ownerPage.getByRole('button', { name: 'Join' }).click();
+    await expect(ownerPage.getByText('1 person in the office')).toBeVisible();
+    await memberPage.getByRole('button', { name: 'Join' }).click();
+    await expect(ownerPage.getByText('2 people in the office')).toBeVisible();
+    await expect(memberPage.getByText('2 people in the office')).toBeVisible();
+    await ownerPage.getByRole('button', { name: 'Opt in to nearby voice' }).click();
+    await memberPage.getByRole('button', { name: 'Opt in to nearby voice' }).click();
+    await expect(
+      ownerPage.getByText(
+        `Paired with ${member.account.displayName}. Turn on your microphone when ready.`,
+      ),
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(
+      memberPage.getByText(
+        `Paired with ${owner.account.displayName}. Turn on your microphone when ready.`,
+      ),
+    ).toBeVisible({ timeout: 15_000 });
+    await ownerPage.getByRole('button', { name: 'Activate proximity microphone' }).click();
+    await memberPage.getByRole('button', { name: 'Activate proximity microphone' }).click();
+    await expect(ownerPage.getByRole('button', { name: 'Mute proximity microphone' })).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(memberPage.getByRole('button', { name: 'Mute proximity microphone' })).toBeVisible(
+      { timeout: 15_000 },
+    );
+
+    const ownerMap = ownerPage.locator('.office-scene svg.office-map');
+    const memberMap = memberPage.locator('.office-scene svg.office-map');
+    const ownerRemoteAudio = ownerPage.locator('.office-proximity-audio-output audio');
+    const memberRemoteAudio = memberPage.locator('.office-proximity-audio-output audio');
+    await expect(ownerRemoteAudio).toHaveCount(1, { timeout: 15_000 });
+    await expect(memberRemoteAudio).toHaveCount(1, { timeout: 15_000 });
+    await startRemoteAudioProbe(ownerPage);
+    await startRemoteAudioProbe(memberPage);
+    await expect
+      .poll(async () => (await readRemoteAudioProbe(ownerPage)).activeSamples, { timeout: 15_000 })
+      .toBeGreaterThan(10);
+    await expect
+      .poll(async () => (await readRemoteAudioProbe(memberPage)).activeSamples, { timeout: 15_000 })
+      .toBeGreaterThan(10);
+
+    const ownerAudioBeforeLogout = await readRemoteAudioProbe(ownerPage);
+    const memberAudioBeforeLogout = await readRemoteAudioProbe(memberPage);
+    const ownerCutoffMarker = await markRemoteAudioStopRequested(ownerPage);
+    const memberCutoffMarker = await markRemoteAudioStopRequested(memberPage);
+    sessionSecurityContext = await browser.newContext({
+      storageState: await member.client.storageState(),
+      ignoreHTTPSErrors: true,
+    });
+    const sessionSecurityPage = await sessionSecurityContext.newPage();
+    await sessionSecurityPage.goto(appOrigin);
+    await sessionSecurityPage.getByRole('button', { name: 'Account security' }).click();
+    await expect(
+      sessionSecurityPage.getByRole('heading', { name: 'Account security' }),
+    ).toBeVisible();
+    const signOutCurrentSession = sessionSecurityPage.getByRole('button', {
+      name: 'Sign out this session',
+    });
+    await expect(signOutCurrentSession).toBeEnabled();
+    await signOutCurrentSession.click();
+    await expect(sessionSecurityPage.getByRole('heading', { name: 'Welcome back' })).toBeVisible();
+    await expect(
+      sessionSecurityPage.getByText(
+        'This browser session was signed out. Sign in again to continue.',
+      ),
+    ).toBeVisible();
+
+    await expect(memberPage.getByText('Office access ended. Re-enter to reconnect.')).toBeVisible({
+      timeout: 10_000,
+    });
+    await expect(memberMap).toHaveCount(0);
+    await expect(memberPage.getByRole('button', { name: 'Join' })).toBeVisible();
+    await expect(ownerPage.getByRole('button', { name: 'Leave conversation' })).toHaveCount(0, {
+      timeout: 10_000,
+    });
+    await expect(ownerRemoteAudio).toHaveCount(0, { timeout: 10_000 });
+    await expect(memberRemoteAudio).toHaveCount(0, { timeout: 10_000 });
+    await expect(ownerMap).toHaveCount(1);
+    await expect(ownerPage.getByText('1 person in the office')).toBeVisible();
+    expect((await member.client.get('/api/auth/me')).status()).toBe(401);
+    expect(await memberPage.evaluate(async () => (await fetch('/api/auth/me')).status)).toBe(401);
+
+    await expect
+      .poll(async () => (await readRemoteAudioProbe(ownerPage)).firstSilentAfterStopAt, {
+        timeout: 5000,
+      })
+      .toBeGreaterThanOrEqual(ownerCutoffMarker);
+    await expect
+      .poll(async () => (await readRemoteAudioProbe(memberPage)).firstSilentAfterStopAt, {
+        timeout: 5000,
+      })
+      .toBeGreaterThanOrEqual(memberCutoffMarker);
+    await ownerPage.waitForTimeout(500);
+    await memberPage.waitForTimeout(500);
+    const ownerAudioAfterLogout = await readRemoteAudioProbe(ownerPage);
+    const memberAudioAfterLogout = await readRemoteAudioProbe(memberPage);
+    const cutoffUpperBoundMs = {
+      owner:
+        Math.max(
+          0,
+          (ownerAudioAfterLogout.lastActiveAfterStopAt ||
+            ownerAudioAfterLogout.firstSilentAfterStopAt) - ownerCutoffMarker,
+        ) + 20,
+      member:
+        Math.max(
+          0,
+          (memberAudioAfterLogout.lastActiveAfterStopAt ||
+            memberAudioAfterLogout.firstSilentAfterStopAt) - memberCutoffMarker,
+        ) + 20,
+    };
+    expect(ownerAudioBeforeLogout.activeSamples).toBeGreaterThan(10);
+    expect(memberAudioBeforeLogout.activeSamples).toBeGreaterThan(10);
+    console.info(
+      `CP08 mounted UI session logout cutoff: ${JSON.stringify({
+        cutoffUpperBoundMs,
+        memberMapRemoved: true,
+        ownerMapRemainsMounted: true,
+        bothRemoteAudioElementsRemoved: true,
+        logoutInitiatedInAccountSecurityUi: true,
+        memberSessionRejectedAfterLogout: true,
+      })}`,
+    );
+    expect(cutoffUpperBoundMs.owner).toBeLessThanOrEqual(8000);
+    expect(cutoffUpperBoundMs.member).toBeLessThanOrEqual(8000);
+    await stopRemoteAudioProbe(ownerPage);
+    await stopRemoteAudioProbe(memberPage);
+    await ownerPage.getByRole('button', { name: 'Leave office' }).click();
+  } finally {
+    await ownerContext?.close();
+    await memberContext?.close();
+    await sessionSecurityContext?.close();
   }
 });

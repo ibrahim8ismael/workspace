@@ -1056,9 +1056,11 @@ describe('backend account authentication', () => {
   });
   it('rate limits shared scopes without permanent account status changes', async () => {
     const abuse = app.get(AbuseService);
-    await abuse.consume('bounded-test', 'same-key', 2, 60000);
-    await abuse.consume('bounded-test', 'same-key', 2, 60000);
-    await expect(abuse.consume('bounded-test', 'same-key', 2, 60000)).rejects.toMatchObject({
+    const key = `test-${randomUUID()}`;
+    const windowMs = 24 * 60 * 60_000;
+    await abuse.consume('bounded-test', key, 2, windowMs);
+    await abuse.consume('bounded-test', key, 2, windowMs);
+    await expect(abuse.consume('bounded-test', key, 2, windowMs)).rejects.toMatchObject({
       status: 429,
     });
   });

@@ -3,6 +3,7 @@ ARG CADDY_IMAGE=caddy:2.11.9-alpine@sha256:0bbb055bda6793c999bde78b1b5ce3e89f829
 
 FROM ${NODE_IMAGE} AS build
 WORKDIR /workspace
+ARG VITE_PROXIMITY_VOICE_ENABLED=true
 ENV PNPM_HOME=/pnpm
 ENV PATH=${PNPM_HOME}:${PATH}
 RUN apt-get update \
@@ -41,7 +42,8 @@ CMD ["node", "apps/worker/dist/main.js"]
 
 FROM ${CADDY_IMAGE} AS web-runtime
 COPY --from=build /workspace/apps/web/dist /srv
-COPY infra/Caddyfile /etc/caddy/Caddyfile
+ARG CADDYFILE=infra/Caddyfile
+COPY ${CADDYFILE} /etc/caddy/Caddyfile
 EXPOSE 8443
 
 FROM api-runtime AS media-guard-runtime

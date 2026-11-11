@@ -11,6 +11,9 @@ coverage/
 .env.*
 !.env.example
 !.env.*.example
+infra/deploy/.env
+infra/deploy/api.env
+infra/deploy/worker.env
 playwright-report/
 test-results/
 

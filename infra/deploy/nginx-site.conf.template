@@ -1,0 +1,63 @@
+server {
+    listen 80;
+    listen [::]:80;
+    server_name @APP_DOMAIN@;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+        default_type "text/plain";
+        try_files $uri =404;
+    }
+
+    location / {
+        return 308 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name @APP_DOMAIN@;
+
+    ssl_certificate /etc/letsencrypt/live/@APP_DOMAIN@/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/@APP_DOMAIN@/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:GATHERLITE:10m;
+    ssl_session_timeout 1d;
+
+    add_header Strict-Transport-Security "max-age=15552000" always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options DENY always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+    add_header Permissions-Policy "camera=(), microphone=(self), geolocation=()" always;
+
+    location ^~ /socket.io {
+        proxy_pass https://127.0.0.1:@GATHER_WEB_BIND_PORT@;
+        proxy_http_version 1.1;
+        proxy_ssl_server_name on;
+        proxy_ssl_name @APP_DOMAIN@;
+        proxy_ssl_verify on;
+        proxy_ssl_trusted_certificate /etc/nginx/ssl/gather-lite-caddy-root.pem;
+        proxy_ssl_verify_depth 2;
+        proxy_set_header Host $host;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 3600s;
+        proxy_buffering off;
+    }
+
+    location / {
+        proxy_pass https://127.0.0.1:@GATHER_WEB_BIND_PORT@;
+        proxy_http_version 1.1;
+        proxy_ssl_server_name on;
+        proxy_ssl_name @APP_DOMAIN@;
+        proxy_ssl_verify on;
+        proxy_ssl_trusted_certificate /etc/nginx/ssl/gather-lite-caddy-root.pem;
+        proxy_ssl_verify_depth 2;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header Connection "";
+    }
+}

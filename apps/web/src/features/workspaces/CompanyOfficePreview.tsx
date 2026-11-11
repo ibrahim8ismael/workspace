@@ -52,6 +52,7 @@ const OFFICE_CHANNEL = {
   topic: 'Company-wide office chat · Messages are retained for 90 days.',
 };
 const MEMBER_COLORS = ['#7968e6', '#54a98f', '#d18b49', '#6888bf', '#bd6b83'];
+const proximityVoiceEnabled = import.meta.env.VITE_PROXIMITY_VOICE_ENABLED !== 'false';
 
 function mergeOfficeMessages(current: OfficeMessage[], incoming: OfficeMessage[]) {
   const merged = new Map(current.map((message) => [message.id, message]));
@@ -456,38 +457,42 @@ export function CompanyOfficePreview({
   const pairedName = activeProximityConversation?.participants.find(
     (participant) => participant.participationId !== ready.participationId,
   )?.displayName;
-  const nearbyVoiceSummary = activeProximityConversation
-    ? proximityAudioStatus === 'live'
-      ? `Microphone on with ${pairedName ?? 'your teammate'}.`
-      : proximityAudioStatus === 'muted'
-        ? `Connected to ${pairedName ?? 'your teammate'}; microphone is off.`
-        : `Paired with ${pairedName ?? 'your teammate'}. Turn on your microphone when ready.`
-    : latestConversation?.state === 'joining'
-      ? 'Pair found. Preparing guarded voice…'
-      : proximityOptedIn
-        ? 'Looking for a nearby coworker. Your microphone is off.'
-        : 'Nearby voice is off. Your microphone will stay off until you turn it on.';
+  const nearbyVoiceSummary = !proximityVoiceEnabled
+    ? 'Nearby voice is unavailable in this deployment.'
+    : activeProximityConversation
+      ? proximityAudioStatus === 'live'
+        ? `Microphone on with ${pairedName ?? 'your teammate'}.`
+        : proximityAudioStatus === 'muted'
+          ? `Connected to ${pairedName ?? 'your teammate'}; microphone is off.`
+          : `Paired with ${pairedName ?? 'your teammate'}. Turn on your microphone when ready.`
+      : latestConversation?.state === 'joining'
+        ? 'Pair found. Preparing guarded voice…'
+        : proximityOptedIn
+          ? 'Looking for a nearby coworker. Your microphone is off.'
+          : 'Nearby voice is off. Your microphone will stay off until you turn it on.';
   const microphoneEnabled =
-    proximityAudioStatus === 'live' ||
-    (microphoneIntent === participationId &&
-      proximityOptedIn &&
-      proximityAudioStatus !== 'error' &&
-      proximityAudioStatus !== 'muted');
-  const microphoneHelp =
-    proximityAudioError ||
-    (proximityAudioStatus === 'connecting'
-      ? 'Connecting microphone…'
-      : proximityAudioStatus === 'reconnecting'
-        ? 'Reconnecting voice…'
-        : proximityAudioStatus === 'live'
-          ? 'Your microphone is on.'
-          : proximityAudioStatus === 'muted'
-            ? 'Your microphone is muted. Click to unmute.'
-            : activeProximityConversation
-              ? 'Ready to talk. Click the microphone and allow browser access.'
-              : proximityOptedIn
-                ? 'Voice enabled; waiting for a nearby coworker. No microphone audio is being captured yet.'
-                : 'Turn on your microphone to enable nearby voice. Coworkers must enable voice and move nearby.');
+    proximityVoiceEnabled &&
+    (proximityAudioStatus === 'live' ||
+      (microphoneIntent === participationId &&
+        proximityOptedIn &&
+        proximityAudioStatus !== 'error' &&
+        proximityAudioStatus !== 'muted'));
+  const microphoneHelp = !proximityVoiceEnabled
+    ? 'Nearby voice is unavailable in this deployment.'
+    : proximityAudioError ||
+      (proximityAudioStatus === 'connecting'
+        ? 'Connecting microphone…'
+        : proximityAudioStatus === 'reconnecting'
+          ? 'Reconnecting voice…'
+          : proximityAudioStatus === 'live'
+            ? 'Your microphone is on.'
+            : proximityAudioStatus === 'muted'
+              ? 'Your microphone is muted. Click to unmute.'
+              : activeProximityConversation
+                ? 'Ready to talk. Click the microphone and allow browser access.'
+                : proximityOptedIn
+                  ? 'Voice enabled; waiting for a nearby coworker. No microphone audio is being captured yet.'
+                  : 'Turn on your microphone to enable nearby voice. Coworkers must enable voice and move nearby.');
   const self = snapshot.participants.find(
     (participant) => participant.participationId === ready.participationId,
   );
@@ -673,24 +678,32 @@ export function CompanyOfficePreview({
               </div>
               <div role="group" aria-labelledby="office-proximity-title">
                 <h3 id="office-proximity-title">Nearby voice</h3>
-                <p className="office-voice-help">
-                  Opt in to pair with an available coworker nearby. Pairing never turns on your
-                  microphone by itself.
-                </p>
+                {proximityVoiceEnabled ? (
+                  <p className="office-voice-help">
+                    Opt in to pair with an available coworker nearby. Pairing never turns on your
+                    microphone by itself.
+                  </p>
+                ) : (
+                  <p className="office-voice-help" role="status">
+                    Nearby voice is unavailable in this deployment.
+                  </p>
+                )}
                 <div className="office-world-control-row">
-                  <button
-                    className="dashboard-secondary"
-                    type="button"
-                    aria-pressed={proximityOptedIn}
-                    disabled={proximityPending}
-                    onClick={() => void changeProximityOptIn()}
-                  >
-                    {proximityPending
-                      ? 'Updating…'
-                      : proximityOptedIn
-                        ? 'Opt out of nearby voice'
-                        : 'Opt in to nearby voice'}
-                  </button>
+                  {proximityVoiceEnabled && (
+                    <button
+                      className="dashboard-secondary"
+                      type="button"
+                      aria-pressed={proximityOptedIn}
+                      disabled={proximityPending}
+                      onClick={() => void changeProximityOptIn()}
+                    >
+                      {proximityPending
+                        ? 'Updating…'
+                        : proximityOptedIn
+                          ? 'Opt out of nearby voice'
+                          : 'Opt in to nearby voice'}
+                    </button>
+                  )}
                   {activeProximityConversation && (
                     <button
                       className="dashboard-secondary"
@@ -896,16 +909,18 @@ export function CompanyOfficePreview({
                       className={`media-control ${microphoneEnabled ? 'enabled' : 'muted'}`}
                       type="button"
                       aria-label={
-                        microphoneEnabled
-                          ? 'Mute proximity microphone'
-                          : proximityAudioStatus === 'muted'
-                            ? 'Unmute proximity microphone'
-                            : 'Activate proximity microphone'
+                        !proximityVoiceEnabled
+                          ? 'Nearby voice unavailable in this deployment'
+                          : microphoneEnabled
+                            ? 'Mute proximity microphone'
+                            : proximityAudioStatus === 'muted'
+                              ? 'Unmute proximity microphone'
+                              : 'Activate proximity microphone'
                       }
                       title={microphoneHelp}
                       aria-describedby="office-microphone-help"
                       aria-pressed={microphoneEnabled}
-                      disabled={proximityPending}
+                      disabled={!proximityVoiceEnabled || proximityPending}
                       onClick={toggleProximityMicrophone}
                     >
                       {microphoneEnabled ? <Mic size={19} /> : <MicOff size={19} />}

@@ -1,0 +1,50 @@
+{
+	admin off
+	auto_https disable_redirects
+	skip_install_trust
+}
+
+https://{$APP_DOMAIN}:8443 {
+	tls internal
+	encode zstd gzip
+
+	@private_api path /api/internal /api/internal/* /api/media/internal /api/media/internal/*
+	handle @private_api {
+		respond 404
+	}
+
+	@media path /rtc /rtc/*
+	handle @media {
+		respond 404
+	}
+
+	@socketio path /socket.io /socket.io/*
+	handle @socketio {
+		reverse_proxy api:3000 {
+			header_up -Forwarded
+			header_up -X-Forwarded-For
+			header_up -X-Forwarded-Host
+			header_up -X-Forwarded-Port
+			header_up -X-Forwarded-Proto
+			header_up -X-Real-IP
+		}
+	}
+
+	@api path /api /api/*
+	handle @api {
+		reverse_proxy api:3000 {
+			header_up -Forwarded
+			header_up -X-Forwarded-For
+			header_up -X-Forwarded-Host
+			header_up -X-Forwarded-Port
+			header_up -X-Forwarded-Proto
+			header_up -X-Real-IP
+		}
+	}
+
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

@@ -12,6 +12,27 @@ The source is pinned to commit `23d6b8999396f9e9d51291bf85bd7b72161f833f`; prese
 
 Company selection opens the office shell directly after authorized detail loading. The intermediate company-details page, owner invitation panel and repeated sign-in status cards are removed from the active UI. The office Back action returns to the company directory. Session expiry checks run invisibly at the account root. Dedicated account-security session management remains available. Owner invitation APIs and their unmounted component are retained; this plan no longer requires their panel in the main journey. Historical test results below describe the UI before this simplification; current regression coverage asserts direct office navigation and absence of those panels.
 
+## Office invitation management restored (2026-11-11)
+
+The owner's latest request supersedes the invitation portion of the UI simplification above.
+After joining the office, owners can select **Invite people** (person-plus icon near the bottom
+of the navigation rail). The invitation view reuses the OpenOffice dashboard forms, buttons,
+colors and office navigation. Members do not see this owner action. The intermediate company-details
+page stays removed.
+
+The mounted `CompanyInvitationManager` uses this project's cookie-authenticated invitation
+list/create/revoke APIs through `ApiClient`, the account-level mutation lock, CSRF handling,
+idempotency keys and unauthorized-session cleanup. It shows pending/accepted/revoked/expired
+states, refresh, errors and confirmation before revocation. Switching back to the map preserves
+the admitted office connection. Recipients use **Join with invitation** in the company directory
+with a verified account matching the invitation email. Locally, invitation emails are captured
+at `http://localhost:8025`; an external email provider is still deferred.
+
+Verification: web TypeScript checks, 25 focused web/API-client unit tests and the mocked-API
+office browser E2E pass. The browser scenario creates, refreshes and revokes an invitation
+through the scoped routes, checks idempotency headers and returns to the same office connection.
+This browser run uses mocked API responses; manual delivery/acceptance can be exercised on Docker.
+
 ## Owner direction: adopt the supplied map and UI (2026-11-10)
 
 The owner has now directed the project to use the OpenOfficeForAll UI styles and its same Vivo map, while connecting only this project's APIs and Socket.IO. This supersedes the earlier Commons-only map choice recorded in CP02. The checked-in upstream `apps/shared/maps/vivo.js` header identifies its source as measurements of Gather 2.0's Vivo office; that provenance is retained here so the dependency is visible and must travel with the import notices.
@@ -39,8 +60,8 @@ Existing integration points include `apps/web/src/lib/api.ts`, `src/features/off
 ## Ordered implementation steps
 
 1. **Inventory and lock the boundary — complete.** Pin upstream source and notices; identify current and obsolete entry points, routes, storage, and service calls. Keep this audit current as screens move.
-2. **Restore the supplied shell — complete for current screens.** Sign-in, verification and recovery use the upstream dashboard header, welcome modal, form, button and link styles. The company directory uses its dashboard, search, card grid and create/join dialogs. Security and the full-screen office use the supplied dashboard/office visual structures. Company selection now opens the office shell directly; company-detail and owner-invitation panels are unmounted. Keep the authenticated entry as the default while final visual/accessibility review and obsolete presentation cleanup proceed.
-3. **Adapt identity and company data — complete for account/company/invitation flows.** The current cookie-authenticated account flows, UUID company list/create/detail, and member invitation-code acceptance use `ApiClient`; owner invitation methods remain available without a mounted panel; guest access and secret-bearing `localStorage` paths remain disconnected. Strict response validation and uncertain-result retries are covered.
+2. **Restore the supplied shell — complete for current screens.** Sign-in, verification and recovery use the upstream dashboard header, welcome modal, form, button and link styles. The company directory uses its dashboard, search, card grid and create/join dialogs. Security and the full-screen office use the supplied dashboard/office visual structures. Company selection now opens the office shell directly; the company-detail panel is unmounted; invitation management is available as an owner-only office view. Keep the authenticated entry as the default while final visual/accessibility review and obsolete presentation cleanup proceed.
+3. **Adapt identity and company data — complete for account/company/invitation flows.** The current cookie-authenticated account flows, UUID company list/create/detail, and member invitation-code acceptance use `ApiClient`; owner invitation methods are mounted in the owner-only office invitation view; guest access and secret-bearing `localStorage` paths remain disconnected. Strict response validation and uncertain-result retries are covered.
 4. **Adapt office admission and live world — integrated.** The pre-join lobby hides the map and connects its Join action to the current bootstrap, one-use ticket and Socket.IO admission flow. New offices use the version-checked Vivo map; the migration moves existing Commons offices to Vivo. The authenticated office mounts upstream `VivoScene` and `OfficeClient`. Movement intent, availability, seat claims, snapshots/deltas, disconnect recovery, leave and fresh-ticket re-entry use this project's server-authoritative Socket.IO state.
 5. **Connect supported features, gate the rest.** The supplied OpenOfficeForAll `ChatView` now uses the project-owned office-message API and `chat:message` Socket.IO room event, with history retained for 90 days. CP08.3b connects nearby-voice opt-in and microphone controls through the project conversation events, session-bound token API and lazy LiveKit client; real media and guard connectivity remain unverified. The company directory supplies real member names. Only the fixed office channel is enabled; DMs, nearby chat, files, calendar, activity and editing have no matching API. Fixed-meeting camera and screen media remain CP09. Do not mount the upstream P2P signaling adapter.
 6. **Review and cut over — in progress.** The current authenticated app is already the default. Mocked E2E covers direct office navigation, Vivo scene mounting, keyboard focus and control-key isolation. After the database migration, a live Docker two-browser run confirmed the Vivo renderer and authoritative movement, then failed at the seat-claim assertion; do not treat the complete live scenario as passing until that separate seating failure is fixed and the test is rerun. The earlier passing live run predates the migration. Vivo wall-collision and concurrent seat-contention still need live coverage. Formal visual anchor/occlusion review, screen-reader navigation, Chrome/Edge review and obsolete Commons sample cleanup remain. The monolithic legacy `App.tsx` remains unmounted; the active authenticated screens use the supplied styles and map renderer with project-owned service boundaries.
@@ -51,7 +72,7 @@ Existing integration points include `apps/web/src/lib/api.ts`, `src/features/off
 - Registration, verification, login, session security, company creation, invitations and membership use current cookie-authenticated APIs.
 - Office discovery/admission uses the current workspace and office IDs, bootstrap and one-use tickets. No legacy `/ws` connection is opened.
 - Two browsers must observe authoritative Vivo movement, presence, seat contention, company isolation, dropped-delta recovery and re-entry through Socket.IO. The latest post-migration run confirms the Vivo map and movement, but is not fully green because seat claiming failed.
-- Owner invitation management stays outside the active UI per the owner decision above; members can accept a valid invitation through the current API flow.
+- Owners manage invitations from the office navigation; recipients accept a valid invitation through the company directory and current API flow.
 - No account/session/access secret is read from or written to `localStorage`; the single office channel is real; nearby voice is guarded and integrated in the UI but remains pending real-media acceptance; unsupported DMs/calendar/activity/editor and fixed-meeting media do not pretend to work.
 - Existing licensing/provenance, accessibility, and English-first Chrome/Edge checks remain in the release evidence.
 

@@ -47,6 +47,12 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   page,
 }) => {
   let authenticated = false;
+  const invitation = {
+    id: '16ab92cd-cbd4-44b6-b827-196ae6044937',
+    email: 'coworker@example.test',
+    expiresAt: '2026-11-16T12:00:00.000Z',
+  };
+  let invitationStatus: 'pending' | 'revoked' | null = null;
   const unexpectedApiCalls: string[] = [];
   const officeEvents: string[] = [];
   const movementInputs: Array<{ dx: number; dy: number }> = [];
@@ -80,6 +86,27 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
         contentType: 'application/json',
         body: JSON.stringify(body),
       });
+
+    if (path === `/api/workspaces/${workspace.id}/invitations`) {
+      if (method === 'GET')
+        return json({
+          invitations: invitationStatus ? [{ ...invitation, status: invitationStatus }] : [],
+        });
+      if (method === 'POST') {
+        expect(request.postDataJSON()).toEqual({ email: invitation.email });
+        expect(request.headers()['idempotency-key']).toBeTruthy();
+        invitationStatus = 'pending';
+        return json({ invitation }, 201);
+      }
+    }
+    if (
+      method === 'DELETE' &&
+      path === `/api/workspaces/${workspace.id}/invitations/${invitation.id}`
+    ) {
+      expect(request.headers()['idempotency-key']).toBeTruthy();
+      invitationStatus = 'revoked';
+      return json({ message: 'Invitation revoked.' });
+    }
 
     if (method === 'GET' && path === '/api/auth/csrf') return json({ csrfToken: 'A'.repeat(43) });
     if (method === 'GET' && path === '/api/auth/me')
@@ -432,6 +459,24 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await expect(page.locator('.office-scene .office-map')).toHaveCount(1);
   await expect.poll(() => officeBootstrapRequests).toBe(1);
   await expect(page.getByRole('group', { name: 'Office connection controls' })).toBeVisible();
+  await page.getByRole('button', { name: 'Invite people', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Employee invitations' })).toBeVisible();
+  await expect(page.getByText('No invitations have been created for this company.')).toBeVisible();
+  await page.getByRole('textbox', { name: 'Employee email' }).fill(invitation.email);
+  await page.getByRole('button', { name: 'Send invitation' }).click();
+  await expect(
+    page.getByRole('status').filter({ hasText: `Invitation created for ${invitation.email}.` }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await expect(page.getByRole('list', { name: 'Company invitations' })).toContainText(
+    invitation.email,
+  );
+  await page.getByRole('button', { name: `Revoke invitation for ${invitation.email}` }).click();
+  await page.getByRole('button', { name: 'Confirm revoke' }).click();
+  await expect(page.getByRole('list', { name: 'Company invitations' })).toContainText('Revoked');
+  await page.getByRole('button', { name: 'Return to office', exact: true }).click();
+  await expect(page.getByText('1 person in the office')).toBeVisible();
+  expect(officeConnections).toBe(1);
   const officeSkipLink = page.getByRole('link', { name: 'Skip to office map' });
   await officeSkipLink.focus();
   await page.keyboard.press('Enter');

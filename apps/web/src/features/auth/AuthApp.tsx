@@ -671,6 +671,7 @@ export default function AuthApp() {
         workspaceId={selectedCompanyId}
         mutationPending={mutationPending}
         mutationLock={mutationLock}
+        runMutation={runMutation}
         onBackToCompanies={backToCompanies}
         onOpenSecurity={openSecurity}
         onUnauthorized={signedOut}

@@ -12,6 +12,7 @@ import {
   MessageCircle,
   Settings2,
   VideoOff,
+  UserPlus,
 } from 'lucide-react';
 import type { AccountDto } from '@gather/contracts';
 import type { OfficeMessage } from '@gather/contracts';
@@ -29,6 +30,7 @@ import {
   type ProximityAudioStatus,
   type ProximityRemoteAudioTrack,
 } from '../office/proximity-audio-session';
+import { CompanyInvitationManager } from './CompanyInvitationManager';
 import './office-preview.css';
 
 const CommonsScene = lazy(() =>
@@ -42,7 +44,7 @@ const LiveCommonsScene = lazy(() =>
   })),
 );
 
-type OfficeSection = 'office' | 'chat' | 'calendar' | 'activity';
+type OfficeSection = 'office' | 'chat' | 'calendar' | 'activity' | 'invitations';
 const OFFICE_CHANNEL = {
   id: 'office',
   name: 'office',
@@ -85,11 +87,23 @@ type Props = {
   account: AccountDto;
   api: ApiClient;
   detail: OfficeWorkspaceDetail;
+  mutationPending: boolean;
+  runMutation: <T>(action: () => Promise<T>) => Promise<T>;
+  onUnauthorized: (notice?: string) => void;
   onBack: () => void;
   onOpenSecurity: () => void;
 };
 
-export function CompanyOfficePreview({ account, api, detail, onBack, onOpenSecurity }: Props) {
+export function CompanyOfficePreview({
+  account,
+  api,
+  detail,
+  mutationPending,
+  runMutation,
+  onUnauthorized,
+  onBack,
+  onOpenSecurity,
+}: Props) {
   const titleRef = useRef<HTMLHeadingElement>(null);
   const client = useMemo(
     () => new OfficeClient(api, detail.id, detail.officeId),
@@ -508,6 +522,18 @@ export function CompanyOfficePreview({ account, api, detail, onBack, onOpenSecur
           </button>
         </div>
         <div className="rail-bottom">
+          {detail.role === 'owner' && (
+            <button
+              className={`nav-item${section === 'invitations' ? ' current' : ''}`}
+              type="button"
+              aria-label="Invite people"
+              aria-pressed={section === 'invitations'}
+              title="Invite people"
+              onClick={() => setSection('invitations')}
+            >
+              <UserPlus size={22} />
+            </button>
+          )}
           <button
             className="icon-button"
             type="button"
@@ -548,6 +574,18 @@ export function CompanyOfficePreview({ account, api, detail, onBack, onOpenSecur
                 Choose a room on the map and talk with your team.
               </p>
             </>
+          ) : section === 'invitations' ? (
+            <div className="office-nav-placeholder">
+              <strong>Invite people</strong>
+              <p>Invite coworkers to {detail.name} and manage pending invitations.</p>
+              <button
+                className="dashboard-secondary"
+                type="button"
+                onClick={() => setSection('office')}
+              >
+                Return to office
+              </button>
+            </div>
           ) : section === 'chat' ? (
             <div className="chat-sidebar office-chat-sidebar" aria-label="Message conversations">
               <p className="chat-section">
@@ -716,9 +754,11 @@ export function CompanyOfficePreview({ account, api, detail, onBack, onOpenSecur
               ? `OpenOfficeForAll ${mapId === 'vivo' ? 'Vivo' : 'Commons'} office map`
               : section === 'chat'
                 ? 'Office messages'
-                : section === 'calendar'
-                  ? 'Office calendar'
-                  : 'Office activity'
+                : section === 'invitations'
+                  ? 'Invite people'
+                  : section === 'calendar'
+                    ? 'Office calendar'
+                    : 'Office activity'
           }
         >
           <div
@@ -852,6 +892,16 @@ export function CompanyOfficePreview({ account, api, detail, onBack, onOpenSecur
                 )}
               </div>
             </>
+          ) : section === 'invitations' && detail.role === 'owner' ? (
+            <div className="dashboard office-invitations">
+              <CompanyInvitationManager
+                api={api}
+                company={detail}
+                mutationPending={mutationPending}
+                runMutation={runMutation}
+                onUnauthorized={onUnauthorized}
+              />
+            </div>
           ) : section === 'chat' ? (
             <>
               <ChatView

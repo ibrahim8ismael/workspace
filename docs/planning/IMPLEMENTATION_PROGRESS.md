@@ -1234,3 +1234,18 @@ typecheck, API build/test typecheck, Prettier and `git diff --check` passed. The
 Chromium synthetic-microphone and Docker results; they prove bounded app-integrated session
 revocation for this fixture, not the deployment supervisor path, physical-device permissions or
 production service topology.
+
+
+### Office Invite people integration (2026-11-11)
+
+Restored owner invitation management inside the supplied OpenOffice office navigation, per the
+owner's latest request. After Join, the person-plus **Invite people** action opens the existing
+invitation manager using the project's scoped list/create/revoke APIs and account-level mutation
+and session protections. The OpenOffice dashboard form/button styles are reused. Members have
+no invitation action; returning to the map preserves the office connection. Recipients accept
+codes from **Join with invitation** in the company directory. Local delivery uses Mailpit on
+port 8025; external email-provider rollout remains deferred.
+
+Web typecheck, focused unit tests (25/25) and the mocked-API office E2E (1/1) pass, including
+create, refresh and confirmed revoke, idempotency headers and return to the same office connection.
+See `docs/migration/OPENOFFICE_UI_INTEGRATION.md` for the updated product direction and manual steps.

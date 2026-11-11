@@ -26,6 +26,7 @@ type Props = {
   workspaceId: string;
   mutationPending: boolean;
   mutationLock: RefObject<boolean>;
+  runMutation: <T>(action: () => Promise<T>) => Promise<T>;
   onBackToCompanies: () => void;
   onOpenSecurity: () => void;
   onUnauthorized: (notice?: string) => void;
@@ -38,6 +39,7 @@ export function CompanyOverview({
   workspaceId,
   mutationPending,
   mutationLock,
+  runMutation,
   onBackToCompanies,
   onOpenSecurity,
   onUnauthorized,
@@ -149,6 +151,9 @@ export function CompanyOverview({
           account={account}
           api={api}
           detail={detail}
+          mutationPending={mutationPending}
+          runMutation={runMutation}
+          onUnauthorized={onUnauthorized}
           onBack={onBackToCompanies}
           onOpenSecurity={onOpenSecurity}
         />

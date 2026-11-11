@@ -2,6 +2,9 @@
 
 B2B SaaS virtual offices for companies and their teams.
 
+The current repository milestone is [v0.1.0](docs/releases/v0.1.0.md), published as a pre-release
+for evaluation. Production and pilot acceptance gates remain open.
+
 ## Repository
 
 | Directory                  | Responsibility                                                              |

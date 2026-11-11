@@ -97,3 +97,36 @@ After verification the project containers were stopped with the documented `down
 On 2026-11-09 the owner requested the local environment and frontend be left running for manual testing. The `app` and `worker` profiles were restarted from the verified images and retained volumes on the `orbstack` Docker context. Frontend signin rendering, same-origin API health, CA-validated HTTPS and Origin checks passed; no browser runtime exceptions were observed. The application is available at `https://localhost:8443` and the captured inbox at `http://localhost:8025` while those services remain running.
 
 If the selected Docker context points to another engine, use `docker --context orbstack compose` in place of `docker compose` in the commands above. This selects the existing local engine for that command without changing the global Docker context. The local certificate is still not installed in the OS trust store, so the manual browser may show a certificate warning.
+
+## Mounted Vivo media E2E (local only)
+
+The two-browser mounted-office media test uses the optional `compose.media-e2e.yaml` overlay. It
+requires the normal private `infra/.env.local` settings and creates a separate ignored
+`infra/.env.media-e2e` file with mode `0600` for random guard/LiveKit test credentials. Create it
+once; the helper refuses to overwrite an existing file.
+
+```sh
+node infra/init-media-e2e-env.mjs
+docker --context orbstack compose --env-file infra/.env.media-e2e \
+  -f infra/compose.yaml -f infra/compose.media-e2e.yaml \
+  --profile app --profile media-e2e up --build -d
+pnpm exec playwright install chromium
+pnpm test:e2e:live-media
+LIVE_OFFICE_E2E=1 pnpm exec playwright test tests/e2e/live-office.spec.ts \
+  -g 'live two-browser Vivo admission'
+```
+
+The overlay routes signaling through `https://localhost:8443/rtc` and publishes only TCP ICE on
+`127.0.0.1:17881`. Playwright uses a synthetic microphone, so the test exercises the actual browser
+audio track, API grant, local policy guard, LiveKit server and mounted Vivo UI without requesting a
+physical microphone. The profile is a local integration fixture; it does not include CP07's
+independent supervisor/SFU lease deployment, TURN/UDP, public ingress or production secrets.
+
+Stop the composed app and media fixture when finished; named volumes and both ignored env files are
+retained.
+
+```sh
+docker --context orbstack compose --env-file infra/.env.media-e2e \
+  -f infra/compose.yaml -f infra/compose.media-e2e.yaml \
+  --profile app --profile media-e2e down
+```

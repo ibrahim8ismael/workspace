@@ -1122,3 +1122,30 @@ did API test typecheck, ESLint and formatting checks. This deterministically exe
 media API denial path; it does not automate the operating-system/browser permission prompt, mount
 the office UI in this same test, or measure active-call forwarding cutoff. Those acceptance cases
 remain open.
+
+## CP08.5.10 — mounted Vivo audio leave cutoff and live office regression (2026-11-11)
+
+Added a local-only `media-e2e` Compose overlay and the `pnpm test:e2e:live-media` command. The overlay
+runs the existing API policy guard and pinned LiveKit image, exposes only loopback TCP ICE, routes
+LiveKit signaling through the app's same-origin Caddy endpoint, and keeps separate from the
+production CP07 supervisor/SFU-lease topology. With two Chromium pages in the actual supplied Vivo
+office UI, the owner and member join a real nearby conversation, publish and decode audio through
+API-issued grants, then the member leaves from the mounted UI. The receiver's decoded-audio probe
+reported a **26 ms cutoff upper bound** (no active sample after the leave marker); the remote
+audio element was removed and the Vivo map remained mounted. The focused test passed.
+
+The same Docker-backed two-browser UI scenario now passes movement, seat sit/stand synchronization,
+dropped-delta snapshot recovery, office WebSocket interruption and re-entry, and company isolation.
+That run exposed a real prediction mismatch: the connected scene advanced six tiles per second while
+the authoritative API speed and 48-pixel Vivo tiles allow four. The connected scene now derives its
+prediction step from shared `OFFICE_LIMITS.movementSpeedPixelsPerSecond`, preventing seat actions
+from arriving before the server reaches the requested tile. The standalone legacy scene keeps its
+local pace; sprinting remains local-only until the movement contract supports it. The full live-office
+E2E passed, as did web typecheck and the real mounted-audio test. A previous attempt could not launch
+because Playwright's Chromium binary was absent; installing the pinned Playwright browser resolved
+the environment issue.
+
+This is local E2E evidence with Playwright's synthetic microphone, not physical-device, browser OS
+permission-prompt, Chrome/Edge release signoff, TURN/UDP, production supervisor/lease, deployment,
+cross-company media-load, or A07/A08 release evidence. Mounted-UI active-call session/membership
+revocation and the other CP08.6/CP08.7 gates remain open.

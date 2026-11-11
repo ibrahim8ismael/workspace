@@ -29,6 +29,7 @@ import {
   blockedWith,
   canStep,
   findTilePath,
+  LOCAL_STEP_MS,
   nearestFreeTile,
   RUN_STEP_MS,
   sameTile,
@@ -1248,6 +1249,7 @@ export default function VivoScene({
         if (next) {
           const from = tileCenter(tile.current),
             to = tileCenter(next);
+          const running = !movementIntent.current && keys.current.has('shift');
           movementIntent.current?.(
             Math.sign(next.tx - tile.current.tx) as -1 | 0 | 1,
             Math.sign(next.ty - tile.current.ty) as -1 | 0 | 1,
@@ -1257,9 +1259,9 @@ export default function VivoScene({
             from,
             to,
             startedAt: time,
-            duration: keys.current.has('shift') ? RUN_STEP_MS : STEP_MS,
+            duration: movementIntent.current ? STEP_MS : running ? RUN_STEP_MS : LOCAL_STEP_MS,
           };
-          playStep(floorMaterial(to), keys.current.has('shift'));
+          playStep(floorMaterial(to), running);
           setMotion({
             facing: facing ?? facingFor(to.x - from.x, to.y - from.y),
             moving: true,

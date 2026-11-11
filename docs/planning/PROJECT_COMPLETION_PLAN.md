@@ -280,9 +280,10 @@ two-browser actual-grant fixture with opt-out and Away triggers: the API emits a
 install ACK while the guard remains alive, and measured final decoded audio cutoff was **0 ms** in
 both runs. The fixture explicitly stops the production `ProximityAudioSession` after the server
 policy ACK; it does not yet prove `CompanyOfficePreview` reacts to these Socket.IO events itself.
-Permission denial with the office/map still usable, active-media leave through the mounted UI,
-active-media teardown after membership/session revocation, office/API lease expiry, guard loss and
-independent-supervisor progress loss remain in the matrix.
+Permission denial with the office/map still usable, active-media teardown after
+membership/session revocation, office/API lease expiry, guard loss and independent-supervisor
+progress loss remain in the matrix. Mounted-UI active-media leave and its measured cutoff are
+verified separately in CP08.5.10.
 CP08.5.4 also runs session logout and owner-driven membership removal during
 the real media fixture: both close the affected office socket, end the pair for the surviving
 participant, install the empty policy while the guard remains alive, and measure **0 ms** decoded-
@@ -304,9 +305,9 @@ actual browser permission prompt/map flow, lease/process loss and deployment ing
 
 CP08.5.7 adds a mounted-office E2E where the mocked media WebSocket fails, the user leaves the
 conversation through the UI, and the Vivo map continues to render and accept movement. It verifies
-the UI's session-stop/ended-state path under media failure. A real audio cutoff caused by leaving an
-active media call, browser permission prompt/map flow, active-call membership/session teardown and
-lease/process faults remain open.
+the UI's session-stop/ended-state path under media failure. The real active-call leave cutoff is
+verified separately in CP08.5.10. Browser permission prompt/map flow, active-call
+membership/session teardown through the UI and lease/process faults remain open.
 
 CP08.5.8 extends the mocked E2E to hold a LiveKit signaling socket during connection, deliver
 `office:access-ended` with `authorization_ended`, and verify the mounted preview closes that socket
@@ -317,8 +318,18 @@ LiveKit pair while Chromium makes one production media session's `getUserMedia` 
 socket stays connected, the production UI-facing session reports its recovery message, and both
 sessions leave the SFU cleanly after conversation termination. This verifies deterministic media
 API denial handling, not the browser's operating-system permission prompt or map usability in the
-same mounted UI scenario. Active-call leave cutoff, mounted-UI permission/map behavior, active-call
-session/membership revocation through the UI, and lease/guard/supervisor fault cases remain open.
+same mounted UI scenario. CP08.5.10 adds a real local two-browser run through the mounted Vivo UI:
+the user leaves an active nearby-audio conversation, the remote audio element is removed, the map
+remains mounted, and the last decoded audio sample has a 26 ms cutoff upper bound (20 ms sampling;
+no active sample after the leave marker). The same run covers office movement, seat
+sit/stand, dropped-delta resync, socket re-entry and company isolation. It exposed a mismatch between
+connected client prediction speed and the authoritative API speed; the connected scene now uses
+shared movement limits, and the standalone legacy scene retains its local-only movement pace. Sprint
+input remains local-only until the movement contract supports a second speed. The full test passed.
+This is local synthetic-microphone/TCP-only evidence, not production deployment or the independent
+CP07 lease/supervisor path. Mounted-UI permission/map
+behavior, active-call session/membership revocation through the UI, and lease/guard/supervisor fault
+cases remain open.
 
 **CP08.6 — webhook reconciliation (pending).** Add strict raw-body signature verification,
 event-ID deduplication and late-event handling under `apps/api/src/modules/media/`; webhooks observe

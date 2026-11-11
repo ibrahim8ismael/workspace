@@ -43,3 +43,15 @@ FROM ${CADDY_IMAGE} AS web-runtime
 COPY --from=build /workspace/apps/web/dist /srv
 COPY infra/Caddyfile /etc/caddy/Caddyfile
 EXPOSE 8443
+
+FROM api-runtime AS media-guard-runtime
+COPY --from=build --chown=node:node /workspace/spikes/media-enforcement/guard-process.mjs ./spikes/media-enforcement/guard-process.mjs
+COPY --from=build --chown=node:node /workspace/spikes/media-enforcement/signaling-guard.mjs ./spikes/media-enforcement/signaling-guard.mjs
+COPY --from=build --chown=node:node /workspace/spikes/media-enforcement/source-grants.mjs ./spikes/media-enforcement/source-grants.mjs
+COPY --from=build --chown=node:node /workspace/spikes/media-enforcement/application-token-authorization.mjs ./spikes/media-enforcement/application-token-authorization.mjs
+COPY --from=build --chown=node:node /workspace/spikes/media-enforcement/permit-state.mjs ./spikes/media-enforcement/permit-state.mjs
+COPY --from=build --chown=node:node /workspace/spikes/media-enforcement/policy-pull.mjs ./spikes/media-enforcement/policy-pull.mjs
+COPY --from=build --chown=node:node /workspace/spikes/media-enforcement/retirement-store.mjs ./spikes/media-enforcement/retirement-store.mjs
+COPY --chown=node:node infra/media/local-guard-entry.mjs ./infra/media/local-guard-entry.mjs
+USER node
+CMD ["node", "infra/media/local-guard-entry.mjs"]

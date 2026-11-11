@@ -1,7 +1,16 @@
 import { randomUUID } from 'node:crypto';
-import { expect, request, test, type APIRequestContext, type Browser } from '@playwright/test';
+import {
+  expect,
+  request,
+  test,
+  type APIRequestContext,
+  type Browser,
+  type Locator,
+  type Page,
+} from '@playwright/test';
 
 const enabled = process.env['LIVE_OFFICE_E2E'] === '1';
+const mediaEnabled = process.env['LIVE_OFFICE_MEDIA_E2E'] === '1';
 const appOrigin = process.env['LIVE_OFFICE_ORIGIN'] ?? 'https://localhost:8443';
 const mailpitOrigin = process.env['LIVE_OFFICE_MAILPIT'] ?? 'http://127.0.0.1:8025';
 const password = `Local-Office-E2E-${randomUUID()}!`;
@@ -13,6 +22,24 @@ type MailpitMessage = {
   Date?: string;
   To: Array<{ Address: string }>;
 };
+
+type OfficeAudioProbe = {
+  activeSamples: number;
+  lastActiveAt: number;
+  firstSilentAfterStopAt: number;
+  lastActiveAfterStopAt: number;
+  stopRequestedAt: number;
+  interval: number;
+  context: AudioContext;
+  analyser: AnalyserNode;
+  samples: Float32Array;
+};
+
+declare global {
+  interface Window {
+    __officeAudioProbe?: OfficeAudioProbe;
+  }
+}
 
 async function json(response: Awaited<ReturnType<APIRequestContext['get']>>) {
   if (!response.ok()) throw new Error(`Local API request failed (${response.status()}).`);
@@ -101,13 +128,115 @@ async function postJson(
 }
 
 async function participantPosition(page: import('@playwright/test').Page, displayName: string) {
-  return page
-    .locator('.office-live-participants li')
-    .filter({ hasText: displayName })
-    .evaluate((element) => ({
-      x: Number(element.getAttribute('data-position-x')),
-      y: Number(element.getAttribute('data-position-y')),
-    }));
+  return page.locator('.office-scene svg.office-map .scene-avatar').evaluateAll((avatars, name) => {
+    const avatar = avatars.find((element) => element.getAttribute('aria-label')?.startsWith(name));
+    const transform = avatar?.parentElement?.getAttribute('transform') ?? '';
+    const coordinates = transform.match(/translate\((-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\)/);
+    if (!coordinates) throw new Error('The remote Vivo avatar has no world-position transform.');
+    return { x: Number(coordinates[1]), y: Number(coordinates[2]) };
+  }, displayName);
+}
+
+async function nearestVisibleOpenSeatId(map: Locator) {
+  return map.evaluate((svg) => {
+    const self = svg.querySelector<SVGGElement>('.scene-avatar.is-self');
+    const transform = self?.parentElement?.getAttribute('transform') ?? '';
+    const position = transform.match(/translate\((-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\)/);
+    if (!position) throw new Error('The local Vivo avatar has no world-position transform.');
+    const selfX = Number(position[1]);
+    const selfY = Number(position[2]);
+    const view = svg.viewBox.baseVal;
+    const seats = Array.from(
+      svg.querySelectorAll<SVGGElement>('.scene-seat[aria-disabled="false"]'),
+    )
+      .map((seat) => {
+        const rect = seat.querySelector<SVGRectElement>('.seat-target')?.getBBox();
+        if (!rect) return null;
+        const x = rect.x + rect.width / 2;
+        const y = rect.y + rect.height / 2;
+        const visible =
+          x >= view.x && x <= view.x + view.width && y >= view.y && y <= view.y + view.height;
+        return {
+          id: seat.getAttribute('data-seat-id'),
+          visible,
+          distance: Math.hypot(x - selfX, y - selfY),
+        };
+      })
+      .filter(
+        (seat): seat is NonNullable<typeof seat> => seat !== null && !!seat.id && seat.visible,
+      )
+      .sort((left, right) => left.distance - right.distance);
+    return seats[0]?.id ?? null;
+  });
+}
+
+async function startRemoteAudioProbe(page: Page) {
+  await page.evaluate(async () => {
+    const tracks = Array.from(
+      document.querySelectorAll<HTMLAudioElement>('.office-proximity-audio-output audio'),
+    ).flatMap((audio) =>
+      audio.srcObject instanceof MediaStream ? audio.srcObject.getAudioTracks() : [],
+    );
+    if (tracks.length === 0) throw new Error('No subscribed remote audio track is available.');
+    const context = new AudioContext();
+    const analyser = context.createAnalyser();
+    const source = context.createMediaStreamSource(new MediaStream(tracks));
+    source.connect(analyser);
+    analyser.connect(context.destination);
+    await context.resume();
+    const samples = new Float32Array(analyser.fftSize);
+    const probe: OfficeAudioProbe = {
+      activeSamples: 0,
+      lastActiveAt: 0,
+      firstSilentAfterStopAt: 0,
+      lastActiveAfterStopAt: 0,
+      stopRequestedAt: 0,
+      interval: 0,
+      context,
+      analyser,
+      samples,
+    };
+    probe.interval = window.setInterval(() => {
+      analyser.getFloatTimeDomainData(samples);
+      const observedAt = Date.now();
+      if (samples.some((sample) => Math.abs(sample) > 0.01)) {
+        probe.activeSamples += 1;
+        probe.lastActiveAt = observedAt;
+        if (probe.stopRequestedAt > 0) probe.lastActiveAfterStopAt = observedAt;
+      } else if (probe.stopRequestedAt > 0 && probe.firstSilentAfterStopAt === 0) {
+        probe.firstSilentAfterStopAt = observedAt;
+      }
+    }, 20);
+    window.__officeAudioProbe = probe;
+  });
+}
+
+async function readRemoteAudioProbe(page: Page) {
+  return page.evaluate(() => ({
+    activeSamples: window.__officeAudioProbe?.activeSamples ?? 0,
+    lastActiveAt: window.__officeAudioProbe?.lastActiveAt ?? 0,
+    firstSilentAfterStopAt: window.__officeAudioProbe?.firstSilentAfterStopAt ?? 0,
+    lastActiveAfterStopAt: window.__officeAudioProbe?.lastActiveAfterStopAt ?? 0,
+  }));
+}
+
+async function markRemoteAudioStopRequested(page: Page) {
+  return page.evaluate(() => {
+    const probe = window.__officeAudioProbe;
+    if (!probe) throw new Error('The remote audio probe is not running.');
+    probe.stopRequestedAt = Date.now();
+    return probe.stopRequestedAt;
+  });
+}
+
+async function stopRemoteAudioProbe(page: Page) {
+  await page.evaluate(async () => {
+    const probe = window.__officeAudioProbe;
+    if (!probe) return;
+    window.clearInterval(probe.interval);
+    await probe.context.close();
+    delete window.__officeAudioProbe;
+  });
 }
 
 async function interceptWorldVersionGap(page: import('@playwright/test').Page) {
@@ -243,9 +372,9 @@ test('live two-browser Vivo admission, movement, seats, recovery, and company is
     await memberPage.getByRole('button', { name: 'Join' }).click();
     await expect(ownerPage.getByText('2 people in the office')).toBeVisible();
     await expect(memberPage.getByText('2 people in the office')).toBeVisible();
-    await expect(ownerPage.getByRole('list', { name: 'People in the office' })).toContainText(
-      `E2E ${memberEmail.split('@')[0]}`,
-    );
+    await expect(
+      ownerPage.getByRole('region', { name: 'People in the office' }).getByRole('list'),
+    ).toContainText(`E2E ${memberEmail.split('@')[0]}`);
 
     await expect(ownerPage.locator('.office-map-heading strong')).toHaveText('Live Vivo office');
     const ownerMap = ownerPage.locator('.office-scene svg.office-map');
@@ -254,6 +383,11 @@ test('live two-browser Vivo admission, movement, seats, recovery, and company is
     await expect(memberMap).toHaveCount(1);
     const ownerName = `E2E ${ownerEmail.split('@')[0]}`;
     const memberName = `E2E ${memberEmail.split('@')[0]}`;
+    const memberOwnerRow = memberPage
+      .getByRole('region', { name: 'People in the office' })
+      .getByRole('listitem')
+      .filter({ hasText: ownerName });
+
     const initialPosition = await participantPosition(memberPage, ownerName);
     await ownerMap.focus();
     await ownerPage.keyboard.down('ArrowRight');
@@ -266,27 +400,25 @@ test('live two-browser Vivo admission, movement, seats, recovery, and company is
       })
       .toBe(true);
 
-    const contestedSeatId = '24c48737:0';
-    const ownerSeat = ownerMap.locator(`[data-seat-id="${contestedSeatId}"]`);
+    const contestedSeatId = await nearestVisibleOpenSeatId(memberMap);
+    expect(contestedSeatId).toBeTruthy();
     const memberSeat = memberMap.locator(`[data-seat-id="${contestedSeatId}"]`);
+    const ownerSeat = ownerMap.locator(`[data-seat-id="${contestedSeatId}"]`);
     await expect(ownerSeat).toHaveAttribute('aria-disabled', 'false');
-    await expect(memberSeat).toHaveAttribute('aria-disabled', 'false');
     await memberSeat.click();
-    const seatedRosterEntry = `.office-live-participants li[data-seat-id="${contestedSeatId}"]`;
-    await expect(ownerPage.locator(seatedRosterEntry)).toContainText(memberName, {
+    await expect(ownerSeat).toHaveAttribute('aria-disabled', 'true', { timeout: 15_000 });
+    await expect(memberMap.locator('.scene-avatar.is-self.is-seated')).toHaveCount(1, {
       timeout: 15_000,
     });
-    await expect(memberPage.locator(seatedRosterEntry)).toContainText(memberName, {
-      timeout: 15_000,
-    });
-    await memberSeat.click();
-    await expect(ownerPage.locator(seatedRosterEntry)).toHaveCount(0);
-    await expect(memberPage.locator(seatedRosterEntry)).toHaveCount(0);
+    await memberMap.focus();
+    await memberPage.keyboard.press('e');
+    await expect(ownerSeat).toHaveAttribute('aria-disabled', 'false', { timeout: 15_000 });
+    await expect(memberMap.locator('.scene-avatar.is-self.is-seated')).toHaveCount(0);
 
     gapProbe.arm();
     await ownerPage.getByRole('button', { name: 'Busy', exact: true }).click();
     await expect.poll(() => gapProbe.state.droppedDelta).toBe(true);
-    await expect(memberPage.locator('[data-availability="busy"]')).toHaveCount(0);
+    await expect(memberOwnerRow.locator('small')).toHaveText('available');
     await ownerPage.getByRole('button', { name: 'Away', exact: true }).click();
     await expect(ownerPage.getByRole('button', { name: 'Away', exact: true })).toHaveAttribute(
       'aria-pressed',
@@ -294,7 +426,7 @@ test('live two-browser Vivo admission, movement, seats, recovery, and company is
     );
     await expect.poll(() => gapProbe.state.resyncRequested).toBe(true);
     await expect.poll(() => gapProbe.state.snapshotReceived).toBe(true);
-    await expect(memberPage.locator('[data-availability="away"]')).toContainText(ownerName);
+    await expect(memberOwnerRow.locator('small')).toHaveText('away');
 
     gapProbe.interrupt();
     await expect(memberPage.getByText('Office connection closed.')).toBeVisible({
@@ -303,7 +435,13 @@ test('live two-browser Vivo admission, movement, seats, recovery, and company is
     await expect(ownerPage.getByText('1 person in the office')).toBeVisible({ timeout: 65_000 });
     await memberPage.getByRole('button', { name: 'Join' }).click();
     await expect(memberPage.getByText('2 people in the office')).toBeVisible();
-    await expect(ownerPage.locator('[data-availability="away"]')).toContainText(ownerName);
+    await expect(
+      ownerPage
+        .getByRole('region', { name: 'People in the office' })
+        .getByRole('listitem')
+        .filter({ hasText: ownerName })
+        .locator('small'),
+    ).toHaveText('away');
 
     await ownerPage.getByRole('button', { name: 'Leave office' }).click();
     await expect(ownerPage.getByRole('button', { name: 'Join' })).toBeVisible();
@@ -333,8 +471,12 @@ test('live two-browser Vivo admission, movement, seats, recovery, and company is
     await ownerSecondPage.getByRole('button', { name: 'Join' }).click();
     await expect(memberPage.getByText('1 person in the office')).toBeVisible();
     await expect(ownerSecondPage.getByText('1 person in the office')).toBeVisible();
-    const memberRoster = memberPage.getByRole('list', { name: 'People in the office' });
-    const ownerRoster = ownerSecondPage.getByRole('list', { name: 'People in the office' });
+    const memberRoster = memberPage
+      .getByRole('region', { name: 'People in the office' })
+      .getByRole('list');
+    const ownerRoster = ownerSecondPage
+      .getByRole('region', { name: 'People in the office' })
+      .getByRole('list');
     await expect(memberRoster).toContainText(memberName);
     await expect(memberRoster).not.toContainText(ownerName);
     await expect(ownerRoster).toContainText(ownerName);
@@ -356,6 +498,161 @@ test('live two-browser Vivo admission, movement, seats, recovery, and company is
     await ownerContext?.close();
     await memberContext?.close();
     await ownerSecondContext?.close();
+    await owner.client.dispose();
+    await member.client.dispose();
+  }
+});
+
+test('mounted Vivo office carries and cuts off live nearby audio on conversation leave', async ({
+  browser,
+}) => {
+  test.skip(
+    !enabled || !mediaEnabled,
+    'Run pnpm test:e2e:live-media against the local media-e2e Compose profile.',
+  );
+  test.setTimeout(120_000);
+
+  const ownerEmail = `cp08510-owner-${randomUUID()}@example.test`;
+  const memberEmail = `cp08510-member-${randomUUID()}@example.test`;
+  const owner = await createAccount(ownerEmail);
+  const member = await createAccount(memberEmail);
+  let ownerContext: Awaited<ReturnType<typeof companyPage>>['context'] | undefined;
+  let memberContext: Awaited<ReturnType<typeof companyPage>>['context'] | undefined;
+  try {
+    const workspaceResponse = await postJson(
+      owner.client,
+      '/api/workspaces',
+      {
+        name: `CP08.5.10 ${randomUUID().slice(0, 8)}`,
+        slug: `cp08510-${randomUUID().slice(0, 12)}`,
+      },
+      owner.csrf,
+      true,
+    );
+    expect(workspaceResponse.status()).toBe(201);
+    const workspaceBody = (await workspaceResponse.json()) as { workspace: { id: string } };
+    const workspaceId = workspaceBody.workspace.id;
+
+    const invitationStartedAt = Date.now();
+    const invitation = await postJson(
+      owner.client,
+      `/api/workspaces/${workspaceId}/invitations`,
+      { email: memberEmail },
+      owner.csrf,
+      true,
+    );
+    expect(invitation.status()).toBe(201);
+    const invitationToken = await mailToken(memberEmail, 'Join a company', invitationStartedAt);
+    const accepted = await postJson(
+      member.client,
+      '/api/invitations/accept',
+      { token: invitationToken },
+      member.csrf,
+      true,
+    );
+    expect(accepted.status()).toBe(200);
+
+    const ownerOffice = await companyPage(browser, owner.client, workspaceId);
+    ownerContext = ownerOffice.context;
+    const memberOffice = await companyPage(browser, member.client, workspaceId);
+    memberContext = memberOffice.context;
+    const ownerPage = ownerOffice.page;
+    const memberPage = memberOffice.page;
+    await ownerContext.grantPermissions(['microphone'], { origin: appOrigin });
+    await memberContext.grantPermissions(['microphone'], { origin: appOrigin });
+
+    await ownerPage.getByRole('button', { name: 'Join' }).click();
+    await expect(ownerPage.getByText('1 person in the office')).toBeVisible();
+    await memberPage.getByRole('button', { name: 'Join' }).click();
+    await expect(ownerPage.getByText('2 people in the office')).toBeVisible();
+    await expect(memberPage.getByText('2 people in the office')).toBeVisible();
+    const ownerName = `E2E ${ownerEmail.split('@')[0]}`;
+    const memberName = `E2E ${memberEmail.split('@')[0]}`;
+    const ownerMap = ownerPage.locator('.office-scene svg.office-map');
+    const memberMap = memberPage.locator('.office-scene svg.office-map');
+    await expect(ownerPage.locator('.office-map-heading strong')).toHaveText('Live Vivo office');
+    await expect(ownerMap).toHaveCount(1);
+    await expect(memberMap).toHaveCount(1);
+
+    await ownerPage.getByRole('button', { name: 'Opt in to nearby voice' }).click();
+    await memberPage.getByRole('button', { name: 'Opt in to nearby voice' }).click();
+    await expect(
+      ownerPage.getByText(`Paired with ${memberName}. Turn on your microphone when ready.`),
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(
+      memberPage.getByText(`Paired with ${ownerName}. Turn on your microphone when ready.`),
+    ).toBeVisible({ timeout: 15_000 });
+    await ownerPage.getByRole('button', { name: 'Activate proximity microphone' }).click();
+    await memberPage.getByRole('button', { name: 'Activate proximity microphone' }).click();
+    await expect(ownerPage.getByRole('button', { name: 'Mute proximity microphone' })).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(memberPage.getByRole('button', { name: 'Mute proximity microphone' })).toBeVisible(
+      { timeout: 15_000 },
+    );
+
+    const ownerRemoteAudio = ownerPage.locator('.office-proximity-audio-output audio');
+    await expect(ownerRemoteAudio).toHaveCount(1, { timeout: 15_000 });
+    await startRemoteAudioProbe(ownerPage);
+    await expect
+      .poll(async () => (await readRemoteAudioProbe(ownerPage)).activeSamples, { timeout: 15_000 })
+      .toBeGreaterThan(10);
+    await expect
+      .poll(async () => Date.now() - (await readRemoteAudioProbe(ownerPage)).lastActiveAt, {
+        timeout: 5000,
+      })
+      .toBeLessThan(250);
+
+    const activeAudioBeforeLeave = await readRemoteAudioProbe(ownerPage);
+    const leaveRequestedAt = await markRemoteAudioStopRequested(ownerPage);
+    await memberPage.getByRole('button', { name: 'Leave conversation' }).click();
+    await expect(ownerPage.getByRole('button', { name: 'Leave conversation' })).toHaveCount(0, {
+      timeout: 10_000,
+    });
+    await expect(memberPage.getByRole('button', { name: 'Leave conversation' })).toHaveCount(0, {
+      timeout: 10_000,
+    });
+    await expect(ownerRemoteAudio).toHaveCount(0, { timeout: 10_000 });
+    await expect(ownerMap).toHaveCount(1);
+    await expect(memberMap).toHaveCount(1);
+    await expect
+      .poll(async () => (await readRemoteAudioProbe(ownerPage)).firstSilentAfterStopAt, {
+        timeout: 5000,
+      })
+      .toBeGreaterThan(leaveRequestedAt);
+    await ownerPage.waitForTimeout(500);
+    const settledAudio = await readRemoteAudioProbe(ownerPage);
+    await ownerPage.waitForTimeout(250);
+    const finalAudio = await readRemoteAudioProbe(ownerPage);
+    const lastAudibleSampleAt =
+      finalAudio.lastActiveAfterStopAt || finalAudio.firstSilentAfterStopAt;
+    const cutoffUpperBoundMs = Math.max(0, lastAudibleSampleAt - leaveRequestedAt) + 20;
+    expect(activeAudioBeforeLeave.activeSamples).toBeGreaterThan(10);
+    expect(activeAudioBeforeLeave.lastActiveAt).toBeGreaterThan(leaveRequestedAt - 250);
+    expect(finalAudio.lastActiveAfterStopAt).toBe(settledAudio.lastActiveAfterStopAt);
+    console.info(
+      `CP08.5 mounted UI leave cutoff: ${JSON.stringify({
+        cutoffUpperBoundMs,
+        audioSamplesBeforeLeave: activeAudioBeforeLeave.activeSamples,
+        lastAudibleSampleAfterLeaveMs: Math.max(
+          0,
+          finalAudio.lastActiveAfterStopAt - leaveRequestedAt,
+        ),
+        remoteAudioElementRemoved: true,
+        mapRemainsMounted: true,
+      })}`,
+    );
+    expect(
+      cutoffUpperBoundMs,
+      `Measured audio cutoff: ${cutoffUpperBoundMs}ms`,
+    ).toBeLessThanOrEqual(8000);
+    await stopRemoteAudioProbe(ownerPage);
+
+    await ownerPage.getByRole('button', { name: 'Leave office' }).click();
+    await memberPage.getByRole('button', { name: 'Leave office' }).click();
+  } finally {
+    await ownerContext?.close();
+    await memberContext?.close();
     await owner.client.dispose();
     await member.client.dispose();
   }

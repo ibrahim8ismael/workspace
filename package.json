@@ -39,6 +39,7 @@
     "test:media-token-refresh": "CP08_MEDIA_TOKEN_REFRESH=1 pnpm test:media-live",
     "test:media-permission-denied": "CP08_MEDIA_PERMISSION_DENIED=1 pnpm test:media-live",
     "test:e2e:live": "LIVE_OFFICE_E2E=1 pnpm exec playwright test tests/e2e/live-office.spec.ts",
+    "test:e2e:live-media": "LIVE_OFFICE_E2E=1 LIVE_OFFICE_MEDIA_E2E=1 pnpm exec playwright test tests/e2e/live-office.spec.ts -g \"mounted Vivo office carries and cuts off live nearby audio\"",
     "db:indexes": "pnpm build:packages && pnpm --filter @gather/api db:indexes",
     "test:contracts": "pnpm --filter @gather/contracts test",
     "test:world": "pnpm --filter @gather/world test",

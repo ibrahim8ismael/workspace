@@ -1,3 +1,4 @@
+import { OFFICE_LIMITS } from '@gather/contracts';
 import { TILE, WORLD } from '../shared/vivo-map.js';
 import {
   BLOCKED,
@@ -13,9 +14,11 @@ export type Tile = { tx: number; ty: number };
 export type Blocked = Set<string>;
 export { TILE, WORLD, BLOCKED, BLOCKED_EDGES, canStep, isBlockedTile };
 
-/** Reference walking pace: one tile every 142.86 ms (7 tiles per second). */
-export const STEP_MS = 1000 / 6; // six tiles a second: a calm walking pace
-export const RUN_STEP_MS = STEP_MS / 1.6;
+/** Local simulation pace for the standalone/legacy scene, which has no server movement intent. */
+export const LOCAL_STEP_MS = 1000 / 6;
+/** Keep prediction aligned with the API when the connected office supplies movement intents. */
+export const STEP_MS = (TILE / OFFICE_LIMITS.movementSpeedPixelsPerSecond) * 1000;
+export const RUN_STEP_MS = LOCAL_STEP_MS / 1.6;
 
 export const tileOf = (point: Point): Tile => ({
   tx: Math.floor(point.x / TILE),

@@ -8,6 +8,13 @@ https://localhost:8443 {
 	tls internal
 	encode zstd gzip
 
+	@livekit path /rtc /rtc/*
+	handle @livekit {
+		reverse_proxy media-guard:7885 {
+			header_up Origin {http.request.header.Origin}
+		}
+	}
+
 	@socketio path /socket.io /socket.io/*
 	handle @socketio {
 		reverse_proxy api:3000 {

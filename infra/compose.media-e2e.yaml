@@ -1,0 +1,92 @@
+# Local-only media integration fixture. This is not the production CP07
+# supervisor/SFU lease deployment profile.
+services:
+  api:
+    env_file:
+      - ./.env.local
+      - ./.env.media-e2e
+    environment:
+      LIVEKIT_URL: wss://localhost:8443
+
+  media-livekit:
+    image: livekit/livekit-server:v1.13.11@sha256:25cd902de7cacbd5f1f779f6a6ac1eae20ba8f56b0935934ce6b0ab80d1e3d20
+    profiles: [media-e2e]
+    environment:
+      LIVEKIT_CONFIG: |-
+        port: 7880
+        log_level: info
+        bind_addresses: [0.0.0.0]
+        rtc:
+          tcp_port: 17881
+          node_ip: 127.0.0.1
+          use_external_ip: false
+        keys:
+          "${LIVEKIT_API_KEY:?Run node infra/init-media-e2e-env.mjs first}": "${LIVEKIT_API_SECRET:?Run node infra/init-media-e2e-env.mjs first}"
+    expose: ['7880']
+    ports:
+      - 127.0.0.1:17881:17881/tcp
+    networks: [edge]
+    restart: 'no'
+
+  media-retirements-init:
+    image: node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d
+    profiles: [media-e2e]
+    user: '0:0'
+    command:
+      - node
+      - --input-type=module
+      - -e
+      - >-
+        import { chownSync, mkdirSync } from 'node:fs';
+        mkdirSync('/retirements', { recursive: true, mode: 0o700 });
+        chownSync('/retirements', 1000, 1000);
+    volumes:
+      - media-retirements:/retirements
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN]
+    security_opt: [no-new-privileges:true]
+    restart: 'no'
+
+  media-guard:
+    image: gather-lite-media-guard-local
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
+      target: media-guard-runtime
+    profiles: [media-e2e]
+    env_file:
+      - ./.env.media-e2e
+    environment:
+      CP07_KEY: ${LIVEKIT_API_KEY:?Run node infra/init-media-e2e-env.mjs first}
+      CP07_SECRET: ${LIVEKIT_API_SECRET:?Run node infra/init-media-e2e-env.mjs first}
+      CP07_ORIGIN: https://localhost:8443
+      CP07_RETIREMENTS: /var/lib/gather/media-retirements
+      CP07_APPLICATION_POLICY: '1'
+      CP07_POLICY_ENDPOINT: http://api:3000/api/media/internal/policy/pull
+      CP07_POLICY_ACK_ENDPOINT: http://api:3000/api/media/internal/policy/ack
+      CP07_POLICY_KEY: ${MEDIA_MACHINE_KEY:?Run node infra/init-media-e2e-env.mjs first}
+      CP07_SFU_UPSTREAM: http://media-livekit:7880
+      CP07_GUARD_HOST: 0.0.0.0
+      CP07_GUARD_PORT: '7885'
+    depends_on:
+      api:
+        condition: service_healthy
+      media-livekit:
+        condition: service_started
+      media-retirements-init:
+        condition: service_completed_successfully
+    expose: ['7885']
+    volumes:
+      - media-retirements:/var/lib/gather/media-retirements
+    read_only: true
+    tmpfs: [/tmp]
+    user: '1000:1000'
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [edge]
+    restart: 'no'
+
+volumes:
+  media-retirements:

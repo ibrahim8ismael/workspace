@@ -48,3 +48,35 @@ The unguarded SFU accepted stale tokens on restart. Guarded admission plus persi
 This evidence establishes the named local spike profile only. It does not integrate application membership/session/conversation policy, grant issuance or real company lifecycle. Those belong to CP08/CP09. Synthetic fixed identities must not be used in production. The local machine still grants the operator Docker control; no unrestricted Docker interface is exposed to the app/browser, but actual deployment service users, volume permissions, TLS, key rotation, scheduler monitoring and privileged operations need CP10 review.
 
 No test stops the shared development Docker daemon or proves a frozen kernel/hypervisor, a malicious authorized lease writer, deletion/rollback of protected denial storage, or production TURN/UDP/alternate ingress. Extending the profile to those transports requires rerunning bypass and cutoff scenarios before enabling them. A07 remains a release gate; these local results do not imply a production availability or universal timing guarantee. Shared-node fail-closed shutdown intentionally interrupts authorized companies on that node and must be reflected in pilot limitations.
+
+## CP08.7 — application-integrated media evidence
+
+Date: 2026-11-11. Environment: local macOS/OrbStack Docker, application API plus the real CP07
+application guard and pinned LiveKit SFU, Chromium fake microphone/audio capture. These focused
+cases use API-issued, short-lived application grants and real Chromium LiveKit clients. They do not
+replace CP07's separate-supervisor fault profile or prove deployment acceptance. The SFU image is
+`livekit/livekit-server@sha256:25cd902de7cacbd5f1f779f6a6ac1eae20ba8f56b0935934ce6b0ab80d1e3d20`;
+the workspace pins `livekit-client` 2.23.0 and `livekit-server-sdk` 2.19.2, with Playwright
+1.65.0 / Chromium 158.0.8127.18.
+
+| Scenario | Method and observation | Result |
+| --- | --- | --- |
+| Browser capture denial | One real application media client receives browser-standard `NotAllowedError`; peer and denied session go through API grants, guard and LiveKit. The denied identity is absent from the SFU roster, the peer remains authorized, recovery state is surfaced, and office Socket.IO stays connected. | Passed; room cleans up after conversation end |
+| TURN-only | LiveKit embedded TURN is enabled; test clients force `iceTransportPolicy: 'relay'`. Instrumented browser RTCPeerConnections report candidate types. Both pages reported only `relay`, connected ICE, and decoded audio samples (11 and 10 in the recorded rerun). | Passed; no direct candidate observed |
+| Weak network | A disposable Alpine sidecar applies 120 ms delay, ±40 ms jitter and 3% random packet loss to SFU egress using `tc netem`. `tc -s` recorded 29 dropped packets. Both clients remained live with connected ICE and peer audio; sample deltas were 105 and 112, with no reconnect. | Passed under this injected profile |
+| Cross-company media | Four Chromium clients join two API-authorized company conversations in separate LiveKit rooms through the same guard/SFU. Each room contains its two authorized identities; neither company receives a remote track from the other. Company B ends; its media reaches stable cutoff while Company's A two-person room continues. | Passed locally; SFU rosters 2/2 before leave, 0 cross-company tracks |
+
+Commands: `pnpm test:media-permission-denied`, `pnpm test:media-turn-only`,
+`pnpm test:media-weak-network`, and `pnpm test:media-cross-company`. The TURN-only rerun logs the
+observed candidate types, ICE connection and decoded audio counts. Weak-network shaping occurs only
+inside the disposable fixture network namespace and is cleared during cleanup. Cross-company
+evidence proves these two isolated application conversations in one local SFU process; it is not a
+multi-tenant load, account lifecycle or production routing test.
+
+This closes only the named CP08.7 local scenarios. A07/A08 remain release gates pending deployed
+listener/ICE/TURN exposure and credentials, production guard/supervisor/SFU failure-domain tests,
+physical-device and real browser permission-prompt behavior, browser/version signoff, screen-share
+and fixed-meeting policy, capacity/load, migration interruption, and a production-like rerun of the
+relevant cutoff and isolation cases. Local synthetic audio and an embedded TURN server do not prove
+reachable production UDP ports or an external TURN service. No production host/network or external
+media provider was modified for these tests.

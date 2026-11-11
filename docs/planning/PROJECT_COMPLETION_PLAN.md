@@ -352,16 +352,19 @@ and wrong content type. This is an authenticated observation journal, not a peri
 reconciliation job or durable generation-retirement/tombstone mechanism; those remain outside this
 slice and do not authorize release.
 
-**CP08.7 — release evidence (pending).** Run denied-capture, TURN-only, weak-network and cross-
-company media tests. Record deployment listener exposure and SDK/SFU digests in
-`docs/planning/MEDIA_ENFORCEMENT_EVIDENCE.md`, link each result to A07/A08 and keep release gated
-until the actual media path passes.
+**CP08.7 — local scenario evidence complete; release evidence remains open (2026-11-11).** The
+application-grant/guard/LiveKit path now passes browser capture denial, TURN-only relay candidates,
+injected weak-network loss and two-company room/track isolation. The exact profile and observations
+are in [`MEDIA_ENFORCEMENT_EVIDENCE.md`](MEDIA_ENFORCEMENT_EVIDENCE.md#cp087--application-integrated-media-evidence).
+These Docker/Chromium results do not verify production listener exposure, reachable UDP/TURN
+configuration, production process failure domains, physical-device prompts, screen sharing, fixed
+meetings, migration interruption or capacity; A07/A08 remain release gates for those items.
 
 The old `apps/web/{useMedia.ts,useSfu.ts,MeetingView.tsx}` P2P lifecycle is not mounted and must not
 be reconnected. The active adapter is `apps/web/src/features/office/proximity-audio-session.ts`;
 fixed meeting camera/screen controls remain CP09.
 
-Exit: real two-browser audio, denied capture, opt-out/away/leave, boundary churn, logout/reset/removal during calls, expired leases, reconnect, stale original/refreshed grants and isolated companies. Re-run forwarding measurements on the integrated path. TURN-only and weak-network scenarios have recorded outcomes. Record A07/A08/A11.
+Exit: real two-browser audio, denied capture, opt-out/away/leave, boundary churn, logout/reset/removal during calls, expired leases, reconnect, stale original/refreshed grants and isolated companies. Re-run forwarding measurements on the integrated path. Local TURN-only, weak-network and cross-company scenarios are recorded; production listener/failure-domain, physical-device, browser-prompt, screen-share, migration and capacity evidence remain before A07/A08/A11 release acceptance.
 
 ### CP09 — Complete fixed meetings and company administration
 

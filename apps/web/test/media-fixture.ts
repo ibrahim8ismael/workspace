@@ -23,6 +23,8 @@ declare global {
       activeAudioSamples: number;
       lastActiveAudioAt: number;
       startedAt: number;
+      gatheredCandidateTypes: string[];
+      iceStates: string[];
       disconnectReason: string;
       refreshedToken: string;
       tokenRefreshCount: number;
@@ -38,10 +40,38 @@ window.__mediaFixture = {
   activeAudioSamples: 0,
   lastActiveAudioAt: 0,
   startedAt: 0,
+  gatheredCandidateTypes: [],
+  iceStates: [],
   disconnectReason: '',
   refreshedToken: '',
   tokenRefreshCount: 0,
 };
+
+const NativeRTCPeerConnection = window.RTCPeerConnection;
+window.RTCPeerConnection = new Proxy(NativeRTCPeerConnection, {
+  construct(target, args, newTarget) {
+    const peer = Reflect.construct(target, args, newTarget);
+    peer.addEventListener('icecandidate', (event: Event) => {
+      const candidate = (event as RTCPeerConnectionIceEvent).candidate;
+      const type = candidate?.type;
+      if (type && !window.__mediaFixture.gatheredCandidateTypes.includes(type))
+        window.__mediaFixture.gatheredCandidateTypes.push(type);
+    });
+    peer.addEventListener('iceconnectionstatechange', () => {
+      const state = `connection:${peer.iceConnectionState}`;
+      if (!window.__mediaFixture.iceStates.includes(state))
+        window.__mediaFixture.iceStates.push(state);
+    });
+    peer.addEventListener('icegatheringstatechange', () => {
+      const state = `gathering:${peer.iceGatheringState}`;
+      if (!window.__mediaFixture.iceStates.includes(state))
+        window.__mediaFixture.iceStates.push(state);
+    });
+    return peer;
+  },
+});
+
+const relayOnly = new URLSearchParams(location.search).get('ice') === 'relay';
 
 const session = new ProximityAudioSession(
   (status, error) => {
@@ -96,6 +126,7 @@ const session = new ProximityAudioSession(
         window.__mediaFixture.refreshedToken = token;
         window.__mediaFixture.tokenRefreshCount += 1;
       },
+      relayOnly ? { iceTransportPolicy: 'relay' } : undefined,
     ),
 );
 

@@ -37,6 +37,7 @@ function mediaError(error: unknown) {
 export async function createLiveKitProximityRoom(
   onDisconnectReason?: (reason: unknown) => void,
   onTokenRefreshed?: (token: string) => void,
+  rtcConfig?: RTCConfiguration,
 ): Promise<ProximityRoom> {
   const { EngineEvent, Room, RoomEvent, Track } = await import('livekit-client');
   const room = new Room({
@@ -49,7 +50,7 @@ export async function createLiveKitProximityRoom(
   }
   return {
     connect: async (serverUrl, token) => {
-      await room.connect(serverUrl, token);
+      await room.connect(serverUrl, token, rtcConfig ? { rtcConfig } : undefined);
     },
     disconnect: async () => {
       await room.disconnect();

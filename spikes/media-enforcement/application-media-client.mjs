@@ -14,12 +14,18 @@ function withoutRefreshedToken(observation) {
   return safe;
 }
 
-export async function startApplicationMediaClient({ fixtureUrl, grants, denyMicrophoneIndex }) {
+export async function startApplicationMediaClient({
+  fixtureUrl,
+  grants,
+  denyMicrophoneIndex,
+  forceRelay = false,
+}) {
   if (
     typeof fixtureUrl !== 'string' ||
     !fixtureUrl.startsWith('http://127.0.0.1:') ||
     !Array.isArray(grants) ||
     grants.length !== 2 ||
+    typeof forceRelay !== 'boolean' ||
     (denyMicrophoneIndex !== undefined && ![0, 1].includes(denyMicrophoneIndex)) ||
     grants.some(
       (grant) =>
@@ -74,7 +80,9 @@ export async function startApplicationMediaClient({ fixtureUrl, grants, denyMicr
         socket.on('close', () => browserErrors.push(`websocket closed ${path}`));
       });
     }
-    await Promise.all(pages.map((page) => page.goto(fixtureUrl)));
+    const mediaFixtureUrl = new URL(fixtureUrl);
+    if (forceRelay) mediaFixtureUrl.searchParams.set('ice', 'relay');
+    await Promise.all(pages.map((page) => page.goto(mediaFixtureUrl.toString())));
     await Promise.all(
       pages.map((page, index) =>
         page.evaluate(
@@ -126,6 +134,21 @@ export async function startApplicationMediaClient({ fixtureUrl, grants, denyMicr
           `application LiveKit audio was not mutual and active: ${JSON.stringify({ observations: observations.map(withoutRefreshedToken), browserErrors })}`,
         );
       }
+      if (forceRelay) {
+        const observations = await Promise.all(pages.map(readObservations));
+        const relayOnlyAudio = observations.every(
+          ({ gatheredCandidateTypes, iceStates, activeAudioSamples, remoteIdentities }, index) =>
+            gatheredCandidateTypes.length > 0 &&
+            gatheredCandidateTypes.every((candidateType) => candidateType === 'relay') &&
+            iceStates.includes('connection:connected') &&
+            activeAudioSamples >= 10 &&
+            remoteIdentities.includes(grants[index === 0 ? 1 : 0].identity),
+        );
+        if (!relayOnlyAudio)
+          throw new Error(
+            `TURN-only audio did not remain on connected relay candidates: ${JSON.stringify(observations.map(withoutRefreshedToken))}`,
+          );
+      }
     }
     const observations = (await Promise.all(pages.map(readObservations))).map(
       withoutRefreshedToken,
@@ -134,6 +157,48 @@ export async function startApplicationMediaClient({ fixtureUrl, grants, denyMicr
       observations,
       pages,
       grants,
+      exerciseWeakNetwork: async () => {
+        const before = await Promise.all(pages.map(readObservations));
+        await Promise.all(
+          pages.map((page, index) =>
+            page.waitForFunction(
+              ({ previousSamples, peerIdentity }) =>
+                window.__mediaFixture.status === 'live' &&
+                window.__mediaFixture.iceStates.includes('connection:connected') &&
+                window.__mediaFixture.remoteIdentities.includes(peerIdentity) &&
+                window.__mediaFixture.activeAudioSamples >= previousSamples + 60,
+              {
+                previousSamples: before[index].activeAudioSamples,
+                peerIdentity: grants[index === 0 ? 1 : 0].identity,
+              },
+              { timeout: 15000 },
+            ),
+          ),
+        );
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        const after = await Promise.all(pages.map(readObservations));
+        const report = after.map((observation, index) => ({
+          status: observation.status,
+          connected: observation.iceStates.includes('connection:connected'),
+          peerPresent: observation.remoteIdentities.includes(grants[index === 0 ? 1 : 0].identity),
+          audioSampleDelta: observation.activeAudioSamples - before[index].activeAudioSamples,
+          sawReconnect: observation.statusHistory.includes('reconnecting'),
+        }));
+        if (
+          report.some(
+            (client) =>
+              client.status !== 'live' ||
+              !client.connected ||
+              !client.peerPresent ||
+              client.audioSampleDelta < 60 ||
+              client.sawReconnect,
+          )
+        )
+          throw new Error(
+            `media did not remain healthy under packet loss and jitter: ${JSON.stringify(report)}`,
+          );
+        return { durationMs: 3000, clients: report };
+      },
       exerciseMuteUnmute: async () => {
         const sender = pages[0];
         const receiver = pages[1];
@@ -278,6 +343,11 @@ export async function runApplicationMediaCutoffCli() {
       if (command.kind === 'exercise-mute-unmute') {
         const result = await client.exerciseMuteUnmute();
         process.stdout.write(JSON.stringify({ kind: 'media-controls', ...result }) + '\n');
+        continue;
+      }
+      if (command.kind === 'exercise-weak-network') {
+        const result = await client.exerciseWeakNetwork();
+        process.stdout.write(JSON.stringify({ kind: 'weak-network', ...result }) + '\n');
         continue;
       }
       if (command.kind === 'exercise-reconnect') {

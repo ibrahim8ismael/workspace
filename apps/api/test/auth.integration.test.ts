@@ -87,6 +87,9 @@ const runLiveMediaFixture = process.env['CP08_REAL_MEDIA'] === '1';
 const runMediaReconnect = process.env['CP08_MEDIA_RECONNECT'] === '1';
 const runMediaTokenRefresh = process.env['CP08_MEDIA_TOKEN_REFRESH'] === '1';
 const runMediaPermissionDenied = process.env['CP08_MEDIA_PERMISSION_DENIED'] === '1';
+const runMediaTurnOnly = process.env['CP08_MEDIA_TURN_ONLY'] === '1';
+const runMediaWeakNetwork = process.env['CP08_MEDIA_WEAK_NETWORK'] === '1';
+const runMediaCrossCompany = process.env['CP08_MEDIA_CROSS_COMPANY'] === '1';
 const configuredMediaEnd = process.env['CP08_MEDIA_END'] ?? 'leave';
 const mediaEndScenario = runLiveMediaFixture
   ? ['opt-out', 'away', 'session-revoke', 'membership-revoke'].includes(configuredMediaEnd)
@@ -95,6 +98,8 @@ const mediaEndScenario = runLiveMediaFixture
   : 'leave';
 const liveKitFixtureImage =
   'livekit/livekit-server@sha256:25cd902de7cacbd5f1f779f6a6ac1eae20ba8f56b0935934ce6b0ab80d1e3d20';
+const mediaNetemHelperImage =
+  'alpine@sha256:49340b346798875b5592e5d420241f2f9cfba5f47e62ebb1446a1b34734e898f';
 const execFileAsync = promisify(execFileCallback);
 let app: NestExpressApplication;
 let mongo: MongoMemoryReplSet;
@@ -108,6 +113,24 @@ async function unusedLoopbackPort() {
   const port = await listenLoopback(server);
   await closeHttpServer(server);
   return port;
+}
+
+function ipv4AddressAtOffset(subnet: string, offset: number) {
+  const [address, prefixValue] = subnet.split('/');
+  const octets = address?.split('.').map(Number);
+  const prefix = Number(prefixValue);
+  if (
+    octets?.length !== 4 ||
+    octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255) ||
+    !Number.isInteger(prefix) ||
+    prefix < 0 ||
+    prefix > 30
+  )
+    throw new Error('Docker returned an invalid IPv4 fixture subnet');
+  const value = octets.reduce((current, octet) => (current * 256 + octet) >>> 0, 0);
+  const mask = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
+  const hostAddress = (((value & mask) >>> 0) + offset) >>> 0;
+  return [24, 16, 8, 0].map((shift) => (hostAddress >>> shift) & 0xff).join('.');
 }
 
 async function startViteMediaFixture() {
@@ -180,7 +203,40 @@ async function startLiveKitFixture() {
   };
   const signalingPort = await unusedLoopbackPort();
   const rtcPort = await unusedLoopbackPort();
-  const config = `port: 7880\nbind_addresses: [0.0.0.0]\nrtc:\n  tcp_port: ${rtcPort}\n  node_ip: 127.0.0.1\n  use_external_ip: false\nkeys:\n  ${livekitApiKey}: ${livekitApiSecret}\n`;
+  const turnPort = runMediaTurnOnly ? await unusedLoopbackPort() : undefined;
+  const networkName = turnPort ? `gather-cp08-turn-${randomUUID()}` : undefined;
+  let containerIp: string | undefined;
+  let networkSubnet: string | undefined;
+  if (networkName) {
+    await docker('network', 'create', '--label', 'gather.cp08.fixture=true', networkName);
+    try {
+      const networkInfo = JSON.parse(await docker('network', 'inspect', networkName)) as Array<{
+        IPAM?: { Config?: Array<{ Subnet?: string }> };
+      }>;
+      networkSubnet = networkInfo[0]?.IPAM?.Config?.[0]?.Subnet;
+      if (!networkSubnet) throw new Error('Docker fixture network has no IPv4 subnet');
+      containerIp = ipv4AddressAtOffset(networkSubnet, 2);
+    } catch (error) {
+      await docker('network', 'rm', networkName).catch(() => '');
+      throw error;
+    }
+  }
+  const turnConfig = turnPort
+    ? `turn:\n  enabled: true\n  domain: ${containerIp}\n  udp_port: ${turnPort}\n  relay_range_start: 30000\n  relay_range_end: 30007\n  allow_restricted_peer_cidrs: [${networkSubnet}]\n`
+    : '';
+  const config = `port: ${turnPort ? signalingPort : 7880}\nbind_addresses: [0.0.0.0]\nrtc:\n  tcp_port: ${rtcPort}\n  node_ip: ${containerIp ?? '127.0.0.1'}\n  use_external_ip: false\nkeys:\n  ${livekitApiKey}: ${livekitApiSecret}\n${turnConfig}`;
+  const networkArgs = turnPort
+    ? [
+        '--network',
+        networkName!,
+        '--ip',
+        containerIp!,
+        '-p',
+        `127.0.0.1:${signalingPort}:${signalingPort}`,
+        '-p',
+        `127.0.0.1:${rtcPort}:${rtcPort}`,
+      ]
+    : ['-p', `127.0.0.1:${signalingPort}:7880`, '-p', `127.0.0.1:${rtcPort}:${rtcPort}`];
   const containerId = await docker(
     'run',
     '-d',
@@ -188,14 +244,12 @@ async function startLiveKitFixture() {
     'no',
     '--label',
     'gather.cp08.fixture=true',
-    '-p',
-    `127.0.0.1:${signalingPort}:7880`,
-    '-p',
-    `127.0.0.1:${rtcPort}:${rtcPort}`,
+    ...networkArgs,
     '-e',
     `LIVEKIT_CONFIG=${config}`,
     liveKitFixtureImage,
   );
+  let netemHelperId: string | undefined;
   try {
     await vi.waitFor(
       async () => {
@@ -214,15 +268,88 @@ async function startLiveKitFixture() {
     containerId,
     signalingPort,
     docker,
+    applyWeakNetwork: async () => {
+      if (netemHelperId) throw new Error('Network impairment is already active');
+      netemHelperId = await docker(
+        'run',
+        '-d',
+        '--network',
+        `container:${containerId}`,
+        '--cap-add',
+        'NET_ADMIN',
+        mediaNetemHelperImage,
+        'sh',
+        '-c',
+        'apk add --no-cache iproute2 && echo ready && sleep 300',
+      );
+      try {
+        const helperReadyDeadline = Date.now() + 30000;
+        while (Date.now() < helperReadyDeadline) {
+          const logs = await docker('logs', netemHelperId);
+          if (logs.includes('ready')) break;
+          const state = JSON.parse(
+            await docker('inspect', '--format', '{{json .State}}', netemHelperId),
+          ) as { Running?: boolean };
+          if (!state.Running)
+            throw new Error(`Packet-impairment helper exited during setup: ${logs.slice(-500)}`);
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+        if (Date.now() >= helperReadyDeadline)
+          throw new Error('Packet-impairment helper did not finish installing iproute2');
+        await docker(
+          'exec',
+          netemHelperId,
+          'tc',
+          'qdisc',
+          'replace',
+          'dev',
+          'eth0',
+          'root',
+          'netem',
+          'delay',
+          '120ms',
+          '40ms',
+          'distribution',
+          'normal',
+          'loss',
+          '3%',
+        );
+        return await docker('exec', netemHelperId, 'tc', '-s', 'qdisc', 'show', 'dev', 'eth0');
+      } catch (error) {
+        await docker('rm', '-f', netemHelperId).catch(() => '');
+        netemHelperId = undefined;
+        throw error;
+      }
+    },
+    readWeakNetworkStats: async () => {
+      if (!netemHelperId) throw new Error('Network impairment is not active');
+      return docker('exec', netemHelperId, 'tc', '-s', 'qdisc', 'show', 'dev', 'eth0');
+    },
+    clearWeakNetwork: async () => {
+      if (!netemHelperId) return;
+      await docker('exec', netemHelperId, 'tc', 'qdisc', 'del', 'dev', 'eth0', 'root').catch(
+        () => '',
+      );
+      await docker('rm', '-f', netemHelperId).catch(() => '');
+      netemHelperId = undefined;
+    },
     restartInPlace: async () => {
       await docker('restart', containerId);
     },
     restart: async () => {
       await docker('rm', '-f', containerId);
+      if (networkName) await docker('network', 'rm', networkName).catch(() => '');
       return startLiveKitFixture();
     },
     stop: async () => {
+      if (netemHelperId) {
+        await docker('exec', netemHelperId, 'tc', 'qdisc', 'del', 'dev', 'eth0', 'root').catch(
+          () => '',
+        );
+        await docker('rm', '-f', netemHelperId).catch(() => '');
+      }
       await docker('rm', '-f', containerId).catch(() => '');
+      if (networkName) await docker('network', 'rm', networkName).catch(() => '');
     },
   };
 }
@@ -237,6 +364,7 @@ type ApplicationMediaClient = {
 function startApplicationMediaClient(config: {
   fixtureUrl: string;
   denyMicrophoneIndex?: 0 | 1;
+  forceRelay?: boolean;
   grants: Array<{
     serverUrl: string;
     token: string;
@@ -2209,7 +2337,17 @@ describe('office socket admission', () => {
       let mediaFixture: Awaited<ReturnType<typeof startViteMediaFixture>> | undefined;
       let liveKitFixture: Awaited<ReturnType<typeof startLiveKitFixture>> | undefined;
       let applicationMediaClient: ApplicationMediaClient | undefined;
+      let crossCompanyMediaClient: ApplicationMediaClient | undefined;
       let retirementDirectory: string | undefined;
+      let crossCompanyOwner: Awaited<ReturnType<typeof account>> | undefined;
+      let crossCompanyMember: Awaited<ReturnType<typeof account>> | undefined;
+      let crossCompanyWorkspaceId: string | undefined;
+      let crossCompanyOwnerSocket: Socket | undefined;
+      let crossCompanyMemberSocket: Socket | undefined;
+      let crossCompanyOwnerReady: ReturnType<typeof officeReadySchema.parse> | undefined;
+      let crossCompanyMemberReady: ReturnType<typeof officeReadySchema.parse> | undefined;
+      let crossCompanyJoining: ReturnType<typeof conversationUpdateSchema.parse> | undefined;
+      let crossCompanyActive: ReturnType<typeof conversationUpdateSchema.parse> | undefined;
       const forwardedSignalingPaths: string[] = [];
       observerSocket.on('conversation:update', (notice: unknown) => observerNotices.push(notice));
 
@@ -2223,6 +2361,37 @@ describe('office socket admission', () => {
         const observerReadyEvent = nextSocketEvent<unknown>(observerSocket, 'office:ready');
         await connectSocket(observerSocket);
         await observerReadyEvent;
+
+        if (runMediaCrossCompany) {
+          crossCompanyOwner = await account();
+          crossCompanyMember = await account();
+          crossCompanyWorkspaceId = await workspace(crossCompanyOwner);
+          await join(crossCompanyOwner, crossCompanyWorkspaceId, crossCompanyMember);
+          const [ownerTicket, memberTicket] = await Promise.all([
+            issueTicket(crossCompanyOwner, crossCompanyWorkspaceId),
+            issueTicket(crossCompanyMember, crossCompanyWorkspaceId),
+          ]);
+          crossCompanyOwnerSocket = officeSocket({
+            ticket: ownerTicket.ticket,
+            protocolVersion: 1,
+          });
+          crossCompanyMemberSocket = officeSocket({
+            ticket: memberTicket.ticket,
+            protocolVersion: 1,
+          });
+          const crossOwnerReadyEvent = nextSocketEvent<unknown>(
+            crossCompanyOwnerSocket,
+            'office:ready',
+          );
+          await connectSocket(crossCompanyOwnerSocket);
+          crossCompanyOwnerReady = officeReadySchema.parse(await crossOwnerReadyEvent);
+          const crossMemberReadyEvent = nextSocketEvent<unknown>(
+            crossCompanyMemberSocket,
+            'office:ready',
+          );
+          await connectSocket(crossCompanyMemberSocket);
+          crossCompanyMemberReady = officeReadySchema.parse(await crossMemberReadyEvent);
+        }
 
         const firstParticipant = firstReady.snapshot.participants.find(
           (participant) => participant.participationId === firstReady.participationId,
@@ -2239,6 +2408,12 @@ describe('office socket admission', () => {
 
         const firstJoinNotice = nextSocketEvent<unknown>(firstSocket, 'conversation:update');
         const secondJoinNotice = nextSocketEvent<unknown>(secondSocket, 'conversation:update');
+        const crossCompanyOwnerJoinNotice = crossCompanyOwnerSocket
+          ? nextSocketEvent<unknown>(crossCompanyOwnerSocket, 'conversation:update')
+          : undefined;
+        const crossCompanyMemberJoinNotice = crossCompanyMemberSocket
+          ? nextSocketEvent<unknown>(crossCompanyMemberSocket, 'conversation:update')
+          : undefined;
         const firstOptIn = {
           eventId: randomUUID(),
           officeEpoch: firstReady.snapshot.officeEpoch,
@@ -2264,8 +2439,47 @@ describe('office socket admission', () => {
           eventId: secondOptIn.eventId,
           ok: true,
         });
+        if (
+          crossCompanyOwnerSocket &&
+          crossCompanyMemberSocket &&
+          crossCompanyOwnerReady &&
+          crossCompanyMemberReady &&
+          crossCompanyOwnerJoinNotice &&
+          crossCompanyMemberJoinNotice
+        ) {
+          const ownerOptIn = {
+            eventId: randomUUID(),
+            officeEpoch: crossCompanyOwnerReady.snapshot.officeEpoch,
+            payload: { enabled: true },
+          };
+          const ownerOptInAck = await new Promise<unknown>((resolve) => {
+            crossCompanyOwnerSocket!.emit('proximity:set-opt-in', ownerOptIn, resolve);
+          });
+          expect(officeCommandAckSchema.parse(ownerOptInAck)).toMatchObject({ ok: true });
+          const memberOptIn = {
+            eventId: randomUUID(),
+            officeEpoch: crossCompanyMemberReady.snapshot.officeEpoch,
+            payload: { enabled: true },
+          };
+          const memberOptInAck = await new Promise<unknown>((resolve) => {
+            crossCompanyMemberSocket!.emit('proximity:set-opt-in', memberOptIn, resolve);
+          });
+          expect(officeCommandAckSchema.parse(memberOptInAck)).toMatchObject({ ok: true });
+          crossCompanyJoining = conversationUpdateSchema.parse(await crossCompanyOwnerJoinNotice);
+          expect(conversationUpdateSchema.parse(await crossCompanyMemberJoinNotice)).toEqual(
+            crossCompanyJoining,
+          );
+          expect(crossCompanyJoining).toMatchObject({
+            kind: 'proximity',
+            state: 'joining',
+            version: 1,
+            mediaReady: false,
+          });
+        }
         const joining = conversationUpdateSchema.parse(await firstJoinNotice);
         expect(conversationUpdateSchema.parse(await secondJoinNotice)).toEqual(joining);
+        if (crossCompanyJoining)
+          expect(crossCompanyJoining.conversationId).not.toBe(joining.conversationId);
         expect(joining).toMatchObject({
           officeEpoch: firstReady.snapshot.officeEpoch,
           kind: 'proximity',
@@ -2317,17 +2531,25 @@ describe('office socket admission', () => {
           nonce: challenge.nonce,
           sequence: 1,
         });
-        expect(snapshot.permits).toHaveLength(2);
+        const expectedPermitIdentities = [
+          firstReady.participationId,
+          secondReady.participationId,
+          ...(crossCompanyOwnerReady ? [crossCompanyOwnerReady.participationId] : []),
+          ...(crossCompanyMemberReady ? [crossCompanyMemberReady.participationId] : []),
+        ];
+        expect(snapshot.permits).toHaveLength(expectedPermitIdentities.length);
         expect(snapshot.permits.map(({ identity }) => identity).sort()).toEqual(
-          [firstReady.participationId, secondReady.participationId].sort(),
+          expectedPermitIdentities.sort(),
         );
+        const expectedGenerations = new Set([
+          joining.generation,
+          ...(crossCompanyJoining ? [crossCompanyJoining.generation] : []),
+        ]);
         for (const permit of snapshot.permits) {
-          expect(permit).toMatchObject({
-            generation: joining.generation,
-            room: joining.generation,
-            version: 1,
-            sources: ['microphone'],
-          });
+          expect(expectedGenerations.has(permit.generation)).toBe(true);
+          expect(permit.room).toBe(permit.generation);
+          expect(permit.version).toBe(1);
+          expect(permit.sources).toEqual(['microphone']);
         }
         expect(signedPull.headers['x-cp07-signature']).toBe(
           createHmac('sha256', mediaMachineKey).update(signedPull.text).digest('hex'),
@@ -2347,6 +2569,12 @@ describe('office socket admission', () => {
 
         const firstActiveNotice = nextSocketEvent<unknown>(firstSocket, 'conversation:update');
         const secondActiveNotice = nextSocketEvent<unknown>(secondSocket, 'conversation:update');
+        const crossCompanyOwnerActiveNotice = crossCompanyOwnerSocket
+          ? nextSocketEvent<unknown>(crossCompanyOwnerSocket, 'conversation:update')
+          : undefined;
+        const crossCompanyMemberActiveNotice = crossCompanyMemberSocket
+          ? nextSocketEvent<unknown>(crossCompanyMemberSocket, 'conversation:update')
+          : undefined;
         const acknowledgement = {
           epoch: snapshot.epoch,
           nonce: snapshot.nonce,
@@ -2375,6 +2603,21 @@ describe('office socket admission', () => {
           version: 2,
           mediaReady: true,
         });
+        if (crossCompanyOwnerActiveNotice && crossCompanyMemberActiveNotice) {
+          crossCompanyActive = conversationUpdateSchema.parse(await crossCompanyOwnerActiveNotice);
+          expect(conversationUpdateSchema.parse(await crossCompanyMemberActiveNotice)).toEqual(
+            crossCompanyActive,
+          );
+          expect(crossCompanyActive).toMatchObject({
+            conversationId: crossCompanyJoining?.conversationId,
+            generation: crossCompanyJoining?.generation,
+            kind: 'proximity',
+            state: 'active',
+            version: 2,
+            mediaReady: true,
+          });
+          expect(crossCompanyActive.generation).not.toBe(active.generation);
+        }
 
         const tokenPath = `/api/conversations/${joining.conversationId}/media-token`;
         const issued = await first.client.send('post', tokenPath, {
@@ -2411,6 +2654,44 @@ describe('office socket admission', () => {
         expect(tokenClaims.video).not.toHaveProperty('roomList');
         expect(tokenClaims.video).not.toHaveProperty('roomRecord');
         const applicationTokenExpiries = [tokenClaims.exp];
+        const crossCompanyMediaGrants: Array<{
+          serverUrl: string;
+          token: string;
+          conversationVersion: number;
+          generation: string;
+          identity: string;
+        }> = [];
+        if (
+          crossCompanyActive &&
+          crossCompanyOwner &&
+          crossCompanyMember &&
+          crossCompanyOwnerReady &&
+          crossCompanyMemberReady
+        ) {
+          for (const [companyAccount, ready] of [
+            [crossCompanyOwner, crossCompanyOwnerReady],
+            [crossCompanyMember, crossCompanyMemberReady],
+          ] as const) {
+            const crossIssued = await companyAccount.client.send(
+              'post',
+              `/api/conversations/${crossCompanyActive.conversationId}/media-token`,
+              {
+                participationId: ready.participationId,
+                conversationVersion: crossCompanyActive.version,
+              },
+            );
+            status(crossIssued, 200);
+            const crossGrant = mediaTokenResponseSchema.parse(crossIssued.body);
+            const crossClaims = await new TokenVerifier(livekitApiKey, livekitApiSecret).verify(
+              crossGrant.token,
+              0,
+            );
+            expect(crossClaims.sub).toBe(ready.participationId);
+            expect(crossClaims.video?.room).toBe(crossCompanyActive.generation);
+            applicationTokenExpiries.push(crossClaims.exp);
+            crossCompanyMediaGrants.push({ ...crossGrant, identity: ready.participationId });
+          }
+        }
 
         if (runLiveMediaFixture) {
           liveKitFixture = await startLiveKitFixture();
@@ -2445,6 +2726,7 @@ describe('office socket admission', () => {
           (message) => message.kind === 'ack' && message.sequence! > snapshot.sequence,
           'the application-policy installation acknowledgement',
         );
+        let latestGuardSequence = firstGuardAck.sequence!;
         const tokenValidationUrl = new URL(`http://127.0.0.1:${guardPort}/rtc/v1/validate`);
         tokenValidationUrl.searchParams.set('access_token', mediaGrant.token);
         tokenValidationUrl.searchParams.set(
@@ -2486,6 +2768,7 @@ describe('office socket admission', () => {
           applicationMediaClient = startApplicationMediaClient({
             fixtureUrl: mediaFixture!.url,
             ...(runMediaPermissionDenied ? { denyMicrophoneIndex: 1 } : {}),
+            forceRelay: runMediaTurnOnly,
             grants: [
               { ...mediaGrant, identity: firstReady.participationId },
               { ...secondMediaGrant, identity: secondReady.participationId },
@@ -2513,8 +2796,31 @@ describe('office socket admission', () => {
             error: string;
             remoteIdentities: string[];
             activeAudioSamples: number;
+            gatheredCandidateTypes: string[];
+            iceStates: string[];
           }>;
           expect(observations).toHaveLength(2);
+          if (runMediaTurnOnly) {
+            expect(
+              observations.every(
+                ({ gatheredCandidateTypes, iceStates }) =>
+                  gatheredCandidateTypes.length > 0 &&
+                  gatheredCandidateTypes.every((type) => type === 'relay') &&
+                  iceStates.includes('connection:connected'),
+              ),
+            ).toBe(true);
+            console.info(
+              `CP08.7 TURN-only media: ${JSON.stringify({
+                clients: observations.map(
+                  ({ gatheredCandidateTypes, iceStates, activeAudioSamples }) => ({
+                    candidateTypes: gatheredCandidateTypes,
+                    iceConnected: iceStates.includes('connection:connected'),
+                    decodedAudioSamples: activeAudioSamples,
+                  }),
+                ),
+              })}`,
+            );
+          }
           if (runMediaPermissionDenied) {
             permissionScenarioRoomService = new RoomServiceClient(
               `http://127.0.0.1:${liveKitFixture!.signalingPort}`,
@@ -2561,6 +2867,180 @@ describe('office socket admission', () => {
             expect(observations.every(({ activeAudioSamples }) => activeAudioSamples >= 10)).toBe(
               true,
             );
+            if (runMediaWeakNetwork) {
+              const initialQdisc = await liveKitFixture!.applyWeakNetwork();
+              expect(initialQdisc).toContain('qdisc netem');
+              try {
+                applicationMediaClient.send({ kind: 'exercise-weak-network' });
+                const weakNetwork = await waitForApplicationMediaMessage(
+                  applicationMediaClient,
+                  (message) => message['kind'] === 'weak-network',
+                  'real audio to stay connected during delayed and dropped SFU egress',
+                );
+                const networkStats = await liveKitFixture!.readWeakNetworkStats();
+                const droppedPackets = Number(networkStats.match(/dropped\s+(\d+)/)?.[1] ?? 0);
+                expect(droppedPackets).toBeGreaterThan(0);
+                expect(weakNetwork['clients']).toEqual(
+                  expect.arrayContaining([
+                    expect.objectContaining({
+                      status: 'live',
+                      connected: true,
+                      peerPresent: true,
+                      sawReconnect: false,
+                    }),
+                    expect.objectContaining({
+                      status: 'live',
+                      connected: true,
+                      peerPresent: true,
+                      sawReconnect: false,
+                    }),
+                  ]),
+                );
+                console.info(
+                  `CP08.7 weak-network media: ${JSON.stringify({
+                    configured: '120ms delay ±40ms jitter, 3% SFU egress loss',
+                    actualDroppedPackets: droppedPackets,
+                    clients: weakNetwork['clients'],
+                  })}`,
+                );
+              } finally {
+                await liveKitFixture!.clearWeakNetwork();
+              }
+            }
+            if (
+              runMediaCrossCompany &&
+              crossCompanyActive &&
+              crossCompanyOwnerReady &&
+              crossCompanyMemberReady &&
+              crossCompanyOwnerSocket &&
+              crossCompanyMemberSocket &&
+              crossCompanyMediaGrants.length === 2
+            ) {
+              crossCompanyMediaClient = startApplicationMediaClient({
+                fixtureUrl: mediaFixture!.url,
+                grants: crossCompanyMediaGrants,
+              });
+              const crossConnected = await waitForApplicationMediaMessage(
+                crossCompanyMediaClient,
+                (message) => message['kind'] === 'connected',
+                'two real audio subscriptions from the second company',
+              );
+              const crossObservations = crossConnected['observations'] as Array<{
+                status: string;
+                remoteIdentities: string[];
+                activeAudioSamples: number;
+              }>;
+              expect(crossObservations).toHaveLength(2);
+              expect(crossObservations[0]).toMatchObject({
+                status: 'live',
+                remoteIdentities: [crossCompanyMemberReady.participationId],
+              });
+              expect(crossObservations[1]).toMatchObject({
+                status: 'live',
+                remoteIdentities: [crossCompanyOwnerReady.participationId],
+              });
+              expect(
+                crossObservations.every(({ activeAudioSamples }) => activeAudioSamples >= 10),
+              ).toBe(true);
+              const companyAIdentities = new Set([
+                firstReady.participationId,
+                secondReady.participationId,
+              ]);
+              const companyBIdentities = new Set([
+                crossCompanyOwnerReady.participationId,
+                crossCompanyMemberReady.participationId,
+              ]);
+              expect(
+                observations.every(({ remoteIdentities }) =>
+                  remoteIdentities.every((identity) => !companyBIdentities.has(identity)),
+                ),
+              ).toBe(true);
+              expect(
+                crossObservations.every(({ remoteIdentities }) =>
+                  remoteIdentities.every((identity) => !companyAIdentities.has(identity)),
+                ),
+              ).toBe(true);
+              const roomService = new RoomServiceClient(
+                `http://127.0.0.1:${liveKitFixture!.signalingPort}`,
+                livekitApiKey,
+                livekitApiSecret,
+              );
+              await vi.waitFor(
+                async () => {
+                  const [companyAParticipants, companyBParticipants] = await Promise.all([
+                    roomService.listParticipants(active.generation),
+                    roomService.listParticipants(crossCompanyActive!.generation),
+                  ]);
+                  expect(companyAParticipants.map(({ identity }) => identity).sort()).toEqual(
+                    [...companyAIdentities].sort(),
+                  );
+                  expect(companyBParticipants.map(({ identity }) => identity).sort()).toEqual(
+                    [...companyBIdentities].sort(),
+                  );
+                },
+                { timeout: 5000, interval: 50 },
+              );
+              const companyBOwnerEnded = nextSocketEvent<unknown>(
+                crossCompanyOwnerSocket,
+                'conversation:update',
+              );
+              const companyBMemberEnded = nextSocketEvent<unknown>(
+                crossCompanyMemberSocket,
+                'conversation:update',
+              );
+              const companyBLeave = {
+                eventId: randomUUID(),
+                officeEpoch: crossCompanyOwnerReady.snapshot.officeEpoch,
+                payload: {
+                  conversationId: crossCompanyActive.conversationId,
+                  conversationVersion: crossCompanyActive.version,
+                },
+              };
+              const companyBLeaveAck = await new Promise<unknown>((resolve) => {
+                crossCompanyOwnerSocket!.emit('conversation:leave', companyBLeave, resolve);
+              });
+              expect(officeCommandAckSchema.parse(companyBLeaveAck)).toMatchObject({ ok: true });
+              const companyBEnded = conversationUpdateSchema.parse(await companyBOwnerEnded);
+              expect(conversationUpdateSchema.parse(await companyBMemberEnded)).toEqual(
+                companyBEnded,
+              );
+              expect(companyBEnded).toMatchObject({
+                conversationId: crossCompanyActive.conversationId,
+                state: 'ended',
+                mediaReady: false,
+                participants: [],
+              });
+              const companyBPolicyAck = await waitForGuardMessage(
+                applicationGuard,
+                (message) => message.kind === 'ack' && message.sequence! > latestGuardSequence,
+                'company B media permits to be removed while company A remains active',
+              );
+              latestGuardSequence = companyBPolicyAck.sequence!;
+              crossCompanyMediaClient.send({ kind: 'stop' });
+              const companyBCutoff = await waitForApplicationMediaMessage(
+                crossCompanyMediaClient,
+                (message) => message['kind'] === 'cutoff',
+                'company B media to stop after its conversation ended',
+              );
+              expect(companyBCutoff['stable']).toBe(true);
+              const remainingCompanyAParticipants = await roomService.listParticipants(
+                active.generation,
+              );
+              expect(remainingCompanyAParticipants.map(({ identity }) => identity).sort()).toEqual(
+                [...companyAIdentities].sort(),
+              );
+              await stopApplicationMediaClient(crossCompanyMediaClient);
+              crossCompanyMediaClient = undefined;
+              console.info(
+                `CP08.7 cross-company media isolation: ${JSON.stringify({
+                  companyARoomParticipants: remainingCompanyAParticipants.length,
+                  companyBRoomParticipantsBeforeLeave: companyBIdentities.size,
+                  crossCompanyRemoteTracks: 0,
+                  companyAStayedLiveAfterCompanyBEnded: true,
+                  companyBMediaCutoffStable: companyBCutoff['stable'],
+                })}`,
+              );
+            }
             applicationMediaClient.send({ kind: 'exercise-mute-unmute' });
             const mediaControls = await waitForApplicationMediaMessage(
               applicationMediaClient,
@@ -2696,8 +3176,6 @@ describe('office socket admission', () => {
           );
           expect(forwardedSignalingPaths).toContain('/rtc/v1/validate');
         }
-        let latestGuardSequence = firstGuardAck.sequence!;
-
         status(
           await observer.client.send('post', tokenPath, {
             participationId: firstReady.participationId,
@@ -2705,8 +3183,8 @@ describe('office socket admission', () => {
           }),
           404,
         );
-        const foreignOwner = await account();
-        await workspace(foreignOwner);
+        const foreignOwner = crossCompanyOwner ?? (await account());
+        if (!crossCompanyOwner) await workspace(foreignOwner);
         status(
           await foreignOwner.client.send('post', tokenPath, {
             participationId: firstReady.participationId,
@@ -2946,6 +3424,7 @@ describe('office socket admission', () => {
         }
         expect(forwardedSignalingPaths).toHaveLength(forwardedBeforeDeniedReplay);
       } finally {
+        if (crossCompanyMediaClient) await stopApplicationMediaClient(crossCompanyMediaClient);
         if (applicationMediaClient) await stopApplicationMediaClient(applicationMediaClient);
         if (applicationGuard) await stopApplicationGuard(applicationGuard);
         if (mediaUpstream) await closeHttpServer(mediaUpstream);
@@ -2955,6 +3434,8 @@ describe('office socket admission', () => {
         firstSocket.disconnect();
         secondSocket.disconnect();
         observerSocket.disconnect();
+        crossCompanyOwnerSocket?.disconnect();
+        crossCompanyMemberSocket?.disconnect();
       }
     },
     runLiveMediaFixture ? 120000 : undefined,

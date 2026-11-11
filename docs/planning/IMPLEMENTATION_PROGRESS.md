@@ -1192,4 +1192,28 @@ selection passed (`2 passed`, `69 skipped`). The first sandboxed test attempt co
 MongoMemoryServer helper; the local integration run then passed with the previously approved loopback
 test execution. This closes the CP08.6 receiver/dedup/ordering slice. It does not add a periodic SFU
 reconciliation job, durable conversation-generation registry/tombstones, or production webhook
-routing/secret rotation. Those and CP08.7 network/deployment acceptance remain open.
+routing/secret rotation. Those production items remain open.
+
+## CP08.7 — application-integrated network and tenant media evidence (2026-11-11)
+
+Completed the local CP08.7 media scenarios against API-issued grants, the real application guard,
+the pinned LiveKit SFU, and Chromium clients. `pnpm test:media-permission-denied` passed with
+browser-standard `NotAllowedError`: the denied participant was removed from the SFU, the authorized
+peer remained, recovery was exposed, and the office Socket.IO connection stayed connected.
+`pnpm test:media-turn-only` passed after adding a relay-only ICE assertion; both clients reported
+only `relay` candidates, connected ICE, and decoded audio (11 and 10 samples in the recorded rerun).
+
+`pnpm test:media-weak-network` passed with disposable-container `tc netem` shaping at 120 ms delay,
+±40 ms jitter and 3% random packet loss. The qdisc counters recorded 29 dropped packets while both
+clients remained live, connected and exchanging audio (105/112 sample deltas; no reconnect).
+`pnpm test:media-cross-company` passed with four Chromium clients and two separate company rooms:
+each SFU room held only its two authorized identities, cross-company remote tracks remained zero,
+and ending company B reached stable media cutoff without interrupting company A's two participants.
+
+The workspace web typecheck, API build, API test TypeScript check, formatting check and `git diff
+--check` pass. These are local Docker/OrbStack and synthetic-microphone measurements, not production
+acceptance. A07/A08 remain open for deployed listener and TURN/UDP reachability, production
+guard/supervisor/SFU failure domains, physical-device/browser permission prompts, screen sharing,
+fixed meetings, migration interruption, browser signoff, capacity/load and release-profile cutoff
+reruns. Detailed method and bounds are recorded in
+[`MEDIA_ENFORCEMENT_EVIDENCE.md`](MEDIA_ENFORCEMENT_EVIDENCE.md#cp087--application-integrated-media-evidence).

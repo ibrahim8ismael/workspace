@@ -1262,3 +1262,15 @@ that no media signaling occurs before opt-in, then exercises activation after th
 
 Validation: web TypeScript checks and focused ESLint pass; the office mocked-API browser E2E
 passes (1/1). Device capture and actual audio are outside this UI regression test.
+
+
+### Single microphone icon follow-up (2026-11-11)
+
+The owner requested the compact OpenOffice microphone on/off interaction. Removed the separate
+text opt-in control and long controlbar explanation. The icon now enables current-participation
+microphone intent, opts in and starts the guarded session once a server-authorized pair is ready.
+Clicking again mutes or cancels; opt-out and Leave conversation clear intent. Tooltip and accessible
+help distinguish waiting without capture from a live microphone; no token is requested while alone.
+Sidebar-only opt-in still requires a microphone click to capture. Typecheck, focused ESLint and
+the office mocked-API browser E2E (1/1) pass, including icon on/off without a peer and automatic
+signaling after explicit microphone consent and subsequent pairing.

@@ -39,7 +39,7 @@ The owner has now directed the project to use the OpenOfficeForAll UI styles and
 
 The active app still mounts the secure authenticated route at `main.tsx`, but its office screen renders the real upstream `VivoScene`, adapts server participants/seats, and sends movement, presence and seat commands through `OfficeClient`. New workspaces already use Vivo. The repeatable migration `db:migrate-legacy-office-maps-to-vivo` updates records on the exact trusted Commons version while preserving office/workspace IDs; unknown versions are left untouched. Run it with the API stopped, after a database backup, then restart the API to close old Socket.IO sessions. Account, membership and ticket APIs remain this project's. The larger legacy `App.tsx` is not mounted because its token storage and legacy service calls are not safe to restore; its reusable UI styles/components remain the source for future shell completion. CP06.11 restores its supplied chat view and connects one office-wide channel to this project's 90-day message API and admitted-room Socket.IO broadcast. CP08.3b adds nearby-voice opt-in and a microphone control to the active shell, using this project's proximity Socket.IO state, session-bound token API and lazy LiveKit client. Capture stays off until an explicit microphone action; an automated E2E asserts signaling is attempted against a deliberately closed mock endpoint. CP08.3c separately runs the API and guard processes: an app-issued grant is authorized against the installed current pair and forwarded to a mock SFU endpoint, then denied after pair end and guard restart. This does not prove actual LiveKit audio or deployment connectivity. Calendar/activity and fixed-meeting camera/screen media remain unavailable.
 
-The office opens to a pre-join lobby styled after the owner-provided reference: workspace and account identity, a camera-off preview, the authenticated display name and a Join action. The map is not loaded or shown in this stage. Join starts the current API bootstrap, one-use ticket and Socket.IO flow; the server-selected map appears only after a valid office-ready event. Lobby microphone and camera controls remain disabled. After joining, nearby voice has explicit opt-in and a microphone action available only for an active, media-ready pair; proximity camera and screen sharing are not offered.
+The office opens to a pre-join lobby styled after the owner-provided reference: workspace and account identity, a camera-off preview, the authenticated display name and a Join action. The map is not loaded or shown in this stage. Join starts the current API bootstrap, one-use ticket and Socket.IO flow; the server-selected map appears only after a valid office-ready event. Lobby microphone and camera controls remain disabled. After joining, the microphone icon records explicit voice intent and starts capture only for an active, media-ready pair; proximity camera and screen sharing are not offered.
 
 ## Repository inventory
 
@@ -79,19 +79,26 @@ Existing integration points include `apps/web/src/lib/api.ts`, `src/features/off
 Ship each completed implementation step with its documentation, focused verification and a separate pushed commit. Full rollout and CP08 media acceptance remain separate gates.
 
 
-## Nearby microphone discoverability (2026-11-11)
+## Single microphone control (2026-11-11)
 
-The office controlbar now exposes **Enable nearby voice** / **Disable nearby voice**, rather
-than requiring users to find opt-in in the sidebar. Inline microphone help explains that both
-accounts must opt in and move close together. It then shows waiting, ready, capture, mute,
-connection and error states. The microphone references this help through `aria-describedby`.
-An office headcount alone does not authorize audio: the microphone remains unavailable until
-the server reports an active, media-ready proximity conversation. Opt-in does not request device
-capture; users click the microphone after pairing and grant browser permission themselves.
+The owner's follow-up supersedes the separate **Enable nearby voice** control. The compact
+OpenOffice controlbar has one microphone icon: click to enable voice and click again to mute
+or cancel a pending attempt. An unslashed icon means voice is enabled; when alone, its tooltip
+and accessible help explicitly say no microphone audio is being captured. The status explanation
+is visually hidden and available through the icon tooltip and `aria-describedby`, keeping the
+controlbar compact. Errors remain visible in the nearby-voice sidebar.
 
-Manual test: refresh `https://localhost:8443`, join with two distinct verified accounts, keep
-both Available, enable nearby voice on both, and move close together. When the ready message
-appears, activate the microphone on each browser and allow microphone access. Use headphones
-or separate devices to avoid feedback. Local browser automation checks bottom-bar opt-in,
-no signaling before consent/pairing, and microphone activation once the mocked pair is ready;
-it does not establish physical-device permission or audio quality.
+Enabling the icon records explicit microphone intent for the current office participation and
+opts in through the current API/socket flow. When the server reports a media-ready nearby pair,
+the client starts the guarded session once for that context; error retries require another click.
+The browser still controls capture permission. Muting disables capture, cancellation stops pending
+signaling, and opt-out or Leave conversation clears microphone intent. A new office participation
+requires fresh consent. There is no token request or capture while waiting alone. The sidebar
+opt-in remains available; opting in there alone does not enable the microphone.
+
+Manual test: refresh `https://localhost:8443`, join with two verified accounts, keep both Available,
+click the microphone on each and move close together. Allow microphone access when prompted.
+Click again to mute. While alone, the icon can be enabled/disabled without acquiring a media grant.
+Web typecheck, focused ESLint and the mocked-API office browser E2E pass (1/1); the browser scenario
+checks enable/cancel while alone with no token, then a single icon click followed by automatic
+signaling after an authorized pair. This does not establish physical-device audio quality.

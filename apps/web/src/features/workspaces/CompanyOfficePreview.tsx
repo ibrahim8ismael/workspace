@@ -132,6 +132,8 @@ export function CompanyOfficePreview({
   const [proximityPending, setProximityPending] = useState(false);
   const [proximityAudioStatus, setProximityAudioStatus] = useState<ProximityAudioStatus>('off');
   const [proximityAudioError, setProximityAudioError] = useState('');
+  const [microphoneIntent, setMicrophoneIntent] = useState<string | null>(null);
+  const [microphoneAttempt, setMicrophoneAttempt] = useState(0);
   const remoteAudioContainer = useRef<HTMLDivElement>(null);
   const mediaContextKey = useRef<string | null>(null);
   const proximityAudio = useRef<ProximityAudioSession | null>(null);
@@ -179,6 +181,41 @@ export function CompanyOfficePreview({
       void proximityAudio.current?.stop();
     };
   }, [activeVoiceContextKey]);
+
+  useEffect(() => {
+    if (
+      !participationId ||
+      microphoneIntent !== participationId ||
+      !proximityOptedIn ||
+      !activeProximityConversation ||
+      !activeVoiceContextKey
+    )
+      return;
+    const contextKey = activeVoiceContextKey;
+    const conversation = activeProximityConversation;
+    void proximityAudio.current?.start(
+      (signal) =>
+        api.proximityMediaToken(
+          conversation.conversationId,
+          {
+            participationId,
+            conversationVersion: conversation.version,
+          },
+          signal,
+        ),
+      () => mediaContextKey.current === contextKey,
+      conversation.version,
+      conversation.generation,
+    );
+  }, [
+    api,
+    participationId,
+    microphoneIntent,
+    microphoneAttempt,
+    proximityOptedIn,
+    activeProximityConversation,
+    activeVoiceContextKey,
+  ]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -230,7 +267,10 @@ export function CompanyOfficePreview({
     if (!participationId) return;
     setProximityPending(true);
     setProximityAudioError('');
-    if (!enabled) await proximityAudio.current?.stop();
+    if (!enabled) {
+      setMicrophoneIntent(null);
+      await proximityAudio.current?.stop();
+    }
     try {
       await client.setProximityOptIn(enabled);
       setProximityOptIn(enabled ? { participationId, enabled: true } : null);
@@ -242,6 +282,7 @@ export function CompanyOfficePreview({
   }
 
   async function leaveProximityConversation() {
+    setMicrophoneIntent(null);
     if (!activeProximityConversation) return;
     await proximityAudio.current?.stop();
     await runOfficeAction(() =>
@@ -254,29 +295,20 @@ export function CompanyOfficePreview({
 
   function toggleProximityMicrophone() {
     const session = proximityAudio.current;
-    if (!session || !activeProximityConversation || !participationId) return;
-    if (proximityAudioStatus === 'live' || proximityAudioStatus === 'muted') {
+    if (!session || !participationId) return;
+    if (proximityAudioStatus === 'live') {
+      setMicrophoneIntent(null);
       void session.toggleMicrophone();
-      return;
+    } else if (microphoneIntent === participationId && proximityAudioStatus !== 'error') {
+      setMicrophoneIntent(null);
+      void session.stop();
+      if (!activeProximityConversation && proximityOptedIn) void changeProximityOptIn();
+    } else {
+      setMicrophoneIntent(participationId);
+      setMicrophoneAttempt((attempt) => attempt + 1);
+      if (proximityAudioStatus === 'muted') void session.toggleMicrophone();
+      if (!proximityOptedIn) void changeProximityOptIn();
     }
-    const contextKey = activeVoiceContextKey;
-    const conversation = activeProximityConversation;
-    const currentParticipationId = participationId;
-    if (!contextKey) return;
-    void session.start(
-      (signal) =>
-        api.proximityMediaToken(
-          conversation.conversationId,
-          {
-            participationId: currentParticipationId,
-            conversationVersion: conversation.version,
-          },
-          signal,
-        ),
-      () => mediaContextKey.current === contextKey,
-      conversation.version,
-      conversation.generation,
-    );
   }
 
   async function sendChatMessage(text: string) {
@@ -449,6 +481,12 @@ export function CompanyOfficePreview({
       : proximityOptedIn
         ? 'Looking for a nearby coworker. Your microphone is off.'
         : 'Nearby voice is off. Your microphone will stay off until you turn it on.';
+  const microphoneEnabled =
+    proximityAudioStatus === 'live' ||
+    (microphoneIntent === participationId &&
+      proximityOptedIn &&
+      proximityAudioStatus !== 'error' &&
+      proximityAudioStatus !== 'muted');
   const microphoneHelp =
     proximityAudioError ||
     (proximityAudioStatus === 'connecting'
@@ -462,8 +500,8 @@ export function CompanyOfficePreview({
             : activeProximityConversation
               ? 'Ready to talk. Click the microphone and allow browser access.'
               : proximityOptedIn
-                ? 'Waiting for a nearby coworker who has also enabled voice.'
-                : 'Enable nearby voice on both accounts, then move close together.');
+                ? 'Voice enabled; waiting for a nearby coworker. No microphone audio is being captured yet.'
+                : 'Turn on your microphone to enable nearby voice. Coworkers must enable voice and move nearby.');
   const self = snapshot.participants.find(
     (participant) => participant.participationId === ready.participationId,
   );
@@ -848,55 +886,32 @@ export function CompanyOfficePreview({
                       ? 'Use arrow keys or WASD to move.'
                       : 'Enter the office to move and interact.'}
                   </small>
-                  {connected && <small id="office-microphone-help">{microphoneHelp}</small>}
+                  {connected && (
+                    <small id="office-microphone-help" className="office-microphone-help">
+                      {microphoneHelp}
+                    </small>
+                  )}
                 </span>
                 <span className="control-separator" />
                 {connected ? (
                   <>
                     <button
-                      className="office-voice-toggle"
-                      type="button"
-                      aria-pressed={proximityOptedIn}
-                      disabled={proximityPending}
-                      onClick={() => void changeProximityOptIn()}
-                    >
-                      {proximityPending
-                        ? 'Updating voice…'
-                        : proximityOptedIn
-                          ? 'Disable nearby voice'
-                          : 'Enable nearby voice'}
-                    </button>
-                    <button
-                      className={`media-control ${proximityAudioStatus === 'live' ? 'enabled' : 'muted'}`}
+                      className={`media-control ${microphoneEnabled ? 'enabled' : 'muted'}`}
                       type="button"
                       aria-label={
-                        proximityAudioStatus === 'live'
+                        microphoneEnabled
                           ? 'Mute proximity microphone'
                           : proximityAudioStatus === 'muted'
                             ? 'Unmute proximity microphone'
                             : 'Activate proximity microphone'
                       }
-                      title={
-                        activeProximityConversation && proximityOptedIn
-                          ? proximityAudioStatus === 'live'
-                            ? 'Mute microphone'
-                            : proximityAudioStatus === 'muted'
-                              ? 'Unmute microphone'
-                              : 'Activate microphone'
-                          : 'Opt in and wait for a nearby pair to use voice'
-                      }
+                      title={microphoneHelp}
                       aria-describedby="office-microphone-help"
-                      aria-pressed={proximityAudioStatus === 'live'}
-                      disabled={
-                        !proximityOptedIn ||
-                        !activeProximityConversation ||
-                        proximityPending ||
-                        proximityAudioStatus === 'connecting' ||
-                        proximityAudioStatus === 'reconnecting'
-                      }
+                      aria-pressed={microphoneEnabled}
+                      disabled={proximityPending}
                       onClick={toggleProximityMicrophone}
                     >
-                      {proximityAudioStatus === 'live' ? <Mic size={19} /> : <MicOff size={19} />}
+                      {microphoneEnabled ? <Mic size={19} /> : <MicOff size={19} />}
                     </button>
                     <button
                       className="icon-button leave-meeting"

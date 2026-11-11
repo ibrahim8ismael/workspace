@@ -59,6 +59,7 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   const sentOfficeMessages: Array<{ clientMessageId: string; text: string }> = [];
   const mediaTokenRequests: Array<{ participationId: string; conversationVersion: number }> = [];
   let liveKitSocketAttempts = 0;
+  let holdPair = true;
   let failNextOfficeMessage = true;
   const officeHistory = [
     {
@@ -338,7 +339,11 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
           if (packet[0] === 'presence:update' && packet[1].payload?.availability) {
             availability = packet[1].payload.availability;
             emitWorldDelta();
-          } else if (packet[0] === 'proximity:set-opt-in' && packet[1].payload?.enabled) {
+          } else if (
+            packet[0] === 'proximity:set-opt-in' &&
+            packet[1].payload?.enabled &&
+            !holdPair
+          ) {
             const participants = [
               { participationId, displayName: account.displayName },
               { participationId: teammateParticipationId, displayName: 'Office Teammate' },
@@ -367,7 +372,11 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
                 participants,
               })}]`,
             );
-          } else if (packet[0] === 'proximity:set-opt-in' && !packet[1].payload?.enabled) {
+          } else if (
+            packet[0] === 'proximity:set-opt-in' &&
+            !packet[1].payload?.enabled &&
+            !holdPair
+          ) {
             socket.send(
               `42/office,["conversation:update",${JSON.stringify({
                 officeEpoch,
@@ -484,16 +493,25 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await expect(page.getByRole('group', { name: 'Office controls' })).toBeVisible();
   await expect(page.getByRole('group', { name: 'Your availability' })).toBeVisible();
   const microphoneButton = page.getByRole('button', { name: 'Activate proximity microphone' });
-  await expect(microphoneButton).toBeDisabled();
-  await expect(page.locator('#office-microphone-help')).toContainText(
-    'Enable nearby voice on both accounts',
+  await expect(microphoneButton).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Enable nearby voice', exact: true })).toHaveCount(
+    0,
   );
   await expect.poll(() => liveKitSocketAttempts).toBe(0);
-  await page.getByRole('button', { name: 'Enable nearby voice', exact: true }).click();
-  await expect(
-    page.getByText('Paired with Office Teammate. Turn on your microphone when ready.'),
-  ).toBeVisible();
-  await expect(microphoneButton).toBeEnabled();
+  // One icon enables voice while alone; a second click cancels without opening media.
+  await microphoneButton.click();
+  const enabledMicrophone = page.getByRole('button', { name: 'Mute proximity microphone' });
+  await expect(enabledMicrophone).toHaveAttribute('aria-pressed', 'true');
+  await expect(enabledMicrophone.locator('svg')).toHaveClass(/lucide-mic/);
+  await expect(page.locator('#office-microphone-help')).toContainText(
+    'No microphone audio is being captured yet',
+  );
+  expect(mediaTokenRequests).toHaveLength(0);
+  await enabledMicrophone.click();
+  await expect(microphoneButton).toHaveAttribute('aria-pressed', 'false');
+  expect(mediaTokenRequests).toHaveLength(0);
+  holdPair = false;
+  // The same icon now enables voice and starts signaling once a ready pair arrives.
   await microphoneButton.click();
   await expect
     .poll(() => mediaTokenRequests)
@@ -511,7 +529,7 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await page.getByRole('button', { name: 'Leave conversation' }).click();
   await expect.poll(() => officeEvents.includes('conversation:leave')).toBe(true);
   await expect(page.getByRole('button', { name: 'Leave conversation' })).toHaveCount(0);
-  await expect(microphoneButton).toBeDisabled();
+  await expect(microphoneButton).toBeEnabled();
   await expect(page.getByRole('alert')).toHaveCount(0);
   await expect(mapAfterMediaError).toHaveCount(1);
   const movementCountAfterConversationLeave = movementInputs.length;

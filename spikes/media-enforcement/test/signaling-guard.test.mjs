@@ -16,6 +16,14 @@ test('validation requires exact origin/path and authorized token; malformed v1 i
   });
   await new Promise((resolve) => guard.server.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${guard.server.address().port}`;
+  const httpStatus = (path, headers) =>
+    new Promise((resolve, reject) => {
+      const req = http.get(base + path, { headers }, (response) => {
+        response.resume();
+        resolve(response.statusCode);
+      });
+      req.on('error', reject);
+    });
   try {
     for (const path of [
       '/rtc/v1?access_token=valid',
@@ -48,6 +56,23 @@ test('validation requires exact origin/path and authorized token; malformed v1 i
     });
     assert.equal(v1.status, 200);
     assert.equal(forwarded, 2);
+
+    const sameOriginV1 = await httpStatus(
+      '/rtc/v1/validate?access_token=valid&join_request=AA',
+      { Host: 'fixture.test', 'Sec-Fetch-Site': 'same-origin' },
+    );
+    assert.equal(sameOriginV1, 200);
+    assert.equal(forwarded, 3);
+    const crossSiteWithoutOrigin = await httpStatus(
+      '/rtc/v1/validate?access_token=valid&join_request=AA',
+      { Host: 'fixture.test', 'Sec-Fetch-Site': 'cross-site' },
+    );
+    assert.equal(crossSiteWithoutOrigin, 403);
+    const missingFetchSite = await httpStatus(
+      '/rtc/v1/validate?access_token=valid&join_request=AA',
+      { Host: 'fixture.test' },
+    );
+    assert.equal(missingFetchSite, 403);
   } finally {
     guard.close();
     await new Promise((resolve) => upstream.close(resolve));

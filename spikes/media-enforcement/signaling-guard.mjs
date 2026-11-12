@@ -4,9 +4,16 @@ export function createSignalingGuard({ upstream, origin, authorize }) {
   const target = new URL(upstream);
   if (target.protocol !== 'http:' || typeof authorize !== 'function')
     throw new Error('invalid guard config');
+  const expectedHost = new URL(origin).host;
   const sockets = new Set();
   async function permitted(req, path) {
-    if (req.method !== 'GET' || req.headers.origin !== origin) return false;
+    const exactOrigin = req.headers.origin === origin;
+    const sameOriginValidation =
+      path === '/rtc/validate' &&
+      req.headers.origin === undefined &&
+      req.headers.host === expectedHost &&
+      req.headers['sec-fetch-site'] === 'same-origin';
+    if (req.method !== 'GET' || (!exactOrigin && !sameOriginValidation)) return false;
     if (req.url.length > 16384) return false;
     const url = new URL(req.url, 'http://fixture.invalid');
     const v1 = path === '/rtc' ? '/rtc/v1' : '/rtc/v1/validate';

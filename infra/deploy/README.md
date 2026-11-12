@@ -3,11 +3,15 @@
 This Compose project is isolated from `infra/compose.yaml` and the media E2E overlay. It expects
 the host's existing Nginx to terminate public TLS and proxy to Caddy over a loopback HTTPS port.
 MongoDB and Redis have no published ports. The app and API bind only to Docker networks; the only
-published container port is the loopback Caddy listener. No LiveKit or TURN listener is enabled.
+public application listener is host Nginx. Caddy is bound to loopback port `18443`. The optional
+`media-pilot` overlay binds the media guard to loopback port `18885` for Nginx; its container port
+`7885` and LiveKit signaling/admin port `7880` are not public. Only bounded ICE/TURN transport ports
+are publicly published. Mailpit's web UI, when enabled, is loopback-only on `8025`.
 
 The default profile includes MongoDB replica-set storage, persistent queue Redis, the NestJS API,
-and Caddy/static frontend. The production `mail` profile is enabled only after a TLS-required SMTP
-provider has been configured in `worker.env`. The optional `compose.mailpit.yaml` overlay is a
+and Caddy/static frontend. The `media-pilot` overlay routes LiveKit signaling over the existing
+`gather.imtelak.com` HTTPS origin. The production `mail` profile is enabled only after a TLS-required
+SMTP provider has been configured in `worker.env`. The optional `compose.mailpit.yaml` overlay is a
 separate, internal-only capture mode for pilot testing; it is not real email delivery.
 
 ## Prepare protected settings
@@ -109,6 +113,49 @@ docker compose --env-file infra/deploy/.env \
   --profile mailpit stop worker-mailpit mailpit
 ```
 
+## Same-domain proximity voice pilot
+
+No media subdomain is needed. The API issues grants for `wss://gather.imtelak.com`; the LiveKit SDK
+uses `/rtc` on that origin. Nginx forwards `/rtc` WebSocket upgrades directly to the policy guard
+on loopback port `18885`; request logging is disabled for this path because LiveKit puts short-lived
+access tokens in signaling URLs. The Caddy `/rtc` route returns 404, and the guard's own port `7885`
+is not publicly published. LiveKit signaling/admin port `7880` stays private. A per-SFU lease wrapper
+prevents LiveKit from starting before current application policy is installed and stops the media
+process when renewals fail.
+
+Initialize protected LiveKit credentials and the server's public IPv4 address. The command writes
+the existing mode-0600 `.env` file and does not print secret values:
+
+```sh
+node infra/deploy/init-media-env.mjs 135.181.204.97 gather.imtelak.com <deployment-revision>
+```
+
+Allow only the media transport ports (not 8025, 7880, or 7885), then build the Caddy frontend with
+voice controls and the media guard:
+
+```sh
+ufw allow 17881/tcp
+ufw allow 17882:17954/udp
+docker compose --parallel 1 --env-file infra/deploy/.env \
+  -f infra/deploy/compose.yaml -f infra/deploy/compose.media-pilot.yaml \
+  -f infra/deploy/compose.mailpit.yaml --profile media-pilot --profile mailpit build caddy media-guard
+```
+
+Deploy while retaining the existing Mailpit capture mode:
+
+```sh
+docker compose --env-file infra/deploy/.env \
+  -f infra/deploy/compose.yaml -f infra/deploy/compose.media-pilot.yaml \
+  -f infra/deploy/compose.mailpit.yaml --profile media-pilot --profile mailpit \
+  up -d api caddy media-livekit media-guard mailpit worker-mailpit
+```
+
+LiveKit advertises the server's public IPv4 address. The pilot profile uses a bounded UDP mux,
+ICE/TCP fallback, and embedded TURN/UDP; verify external ICE and relay connectivity before relying
+on voice. This does not close the A07 production host/process failure gate or prove reachability from
+networks that block UDP; those release limits remain documented in
+`docs/planning/ACCEPTANCE.md`.
+
 ## Verify and operate
 
 Inspect service state with `docker compose ... ps`, container health with `docker inspect` health
@@ -140,11 +187,11 @@ security settings. Recheck revoked sessions and tickets after rollback.
 
 ## Current pilot boundary
 
-The production frontend build sets `VITE_PROXIMITY_VOICE_ENABLED=false`; voice controls report that
-nearby voice is unavailable. The API's LiveKit settings remain blank, so media grant requests fail
-closed. The local media E2E configuration is not used here. Enable media only after deploying the
-independent guard/supervisor profile, TURN/ICE/firewall policy and production revocation/failure
-tests documented in `docs/planning/ACCEPTANCE.md` and `MEDIA_ENFORCEMENT_EVIDENCE.md`.
+Without the `media-pilot` overlay, the frontend build disables proximity voice and the API's LiveKit
+settings stay blank, so media grant requests fail closed. With the overlay, keep signaling behind
+the policy guard and SFU lease wrapper; do not publish LiveKit's API port or bypass guard routing.
+The A07 production release gate remains open for host/process failure validation and a production
+profile rerun documented in `docs/planning/ACCEPTANCE.md` and `MEDIA_ENFORCEMENT_EVIDENCE.md`.
 
 No real TLS SMTP provider is configured in this environment, so email verification, password
 recovery, and invitation delivery are not ready for real onboarding. The isolated Mailpit capture
@@ -152,3 +199,28 @@ profile is available for code testing through an SSH tunnel, but captured messag
 server. Configure the protected `worker.env` with the provider's TLS endpoint, sender, and
 credentials, stop `worker-mailpit`, start the production `mail` profile, and verify real delivery
 before inviting users.
+
+## Deployment verification — 2026-11-12
+
+The pilot is serving `https://gather.imtelak.com`. API/frontend source is based on `6e4620dec60c`;
+`e7b4d3dbc3db4352d9fd23314e6279c261a2fae6` is a documentation-only commit on top. The same-domain
+media guard changes and this deployment configuration are local working-tree changes deployed as
+the `r2-media-pilot` images.
+
+Verified on the deployed host:
+
+- Public HTTPS frontend returned `200`; the deployed API liveness endpoint returned `{"status":"ok","service":"api"}`.
+- An unauthenticated `/rtc/v1/validate` request returned `403`; guard and API containers were healthy.
+- The two-browser live audio test passed. Conversation leave removed the remote audio element and
+  audio samples stopped within 30 ms.
+- Membership removal stopped both clients' audio within 1.3 seconds, removed the revoked member's
+  office view, and retained the owner's view. Logout stopped both clients' audio within 1.5 seconds
+  and the logged-out session was rejected.
+- `pnpm test:media-spike` passed 25/25 tests. `infra/deploy/backup.sh` created and validated
+  `/var/backups/gather-lite/gather-lite-20261112T115401Z.archive.gz`.
+
+Microphone denial displayed the expected browser permission error while preserving the office
+socket and movement, but the Playwright case timed out during browser cleanup; it is not counted as
+a passing E2E test. External TURN-only connectivity and A07 host/process failure supervision remain
+unverified. Real SMTP is not configured: registration and invitation messages are captured by
+Mailpit, whose port `8025` is available only on loopback and must not be opened publicly.

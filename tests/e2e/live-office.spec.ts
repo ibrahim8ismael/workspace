@@ -375,6 +375,7 @@ async function companyPage(
   client: APIRequestContext,
   workspaceId: string,
   withGapProbe = false,
+  denyMicrophone = false,
   traceRtc = false,
 ) {
   const context = await browser.newContext({
@@ -384,6 +385,22 @@ async function companyPage(
       ? { userAgent: devices['Desktop Firefox'].userAgent }
       : {}),
   });
+  if (denyMicrophone) {
+    await context.addInitScript(() => {
+      const devices = navigator.mediaDevices;
+      const getUserMedia = devices.getUserMedia.bind(devices);
+      Object.defineProperty(devices, 'getUserMedia', {
+        configurable: true,
+        value: (constraints?: MediaStreamConstraints) => {
+          if (constraints?.audio)
+            return Promise.reject(
+              new DOMException('Microphone permission denied', 'NotAllowedError'),
+            );
+          return getUserMedia(constraints);
+        },
+      });
+    });
+  }
   if (traceRtc) {
     await context.addInitScript(
       ({ forceRelay }) => {
@@ -712,6 +729,7 @@ test('mounted Vivo office carries and cuts off live nearby audio on conversation
       owner.client,
       workspaceId,
       false,
+      false,
       useMixedBrowser,
     );
     ownerContext = ownerOffice.context;
@@ -730,6 +748,7 @@ test('mounted Vivo office carries and cuts off live nearby audio on conversation
       memberBrowser,
       member.client,
       workspaceId,
+      false,
       false,
       useMixedBrowser,
     );
@@ -926,6 +945,107 @@ test('mounted Vivo office carries and cuts off live nearby audio on conversation
     await ownerContext?.close();
     await memberContext?.close();
     await mixedBrowser?.close();
+  }
+});
+
+test('mounted Vivo office keeps the map and office socket live after microphone denial', async ({
+  browser,
+}) => {
+  test.skip(
+    !enabled || !mediaEnabled,
+    'Run pnpm test:e2e:live-media against the local media-e2e Compose profile.',
+  );
+  test.setTimeout(120_000);
+
+  const { owner, member, workspaceId } = await getLiveMediaOfficeFixture();
+  let ownerContext: Awaited<ReturnType<typeof companyPage>>['context'] | undefined;
+  let memberContext: Awaited<ReturnType<typeof companyPage>>['context'] | undefined;
+  try {
+    const ownerOffice = await companyPage(browser, owner.client, workspaceId);
+    ownerContext = ownerOffice.context;
+    const memberOffice = await companyPage(browser, member.client, workspaceId, false, true);
+    memberContext = memberOffice.context;
+    const ownerPage = ownerOffice.page;
+    const memberPage = memberOffice.page;
+    await ownerContext.grantPermissions(['microphone'], { origin: appOrigin });
+
+    await ownerPage.getByRole('button', { name: 'Join' }).click();
+    await expect(ownerPage.getByText('1 person in the office')).toBeVisible();
+    await memberPage.getByRole('button', { name: 'Join' }).click();
+    await expect(ownerPage.getByText('2 people in the office')).toBeVisible();
+    await expect(memberPage.getByText('2 people in the office')).toBeVisible();
+    await ownerPage.getByRole('button', { name: 'Opt in to nearby voice' }).click();
+    await memberPage.getByRole('button', { name: 'Opt in to nearby voice' }).click();
+    await expect(
+      ownerPage.getByText(
+        `Paired with ${member.account.displayName}. Turn on your microphone when ready.`,
+      ),
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(
+      memberPage.getByText(
+        `Paired with ${owner.account.displayName}. Turn on your microphone when ready.`,
+      ),
+    ).toBeVisible({ timeout: 15_000 });
+
+    await ownerPage.getByRole('button', { name: 'Activate proximity microphone' }).click();
+    await expect(ownerPage.getByRole('button', { name: 'Mute proximity microphone' })).toBeVisible({
+      timeout: 15_000,
+    });
+    await memberPage.getByRole('button', { name: 'Activate proximity microphone' }).click();
+    await expect(
+      memberPage
+        .getByRole('alert')
+        .getByText(
+          'Microphone access was denied. Allow microphone access in your browser and try again.',
+        ),
+    ).toBeVisible({ timeout: 15_000 });
+
+    const ownerMap = ownerPage.locator('.office-scene svg.office-map');
+    const memberMap = memberPage.locator('.office-scene svg.office-map');
+    await expect(ownerMap).toHaveCount(1);
+    await expect(memberMap).toHaveCount(1);
+    await expect(ownerPage.getByText('2 people in the office')).toBeVisible();
+    await expect(memberPage.getByText('2 people in the office')).toBeVisible();
+    await expect(ownerPage.locator('.sidebar-foot')).toContainText('Connected');
+    await expect(memberPage.locator('.sidebar-foot')).toContainText('Connected');
+    await expect(
+      ownerPage.getByRole('button', { name: 'Mute proximity microphone' }),
+    ).toBeVisible();
+
+    const memberName = member.account.displayName;
+    const initialMemberPosition = await participantPosition(ownerPage, memberName);
+    await memberMap.focus();
+    await memberPage.keyboard.down('ArrowRight');
+    await new Promise((resolve) => setTimeout(resolve, 900));
+    await memberPage.keyboard.up('ArrowRight');
+    await expect
+      .poll(async () => {
+        const current = await participantPosition(ownerPage, memberName);
+        return current.x !== initialMemberPosition.x || current.y !== initialMemberPosition.y;
+      })
+      .toBe(true);
+
+    console.info(
+      `CP08 mounted UI microphone denial: ${JSON.stringify({
+        deniedCapture: 'NotAllowedError',
+        recoveryMessageVisible: true,
+        memberOfficeSocketConnected: true,
+        memberMapRemainsMounted: true,
+        memberMovementVisibleToPeer: true,
+        authorizedPeerMicrophoneRemainsLive: true,
+      })}`,
+    );
+    await memberPage.getByRole('button', { name: 'Leave conversation' }).click();
+    await expect(
+      ownerPage.getByRole('button', { name: 'Activate proximity microphone' }),
+    ).toBeVisible({
+      timeout: 10_000,
+    });
+    await ownerPage.getByRole('button', { name: 'Leave office' }).click();
+    await memberPage.getByRole('button', { name: 'Leave office' }).click();
+  } finally {
+    await ownerContext?.close();
+    await memberContext?.close();
   }
 });
 

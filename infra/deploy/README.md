@@ -6,8 +6,9 @@ MongoDB and Redis have no published ports. The app and API bind only to Docker n
 published container port is the loopback Caddy listener. No LiveKit or TURN listener is enabled.
 
 The default profile includes MongoDB replica-set storage, persistent queue Redis, the NestJS API,
-and Caddy/static frontend. The `mail` profile is enabled only after a TLS-required SMTP provider
-has been configured in `worker.env`. Mailpit is not part of this deployment.
+and Caddy/static frontend. The production `mail` profile is enabled only after a TLS-required SMTP
+provider has been configured in `worker.env`. The optional `compose.mailpit.yaml` overlay is a
+separate, internal-only capture mode for pilot testing; it is not real email delivery.
 
 ## Prepare protected settings
 
@@ -78,6 +79,36 @@ After TLS SMTP credentials are configured, start the mail worker:
 docker compose --env-file infra/deploy/.env -f infra/deploy/compose.yaml --profile mail up -d worker
 ```
 
+## Mail capture for pilot testing
+
+When a real SMTP provider is not configured, the optional mail-capture overlay can exercise
+verification and invitation delivery without sending messages externally. It starts a separate
+development-mode worker and Mailpit. SMTP port `1025` is available only on the private Compose
+network; the inbox UI binds to host loopback at `127.0.0.1:8025`. The host firewall is not opened.
+This is a test mode, not real email delivery. Do not run it at the same time as the production `mail`
+profile because both workers would consume the same queue.
+
+```sh
+docker compose --env-file infra/deploy/.env \
+  -f infra/deploy/compose.yaml -f infra/deploy/compose.mailpit.yaml \
+  --profile mailpit up -d mailpit worker-mailpit
+```
+
+Access the inbox over an SSH tunnel from your workstation, replacing `<ssh-user>` with the account
+used to connect to the host:
+
+```sh
+ssh -L 8025:127.0.0.1:8025 <ssh-user>@gather.imtelak.com
+```
+
+Then open `http://localhost:8025` locally. Stop capture mode before starting the production worker:
+
+```sh
+docker compose --env-file infra/deploy/.env \
+  -f infra/deploy/compose.yaml -f infra/deploy/compose.mailpit.yaml \
+  --profile mailpit stop worker-mailpit mailpit
+```
+
 ## Verify and operate
 
 Inspect service state with `docker compose ... ps`, container health with `docker inspect` health
@@ -114,7 +145,9 @@ closed. The local media E2E configuration is not used here. Enable media only af
 independent guard/supervisor profile, TURN/ICE/firewall policy and production revocation/failure
 tests documented in `docs/planning/ACCEPTANCE.md` and `MEDIA_ENFORCEMENT_EVIDENCE.md`.
 
-No TLS SMTP provider is configured in this environment, so email verification, password recovery,
-and invitation delivery are not verified or ready for real onboarding. Configure the protected
-`worker.env` with the provider's TLS endpoint, sender, and credentials, start the `mail` profile,
-and verify delivery before inviting users. Mailpit is intentionally not deployed.
+No real TLS SMTP provider is configured in this environment, so email verification, password
+recovery, and invitation delivery are not ready for real onboarding. The isolated Mailpit capture
+profile is available for code testing through an SSH tunnel, but captured messages do not leave the
+server. Configure the protected `worker.env` with the provider's TLS endpoint, sender, and
+credentials, stop `worker-mailpit`, start the production `mail` profile, and verify real delivery
+before inviting users.

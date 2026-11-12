@@ -1,0 +1,66 @@
+services:
+  mailpit:
+    image: axllent/mailpit:v1.33.1@sha256:aef2aacc11f075ec0fb6874275ee4a421e688e11a96ebb296134d1735c7761ce
+    profiles: [mailpit]
+    environment:
+      MP_DATABASE: /data/mailpit.db
+      MP_DISABLE_VERSION_CHECK: 'true'
+      MP_QUIET: 'true'
+      MP_ALLOWED_HOSTS: localhost:8025,127.0.0.1:8025
+    ports:
+      - 127.0.0.1:8025:8025
+    healthcheck:
+      test: [CMD, /mailpit, readyz]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 5s
+    volumes:
+      - mailpit-data:/data
+    networks: [data, host-access]
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+
+  worker-mailpit:
+    image: ${GATHER_WORKER_IMAGE:?set GATHER_WORKER_IMAGE in infra/deploy/.env}
+    profiles: [mailpit]
+    env_file: [./worker.env]
+    environment:
+      NODE_ENV: development
+      REDIS_QUEUE_URL: redis://redis-queue:6379
+      SMTP_HOST: mailpit
+      SMTP_PORT: '1025'
+      SMTP_SECURE: 'false'
+      SMTP_REQUIRE_TLS: 'false'
+      SMTP_USER: ''
+      SMTP_PASSWORD: ''
+      SMTP_FROM: noreply@gather.local
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis-queue:
+        condition: service_healthy
+      mailpit:
+        condition: service_healthy
+    networks: [data]
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+volumes:
+  mailpit-data:

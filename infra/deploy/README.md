@@ -130,12 +130,13 @@ newer revocations.
 Routine restart: `docker compose ... restart`. Graceful stop retaining data: `docker compose ...
 down`. Never add `-v` to shutdown or remove either persistent volume. To roll back code, deploy the
 recorded previous image tags and matching Compose/configuration revision, then restart the stack;
-keep the current database and queue. For this pilot the running application images use tag
-`1e57915406cf`; previous images tagged `3cf0de42b98e` are retained locally. To roll back only
-application code, set the three image variables in the protected `.env` to the prior tag and run
-`docker compose ... up -d --no-build api caddy` (add `--profile mail ... worker` only if SMTP is
-configured). Keep the current Mongo/Redis volumes and deployment security settings. Recheck revoked
-sessions and tickets after rollback.
+keep the current database and queue. The running application images use tag `6e4620dec60c`; the
+previous deployed images tagged `1e57915406cf` are retained locally. To roll back only application
+code, set the three image variables in the protected `.env` to that prior tag and run
+`docker compose ... up -d --no-build api caddy`. If Mailpit capture mode is active, also roll back
+`worker-mailpit` with the `compose.mailpit.yaml` overlay and `--profile mailpit`; use the production
+`mail` worker only when real SMTP is configured. Keep the current Mongo/Redis volumes and deployment
+security settings. Recheck revoked sessions and tickets after rollback.
 
 ## Current pilot boundary
 

@@ -226,4 +226,34 @@ describe('session-bound proximity audio client', () => {
     await session.stop();
     expect(cleanup).toHaveBeenCalledTimes(2);
   });
+
+  it('attaches every remote group member once and cleans up each track on leave', async () => {
+    const firstCleanup = vi.fn();
+    const secondCleanup = vi.fn();
+    const bindRemoteTrack = vi.fn((_track: ProximityRemoteAudioTrack, identity: string) =>
+      identity === 'member-b' ? firstCleanup : secondCleanup,
+    );
+    const fake = createRoom();
+    const session = new ProximityAudioSession(
+      () => undefined,
+      bindRemoteTrack,
+      async () => fake.room,
+    );
+    const firstTrack = { kind: 'audio' } as ProximityRemoteAudioTrack;
+    const secondTrack = { kind: 'audio' } as ProximityRemoteAudioTrack;
+    await session.start(
+      async () => grant,
+      () => true,
+      2,
+      grant.generation,
+    );
+
+    fake.handlers.subscribed?.(firstTrack, 'member-b');
+    fake.handlers.subscribed?.(firstTrack, 'member-b');
+    fake.handlers.subscribed?.(secondTrack, 'member-c');
+    expect(bindRemoteTrack).toHaveBeenCalledTimes(2);
+    await session.stop();
+    expect(firstCleanup).toHaveBeenCalledTimes(1);
+    expect(secondCleanup).toHaveBeenCalledTimes(1);
+  });
 });

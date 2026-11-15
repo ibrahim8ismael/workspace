@@ -57,10 +57,10 @@ test('validation requires exact origin/path and authorized token; malformed v1 i
     assert.equal(v1.status, 200);
     assert.equal(forwarded, 2);
 
-    const sameOriginV1 = await httpStatus(
-      '/rtc/v1/validate?access_token=valid&join_request=AA',
-      { Host: 'fixture.test', 'Sec-Fetch-Site': 'same-origin' },
-    );
+    const sameOriginV1 = await httpStatus('/rtc/v1/validate?access_token=valid&join_request=AA', {
+      Host: 'fixture.test',
+      'Sec-Fetch-Site': 'same-origin',
+    });
     assert.equal(sameOriginV1, 200);
     assert.equal(forwarded, 3);
     const crossSiteWithoutOrigin = await httpStatus(

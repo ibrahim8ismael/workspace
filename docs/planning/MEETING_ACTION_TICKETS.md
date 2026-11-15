@@ -1,0 +1,195 @@
+# Gather Lite — Meeting Action Tickets
+
+**Meeting time:** 3:08–3:20 PM  
+**Reported by:** Team / Kassem_0001  
+**Priority levels:** Suggested, subject to team review
+
+---
+
+### TICKET-001 — Support Group Meetings in the Same Room
+
+**Type:** Feature  
+**Priority:** High  
+**Component:** Office / Meetings / Media
+
+**Description:**  
+Currently, meetings appear to support only one-to-one conversations. Users occupying the same meeting room should be able to join a shared group conversation.
+
+**Acceptance Criteria:**
+- [ ] Multiple users can participate in the same room-based meeting.
+- [ ] All authorized participants can hear each other.
+- [ ] Participants joining or leaving do not interrupt the remaining conversation.
+- [ ] The UI displays the current participants.
+- [ ] Users outside the meeting cannot join without authorization.
+
+---
+
+### TICKET-002 — Support Multi-User Proximity Conversations
+
+**Type:** Feature  
+**Priority:** High  
+**Component:** Office / Proximity Audio
+
+**Description:**  
+Allow more than two users standing near one another to participate in the same proximity-based voice conversation.
+
+**Acceptance Criteria:**
+- [ ] Nearby users can participate in a shared conversation instead of being limited to pairs.
+- [ ] Additional eligible users can join an existing conversation.
+- [ ] Each participant can hear the other authorized participants.
+- [ ] Joining and leaving are synchronized across connected clients.
+- [ ] Moving outside the permitted proximity area updates conversation membership according to the proximity rules.
+
+---
+
+### TICKET-003 — Fix Player Coordinate Synchronization
+
+**Type:** Bug  
+**Priority:** Critical  
+**Component:** Realtime / World State
+
+**Description:**  
+Player coordinates are inconsistent between users. A character's position may appear differently on another user's screen, affecting proximity detection and conversation behavior.
+
+**Acceptance Criteria:**
+- [ ] All connected clients receive consistent authoritative player positions.
+- [ ] Proximity calculations use the server-authoritative coordinates.
+- [ ] Movement updates do not produce persistent position differences between clients.
+- [ ] Reconnection correctly restores the latest player positions.
+- [ ] Multi-user tests verify coordinate consistency during movement and conversation initiation.
+
+---
+
+### TICKET-004 — Fix Delayed Voice Permission and Conversation Activation
+
+**Type:** Bug  
+**Priority:** High  
+**Component:** Media / Permissions
+
+**Description:**  
+Voice permissions or conversation authorization arrive too late, delaying the start of communication between eligible users.
+
+Investigate whether the delay comes from browser microphone permissions, backend authorization, realtime events, or media connection establishment.
+
+**Acceptance Criteria:**
+- [ ] The source of the permission/activation delay is identified.
+- [ ] Permission and conversation-state changes reach affected users promptly.
+- [ ] Users receive clear feedback while microphone permission or media connection is pending.
+- [ ] Voice communication starts without unnecessary authorization delays.
+- [ ] End-to-end activation latency is measured and validated against an agreed target.
+
+---
+
+### TICKET-005 — Replace the Placeholder First Page
+
+**Type:** Bug / UI Integration  
+**Priority:** High  
+**Component:** Frontend / Navigation
+
+**Description:**  
+The first page of the application appears to be a fake, mock, or placeholder page rather than a fully functional part of the product.
+
+**Acceptance Criteria:**
+- [ ] Identify the first page referenced in the meeting.
+- [ ] Remove or replace placeholder-only content.
+- [ ] Connect the page to actual application functionality and data where required.
+- [ ] Ensure buttons, navigation, and user actions work correctly.
+- [ ] Verify the page behaves correctly for the relevant authenticated or unauthenticated user state.
+
+---
+
+### TICKET-006 — Enforce a Maximum of 20 Conversation Participants
+
+**Type:** Feature / Business Rule  
+**Priority:** High  
+**Component:** Conversations / Media
+
+**Description:**  
+Introduce a maximum capacity of **20 participants per conversation**, based on the meeting decision.
+
+**Acceptance Criteria:**
+- [ ] A single conversation supports up to 20 simultaneous participants.
+- [ ] The backend enforces the participant limit.
+- [ ] Attempts to join a full conversation are rejected gracefully.
+- [ ] Users receive a clear conversation-full message.
+- [ ] The limit remains enforced during simultaneous join attempts.
+- [ ] Disconnects and participant departures release capacity correctly.
+
+**Open clarification:** Confirm whether this limit applies to proximity conversations, room-based meetings, or both.
+
+---
+
+### TICKET-007 — Implement Two-Block Proximity Detection and Conversation Circle
+
+**Type:** Feature  
+**Priority:** High  
+**Component:** World Geometry / Proximity
+
+**Description:**  
+Define nearby conversation eligibility based on a distance of **two map blocks in every direction** from the character, with a conversation area represented as a circle around the user or conversation.
+
+**Acceptance Criteria:**
+- [ ] Proximity eligibility is calculated using player coordinates.
+- [ ] The configured proximity distance is two map blocks.
+- [ ] Eligible users inside the area can participate in the nearby conversation.
+- [ ] Users outside the area are not automatically eligible.
+- [ ] Proximity results are consistent across all clients.
+- [ ] A circular visual indicator represents the nearby conversation area when appropriate.
+
+**Open clarification:** Confirm whether the two-block rule uses a true circular distance or a square grid neighborhood, and how the shared conversation center is determined.
+
+---
+
+### TICKET-008 — Add Avatar Talking Animation
+
+**Type:** Feature / UX  
+**Priority:** Medium  
+**Component:** Avatar / Animation / Media
+
+**Description:**  
+Display a visual animation or indicator when a user's avatar is speaking during a voice conversation.
+
+**Acceptance Criteria:**
+- [ ] Speaking users have a visible talking animation or indicator.
+- [ ] The indicator appears while speech is detected, not merely while the microphone is enabled.
+- [ ] Speaking-state changes are visible to other participants.
+- [ ] The animation stops when the user stops speaking.
+- [ ] Muted or disconnected users do not incorrectly appear to be speaking.
+- [ ] The animation does not interfere with walking or sitting animations.
+
+---
+
+## Suggested Implementation Order
+
+1. **TICKET-003:** Fix coordinate synchronization.
+2. **TICKET-004:** Resolve permission/activation delays.
+3. **TICKET-007:** Establish reliable two-block proximity rules.
+4. **TICKET-002:** Enable multi-user proximity conversations.
+5. **TICKET-001:** Enable group meetings in rooms.
+6. **TICKET-006:** Enforce the 20-participant limit.
+7. **TICKET-008:** Add speaking animations.
+8. **TICKET-005:** Replace the placeholder first page (can proceed independently).
+
+## Decisions to Confirm
+
+- Does the 20-user limit apply to both meeting rooms and proximity conversations?
+- Is the two-block proximity area circular or square?
+- Does “permission arrives too late” refer to the browser microphone prompt, backend authorization, or actual voice connection?
+- Which specific first page was described as fake?
+
+## GitHub Issue and PR Review — 2026-11-15
+
+The tickets map to the repository's GitHub issues below. A repository-wide PR query returned no open or closed pull requests. The local proximity-group patch is still uncommitted, so there is no PR to attach yet. Keep issues open until the relevant change has a reviewable PR and its acceptance criteria are met; none should be closed based on this local worktree alone.
+
+| Ticket | GitHub issue | Work found in this repository | Disposition |
+| --- | --- | --- | --- |
+| TICKET-001 | [#3](https://github.com/ibrahim8ismael/workspace/issues/3) | Fixed meeting-zone group joining is not implemented by this patch. | Open; no PR. |
+| TICKET-002 | [#4](https://github.com/ibrahim8ismael/workspace/issues/4) | Proximity groups of 2–6 are implemented locally; a real local three-browser LiveKit test verifies two remote tracks per participant and safe member removal. | Open pending PR, review, and deployed-stack verification. |
+| TICKET-003 | [#5](https://github.com/ibrahim8ismael/workspace/issues/5) | No separate coordinate-sync fix was made. The group logic consumes server-owned positions, but the reported coordinate mismatch was not independently reproduced. | Open; investigate and test independently. |
+| TICKET-004 | [#6](https://github.com/ibrahim8ismael/workspace/issues/6) | The third-user failure was traced to pair-only membership. Local group authorization measured 762 ms; browser-permission latency and an agreed activation target remain unverified. | Open; update diagnosis/target before closure. |
+| TICKET-005 | [#7](https://github.com/ibrahim8ismael/workspace/issues/7) | No first-page replacement work was made. | Open; no PR. |
+| TICKET-006 | [#8](https://github.com/ibrahim8ismael/workspace/issues/8) | A separate six-person proximity voice cap was added per the incident scope. The requested 20-person conversation cap and its meeting/proximity scope were not implemented. | Open; resolve scope and implement the requested rule. |
+| TICKET-007 | [#9](https://github.com/ibrahim8ismael/workspace/issues/9) | The backend uses a true circular two-tile join radius from the group centroid, with a three-tile leave radius and 500 ms positional debounce. The circle UI indicator is not implemented. | Open; finish UI criterion and review. |
+| TICKET-008 | [#2](https://github.com/ibrahim8ismael/workspace/issues/2) | No avatar speaking animation was added. | Open; no PR. |
+
+Parent roadmap: [#1](https://github.com/ibrahim8ismael/workspace/issues/1) remains open until the child issues are complete. No GitHub issue was closed in this review because there is no PR and the local-only work does not meet the production acceptance gate.

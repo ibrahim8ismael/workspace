@@ -17,7 +17,7 @@ export const conversationUpdateSchema = z
       .array(
         z.object({ participationId: idSchema, displayName: z.string().min(2).max(80) }).strict(),
       )
-      .max(OFFICE_LIMITS.maxMeetingParticipants),
+      .max(Math.max(OFFICE_LIMITS.maxMeetingParticipants, OFFICE_LIMITS.maxProximityParticipants)),
   })
   .strict()
   .superRefine((value, ctx) => {
@@ -29,11 +29,16 @@ export const conversationUpdateSchema = z
         path: ['participants'],
         message: 'Duplicate conversation member',
       });
-    if (value.kind === 'proximity' && value.state !== 'ended' && value.participants.length !== 2)
+    if (
+      value.kind === 'proximity' &&
+      value.state !== 'ended' &&
+      (value.participants.length < 2 ||
+        value.participants.length > OFFICE_LIMITS.maxProximityParticipants)
+    )
       ctx.addIssue({
         code: 'custom',
         path: ['participants'],
-        message: 'Proximity requires a pair',
+        message: 'Proximity participant count is outside the permitted range',
       });
     if (value.kind === 'meeting' && value.state !== 'ended' && value.participants.length === 0)
       ctx.addIssue({ code: 'custom', path: ['participants'], message: 'Meeting has no members' });

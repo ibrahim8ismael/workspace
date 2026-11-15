@@ -54,6 +54,7 @@ COPY --from=build --chown=node:node /workspace/spikes/media-enforcement/applicat
 COPY --from=build --chown=node:node /workspace/spikes/media-enforcement/permit-state.mjs ./spikes/media-enforcement/permit-state.mjs
 COPY --from=build --chown=node:node /workspace/spikes/media-enforcement/policy-pull.mjs ./spikes/media-enforcement/policy-pull.mjs
 COPY --from=build --chown=node:node /workspace/spikes/media-enforcement/retirement-store.mjs ./spikes/media-enforcement/retirement-store.mjs
+COPY --from=build --chown=node:node /workspace/spikes/media-enforcement/sfu-generation-retirement.mjs ./spikes/media-enforcement/sfu-generation-retirement.mjs
 COPY --chown=node:node infra/media/local-guard-entry.mjs ./infra/media/local-guard-entry.mjs
 USER node
 CMD ["node", "infra/media/local-guard-entry.mjs"]

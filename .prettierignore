@@ -16,3 +16,6 @@ packages/assets/manifests/vivo-art-v1-*.json
 
 # Preserve the vendored EGM runtime exactly as distributed upstream.
 plugins/egm/
+
+# Generated repository snapshot; preserve its source-export formatting.
+workspace_ibrahim.md

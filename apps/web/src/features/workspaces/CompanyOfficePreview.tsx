@@ -454,19 +454,26 @@ export function CompanyOfficePreview({
   const { bootstrap, ready, snapshot } = state;
   const mapId = bootstrap.manifest.mapId;
   const participantCount = snapshot.participants.length;
-  const pairedName = activeProximityConversation?.participants.find(
-    (participant) => participant.participationId !== ready.participationId,
-  )?.displayName;
+  const conversationMembers = activeProximityConversation?.participants ?? [];
+  const conversationMemberNames = conversationMembers.map((participant) =>
+    participant.participationId === ready.participationId
+      ? `${participant.displayName} (you)`
+      : participant.displayName,
+  );
+  const conversationPartnerNames = conversationMembers
+    .filter((participant) => participant.participationId !== ready.participationId)
+    .map((participant) => participant.displayName);
+  const conversationPartners = conversationPartnerNames.join(', ');
   const nearbyVoiceSummary = !proximityVoiceEnabled
     ? 'Nearby voice is unavailable in this deployment.'
     : activeProximityConversation
       ? proximityAudioStatus === 'live'
-        ? `Microphone on with ${pairedName ?? 'your teammate'}.`
+        ? `Microphone on in a ${conversationMembers.length}-person conversation with ${conversationPartners}.`
         : proximityAudioStatus === 'muted'
-          ? `Connected to ${pairedName ?? 'your teammate'}; microphone is off.`
-          : `Paired with ${pairedName ?? 'your teammate'}. Turn on your microphone when ready.`
+          ? `Connected to ${conversationMembers.length}-person conversation with ${conversationPartners}; microphone is off.`
+          : `In a ${conversationMembers.length}-person conversation with ${conversationPartners}. Turn on your microphone when ready.`
       : latestConversation?.state === 'joining'
-        ? 'Pair found. Preparing guarded voice…'
+        ? 'Nearby group found. Preparing guarded voice…'
         : proximityOptedIn
           ? 'Looking for a nearby coworker. Your microphone is off.'
           : 'Nearby voice is off. Your microphone will stay off until you turn it on.';
@@ -680,8 +687,8 @@ export function CompanyOfficePreview({
                 <h3 id="office-proximity-title">Nearby voice</h3>
                 {proximityVoiceEnabled ? (
                   <p className="office-voice-help">
-                    Opt in to pair with an available coworker nearby. Pairing never turns on your
-                    microphone by itself.
+                    Opt in to join a nearby group conversation with up to six coworkers. Joining
+                    never turns on your microphone by itself.
                   </p>
                 ) : (
                   <p className="office-voice-help" role="status">
@@ -718,6 +725,11 @@ export function CompanyOfficePreview({
                 <p className="office-voice-status" role="status" aria-live="polite">
                   {nearbyVoiceSummary}
                 </p>
+                {activeProximityConversation && (
+                  <p className="office-voice-members" aria-label="Conversation participants">
+                    {conversationMembers.length} participants: {conversationMemberNames.join(', ')}
+                  </p>
+                )}
                 {proximityAudioError && (
                   <p className="office-action-error" role="alert">
                     {proximityAudioError}

@@ -103,7 +103,7 @@ describe('office v1 contracts (fixtures do not approve a map or grant access)', 
         officeBootstrapResponseSchema.safeParse({ ...bootstrap, manifest: changed }).success,
       ).toBe(false);
     expect(
-      officeBootstrapResponseSchema.safeParse({ ...bootstrap, protocolVersion: 2 }).success,
+      officeBootstrapResponseSchema.safeParse({ ...bootstrap, protocolVersion: 1 }).success,
     ).toBe(false);
     expect(
       officeBootstrapResponseSchema.safeParse({
@@ -130,7 +130,7 @@ describe('office v1 contracts (fixtures do not approve a map or grant access)', 
     expect(
       joinTicketRequestSchema.safeParse({
         mapVersion: commonsManifest.mapVersion,
-        protocolVersion: 1,
+        protocolVersion: OFFICE_PROTOCOL_VERSION,
       }).success,
     ).toBe(true);
     for (const changed of [
@@ -171,8 +171,8 @@ describe('office v1 contracts (fixtures do not approve a map or grant access)', 
   });
 
   it('does not accept client identities, takeover flags or pending maps in ordinary admission', () => {
-    const body = { mapVersion: version, protocolVersion: 1 };
-    const auth = { ticket: 'a'.repeat(43), protocolVersion: 1 };
+    const body = { mapVersion: version, protocolVersion: OFFICE_PROTOCOL_VERSION };
+    const auth = { ticket: 'a'.repeat(43), protocolVersion: OFFICE_PROTOCOL_VERSION };
     expect(joinTicketRequestSchema.safeParse(body).success).toBe(true);
     expect(officeSocketAuthSchema.safeParse(auth).success).toBe(true);
     for (const field of ['userId', 'role', 'workspaceId', 'takeover', 'spawn']) {
@@ -269,7 +269,7 @@ describe('office v1 contracts (fixtures do not approve a map or grant access)', 
       workspaceId: id,
       officeId: other,
       mapVersion: version,
-      protocolVersion: 1,
+      protocolVersion: OFFICE_PROTOCOL_VERSION,
       participationId: id,
       snapshot,
     };

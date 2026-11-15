@@ -24,9 +24,14 @@ export async function startApplicationMediaClient({
     typeof fixtureUrl !== 'string' ||
     !fixtureUrl.startsWith('http://127.0.0.1:') ||
     !Array.isArray(grants) ||
-    grants.length !== 2 ||
+    grants.length < 2 ||
+    grants.length > 6 ||
     typeof forceRelay !== 'boolean' ||
-    (denyMicrophoneIndex !== undefined && ![0, 1].includes(denyMicrophoneIndex)) ||
+    (denyMicrophoneIndex !== undefined &&
+      (!Number.isInteger(denyMicrophoneIndex) ||
+        denyMicrophoneIndex < 0 ||
+        denyMicrophoneIndex >= grants.length)) ||
+    new Set(grants.map((grant) => grant?.identity)).size !== grants.length ||
     grants.some(
       (grant) =>
         !grant ||
@@ -45,7 +50,7 @@ export async function startApplicationMediaClient({
     args: [...FIXTURE_ARGS, '--autoplay-policy=no-user-gesture-required'],
   });
   try {
-    const pages = await Promise.all([browser.newPage(), browser.newPage()]);
+    const pages = await Promise.all(grants.map(() => browser.newPage()));
     if (denyMicrophoneIndex !== undefined) {
       await pages[denyMicrophoneIndex].addInitScript(() => {
         const mediaDevices = navigator.mediaDevices;
@@ -119,11 +124,17 @@ export async function startApplicationMediaClient({
         await Promise.all(
           pages.map((page, index) =>
             page.waitForFunction(
-              (peerIdentity) =>
+              (peerIdentities) =>
                 window.__mediaFixture.status === 'live' &&
-                window.__mediaFixture.remoteIdentities.includes(peerIdentity) &&
+                window.__mediaFixture.remoteIdentities.length === peerIdentities.length &&
+                window.__mediaFixture.remoteTrackIdentities.length === peerIdentities.length &&
+                peerIdentities.every(
+                  (identity) =>
+                    window.__mediaFixture.remoteIdentities.includes(identity) &&
+                    window.__mediaFixture.remoteTrackIdentities.includes(identity),
+                ) &&
                 window.__mediaFixture.activeAudioSamples >= 10,
-              grants[index === 0 ? 1 : 0].identity,
+              grants.filter((_, peerIndex) => peerIndex !== index).map(({ identity }) => identity),
               { timeout: 15000 },
             ),
           ),
@@ -137,12 +148,28 @@ export async function startApplicationMediaClient({
       if (forceRelay) {
         const observations = await Promise.all(pages.map(readObservations));
         const relayOnlyAudio = observations.every(
-          ({ gatheredCandidateTypes, iceStates, activeAudioSamples, remoteIdentities }, index) =>
+          (
+            {
+              gatheredCandidateTypes,
+              iceStates,
+              activeAudioSamples,
+              remoteIdentities,
+              remoteTrackIdentities,
+            },
+            index,
+          ) =>
             gatheredCandidateTypes.length > 0 &&
             gatheredCandidateTypes.every((candidateType) => candidateType === 'relay') &&
             iceStates.includes('connection:connected') &&
             activeAudioSamples >= 10 &&
-            remoteIdentities.includes(grants[index === 0 ? 1 : 0].identity),
+            remoteIdentities.length === grants.length - 1 &&
+            remoteTrackIdentities.length === grants.length - 1 &&
+            grants
+              .filter((_, peerIndex) => peerIndex !== index)
+              .every(
+                ({ identity }) =>
+                  remoteIdentities.includes(identity) && remoteTrackIdentities.includes(identity),
+              ),
         );
         if (!relayOnlyAudio)
           throw new Error(
@@ -162,14 +189,22 @@ export async function startApplicationMediaClient({
         await Promise.all(
           pages.map((page, index) =>
             page.waitForFunction(
-              ({ previousSamples, peerIdentity }) =>
+              ({ previousSamples, peerIdentities }) =>
                 window.__mediaFixture.status === 'live' &&
                 window.__mediaFixture.iceStates.includes('connection:connected') &&
-                window.__mediaFixture.remoteIdentities.includes(peerIdentity) &&
+                peerIdentities.length === window.__mediaFixture.remoteIdentities.length &&
+                peerIdentities.length === window.__mediaFixture.remoteTrackIdentities.length &&
+                peerIdentities.every(
+                  (identity) =>
+                    window.__mediaFixture.remoteIdentities.includes(identity) &&
+                    window.__mediaFixture.remoteTrackIdentities.includes(identity),
+                ) &&
                 window.__mediaFixture.activeAudioSamples >= previousSamples + 60,
               {
                 previousSamples: before[index].activeAudioSamples,
-                peerIdentity: grants[index === 0 ? 1 : 0].identity,
+                peerIdentities: grants
+                  .filter((_, peerIndex) => peerIndex !== index)
+                  .map(({ identity }) => identity),
               },
               { timeout: 15000 },
             ),
@@ -180,7 +215,17 @@ export async function startApplicationMediaClient({
         const report = after.map((observation, index) => ({
           status: observation.status,
           connected: observation.iceStates.includes('connection:connected'),
-          peerPresent: observation.remoteIdentities.includes(grants[index === 0 ? 1 : 0].identity),
+          peerPresent:
+            observation.remoteIdentities.length === grants.length - 1 &&
+            observation.remoteTrackIdentities.length === grants.length - 1 &&
+            grants
+              .filter((_, peerIndex) => peerIndex !== index)
+              .every(
+                ({ identity }) =>
+                  observation.remoteIdentities.includes(identity) &&
+                  observation.remoteTrackIdentities.includes(identity),
+              ),
+          remoteTrackCount: observation.remoteTrackIdentities.length,
           audioSampleDelta: observation.activeAudioSamples - before[index].activeAudioSamples,
           sawReconnect: observation.statusHistory.includes('reconnecting'),
         }));
@@ -201,8 +246,7 @@ export async function startApplicationMediaClient({
       },
       exerciseMuteUnmute: async () => {
         const sender = pages[0];
-        const receiver = pages[1];
-        const peerIdentity = grants[0].identity;
+        const receivers = pages.slice(1);
         const muteRequestedAt = Date.now();
         await sender.evaluate(() =>
           window.postMessage({ kind: 'toggle-microphone' }, location.origin),
@@ -211,10 +255,12 @@ export async function startApplicationMediaClient({
           timeout: 5000,
         });
         await new Promise((resolve) => setTimeout(resolve, 500));
-        const muted = await readObservations(receiver);
+        const muted = await Promise.all(receivers.map(readObservations));
         await new Promise((resolve) => setTimeout(resolve, 500));
-        const mutedAfterQuiet = await readObservations(receiver);
-        const muteStable = muted.activeAudioSamples === mutedAfterQuiet.activeAudioSamples;
+        const mutedAfterQuiet = await Promise.all(receivers.map(readObservations));
+        const muteStable = muted.every(
+          (value, index) => value.activeAudioSamples === mutedAfterQuiet[index].activeAudioSamples,
+        );
 
         const unmuteRequestedAt = Date.now();
         await sender.evaluate(() =>
@@ -223,21 +269,41 @@ export async function startApplicationMediaClient({
         await sender.waitForFunction(() => window.__mediaFixture.status === 'live', null, {
           timeout: 5000,
         });
-        await receiver.waitForFunction(
-          ({ identity, samples }) =>
-            window.__mediaFixture.remoteIdentities.includes(identity) &&
-            window.__mediaFixture.activeAudioSamples > samples + 5,
-          { identity: peerIdentity, samples: mutedAfterQuiet.activeAudioSamples },
-          { timeout: 8000 },
+        await Promise.all(
+          receivers.map((receiver, index) =>
+            receiver.waitForFunction(
+              ({ identity, samples }) =>
+                window.__mediaFixture.remoteIdentities.includes(identity) &&
+                window.__mediaFixture.activeAudioSamples > samples + 5,
+              {
+                identity: grants[0].identity,
+                samples: mutedAfterQuiet[index].activeAudioSamples,
+              },
+              { timeout: 12000 },
+            ),
+          ),
         );
-        const resumed = await readObservations(receiver);
+        const resumed = await Promise.all(receivers.map(readObservations));
         const result = {
-          muteCutoffMs: Math.max(0, muted.lastActiveAudioAt - muteRequestedAt),
-          mutedSampleCount: mutedAfterQuiet.activeAudioSamples,
+          muteCutoffMs: Math.max(
+            0,
+            Math.max(...muted.map(({ lastActiveAudioAt }) => lastActiveAudioAt)) - muteRequestedAt,
+          ),
+          mutedSampleCount: Math.min(
+            ...mutedAfterQuiet.map(({ activeAudioSamples }) => activeAudioSamples),
+          ),
           muteStable,
-          unmuteObservedMs: Math.max(0, resumed.lastActiveAudioAt - unmuteRequestedAt),
-          resumedSampleCount: resumed.activeAudioSamples,
-          resumed: resumed.remoteIdentities.includes(peerIdentity),
+          unmuteObservedMs: Math.max(
+            0,
+            Math.max(...resumed.map(({ lastActiveAudioAt }) => lastActiveAudioAt)) -
+              unmuteRequestedAt,
+          ),
+          resumedSampleCount: Math.min(
+            ...resumed.map(({ activeAudioSamples }) => activeAudioSamples),
+          ),
+          resumed: resumed.every(({ remoteIdentities }) =>
+            remoteIdentities.includes(grants[0].identity),
+          ),
         };
         if (
           !result.muteStable ||
@@ -262,10 +328,22 @@ export async function startApplicationMediaClient({
         await Promise.all(
           pages.map((page, index) =>
             page.waitForFunction(
-              (sampleCount) =>
+              ({ sampleCount, peerIdentities }) =>
                 window.__mediaFixture.status === 'live' &&
+                peerIdentities.length === window.__mediaFixture.remoteIdentities.length &&
+                peerIdentities.length === window.__mediaFixture.remoteTrackIdentities.length &&
+                peerIdentities.every(
+                  (identity) =>
+                    window.__mediaFixture.remoteIdentities.includes(identity) &&
+                    window.__mediaFixture.remoteTrackIdentities.includes(identity),
+                ) &&
                 window.__mediaFixture.activeAudioSamples > sampleCount + 5,
-              baseline[index].activeAudioSamples,
+              {
+                sampleCount: baseline[index].activeAudioSamples,
+                peerIdentities: grants
+                  .filter((_, peerIndex) => peerIndex !== index)
+                  .map(({ identity }) => identity),
+              },
               { timeout: 20000 },
             ),
           ),
@@ -278,6 +356,72 @@ export async function startApplicationMediaClient({
           live: observations.every(({ status }) => status === 'live'),
           activeAudioSamples: observations.map(({ activeAudioSamples }) => activeAudioSamples),
           statuses: observations.map(({ status }) => status),
+        };
+      },
+      exerciseServerCutoff: async () => {
+        const requestedAt = Date.now();
+        try {
+          await Promise.all(
+            pages.map((page) =>
+              page.waitForFunction(
+                (startedAt) => {
+                  const fixture = window.__mediaFixture;
+                  const detached =
+                    fixture.status !== 'live' && fixture.remoteTrackIdentities.length === 0;
+                  const decodedAudioStopped =
+                    fixture.lastDecodedAudioAt > 0 &&
+                    Date.now() - fixture.lastDecodedAudioAt >= 300;
+                  return Date.now() >= startedAt && (detached || decodedAudioStopped);
+                },
+                requestedAt,
+                { timeout: 12000 },
+              ),
+            ),
+          );
+        } catch (error) {
+          const observations = await Promise.all(pages.map(readObservations));
+          throw new Error(
+            `server forwarding did not stop before cutoff deadline: ${JSON.stringify({
+              observations: observations.map(
+                ({
+                  status,
+                  remoteTrackIdentities,
+                  decodedAudioSamples,
+                  lastDecodedAudioAt,
+                  iceStates,
+                }) => ({
+                  status,
+                  remoteTrackCount: remoteTrackIdentities.length,
+                  decodedAudioSamples,
+                  lastDecodedAudioAt,
+                  iceStates,
+                }),
+              ),
+              requestedAt,
+              observedAt: Date.now(),
+              cause: error instanceof Error ? error.message : 'unknown',
+            })}`,
+            { cause: error },
+          );
+        }
+        const after = await Promise.all(pages.map(readObservations));
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        const settled = await Promise.all(pages.map(readObservations));
+        const lastDecodedAudioAt = Math.max(
+          ...settled.map(({ lastDecodedAudioAt }) => lastDecodedAudioAt),
+        );
+        return {
+          cutoffMs: Math.max(0, lastDecodedAudioAt - requestedAt),
+          remoteTracks: after.map(({ remoteTrackIdentities }) => remoteTrackIdentities.length),
+          remoteAudioDecodedSamples: after.map(({ decodedAudioSamples }) => decodedAudioSamples),
+          settledDecodedAudioSamples: settled.map(({ decodedAudioSamples }) => decodedAudioSamples),
+          statuses: after.map(({ status }) => status),
+          lastDecodedAudioAt,
+          observedAt: Date.now(),
+          stable: after.every(
+            (observation, index) =>
+              observation.decodedAudioSamples === settled[index].decodedAudioSamples,
+          ),
         };
       },
       stop: async () => {
@@ -356,6 +500,28 @@ export async function runApplicationMediaCutoffCli() {
         process.stdout.write(JSON.stringify({ kind: 'media-reconnect', ...result }) + '\n');
         continue;
       }
+      if (command.kind === 'expect-server-cutoff') {
+        const result = await client.exerciseServerCutoff();
+        process.stdout.write(JSON.stringify({ kind: 'server-cutoff', ...result }) + '\n');
+        continue;
+      }
+      if (command.kind === 'expect-audio-advancing') {
+        const before = await Promise.all(client.pages.map(readObservations));
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        const after = await Promise.all(client.pages.map(readObservations));
+        const decodedAudioSampleDeltas = after.map(
+          (observation, index) =>
+            observation.decodedAudioSamples - before[index].decodedAudioSamples,
+        );
+        if (decodedAudioSampleDeltas.some((delta) => delta <= 0))
+          throw new Error(
+            `decoded audio stopped advancing: ${JSON.stringify(decodedAudioSampleDeltas)}`,
+          );
+        process.stdout.write(
+          JSON.stringify({ kind: 'audio-advancing', decodedAudioSampleDeltas }) + '\n',
+        );
+        continue;
+      }
       if (command.kind === 'read-refreshed-token') {
         if (!Number.isInteger(command.afterCount) || command.afterCount < 0)
           throw new Error('invalid token refresh baseline');
@@ -382,7 +548,9 @@ export async function runApplicationMediaCutoffCli() {
         if (typeof command.token !== 'string' || command.token.length > 8192)
           throw new Error('invalid refreshed media token');
         const receiver = client.pages[1];
-        const peerIdentity = client.grants[0].identity;
+        const peerIdentities = client.grants
+          .filter((_, peerIndex) => peerIndex !== 1)
+          .map(({ identity }) => identity);
         const before = await readObservations(receiver);
         await receiver.evaluate(() => window.postMessage({ kind: 'stop' }, location.origin));
         await receiver.waitForFunction(() => window.__mediaFixture.status === 'off', null, {
@@ -398,11 +566,17 @@ export async function runApplicationMediaCutoffCli() {
           { timeout: 10000 },
         );
         await receiver.waitForFunction(
-          ({ identity, samples }) =>
+          ({ identities, samples }) =>
             window.__mediaFixture.status === 'live' &&
-            window.__mediaFixture.remoteIdentities.includes(identity) &&
+            identities.length === window.__mediaFixture.remoteIdentities.length &&
+            identities.length === window.__mediaFixture.remoteTrackIdentities.length &&
+            identities.every(
+              (identity) =>
+                window.__mediaFixture.remoteIdentities.includes(identity) &&
+                window.__mediaFixture.remoteTrackIdentities.includes(identity),
+            ) &&
             window.__mediaFixture.activeAudioSamples > samples + 5,
-          { identity: peerIdentity, samples: before.activeAudioSamples },
+          { identities: peerIdentities, samples: before.activeAudioSamples },
           { timeout: 10000 },
         );
         const observation = await readObservations(receiver);
@@ -411,7 +585,11 @@ export async function runApplicationMediaCutoffCli() {
             kind: 'token-reconnect',
             live: observation.status === 'live',
             resumedSamples: observation.activeAudioSamples - before.activeAudioSamples,
-            remoteIdentityPresent: observation.remoteIdentities.includes(peerIdentity),
+            remoteIdentityPresent: peerIdentities.every(
+              (identity) =>
+                observation.remoteIdentities.includes(identity) &&
+                observation.remoteTrackIdentities.includes(identity),
+            ),
           }) + '\n',
         );
         continue;

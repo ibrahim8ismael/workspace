@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
-import { OFFICE_LIMITS } from '@gather/contracts';
+import { OFFICE_LIMITS, OFFICE_PROTOCOL_VERSION } from '@gather/contracts';
 import { COMMONS_GEOMETRY, VIVO_GEOMETRY, pixelToTile } from '@gather/world';
 import commonsManifest from '@gather/assets/manifests/commons-map.json' with { type: 'json' };
 import vivoManifest from '@gather/assets/manifests/vivo-map.json' with { type: 'json' };
@@ -18,7 +18,7 @@ function ticket(userNumber: number, mapVersion = commonsManifest.mapVersion): Co
     officeId: '20000000-0000-4000-8000-000000000001',
     officeEpoch: '5fc87e60-62b8-4cf9-8edc-dcaa2a1d8249',
     mapVersion,
-    protocolVersion: 1,
+    protocolVersion: OFFICE_PROTOCOL_VERSION,
   };
 }
 

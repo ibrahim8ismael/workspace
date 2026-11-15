@@ -440,3 +440,20 @@ the verified authority snapshot sequence, not a locally generated counter.
 The standard `pnpm check` now includes `pnpm test:media-spike` and passed 190 tests
 across the repository, including all twenty spike regressions. None of these
 commands integrate production media or accept the A07 deployment release gate.
+
+## CP08.7 local three-person proximity group
+
+`pnpm test:media-live` now exercises the active API/runtime and a pinned local
+LiveKit 1.13.11 SFU with three headless Chromium clients. A and B establish a
+pair, then C joins the same authorized group. Each client receives two remote
+audio tracks and advancing decoded samples. The membership change retires the
+pair generation before the three-person generation is activated. Removing C
+retires that generation, blocks C's old signaling token, and reconnects A and B
+to a fresh two-person generation.
+
+The latest passing local run measured group authorization at 762ms, pair-generation
+retirement at 191ms, removal-generation retirement at 174ms, and decoded-audio
+cutoff at 326ms and 12ms respectively. These measurements are specific to the
+local fixture. They do not establish public ICE/TURN reachability, production
+deployment identity, or production release readiness; see
+[`PROXIMITY_GROUP_ROLLOUT.md`](../../docs/planning/PROXIMITY_GROUP_ROLLOUT.md).

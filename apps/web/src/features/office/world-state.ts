@@ -8,6 +8,10 @@ import {
 export type WorldApplyResult =
   { kind: 'applied'; snapshot: WorldSnapshot } | { kind: 'resync'; snapshot: WorldSnapshot };
 
+export function isSnapshotMonotonic(current: WorldSnapshot, next: WorldSnapshot): boolean {
+  return current.officeEpoch === next.officeEpoch && next.stateVersion >= current.stateVersion;
+}
+
 export function applyWorldDelta(current: WorldSnapshot, raw: unknown): WorldApplyResult {
   const parsed = worldDeltaForStateSchema(current).safeParse(raw);
   if (!parsed.success) return { kind: 'resync', snapshot: current };

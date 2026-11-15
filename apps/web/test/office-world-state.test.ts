@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { WorldSnapshot } from '@gather/contracts';
-import { applyWorldDelta } from '../src/features/office/world-state';
+import { applyWorldDelta, isSnapshotMonotonic } from '../src/features/office/world-state';
 
 const epoch = '3c2c80f4-e83a-4dc5-a733-cfe126a5ec94';
 const aliceId = '5cd178a6-d921-4a92-9e0f-816c830d7361';
@@ -28,6 +28,18 @@ const snapshot: WorldSnapshot = {
 };
 
 describe('applyWorldDelta', () => {
+  it('rejects old full snapshots and snapshots from a replaced epoch', () => {
+    expect(isSnapshotMonotonic(snapshot, { ...snapshot, stateVersion: 1 })).toBe(true);
+    expect(isSnapshotMonotonic({ ...snapshot, stateVersion: 2 }, snapshot)).toBe(false);
+    expect(
+      isSnapshotMonotonic(snapshot, {
+        ...snapshot,
+        officeEpoch: 'c202a2f9-d489-4da2-b6a8-f8b658f2268a',
+        stateVersion: 1,
+      }),
+    ).toBe(false);
+  });
+
   it('applies a contiguous participant update', () => {
     const result = applyWorldDelta(snapshot, {
       officeEpoch: epoch,

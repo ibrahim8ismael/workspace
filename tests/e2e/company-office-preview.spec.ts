@@ -250,6 +250,7 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
     let stateVersion = 0;
     let availability = 'available';
     let sittingAt: string | null = null;
+    let position = { x: 656, y: 1264 };
     const seatIds = ['24c48737:0', '52e00cff:0', 'd8fe8680:0', '88544309:0'];
     const emitWorldDelta = () => {
       const firstSeat = sittingAt === seatIds[0];
@@ -264,7 +265,7 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
               participationId,
               displayName: account.displayName,
               appearance: { bodyId: 'commons-worker', paletteId: 'teal' },
-              position: firstSeat ? { x: 624, y: 1168 } : { x: 656, y: 1264 },
+              position: firstSeat ? { x: 624, y: 1168 } : position,
               facing: 'south',
               availability,
               seatId: sittingAt,
@@ -337,6 +338,12 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
             packet[1].payload.dy !== undefined
           ) {
             movementInputs.push({ dx: packet[1].payload.dx, dy: packet[1].payload.dy });
+            const { dx, dy } = packet[1].payload;
+            if (dx !== 0 || dy !== 0) {
+              const scale = 19.2 / Math.hypot(dx, dy);
+              position = { x: position.x + dx * scale, y: position.y + dy * scale };
+              emitWorldDelta();
+            }
           }
           if (ackId) {
             socket.send(

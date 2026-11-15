@@ -852,6 +852,11 @@ export function CompanyOfficePreview({
                     selectedObject={null}
                     editorOpen={false}
                     overrides={noOverrides}
+                    authoritativeMovement
+                    authoritativeRevision={{
+                      epoch: state.snapshot.officeEpoch,
+                      version: state.snapshot.stateVersion,
+                    }}
                     onMove={() => {}}
                     onMovementIntent={(dx, dy) => client.move(dx, dy)}
                     onPlace={() => {}}

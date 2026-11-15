@@ -20,7 +20,7 @@ import {
 } from '@gather/contracts';
 import { io, type Socket } from 'socket.io-client';
 import { ApiClient } from '../../lib/api';
-import { applyWorldDelta } from './world-state';
+import { applyWorldDelta, isSnapshotMonotonic } from './world-state';
 
 export type OfficeConnectionStatus =
   'idle' | 'connecting' | 'connected' | 'disconnected' | 'ended' | 'error';
@@ -138,6 +138,7 @@ export class OfficeClient {
       });
       this.socket = socket;
       socket.on('office:ready', (raw: unknown) => {
+        if (!this.isCurrent(generation) || this.socket !== socket) return;
         const ready = officeReadySchema.safeParse(raw);
         if (!ready.success || !this.bootstrapMatches(ready.data, bootstrap)) {
           this.fail('The office returned an invalid session.');
@@ -152,6 +153,7 @@ export class OfficeClient {
         });
       });
       socket.on('world:delta', (raw: unknown) => {
+        if (!this.isCurrent(generation) || this.socket !== socket) return;
         const current = this.state.snapshot;
         if (!current) return;
         const result = applyWorldDelta(current, raw);
@@ -194,9 +196,10 @@ export class OfficeClient {
         });
       });
       socket.on('world:snapshot', (raw: unknown) => {
+        if (!this.isCurrent(generation) || this.socket !== socket) return;
         const parsed = worldSnapshotSchema.safeParse(raw);
         const current = this.state.snapshot;
-        if (!parsed.success || (current && parsed.data.officeEpoch !== current.officeEpoch)) {
+        if (!parsed.success || (current && !isSnapshotMonotonic(current, parsed.data))) {
           this.requestResync();
           return;
         }

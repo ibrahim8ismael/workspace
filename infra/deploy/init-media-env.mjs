@@ -5,16 +5,20 @@ import { fileURLToPath } from 'node:url';
 
 const [publicIp, domain = 'gather.imtelak.com', requestedRevision] = process.argv.slice(2);
 if (!isIPv4(publicIp ?? '') || domain !== 'gather.imtelak.com') {
-  console.error('Usage: node infra/deploy/init-media-env.mjs <public-ip> gather.imtelak.com [revision]');
+  console.error(
+    'Usage: node infra/deploy/init-media-env.mjs <public-ip> gather.imtelak.com [revision]',
+  );
   process.exit(2);
 }
 
 const path = fileURLToPath(new URL('./.env', import.meta.url));
 let contents = readFileSync(path, 'utf8');
 const read = (key) => contents.match(new RegExp(`^${key}=(.*)$`, 'm'))?.[1] ?? '';
-if (read('APP_DOMAIN') !== domain) throw new Error('APP_DOMAIN must already match the deployed host');
+if (read('APP_DOMAIN') !== domain)
+  throw new Error('APP_DOMAIN must already match the deployed host');
 const currentIp = read('MEDIA_PUBLIC_IP');
-if (currentIp && currentIp !== publicIp) throw new Error('MEDIA_PUBLIC_IP already differs; review it before changing');
+if (currentIp && currentIp !== publicIp)
+  throw new Error('MEDIA_PUBLIC_IP already differs; review it before changing');
 const currentUrl = read('LIVEKIT_URL');
 if (currentUrl && currentUrl !== `wss://${domain}`)
   throw new Error('LIVEKIT_URL already differs; review it before changing');

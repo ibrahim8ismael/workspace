@@ -253,6 +253,31 @@ describe('proximity voice groups', () => {
     ).toEqual([a, b]);
   });
 
+  it('keeps an established pair through leave-radius jitter and resets the exit timer on re-entry', () => {
+    const pairing = new ProximityPairing(officeEpoch, 32);
+    const closePeople = [candidate(a, 'socket-a', 64), candidate(b, 'socket-b', 128)];
+    pairing.setOptIn(a, true, closePeople, 10);
+    pairing.setOptIn(b, true, closePeople, 11);
+
+    const atLeaveBoundary = [candidate(a, 'socket-a', 64), candidate(b, 'socket-b', 256)];
+    expect(pairing.reconcile(atLeaveBoundary, 100)).toEqual([]);
+    expect(
+      pairing.reconcile([candidate(a, 'socket-a', 64), candidate(b, 'socket-b', 255.99)], 200),
+    ).toEqual([]);
+    expect(
+      pairing.reconcile([candidate(a, 'socket-a', 64), candidate(b, 'socket-b', 256.01)], 300),
+    ).toEqual([]);
+    expect(pairing.reconcile(atLeaveBoundary, 300 + PROXIMITY_EXIT_DEBOUNCE_MS - 1)).toEqual([]);
+    expect(pairing.reconcile(atLeaveBoundary, 300 + PROXIMITY_EXIT_DEBOUNCE_MS)).toEqual([]);
+
+    const sustainedOutside = [candidate(a, 'socket-a', 64), candidate(b, 'socket-b', 257)];
+    expect(pairing.reconcile(sustainedOutside, 1000)).toEqual([]);
+    expect(pairing.reconcile(sustainedOutside, 1000 + PROXIMITY_EXIT_DEBOUNCE_MS - 1)).toEqual([]);
+    expect(
+      pairing.reconcile(sustainedOutside, 1000 + PROXIMITY_EXIT_DEBOUNCE_MS)[0]?.update.state,
+    ).toBe('ended');
+  });
+
   it('debounces boundary exit and preserves a close surviving group on a new generation', () => {
     const pairing = new ProximityPairing(officeEpoch, 32);
     const closePeople = [

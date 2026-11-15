@@ -31,7 +31,12 @@ type OfficeAudioProbe = {
   firstSilentAfterStopAt: number;
   lastActiveAfterStopAt: number;
   stopRequestedAt: number;
+  silentStartedAt: number;
+  longestSilentMs: number;
   interval: number;
+  sampleCount: number;
+  lastSampleAt: number;
+  maxCallbackIntervalMs: number;
   context: AudioContext;
   analyser: AnalyserNode;
   samples: Float32Array;
@@ -44,10 +49,23 @@ type OfficeRtcDiagnostic = {
   peerConnection: RTCPeerConnection;
 };
 
+type PositionRenderProbe = {
+  frameCount: number;
+  startedAt: number;
+  firstChangedAt: number;
+  maxStepPx: number;
+  lastX: number;
+  lastY: number;
+  initialX: number;
+  initialY: number;
+  animationFrame: number;
+};
+
 declare global {
   interface Window {
     __officeAudioProbe?: OfficeAudioProbe;
     __officeRtcDiagnostics?: { peers: OfficeRtcDiagnostic[] };
+    __officePositionRenderProbe?: PositionRenderProbe;
   }
 }
 
@@ -223,6 +241,131 @@ async function participantPosition(page: import('@playwright/test').Page, displa
   }, displayName);
 }
 
+async function participantPositionObservation(
+  page: Page,
+  displayName: string,
+): Promise<{
+  epoch: string | null;
+  version: string | null;
+  worldX: number;
+  worldY: number;
+  authoritativeX: number;
+  authoritativeY: number;
+}> {
+  return page.locator('.office-scene svg.office-map').evaluate((element, name) => {
+    const svg = element as SVGSVGElement;
+    const avatar = Array.from(svg.querySelectorAll<SVGGElement>('g[data-world-x]')).find((group) =>
+      Array.from(group.querySelectorAll<SVGElement>('[aria-label]')).some((child) =>
+        child.getAttribute('aria-label')?.startsWith(name),
+      ),
+    );
+    if (!avatar) throw new Error(`The Vivo avatar for ${name} has no logical position.`);
+    return {
+      epoch: svg.getAttribute('data-authoritative-epoch'),
+      version: svg.getAttribute('data-authoritative-version'),
+      worldX: Number(avatar.getAttribute('data-world-x')),
+      worldY: Number(avatar.getAttribute('data-world-y')),
+      authoritativeX: Number(avatar.getAttribute('data-authoritative-x')),
+      authoritativeY: Number(avatar.getAttribute('data-authoritative-y')),
+    };
+  }, displayName);
+}
+
+async function officePairPositions(page: Page, firstName: string, secondName: string) {
+  return page.locator('.office-scene svg.office-map').evaluate(
+    (element, names) => {
+      const svg = element as SVGSVGElement;
+      const find = (name: string) =>
+        Array.from(svg.querySelectorAll<SVGGElement>('g[data-world-x]')).find((group) =>
+          Array.from(group.querySelectorAll<SVGElement>('[aria-label]')).some((child) =>
+            child.getAttribute('aria-label')?.startsWith(name),
+          ),
+        );
+      const first = find(names[0]);
+      const second = find(names[1]);
+      if (!first || !second) throw new Error('Both live Vivo avatar positions must be available.');
+      return {
+        epoch: svg.getAttribute('data-authoritative-epoch'),
+        version: svg.getAttribute('data-authoritative-version'),
+        first: {
+          x: Number(first.getAttribute('data-authoritative-x')),
+          y: Number(first.getAttribute('data-authoritative-y')),
+        },
+        second: {
+          x: Number(second.getAttribute('data-authoritative-x')),
+          y: Number(second.getAttribute('data-authoritative-y')),
+        },
+      };
+    },
+    [firstName, secondName],
+  );
+}
+
+async function startPositionRenderProbe(page: Page, displayName: string) {
+  return page.evaluate((name) => {
+    const svg = document.querySelector<SVGSVGElement>('.office-scene svg.office-map');
+    if (!svg) throw new Error('The live office map is not mounted.');
+    const findAvatar = () =>
+      Array.from(svg.querySelectorAll<SVGGElement>('g[data-world-x]')).find((group) =>
+        Array.from(group.querySelectorAll<SVGElement>('[aria-label]')).some((child) =>
+          child.getAttribute('aria-label')?.startsWith(name),
+        ),
+      );
+    const initialAvatar = findAvatar();
+    if (!initialAvatar) throw new Error(`The Vivo avatar for ${name} has no logical position.`);
+    const initialX = Number(initialAvatar.getAttribute('data-world-x'));
+    const initialY = Number(initialAvatar.getAttribute('data-world-y'));
+    const probe: PositionRenderProbe = {
+      frameCount: 0,
+      startedAt: performance.now(),
+      firstChangedAt: 0,
+      maxStepPx: 0,
+      lastX: initialX,
+      lastY: initialY,
+      initialX,
+      initialY,
+      animationFrame: 0,
+    };
+    const sample = () => {
+      const avatar = findAvatar();
+      if (avatar) {
+        const x = Number(avatar.getAttribute('data-world-x'));
+        const y = Number(avatar.getAttribute('data-world-y'));
+        const dx = x - probe.lastX;
+        const dy = y - probe.lastY;
+        probe.frameCount += 1;
+        if (probe.firstChangedAt === 0 && (x !== initialX || y !== initialY))
+          probe.firstChangedAt = performance.now();
+        probe.maxStepPx = Math.max(probe.maxStepPx, Math.hypot(dx, dy));
+        probe.lastX = x;
+        probe.lastY = y;
+      }
+      probe.animationFrame = requestAnimationFrame(sample);
+    };
+    window.__officePositionRenderProbe = probe;
+    probe.animationFrame = requestAnimationFrame(sample);
+    return { startedAt: probe.startedAt, initialX, initialY };
+  }, displayName);
+}
+
+async function readPositionRenderProbe(page: Page) {
+  return page.evaluate(() => {
+    const probe = window.__officePositionRenderProbe;
+    if (!probe) throw new Error('The live position render probe is not running.');
+    return { ...probe, now: performance.now() };
+  });
+}
+
+async function stopPositionRenderProbe(page: Page) {
+  return page.evaluate(() => {
+    const probe = window.__officePositionRenderProbe;
+    if (!probe) throw new Error('The live position render probe is not running.');
+    cancelAnimationFrame(probe.animationFrame);
+    delete window.__officePositionRenderProbe;
+    return { ...probe, stoppedAt: performance.now() };
+  });
+}
+
 async function nearestVisibleOpenSeatId(map: Locator) {
   return map.evaluate((element) => {
     const svg = element as SVGSVGElement;
@@ -278,6 +421,11 @@ async function startRemoteAudioProbe(page: Page) {
       firstSilentAfterStopAt: 0,
       lastActiveAfterStopAt: 0,
       stopRequestedAt: 0,
+      silentStartedAt: 0,
+      longestSilentMs: 0,
+      sampleCount: 0,
+      lastSampleAt: 0,
+      maxCallbackIntervalMs: 0,
       interval: 0,
       context,
       analyser,
@@ -286,12 +434,28 @@ async function startRemoteAudioProbe(page: Page) {
     probe.interval = window.setInterval(() => {
       analyser.getFloatTimeDomainData(samples);
       const observedAt = Date.now();
+      probe.sampleCount += 1;
+      if (probe.lastSampleAt > 0)
+        probe.maxCallbackIntervalMs = Math.max(
+          probe.maxCallbackIntervalMs,
+          observedAt - probe.lastSampleAt,
+        );
+      probe.lastSampleAt = observedAt;
       if (samples.some((sample) => Math.abs(sample) > 0.01)) {
         probe.activeSamples += 1;
         probe.lastActiveAt = observedAt;
+        if (probe.silentStartedAt > 0) {
+          probe.longestSilentMs = Math.max(
+            probe.longestSilentMs,
+            observedAt - probe.silentStartedAt,
+          );
+          probe.silentStartedAt = 0;
+        }
         if (probe.stopRequestedAt > 0) probe.lastActiveAfterStopAt = observedAt;
-      } else if (probe.stopRequestedAt > 0 && probe.firstSilentAfterStopAt === 0) {
-        probe.firstSilentAfterStopAt = observedAt;
+      } else {
+        if (probe.silentStartedAt === 0) probe.silentStartedAt = observedAt;
+        if (probe.stopRequestedAt > 0 && probe.firstSilentAfterStopAt === 0)
+          probe.firstSilentAfterStopAt = observedAt;
       }
     }, 20);
     window.__officeAudioProbe = probe;
@@ -301,9 +465,16 @@ async function startRemoteAudioProbe(page: Page) {
 async function readRemoteAudioProbe(page: Page) {
   return page.evaluate(() => ({
     activeSamples: window.__officeAudioProbe?.activeSamples ?? 0,
+    sampleCount: window.__officeAudioProbe?.sampleCount ?? 0,
+    maxCallbackIntervalMs: window.__officeAudioProbe?.maxCallbackIntervalMs ?? 0,
     lastActiveAt: window.__officeAudioProbe?.lastActiveAt ?? 0,
     firstSilentAfterStopAt: window.__officeAudioProbe?.firstSilentAfterStopAt ?? 0,
     lastActiveAfterStopAt: window.__officeAudioProbe?.lastActiveAfterStopAt ?? 0,
+    longestSilentMs: window.__officeAudioProbe?.longestSilentMs ?? 0,
+    currentSilentMs:
+      window.__officeAudioProbe?.silentStartedAt && window.__officeAudioProbe
+        ? Date.now() - window.__officeAudioProbe.silentStartedAt
+        : 0,
   }));
 }
 
@@ -503,6 +674,22 @@ async function readOfficeRtcDiagnostics(page: Page) {
               bytesReceived: pair.bytesReceived,
             };
           });
+        const audioStreams = Array.from(stats.values())
+          .filter(
+            (report) =>
+              (report.type === 'inbound-rtp' || report.type === 'outbound-rtp') &&
+              (report.kind === 'audio' || report.mediaType === 'audio'),
+          )
+          .map((report) => ({
+            direction: report.type,
+            bytes: 'bytesReceived' in report ? report.bytesReceived : report.bytesSent,
+            packets: 'packetsReceived' in report ? report.packetsReceived : report.packetsSent,
+            packetsLost: 'packetsLost' in report ? report.packetsLost : undefined,
+            jitter: 'jitter' in report ? report.jitter : undefined,
+            totalSamplesReceived:
+              'totalSamplesReceived' in report ? report.totalSamplesReceived : undefined,
+            totalAudioEnergy: 'totalAudioEnergy' in report ? report.totalAudioEnergy : undefined,
+          }));
         return {
           iceServers: entry.iceServers,
           iceState: entry.peerConnection.iceConnectionState,
@@ -511,6 +698,7 @@ async function readOfficeRtcDiagnostics(page: Page) {
           candidateErrors: entry.candidateErrors,
           candidates,
           pairs,
+          audioStreams,
         };
       }),
     );
@@ -595,16 +783,67 @@ test('live two-browser Vivo admission, movement, seats, recovery, and company is
       .filter({ hasText: ownerName });
 
     const initialPosition = await participantPosition(memberPage, ownerName);
+    await startPositionRenderProbe(memberPage, ownerName);
+    const inputMark = await memberPage.evaluate(() => performance.now());
     await ownerMap.focus();
     await ownerPage.keyboard.down('ArrowRight');
+    await expect
+      .poll(async () => (await readPositionRenderProbe(memberPage)).firstChangedAt)
+      .toBeGreaterThan(inputMark);
     await new Promise((resolve) => setTimeout(resolve, 900));
     await ownerPage.keyboard.up('ArrowRight');
+    const liveRenderTrace = await stopPositionRenderProbe(memberPage);
     await expect
       .poll(async () => {
         const current = await participantPosition(memberPage, ownerName);
         return current.x !== initialPosition.x || current.y !== initialPosition.y;
       })
       .toBe(true);
+
+    let matchingOwnerState: Awaited<ReturnType<typeof participantPositionObservation>> | undefined;
+    let matchingMemberState: Awaited<ReturnType<typeof participantPositionObservation>> | undefined;
+    await expect
+      .poll(async () => {
+        matchingOwnerState = await participantPositionObservation(ownerPage, ownerName);
+        matchingMemberState = await participantPositionObservation(memberPage, ownerName);
+        return Boolean(
+          matchingOwnerState.epoch &&
+          matchingOwnerState.epoch === matchingMemberState.epoch &&
+          matchingOwnerState.version === matchingMemberState.version &&
+          matchingOwnerState.authoritativeX === matchingMemberState.authoritativeX &&
+          matchingOwnerState.authoritativeY === matchingMemberState.authoritativeY,
+        );
+      })
+      .toBe(true);
+    await ownerPage.waitForTimeout(220);
+    const settledOwnerState = await participantPositionObservation(ownerPage, ownerName);
+    const settledMemberState = await participantPositionObservation(memberPage, ownerName);
+    expect(settledOwnerState.epoch).toBe(settledMemberState.epoch);
+    expect(settledOwnerState.version).toBe(settledMemberState.version);
+    expect(settledOwnerState.authoritativeX).toBe(settledMemberState.authoritativeX);
+    expect(settledOwnerState.authoritativeY).toBe(settledMemberState.authoritativeY);
+    for (const observation of [settledOwnerState, settledMemberState]) {
+      expect(Math.abs(observation.worldX - observation.authoritativeX)).toBeLessThan(0.01);
+      expect(Math.abs(observation.worldY - observation.authoritativeY)).toBeLessThan(0.01);
+    }
+    console.info(
+      `CP06.5 live movement convergence: ${JSON.stringify({
+        inputToPeerVisibleMs: liveRenderTrace.firstChangedAt - inputMark,
+        renderFrames: liveRenderTrace.frameCount,
+        maxRenderedStepPx: liveRenderTrace.maxStepPx,
+        epoch: settledOwnerState.epoch,
+        version: settledOwnerState.version,
+        authoritative: [settledOwnerState.authoritativeX, settledOwnerState.authoritativeY],
+        ownerRendered: [settledOwnerState.worldX, settledOwnerState.worldY],
+        peerRendered: [settledMemberState.worldX, settledMemberState.worldY],
+        maxResidualPx: Math.max(
+          Math.abs(settledOwnerState.worldX - settledOwnerState.authoritativeX),
+          Math.abs(settledOwnerState.worldY - settledOwnerState.authoritativeY),
+          Math.abs(settledMemberState.worldX - settledMemberState.authoritativeX),
+          Math.abs(settledMemberState.worldY - settledMemberState.authoritativeY),
+        ),
+      })}`,
+    );
 
     const contestedSeatId = await nearestVisibleOpenSeatId(memberMap);
     expect(contestedSeatId).toBeTruthy();
@@ -716,7 +955,7 @@ test('mounted Vivo office carries and cuts off live nearby audio on conversation
     !enabled || !mediaEnabled,
     'Run pnpm test:e2e:live-media against the local media-e2e Compose profile.',
   );
-  test.setTimeout(120_000);
+  test.setTimeout(420_000);
 
   const { owner, member, workspaceId } = await getLiveMediaOfficeFixture();
   let mixedBrowser: Browser | undefined;
@@ -724,14 +963,7 @@ test('mounted Vivo office carries and cuts off live nearby audio on conversation
   let memberContext: Awaited<ReturnType<typeof companyPage>>['context'] | undefined;
   try {
     const useMixedBrowser = process.env['LIVE_OFFICE_MIXED_BROWSERS'] === '1';
-    const ownerOffice = await companyPage(
-      browser,
-      owner.client,
-      workspaceId,
-      false,
-      false,
-      useMixedBrowser,
-    );
+    const ownerOffice = await companyPage(browser, owner.client, workspaceId, false, false, true);
     ownerContext = ownerOffice.context;
     if (useMixedBrowser) {
       mixedBrowser = await firefoxBrowser.launch({
@@ -750,7 +982,7 @@ test('mounted Vivo office carries and cuts off live nearby audio on conversation
       workspaceId,
       false,
       false,
-      useMixedBrowser,
+      true,
     );
     memberContext = memberOffice.context;
     const ownerPage = ownerOffice.page;
@@ -872,6 +1104,69 @@ test('mounted Vivo office carries and cuts off live nearby audio on conversation
       })
       .toBeLessThan(250);
 
+    // Keep the pair stationary long enough to detect an established-pair cutoff,
+    // rather than treating a successful initial subscription as continuity.
+    for (let minute = 1; minute <= 5; minute += 1) {
+      await ownerPage.waitForTimeout(60_000);
+      const [ownerProbe, memberProbe, ownerRtc, memberRtc] = await Promise.all([
+        readRemoteAudioProbe(ownerPage),
+        readRemoteAudioProbe(memberPage),
+        readOfficeRtcDiagnostics(ownerPage),
+        readOfficeRtcDiagnostics(memberPage),
+      ]);
+      console.info(
+        `CP08.5 live stationary checkpoint ${minute}/5: ${JSON.stringify({
+          elapsedMs: minute * 60_000,
+          owner: {
+            activeSamples: ownerProbe.activeSamples,
+            sampleCount: ownerProbe.sampleCount,
+            longestSilentMs: ownerProbe.longestSilentMs,
+            currentSilentMs: ownerProbe.currentSilentMs,
+            maxCallbackIntervalMs: ownerProbe.maxCallbackIntervalMs,
+            rtpAudio: ownerRtc.flatMap((peer) => peer.audioStreams),
+          },
+          member: {
+            activeSamples: memberProbe.activeSamples,
+            sampleCount: memberProbe.sampleCount,
+            longestSilentMs: memberProbe.longestSilentMs,
+            currentSilentMs: memberProbe.currentSilentMs,
+            maxCallbackIntervalMs: memberProbe.maxCallbackIntervalMs,
+            rtpAudio: memberRtc.flatMap((peer) => peer.audioStreams),
+          },
+        })}`,
+      );
+    }
+    const stationaryAudio = await Promise.all([
+      readRemoteAudioProbe(ownerPage),
+      readRemoteAudioProbe(memberPage),
+    ]);
+    const stationaryGaps = stationaryAudio.map((probe) =>
+      Math.max(probe.longestSilentMs, probe.currentSilentMs),
+    );
+    console.info(
+      `CP08.5 live stationary nearby audio: ${JSON.stringify({
+        durationMs: 300_000,
+        activeSamples: stationaryAudio.map((probe) => probe.activeSamples),
+        sampleCounts: stationaryAudio.map((probe) => probe.sampleCount),
+        longestSilentMs: stationaryGaps,
+        maxCallbackIntervalMs: stationaryAudio.map((probe) => probe.maxCallbackIntervalMs),
+        bothDirectionsActive: stationaryAudio.every((probe) => probe.activeSamples > 100),
+      })}`,
+    );
+    expect(stationaryAudio.every((probe) => probe.activeSamples > 100)).toBe(true);
+    const continuousChromiumSource = Boolean(
+      process.env['LIVE_OFFICE_FAKE_AUDIO_WAV'] &&
+      browser.browserType().name() === 'chromium' &&
+      !useMixedBrowser,
+    );
+    if (continuousChromiumSource) {
+      expect(Math.max(...stationaryGaps)).toBeLessThanOrEqual(500);
+    } else {
+      console.info(
+        'CP08.5 continuous-energy budget not enforced: this browser configuration does not use the controlled Chrome WAV source.',
+      );
+    }
+
     if (useMixedBrowser) {
       const peers = await readOfficeRtcDiagnostics(memberPage);
       expect(peers.length).toBeGreaterThan(0);
@@ -945,6 +1240,235 @@ test('mounted Vivo office carries and cuts off live nearby audio on conversation
     await ownerContext?.close();
     await memberContext?.close();
     await mixedBrowser?.close();
+  }
+});
+
+test('mounted Vivo nearby audio ends outside and resumes after proximity re-entry', async ({
+  browser,
+}) => {
+  test.skip(
+    !enabled || !mediaEnabled,
+    'Run pnpm test:e2e:live-media against the local media-e2e Compose profile.',
+  );
+  test.setTimeout(150_000);
+
+  const { owner, member, workspaceId } = await getLiveMediaOfficeFixture();
+  let ownerContext: Awaited<ReturnType<typeof companyPage>>['context'] | undefined;
+  let memberContext: Awaited<ReturnType<typeof companyPage>>['context'] | undefined;
+  try {
+    const ownerOffice = await companyPage(browser, owner.client, workspaceId);
+    ownerContext = ownerOffice.context;
+    const memberOffice = await companyPage(browser, member.client, workspaceId);
+    memberContext = memberOffice.context;
+    const ownerPage = ownerOffice.page;
+    const memberPage = memberOffice.page;
+    const ownerName = owner.account.displayName;
+    const memberName = member.account.displayName;
+    await ownerContext.grantPermissions(['microphone'], { origin: appOrigin });
+    await memberContext.grantPermissions(['microphone'], { origin: appOrigin });
+
+    await ownerPage.getByRole('button', { name: 'Join' }).click();
+    await expect(ownerPage.getByText('1 person in the office')).toBeVisible();
+    await memberPage.getByRole('button', { name: 'Join' }).click();
+    await expect(ownerPage.getByText('2 people in the office')).toBeVisible();
+    await expect(memberPage.getByText('2 people in the office')).toBeVisible();
+    const memberMap = memberPage.locator('.office-scene svg.office-map');
+    await ownerPage.getByRole('button', { name: 'Opt in to nearby voice' }).click();
+    await memberPage.getByRole('button', { name: 'Opt in to nearby voice' }).click();
+    await expect(
+      ownerPage.getByText(`Paired with ${memberName}. Turn on your microphone when ready.`),
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(
+      memberPage.getByText(`Paired with ${ownerName}. Turn on your microphone when ready.`),
+    ).toBeVisible({ timeout: 15_000 });
+    await ownerPage.getByRole('button', { name: 'Activate proximity microphone' }).click();
+    await memberPage.getByRole('button', { name: 'Activate proximity microphone' }).click();
+    await expect(ownerPage.locator('#office-microphone-help')).toHaveText(
+      'Your microphone is on.',
+      {
+        timeout: 20_000,
+      },
+    );
+    await expect(memberPage.locator('#office-microphone-help')).toHaveText(
+      'Your microphone is on.',
+      {
+        timeout: 20_000,
+      },
+    );
+    const ownerRemoteAudio = ownerPage.locator('.office-proximity-audio-output audio');
+    const memberRemoteAudio = memberPage.locator('.office-proximity-audio-output audio');
+    await expect(ownerRemoteAudio).toHaveCount(1, { timeout: 15_000 });
+    await expect(memberRemoteAudio).toHaveCount(1, { timeout: 15_000 });
+    await startRemoteAudioProbe(ownerPage);
+    await startRemoteAudioProbe(memberPage);
+    await expect
+      .poll(async () => {
+        const [ownerProbe, memberProbe] = await Promise.all([
+          readRemoteAudioProbe(ownerPage),
+          readRemoteAudioProbe(memberPage),
+        ]);
+        return Math.min(ownerProbe.activeSamples, memberProbe.activeSamples);
+      })
+      .toBeGreaterThan(10);
+
+    const currentPair = async () => officePairPositions(memberPage, ownerName, memberName);
+    const initialPair = await currentPair();
+    expect(
+      Math.hypot(
+        initialPair.first.x - initialPair.second.x,
+        initialPair.first.y - initialPair.second.y,
+      ),
+    ).toBeLessThanOrEqual(64);
+
+    const moveRightStep = async () => {
+      const before = await currentPair();
+      await memberMap.focus();
+      await memberPage.keyboard.down('ArrowRight');
+      await memberPage.waitForTimeout(120);
+      await memberPage.keyboard.up('ArrowRight');
+      await expect
+        .poll(async () => {
+          const after = await currentPair();
+          return (
+            after.epoch === before.epoch &&
+            after.version !== before.version &&
+            (after.second.x !== before.second.x || after.second.y !== before.second.y)
+          );
+        })
+        .toBe(true);
+      await memberPage.waitForTimeout(180);
+      return currentPair();
+    };
+
+    let withinExitRadius = initialPair;
+    for (let step = 0; step < 5; step += 1) {
+      withinExitRadius = await moveRightStep();
+      const distance = Math.hypot(
+        withinExitRadius.first.x - withinExitRadius.second.x,
+        withinExitRadius.first.y - withinExitRadius.second.y,
+      );
+      if (distance > 64) break;
+    }
+    const withinRadiusPx = Math.hypot(
+      withinExitRadius.first.x - withinExitRadius.second.x,
+      withinExitRadius.first.y - withinExitRadius.second.y,
+    );
+    expect(withinRadiusPx).toBeGreaterThan(64);
+    expect(withinRadiusPx).toBeLessThanOrEqual(96);
+    await expect(ownerPage.getByRole('button', { name: 'Leave conversation' })).toBeVisible();
+    await expect(memberPage.getByRole('button', { name: 'Leave conversation' })).toBeVisible();
+    const activeAtBoundary = await Promise.all([
+      readRemoteAudioProbe(ownerPage),
+      readRemoteAudioProbe(memberPage),
+    ]);
+    expect(activeAtBoundary.every((probe) => probe.lastActiveAt > Date.now() - 1000)).toBe(true);
+
+    let outsideRadius = withinExitRadius;
+    for (let step = 0; step < 8; step += 1) {
+      outsideRadius = await moveRightStep();
+      const distance = Math.hypot(
+        outsideRadius.first.x - outsideRadius.second.x,
+        outsideRadius.first.y - outsideRadius.second.y,
+      );
+      if (distance > 96) break;
+    }
+    const outsideDistance = Math.hypot(
+      outsideRadius.first.x - outsideRadius.second.x,
+      outsideRadius.first.y - outsideRadius.second.y,
+    );
+    expect(outsideDistance).toBeGreaterThan(96);
+    await expect(ownerPage.getByRole('button', { name: 'Leave conversation' })).toHaveCount(0, {
+      timeout: 10_000,
+    });
+    await expect(memberPage.getByRole('button', { name: 'Leave conversation' })).toHaveCount(0, {
+      timeout: 10_000,
+    });
+    await expect(ownerRemoteAudio).toHaveCount(0, { timeout: 10_000 });
+    await expect(memberRemoteAudio).toHaveCount(0, { timeout: 10_000 });
+    await expect(
+      ownerPage.getByText('Looking for a nearby coworker. Your microphone is off.'),
+    ).toBeVisible();
+
+    await stopRemoteAudioProbe(ownerPage);
+    await stopRemoteAudioProbe(memberPage);
+    console.info(
+      `CP08.5 live nearby audio separation: ${JSON.stringify({
+        initialRadiusPx: Math.hypot(
+          initialPair.first.x - initialPair.second.x,
+          initialPair.first.y - initialPair.second.y,
+        ),
+        withinExitRadiusPx: withinRadiusPx,
+        outsideExitRadiusPx: outsideDistance,
+        ownerPosition: outsideRadius.first,
+        memberPosition: outsideRadius.second,
+      })}`,
+    );
+    let nearAgain = outsideRadius;
+    await memberMap.focus();
+    await memberPage.keyboard.down('ArrowLeft');
+    await expect
+      .poll(
+        async () => {
+          nearAgain = await currentPair();
+          return (
+            nearAgain.epoch === outsideRadius.epoch &&
+            Math.hypot(
+              nearAgain.first.x - nearAgain.second.x,
+              nearAgain.first.y - nearAgain.second.y,
+            ) <= 64
+          );
+        },
+        { timeout: 15_000 },
+      )
+      .toBe(true);
+    await memberPage.keyboard.up('ArrowLeft');
+    await memberPage.waitForTimeout(200);
+    nearAgain = await currentPair();
+    const reentryDistance = Math.hypot(
+      nearAgain.first.x - nearAgain.second.x,
+      nearAgain.first.y - nearAgain.second.y,
+    );
+    expect(reentryDistance).toBeLessThanOrEqual(64);
+    await expect(ownerPage.getByRole('button', { name: 'Leave conversation' })).toBeVisible({
+      timeout: 10_000,
+    });
+    await expect(memberPage.getByRole('button', { name: 'Leave conversation' })).toBeVisible({
+      timeout: 10_000,
+    });
+    if (await ownerPage.getByRole('button', { name: 'Activate proximity microphone' }).isVisible())
+      await ownerPage.getByRole('button', { name: 'Activate proximity microphone' }).click();
+    if (await memberPage.getByRole('button', { name: 'Activate proximity microphone' }).isVisible())
+      await memberPage.getByRole('button', { name: 'Activate proximity microphone' }).click();
+    await expect(ownerRemoteAudio).toHaveCount(1, { timeout: 15_000 });
+    await expect(memberRemoteAudio).toHaveCount(1, { timeout: 15_000 });
+    await startRemoteAudioProbe(ownerPage);
+    await startRemoteAudioProbe(memberPage);
+    await expect
+      .poll(async () => {
+        const [ownerProbe, memberProbe] = await Promise.all([
+          readRemoteAudioProbe(ownerPage),
+          readRemoteAudioProbe(memberPage),
+        ]);
+        return Math.min(ownerProbe.activeSamples, memberProbe.activeSamples);
+      })
+      .toBeGreaterThan(10);
+    console.info(
+      `CP08.5 live nearby audio boundary: ${JSON.stringify({
+        withinExitRadiusPx: withinRadiusPx,
+        outsideExitRadiusPx: outsideDistance,
+        reentryRadiusPx: reentryDistance,
+        pairEndedOutsideRadius: true,
+        newPairAndDecodedAudioOnReentry: true,
+      })}`,
+    );
+
+    await stopRemoteAudioProbe(ownerPage);
+    await stopRemoteAudioProbe(memberPage);
+    await ownerPage.getByRole('button', { name: 'Leave office' }).click();
+    await memberPage.getByRole('button', { name: 'Leave office' }).click();
+  } finally {
+    await ownerContext?.close();
+    await memberContext?.close();
   }
 });
 

@@ -166,6 +166,28 @@ grant access to the real microphone or change the user's browser preferences. Fi
 preferences bypass the capture prompt only for synthetic input. Real microphone selection,
 permissions and sound quality still require manual testing.
 
+The mounted office audio soak uses a repeatable synthetic source. Generate a three-second,
+48 kHz, mono, 16-bit PCM 440 Hz tone, then run the local media test:
+
+```sh
+node tests/e2e/create-continuous-tone.mjs /private/tmp/gather-office-continuous-tone.wav
+LIVE_OFFICE_E2E=1 LIVE_OFFICE_MEDIA_E2E=1 \
+  LIVE_OFFICE_FAKE_AUDIO_WAV=/private/tmp/gather-office-continuous-tone.wav \
+  pnpm exec playwright test tests/e2e/live-office.spec.ts \
+  -g 'carries and cuts off live nearby audio' --output=/tmp/gather-live-audio
+```
+
+Chromium replays that WAV as its fake microphone input. The test checks received decoded energy,
+sample callback gaps and inbound/outbound RTP counters once per minute during five stationary
+minutes, then measures cutoff when the conversation ends. The `pnpm test:e2e:live-media` script
+generates the same WAV at `/private/tmp/gather-office-continuous-tone.wav` before running the
+mounted Vivo suite. The audio boundary test separately verifies that an established pair remains
+active between 64 and 96 px, ends after continuous separation beyond 96 px, and pairs again within
+64 px with decoded audio restored. This uses synthetic input and localhost media; it does not
+establish real-microphone quality or behavior across external networks. Firefox and mixed-browser
+runs use Firefox's own synthetic capture path, which does not consume Chromium's WAV file; those
+runs report energy and RTP metrics but skip the continuous-tone 500 ms energy-gap assertion.
+
 The overlay also configures LiveKit to POST signed events directly to
 `http://api:3000/api/internal/media/livekit/webhook` over the private Docker network. The API uses
 the same `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` values as the local LiveKit server. Caddy

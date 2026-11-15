@@ -41,6 +41,7 @@ import {
   worldSnapshotSchema,
   takeoverReferenceResponseSchema,
   OFFICE_LIMITS,
+  OFFICE_PROTOCOL_VERSION,
   officeMessageSchema,
   officeMessagesResponseSchema,
   officeChatMessageEventSchema,
@@ -497,7 +498,30 @@ function nextSocketEvent<T>(socket: Socket, event: string) {
     socket.once('connect_error', (error) => reject(error));
   });
 }
-type GuardOutput = { kind?: string; sequence?: number; epoch?: string };
+function socketEventQueue(socket: Socket, event: string) {
+  const queued: unknown[] = [];
+  socket.on(event, (payload: unknown) => queued.push(payload));
+  return async (predicate: (payload: unknown) => boolean) => {
+    let matched: unknown;
+    await vi.waitFor(
+      () => {
+        const index = queued.findIndex(predicate);
+        if (index < 0) throw new Error(`waiting for ${event}`);
+        matched = queued.splice(index, 1)[0];
+      },
+      { timeout: 10000, interval: 20 },
+    );
+    return matched;
+  };
+}
+type GuardOutput = {
+  kind?: string;
+  sequence?: number;
+  epoch?: string;
+  generation?: string;
+  durationMs?: number;
+  participants?: number | string;
+};
 type ApplicationGuard = {
   child: ChildProcessByStdio<null, Readable, Readable>;
   messages: GuardOutput[];
@@ -565,15 +589,30 @@ async function waitForGuardMessage(
   label: string,
 ) {
   let result: GuardOutput | undefined;
-  await vi.waitFor(
-    () => {
-      if (guard.child.exitCode !== null)
-        throw new Error(`application guard exited before ${label}: ${guard.getStderr()}`);
-      result = guard.messages.find(predicate);
-      if (!result) throw new Error(`application guard has not emitted ${label}`);
-    },
-    { timeout: 5000, interval: 25 },
-  );
+  try {
+    await vi.waitFor(
+      () => {
+        if (guard.child.exitCode !== null)
+          throw new Error(`application guard exited before ${label}: ${guard.getStderr()}`);
+        result = guard.messages.find(predicate);
+        if (!result) throw new Error(`application guard has not emitted ${label}`);
+      },
+      { timeout: 5000, interval: 25 },
+    );
+  } catch (error) {
+    const trace = guard.messages.map(
+      ({ kind, sequence, generation, durationMs, participants }) => ({
+        kind,
+        sequence,
+        generation,
+        durationMs,
+        participants,
+      }),
+    );
+    throw new Error(`${String(error)}; safe guard trace=${JSON.stringify(trace)}`, {
+      cause: error,
+    });
+  }
   return result!;
 }
 
@@ -1147,7 +1186,7 @@ describe('company roles and isolation', () => {
         officeId,
         workspaceId,
         mapVersion: approved,
-        protocolVersion: 1,
+        protocolVersion: OFFICE_PROTOCOL_VERSION,
         manifest: vivoManifest,
       });
     }
@@ -1562,7 +1601,7 @@ describe('office join tickets', () => {
       const response = await user.client.send(
         'post',
         `/api/workspaces/${workspaceId}/offices/${office!._id}/join-ticket`,
-        { mapVersion: vivoManifest.mapVersion, protocolVersion: 1 },
+        { mapVersion: vivoManifest.mapVersion, protocolVersion: OFFICE_PROTOCOL_VERSION },
       );
       status(response, 201);
       const issued = joinTicketResponseSchema.parse(response.body);
@@ -1575,7 +1614,7 @@ describe('office join tickets', () => {
         workspaceId,
         officeId: office!._id,
         mapVersion: vivoManifest.mapVersion,
-        protocolVersion: 1,
+        protocolVersion: OFFICE_PROTOCOL_VERSION,
         consumedAt: null,
       });
       expect(stored?.ticketDigest).toBe(digest(issued.ticket));
@@ -1597,7 +1636,7 @@ describe('office join tickets', () => {
         workspaceId,
         officeId: office!._id,
         mapVersion: vivoManifest.mapVersion,
-        protocolVersion: 1,
+        protocolVersion: OFFICE_PROTOCOL_VERSION,
       });
       expect(consumed).toMatchObject({ userId: user.id, workspaceId, officeId: office!._id });
     }
@@ -1618,7 +1657,7 @@ describe('office join tickets', () => {
         .set('Origin', 'https://evil.test')
         .set('X-CSRF-Token', owner.client.csrf)
         .set('Content-Type', 'application/json')
-        .send({ mapVersion: vivoManifest.mapVersion, protocolVersion: 1 }),
+        .send({ mapVersion: vivoManifest.mapVersion, protocolVersion: OFFICE_PROTOCOL_VERSION }),
       403,
     );
     status(
@@ -1627,28 +1666,28 @@ describe('office join tickets', () => {
         .set('Cookie', owner.client.cookie)
         .set('Origin', origin)
         .set('Content-Type', 'application/json')
-        .send({ mapVersion: vivoManifest.mapVersion, protocolVersion: 1 }),
+        .send({ mapVersion: vivoManifest.mapVersion, protocolVersion: OFFICE_PROTOCOL_VERSION }),
       403,
     );
     status(
       await owner.client.send(
         'post',
         `/api/workspaces/not-a-uuid/offices/${office!._id}/join-ticket`,
-        { mapVersion: vivoManifest.mapVersion, protocolVersion: 1 },
+        { mapVersion: vivoManifest.mapVersion, protocolVersion: OFFICE_PROTOCOL_VERSION },
       ),
       400,
     );
     status(
       await owner.client.send('post', path, {
         mapVersion: vivoManifest.mapVersion,
-        protocolVersion: 2,
+        protocolVersion: 1,
       }),
       400,
     );
     status(
       await owner.client.send('post', path, {
         mapVersion: vivoManifest.mapVersion,
-        protocolVersion: 1,
+        protocolVersion: OFFICE_PROTOCOL_VERSION,
         extra: true,
       }),
       400,
@@ -1657,14 +1696,14 @@ describe('office join tickets', () => {
       await owner.client.send(
         'post',
         `/api/workspaces/${workspaceId}/offices/${otherOffice!._id}/join-ticket`,
-        { mapVersion: vivoManifest.mapVersion, protocolVersion: 1 },
+        { mapVersion: vivoManifest.mapVersion, protocolVersion: OFFICE_PROTOCOL_VERSION },
       ),
       404,
     );
     status(
       await owner.client.send('post', path, {
         mapVersion: `commons-v1-${'0'.repeat(64)}`,
-        protocolVersion: 1,
+        protocolVersion: OFFICE_PROTOCOL_VERSION,
       }),
       409,
     );
@@ -1672,7 +1711,7 @@ describe('office join tickets', () => {
       (
         await owner.client.send('post', path, {
           mapVersion: `commons-v1-${'0'.repeat(64)}`,
-          protocolVersion: 1,
+          protocolVersion: OFFICE_PROTOCOL_VERSION,
         })
       ).body.error.code,
     ).toBe('map_version_mismatch');
@@ -1680,7 +1719,7 @@ describe('office join tickets', () => {
     await tenancy.offices.updateOne({ _id: office!._id }, { $set: { mapVersion: 'pending-m0' } });
     const pending = await owner.client.send('post', path, {
       mapVersion: vivoManifest.mapVersion,
-      protocolVersion: 1,
+      protocolVersion: OFFICE_PROTOCOL_VERSION,
     });
     status(pending, 409);
     expect(pending.body.error.code).toBe('office_not_ready');
@@ -1695,7 +1734,10 @@ describe('office join tickets', () => {
     const workspaceId = await workspace(owner);
     const office = await tenancy.offices.findOne({ workspaceId }).lean();
     const path = `/api/workspaces/${workspaceId}/offices/${office!._id}/join-ticket`;
-    const payload = { mapVersion: vivoManifest.mapVersion, protocolVersion: 1 };
+    const payload = {
+      mapVersion: vivoManifest.mapVersion,
+      protocolVersion: OFFICE_PROTOCOL_VERSION,
+    };
     const fixedNow = Date.now();
     const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(fixedNow);
     const currentBucket = Math.floor(fixedNow / OFFICE_LIMITS.ticketWindowMs);
@@ -1746,7 +1788,7 @@ describe('office join tickets', () => {
     const response = await owner.client.send(
       'post',
       `/api/workspaces/${workspaceId}/offices/${office!._id}/join-ticket`,
-      { mapVersion: vivoManifest.mapVersion, protocolVersion: 1 },
+      { mapVersion: vivoManifest.mapVersion, protocolVersion: OFFICE_PROTOCOL_VERSION },
     );
     status(response, 201);
     const raw = joinTicketResponseSchema.parse(response.body).ticket;
@@ -1754,7 +1796,7 @@ describe('office join tickets', () => {
       workspaceId,
       officeId: office!._id,
       mapVersion: vivoManifest.mapVersion,
-      protocolVersion: 1,
+      protocolVersion: OFFICE_PROTOCOL_VERSION,
     };
     const admission = app.get(OfficeAdmissionService);
     await expect(
@@ -1776,7 +1818,7 @@ describe('office join tickets', () => {
     const second = await owner.client.send(
       'post',
       `/api/workspaces/${workspaceId}/offices/${office!._id}/join-ticket`,
-      { mapVersion: vivoManifest.mapVersion, protocolVersion: 1 },
+      { mapVersion: vivoManifest.mapVersion, protocolVersion: OFFICE_PROTOCOL_VERSION },
     );
     const expiring = joinTicketResponseSchema.parse(second.body).ticket;
     const ticketModels = app.get(OfficeJoinTicketModels);
@@ -1798,13 +1840,13 @@ describe('office join tickets', () => {
       workspaceId,
       officeId: office!._id,
       mapVersion: vivoManifest.mapVersion,
-      protocolVersion: 1,
+      protocolVersion: OFFICE_PROTOCOL_VERSION,
     };
     const admission = app.get(OfficeAdmissionService);
     const issue = async () => {
       const response = await member.client.send('post', path, {
         mapVersion: vivoManifest.mapVersion,
-        protocolVersion: 1,
+        protocolVersion: OFFICE_PROTOCOL_VERSION,
       });
       status(response, 201);
       return joinTicketResponseSchema.parse(response.body).ticket;
@@ -1843,13 +1885,13 @@ describe('office join tickets', () => {
       workspaceId,
       officeId: office!._id,
       mapVersion: vivoManifest.mapVersion,
-      protocolVersion: 1,
+      protocolVersion: OFFICE_PROTOCOL_VERSION,
     };
     const issue = async () => {
       const response = await member.client.send(
         'post',
         `/api/workspaces/${workspaceId}/offices/${office!._id}/join-ticket`,
-        { mapVersion: vivoManifest.mapVersion, protocolVersion: 1 },
+        { mapVersion: vivoManifest.mapVersion, protocolVersion: OFFICE_PROTOCOL_VERSION },
       );
       status(response, 201);
       return joinTicketResponseSchema.parse(response.body).ticket;
@@ -1891,7 +1933,7 @@ describe('office join tickets', () => {
     const ownerTicketResponse = await owner.client.send(
       'post',
       `/api/workspaces/${workspaceId}/offices/${office!._id}/join-ticket`,
-      { mapVersion: vivoManifest.mapVersion, protocolVersion: 1 },
+      { mapVersion: vivoManifest.mapVersion, protocolVersion: OFFICE_PROTOCOL_VERSION },
     );
     status(ownerTicketResponse, 201);
     const logoutTicket = joinTicketResponseSchema.parse(ownerTicketResponse.body).ticket;
@@ -1908,7 +1950,7 @@ describe('office join tickets', () => {
     const response = await member.client.send(
       'post',
       `/api/workspaces/${workspaceId}/offices/${office!._id}/join-ticket`,
-      { mapVersion: vivoManifest.mapVersion, protocolVersion: 1 },
+      { mapVersion: vivoManifest.mapVersion, protocolVersion: OFFICE_PROTOCOL_VERSION },
     );
     status(response, 201);
     const raw = joinTicketResponseSchema.parse(response.body).ticket;
@@ -1917,7 +1959,7 @@ describe('office join tickets', () => {
       workspaceId,
       officeId: office!._id,
       mapVersion: vivoManifest.mapVersion,
-      protocolVersion: 1,
+      protocolVersion: OFFICE_PROTOCOL_VERSION,
     };
     const [consumeResult, revokeResult] = await Promise.allSettled([
       admission.consume(raw, scope),
@@ -1942,7 +1984,7 @@ describe('office join tickets', () => {
     const path = `/api/workspaces/${workspaceId}/offices/${office!._id}/join-ticket`;
     const issued = await owner.client.send('post', path, {
       mapVersion: vivoManifest.mapVersion,
-      protocolVersion: 1,
+      protocolVersion: OFFICE_PROTOCOL_VERSION,
     });
     status(issued, 201);
     const raw = joinTicketResponseSchema.parse(issued.body).ticket;
@@ -1969,7 +2011,7 @@ describe('office join tickets', () => {
           workspaceId,
           officeId: office!._id,
           mapVersion: vivoManifest.mapVersion,
-          protocolVersion: 1,
+          protocolVersion: OFFICE_PROTOCOL_VERSION,
         }),
       ).rejects.toMatchObject({ status: 401 });
       expect(validWhenPolicyLocked).toBe(true);
@@ -2017,7 +2059,7 @@ describe('office socket admission', () => {
     const response = await user.client.send(
       'post',
       `/api/workspaces/${workspaceId}/offices/${office._id}/join-ticket`,
-      { mapVersion: vivoManifest.mapVersion, protocolVersion: 1 },
+      { mapVersion: vivoManifest.mapVersion, protocolVersion: OFFICE_PROTOCOL_VERSION },
     );
     status(response, 201);
     return {
@@ -2030,12 +2072,16 @@ describe('office socket admission', () => {
     const owner = await account();
     const workspaceId = await workspace(owner);
     const { office, ticket } = await issueTicket(owner, workspaceId);
-    const client = officeSocket({ ticket, protocolVersion: 1 });
+    const client = officeSocket({ ticket, protocolVersion: OFFICE_PROTOCOL_VERSION });
     const readyEvent = nextSocketEvent<unknown>(client, 'office:ready');
     try {
       await connectSocket(client);
       const ready = officeReadySchema.parse(await readyEvent);
-      expect(ready).toMatchObject({ workspaceId, officeId: office._id, protocolVersion: 1 });
+      expect(ready).toMatchObject({
+        workspaceId,
+        officeId: office._id,
+        protocolVersion: OFFICE_PROTOCOL_VERSION,
+      });
       expect(ready.snapshot.participants).toHaveLength(1);
       expect(ready.snapshot.participants[0]).toMatchObject({
         displayName: 'Test Person',
@@ -2063,8 +2109,14 @@ describe('office socket admission', () => {
     await join(owner, workspaceId, member);
     const { office, ticket: ownerTicket } = await issueTicket(owner, workspaceId);
     const { ticket: memberTicket } = await issueTicket(member, workspaceId);
-    const ownerSocket = officeSocket({ ticket: ownerTicket, protocolVersion: 1 });
-    const memberSocket = officeSocket({ ticket: memberTicket, protocolVersion: 1 });
+    const ownerSocket = officeSocket({
+      ticket: ownerTicket,
+      protocolVersion: OFFICE_PROTOCOL_VERSION,
+    });
+    const memberSocket = officeSocket({
+      ticket: memberTicket,
+      protocolVersion: OFFICE_PROTOCOL_VERSION,
+    });
     const messageId = randomUUID();
     const body = { clientMessageId: messageId, text: 'Hello from the office' };
     try {
@@ -2158,8 +2210,14 @@ describe('office socket admission', () => {
     await join(owner, workspaceId, member);
     const { ticket: ownerTicket } = await issueTicket(owner, workspaceId);
     const { ticket: memberTicket } = await issueTicket(member, workspaceId);
-    const ownerSocket = officeSocket({ ticket: ownerTicket, protocolVersion: 1 });
-    const memberSocket = officeSocket({ ticket: memberTicket, protocolVersion: 1 });
+    const ownerSocket = officeSocket({
+      ticket: ownerTicket,
+      protocolVersion: OFFICE_PROTOCOL_VERSION,
+    });
+    const memberSocket = officeSocket({
+      ticket: memberTicket,
+      protocolVersion: OFFICE_PROTOCOL_VERSION,
+    });
     try {
       const ownerReadyEvent = nextSocketEvent<unknown>(ownerSocket, 'office:ready');
       await connectSocket(ownerSocket);
@@ -2256,7 +2314,7 @@ describe('office socket admission', () => {
     const owner = await account();
     const workspaceId = await workspace(owner);
     const { ticket } = await issueTicket(owner, workspaceId);
-    const client = officeSocket({ ticket, protocolVersion: 1 });
+    const client = officeSocket({ ticket, protocolVersion: OFFICE_PROTOCOL_VERSION });
     try {
       const readyEvent = nextSocketEvent<unknown>(client, 'office:ready');
       await connectSocket(client);
@@ -2330,9 +2388,18 @@ describe('office socket admission', () => {
           issueTicket(second, workspaceId),
           issueTicket(observer, workspaceId),
         ]);
-      const firstSocket = officeSocket({ ticket: firstTicket, protocolVersion: 1 });
-      const secondSocket = officeSocket({ ticket: secondTicket, protocolVersion: 1 });
-      const observerSocket = officeSocket({ ticket: observerTicket, protocolVersion: 1 });
+      const firstSocket = officeSocket({
+        ticket: firstTicket,
+        protocolVersion: OFFICE_PROTOCOL_VERSION,
+      });
+      const secondSocket = officeSocket({
+        ticket: secondTicket,
+        protocolVersion: OFFICE_PROTOCOL_VERSION,
+      });
+      const observerSocket = officeSocket({
+        ticket: observerTicket,
+        protocolVersion: OFFICE_PROTOCOL_VERSION,
+      });
       const observerNotices: unknown[] = [];
       let applicationGuard: ApplicationGuard | undefined;
       let mediaUpstream: ReturnType<typeof createServer> | undefined;
@@ -2375,11 +2442,11 @@ describe('office socket admission', () => {
           ]);
           crossCompanyOwnerSocket = officeSocket({
             ticket: ownerTicket.ticket,
-            protocolVersion: 1,
+            protocolVersion: OFFICE_PROTOCOL_VERSION,
           });
           crossCompanyMemberSocket = officeSocket({
             ticket: memberTicket.ticket,
-            protocolVersion: 1,
+            protocolVersion: OFFICE_PROTOCOL_VERSION,
           });
           const crossOwnerReadyEvent = nextSocketEvent<unknown>(
             crossCompanyOwnerSocket,
@@ -3443,11 +3510,494 @@ describe('office socket admission', () => {
     runLiveMediaFixture ? 120000 : undefined,
   );
 
+  it.skipIf(!runLiveMediaFixture)(
+    'moves an established pair into a three-person LiveKit group and retires old generations safely',
+    async () => {
+      const owner = await account();
+      const first = await account();
+      const second = await account();
+      const third = await account();
+      const workspaceId = await workspace(owner);
+      await join(owner, workspaceId, first);
+      await join(owner, workspaceId, second);
+      await join(owner, workspaceId, third);
+
+      const tickets = await Promise.all(
+        [first, second, third].map((member) => issueTicket(member, workspaceId)),
+      );
+      const sockets = tickets.map(({ ticket }) =>
+        officeSocket({ ticket, protocolVersion: OFFICE_PROTOCOL_VERSION }),
+      );
+      const [firstSocket, secondSocket, thirdSocket] = sockets as [Socket, Socket, Socket];
+      const takeFirstUpdate = socketEventQueue(firstSocket, 'conversation:update');
+      const takeSecondUpdate = socketEventQueue(secondSocket, 'conversation:update');
+      const takeThirdUpdate = socketEventQueue(thirdSocket, 'conversation:update');
+      let mediaFixture: Awaited<ReturnType<typeof startViteMediaFixture>> | undefined;
+      let liveKitFixture: Awaited<ReturnType<typeof startLiveKitFixture>> | undefined;
+      let applicationGuard: ApplicationGuard | undefined;
+      let pairMediaClient: ApplicationMediaClient | undefined;
+      let groupMediaClient: ApplicationMediaClient | undefined;
+      let survivorMediaClient: ApplicationMediaClient | undefined;
+      let retirementDirectory: string | undefined;
+
+      const setOptIn = async (
+        socket: Socket,
+        ready: ReturnType<typeof officeReadySchema.parse>,
+      ) => {
+        const command = {
+          eventId: randomUUID(),
+          officeEpoch: ready.snapshot.officeEpoch,
+          payload: { enabled: true },
+        };
+        const acknowledgement = await new Promise<unknown>((resolve) => {
+          socket.emit('proximity:set-opt-in', command, resolve);
+        });
+        expect(officeCommandAckSchema.parse(acknowledgement)).toEqual({
+          eventId: command.eventId,
+          ok: true,
+        });
+      };
+      const waitForUpdate = (
+        take: (predicate: (payload: unknown) => boolean) => Promise<unknown>,
+        predicate: (update: ReturnType<typeof conversationUpdateSchema.parse>) => boolean,
+      ) =>
+        take((raw) => {
+          const parsed = conversationUpdateSchema.safeParse(raw);
+          return parsed.success && predicate(parsed.data);
+        }).then((raw) => conversationUpdateSchema.parse(raw));
+      const issueMediaGrant = async (
+        member: Awaited<ReturnType<typeof account>>,
+        ready: ReturnType<typeof officeReadySchema.parse>,
+        conversation: ReturnType<typeof conversationUpdateSchema.parse>,
+      ) => {
+        const response = await member.client.send(
+          'post',
+          `/api/conversations/${conversation.conversationId}/media-token`,
+          {
+            participationId: ready.participationId,
+            conversationVersion: conversation.version,
+          },
+        );
+        status(response, 200);
+        const grant = mediaTokenResponseSchema.parse(response.body);
+        const claims = await new TokenVerifier(livekitApiKey, livekitApiSecret).verify(
+          grant.token,
+          0,
+        );
+        expect(claims.sub).toBe(ready.participationId);
+        expect(claims.video).toMatchObject({
+          room: conversation.generation,
+          roomJoin: true,
+          canPublish: true,
+          canPublishSources: ['microphone'],
+          canSubscribe: true,
+          canPublishData: false,
+          canUpdateOwnMetadata: false,
+        });
+        return { ...grant, identity: ready.participationId };
+      };
+      const expectRemoteGroupAudio = async (
+        mediaClient: ApplicationMediaClient,
+        identities: readonly string[],
+      ) => {
+        const connected = await waitForApplicationMediaMessage(
+          mediaClient,
+          (message) => message['kind'] === 'connected',
+          'all authorized group members to receive LiveKit audio',
+        );
+        const observations = connected['observations'] as Array<{
+          status: string;
+          remoteIdentities: string[];
+          remoteTrackIdentities: string[];
+          activeAudioSamples: number;
+          decodedAudioSamples: number;
+          iceStates: string[];
+        }>;
+        expect(observations).toHaveLength(identities.length);
+        observations.forEach((observation, index) => {
+          const expectedPeers = identities.filter((_, peerIndex) => peerIndex !== index).sort();
+          expect(observation.status).toBe('live');
+          expect(observation.remoteIdentities.slice().sort()).toEqual(expectedPeers);
+          expect(observation.remoteTrackIdentities.slice().sort()).toEqual(expectedPeers);
+          expect(observation.remoteTrackIdentities).toHaveLength(identities.length - 1);
+          expect(observation.activeAudioSamples).toBeGreaterThanOrEqual(10);
+          expect(observation.decodedAudioSamples).toBeGreaterThan(0);
+          expect(observation.iceStates).toContain('connection:connected');
+        });
+        mediaClient.send({ kind: 'expect-audio-advancing' });
+        const audioAdvancing = await waitForApplicationMediaMessage(
+          mediaClient,
+          (message) => message['kind'] === 'audio-advancing',
+          'decoded audio samples to keep advancing for every group member',
+        );
+        const decodedAudioSampleDeltas = audioAdvancing['decodedAudioSampleDeltas'] as number[];
+        expect(decodedAudioSampleDeltas).toHaveLength(identities.length);
+        expect(decodedAudioSampleDeltas.every((delta) => delta > 0)).toBe(true);
+        return observations;
+      };
+
+      try {
+        const readyEvents = sockets.map((socket) =>
+          nextSocketEvent<unknown>(socket, 'office:ready'),
+        );
+        await Promise.all(sockets.map((socket) => connectSocket(socket)));
+        const ready = await Promise.all(
+          readyEvents.map((event) => event.then((value) => officeReadySchema.parse(value))),
+        );
+        const identities = ready.map(({ participationId }) => participationId);
+        const positions = ready.map(
+          (member) =>
+            member.snapshot.participants.find(
+              (participant) => participant.participationId === member.participationId,
+            )!.position,
+        );
+        expect(
+          positions.every(
+            (position) =>
+              Math.hypot(position.x - positions[0]!.x, position.y - positions[0]!.y) / 32 <= 2,
+          ),
+        ).toBe(true);
+
+        const firstPairNotice = waitForUpdate(
+          takeFirstUpdate,
+          (update) => update.state === 'joining' && update.participants.length === 2,
+        );
+        const secondPairNotice = waitForUpdate(
+          takeSecondUpdate,
+          (update) => update.state === 'joining' && update.participants.length === 2,
+        );
+        await setOptIn(firstSocket, ready[0]!);
+        await setOptIn(secondSocket, ready[1]!);
+        const pairJoining = await firstPairNotice;
+        expect(await secondPairNotice).toEqual(pairJoining);
+        expect(
+          pairJoining.participants.map(({ participationId }) => participationId).sort(),
+        ).toEqual(identities.slice(0, 2).sort());
+
+        liveKitFixture = await startLiveKitFixture();
+        mediaFixture = await startViteMediaFixture();
+        if (!liveMediaGuardPort) throw new Error('real media guard port is unavailable');
+        retirementDirectory = await mkdtemp(resolve(tmpdir(), 'gather-cp08-group-guard-'));
+        const apiAddress = app.getHttpServer().address() as AddressInfo;
+        applicationGuard = startApplicationGuard({
+          apiBaseUrl: `http://127.0.0.1:${apiAddress.port}`,
+          epoch: randomBytes(32).toString('hex'),
+          host: '127.0.0.1',
+          port: liveMediaGuardPort,
+          retirementDirectory,
+          sfuUpstream: `http://127.0.0.1:${liveKitFixture.signalingPort}`,
+          origin: mediaFixture.origin,
+        });
+        const pairActiveEvent = waitForUpdate(
+          takeFirstUpdate,
+          (update) => update.state === 'active' && update.generation === pairJoining.generation,
+        );
+        const secondPairActiveEvent = waitForUpdate(
+          takeSecondUpdate,
+          (update) => update.state === 'active' && update.generation === pairJoining.generation,
+        );
+        await waitForGuardMessage(
+          applicationGuard,
+          (message) => message.kind === 'ack',
+          'the installed two-person policy',
+        );
+        const pairActive = await pairActiveEvent;
+        expect(await secondPairActiveEvent).toEqual(pairActive);
+        const pairGrants = await Promise.all([
+          issueMediaGrant(first, ready[0]!, pairActive),
+          issueMediaGrant(second, ready[1]!, pairActive),
+        ]);
+        expect(new Set(pairGrants.map(({ generation }) => generation))).toEqual(
+          new Set([pairActive.generation]),
+        );
+        pairMediaClient = startApplicationMediaClient({
+          fixtureUrl: mediaFixture.url,
+          grants: pairGrants,
+        });
+        await expectRemoteGroupAudio(pairMediaClient, identities.slice(0, 2));
+        const roomService = new RoomServiceClient(
+          `http://127.0.0.1:${liveKitFixture.signalingPort}`,
+          livekitApiKey,
+          livekitApiSecret,
+        );
+        await vi.waitFor(
+          async () => {
+            const participants = await roomService.listParticipants(pairActive.generation);
+            expect(participants.map(({ identity }) => identity).sort()).toEqual(
+              identities.slice(0, 2).sort(),
+            );
+          },
+          { timeout: 5000, interval: 50 },
+        );
+
+        pairMediaClient.send({ kind: 'expect-server-cutoff' });
+        const groupJoinStartedAt = Date.now();
+        const firstGroupJoiningEvent = waitForUpdate(
+          takeFirstUpdate,
+          (update) => update.state === 'joining' && update.participants.length === 3,
+        );
+        const secondGroupJoiningEvent = waitForUpdate(
+          takeSecondUpdate,
+          (update) => update.state === 'joining' && update.participants.length === 3,
+        );
+        const thirdGroupJoiningEvent = waitForUpdate(
+          takeThirdUpdate,
+          (update) => update.state === 'joining' && update.participants.length === 3,
+        );
+        await setOptIn(thirdSocket, ready[2]!);
+        const groupJoining = await firstGroupJoiningEvent;
+        expect(await secondGroupJoiningEvent).toEqual(groupJoining);
+        expect(await thirdGroupJoiningEvent).toEqual(groupJoining);
+        expect(groupJoining).toMatchObject({
+          conversationId: pairJoining.conversationId,
+          state: 'joining',
+          version: pairActive.version + 1,
+          mediaReady: false,
+        });
+        expect(groupJoining.generation).not.toBe(pairActive.generation);
+        expect(
+          groupJoining.participants.map(({ participationId }) => participationId).sort(),
+        ).toEqual(identities.slice().sort());
+
+        const groupActiveEvents = [
+          waitForUpdate(
+            takeFirstUpdate,
+            (update) => update.state === 'active' && update.generation === groupJoining.generation,
+          ),
+          waitForUpdate(
+            takeSecondUpdate,
+            (update) => update.state === 'active' && update.generation === groupJoining.generation,
+          ),
+          waitForUpdate(
+            takeThirdUpdate,
+            (update) => update.state === 'active' && update.generation === groupJoining.generation,
+          ),
+        ];
+        const pairRetirement = await waitForGuardMessage(
+          applicationGuard,
+          (message) => message.kind === 'retired' && message.generation === pairActive.generation,
+          'the old two-person generation forwarding cutoff',
+        );
+        const retiredPairRooms = await roomService.listRooms([pairActive.generation]);
+        expect(retiredPairRooms.every((room) => Number(room.numParticipants) === 0)).toBe(true);
+        expect(await roomService.listParticipants(pairActive.generation).catch(() => [])).toEqual(
+          [],
+        );
+        const pairCutoff = await waitForApplicationMediaMessage(
+          pairMediaClient,
+          (message) => message['kind'] === 'server-cutoff',
+          'existing pair audio to stop when its generation is retired',
+        );
+        if (pairCutoff['stable'] !== true)
+          throw new Error(
+            `pair decoded audio cutoff did not settle: ${JSON.stringify(pairCutoff)}`,
+          );
+        expect(pairCutoff['remoteAudioDecodedSamples']).toHaveLength(2);
+        expect(pairCutoff['cutoffMs']).toBeLessThanOrEqual(8000);
+        const groupActive = (await Promise.all(groupActiveEvents))[0]!;
+        expect(groupActive).toMatchObject({
+          conversationId: pairActive.conversationId,
+          state: 'active',
+          generation: groupJoining.generation,
+          version: groupJoining.version + 1,
+          mediaReady: true,
+        });
+        const groupJoinLatencyMs = Date.now() - groupJoinStartedAt;
+        expect(groupJoinLatencyMs).toBeGreaterThan(0);
+
+        const groupGrants = await Promise.all(
+          ready.map((member, index) =>
+            issueMediaGrant([first, second, third][index]!, member, groupActive),
+          ),
+        );
+        expect(new Set(groupGrants.map(({ identity }) => identity))).toEqual(new Set(identities));
+        expect(new Set(groupGrants.map(({ generation }) => generation))).toEqual(
+          new Set([groupActive.generation]),
+        );
+        groupMediaClient = startApplicationMediaClient({
+          fixtureUrl: mediaFixture.url,
+          grants: groupGrants,
+        });
+        await expectRemoteGroupAudio(groupMediaClient, identities);
+        await vi.waitFor(
+          async () => {
+            const participants = await roomService.listParticipants(groupActive.generation);
+            expect(participants.map(({ identity }) => identity).sort()).toEqual(
+              identities.slice().sort(),
+            );
+          },
+          { timeout: 5000, interval: 50 },
+        );
+
+        groupMediaClient.send({ kind: 'expect-server-cutoff' });
+        const leave = {
+          eventId: randomUUID(),
+          officeEpoch: ready[2]!.snapshot.officeEpoch,
+          payload: {
+            conversationId: groupActive.conversationId,
+            conversationVersion: groupActive.version,
+          },
+        };
+        const firstSurvivorJoiningEvent = waitForUpdate(
+          takeFirstUpdate,
+          (update) => update.state === 'joining' && update.participants.length === 2,
+        );
+        const secondSurvivorJoiningEvent = waitForUpdate(
+          takeSecondUpdate,
+          (update) => update.state === 'joining' && update.participants.length === 2,
+        );
+        const thirdEndedEvent = waitForUpdate(
+          takeThirdUpdate,
+          (update) => update.state === 'ended',
+        );
+        const leaveAck = await new Promise<unknown>((resolve) => {
+          thirdSocket.emit('conversation:leave', leave, resolve);
+        });
+        expect(officeCommandAckSchema.parse(leaveAck)).toEqual({
+          eventId: leave.eventId,
+          ok: true,
+        });
+        const survivorJoining = await firstSurvivorJoiningEvent;
+        expect(await secondSurvivorJoiningEvent).toEqual(survivorJoining);
+        const thirdEnded = await thirdEndedEvent;
+        expect(survivorJoining).toMatchObject({
+          conversationId: groupActive.conversationId,
+          state: 'joining',
+          mediaReady: false,
+          participants: expect.arrayContaining([
+            expect.objectContaining({ participationId: identities[0] }),
+            expect.objectContaining({ participationId: identities[1] }),
+          ]),
+        });
+        expect(survivorJoining.generation).not.toBe(groupActive.generation);
+        expect(thirdEnded).toMatchObject({
+          conversationId: groupActive.conversationId,
+          state: 'ended',
+          participants: [],
+          mediaReady: false,
+        });
+
+        const groupCutoff = await waitForApplicationMediaMessage(
+          groupMediaClient,
+          (message) => message['kind'] === 'server-cutoff',
+          'the removed user and survivors to lose all old-generation audio',
+        );
+        if (groupCutoff['stable'] !== true)
+          throw new Error(
+            `group decoded audio cutoff did not settle: ${JSON.stringify(groupCutoff)}`,
+          );
+        expect(groupCutoff['remoteAudioDecodedSamples']).toHaveLength(3);
+        expect(groupCutoff['cutoffMs']).toBeLessThanOrEqual(8000);
+        const groupRetirement = await waitForGuardMessage(
+          applicationGuard,
+          (message) => message.kind === 'retired' && message.generation === groupActive.generation,
+          'the old three-person generation forwarding cutoff',
+        );
+        expect(await roomService.listRooms([groupActive.generation])).toEqual([]);
+        expect(await roomService.listParticipants(groupActive.generation).catch(() => [])).toEqual(
+          [],
+        );
+
+        const removedTokenUrl = new URL(`http://127.0.0.1:${liveMediaGuardPort}/rtc/v1/validate`);
+        removedTokenUrl.searchParams.set('access_token', groupGrants[2]!.token);
+        removedTokenUrl.searchParams.set(
+          'join_request',
+          Buffer.from(JSON.stringify({ protocol: 12 })).toString('base64url'),
+        );
+        expect(
+          (
+            await fetch(removedTokenUrl, {
+              headers: { Origin: mediaFixture.origin },
+            })
+          ).status,
+        ).toBe(403);
+        status(
+          await third.client.send(
+            'post',
+            `/api/conversations/${groupActive.conversationId}/media-token`,
+            {
+              participationId: ready[2]!.participationId,
+              conversationVersion: groupActive.version,
+            },
+          ),
+          409,
+        );
+
+        const survivorActiveEvents = [
+          waitForUpdate(
+            takeFirstUpdate,
+            (update) =>
+              update.state === 'active' && update.generation === survivorJoining.generation,
+          ),
+          waitForUpdate(
+            takeSecondUpdate,
+            (update) =>
+              update.state === 'active' && update.generation === survivorJoining.generation,
+          ),
+        ];
+        const survivorActive = (await Promise.all(survivorActiveEvents))[0]!;
+        expect(survivorActive).toMatchObject({
+          conversationId: groupActive.conversationId,
+          state: 'active',
+          generation: survivorJoining.generation,
+          version: survivorJoining.version + 1,
+          mediaReady: true,
+        });
+        const survivorGrants = await Promise.all([
+          issueMediaGrant(first, ready[0]!, survivorActive),
+          issueMediaGrant(second, ready[1]!, survivorActive),
+        ]);
+        survivorMediaClient = startApplicationMediaClient({
+          fixtureUrl: mediaFixture.url,
+          grants: survivorGrants,
+        });
+        await expectRemoteGroupAudio(survivorMediaClient, identities.slice(0, 2));
+        await vi.waitFor(
+          async () => {
+            const participants = await roomService.listParticipants(survivorActive.generation);
+            expect(participants.map(({ identity }) => identity).sort()).toEqual(
+              identities.slice(0, 2).sort(),
+            );
+          },
+          { timeout: 5000, interval: 50 },
+        );
+
+        console.info(
+          `three-person LiveKit verification: ${JSON.stringify({
+            initialPairParticipants: 2,
+            threePersonParticipants: 3,
+            remoteAudioTracksPerGroupMember: [2, 2, 2],
+            survivorParticipants: 2,
+            survivorRemoteAudioTracks: [1, 1],
+            groupJoinAuthorizationLatencyMs: groupJoinLatencyMs,
+            pairRoomRetirementMs: pairRetirement.durationMs,
+            groupRoomRetirementMs: groupRetirement.durationMs,
+            pairDecodedAudioCutoffMs: pairCutoff['cutoffMs'],
+            groupDecodedAudioCutoffMs: groupCutoff['cutoffMs'],
+            pairGenerationRetired: retiredPairRooms.length === 0,
+            removedGroupGenerationRetired: true,
+            removedUserRejoinDenied: true,
+          })}`,
+        );
+      } finally {
+        for (const mediaClient of [pairMediaClient, groupMediaClient, survivorMediaClient]) {
+          if (mediaClient) await stopApplicationMediaClient(mediaClient);
+        }
+        if (applicationGuard) await stopApplicationGuard(applicationGuard);
+        if (mediaFixture) await mediaFixture.stop();
+        if (liveKitFixture) await liveKitFixture.stop();
+        if (retirementDirectory) await rm(retirementDirectory, { recursive: true, force: true });
+        for (const socket of sockets) socket.disconnect();
+      }
+    },
+    180000,
+  );
+
   it('repairs a missed world delta with a current safe snapshot', async () => {
     const owner = await account();
     const workspaceId = await workspace(owner);
     const { ticket } = await issueTicket(owner, workspaceId);
-    const client = officeSocket({ ticket, protocolVersion: 1 });
+    const client = officeSocket({ ticket, protocolVersion: OFFICE_PROTOCOL_VERSION });
     try {
       const readyEvent = nextSocketEvent<unknown>(client, 'office:ready');
       await connectSocket(client);
@@ -3523,8 +4073,14 @@ describe('office socket admission', () => {
     await join(owner, workspaceId, member);
     const { office, ticket: ownerTicket } = await issueTicket(owner, workspaceId);
     const { ticket: memberTicket } = await issueTicket(member, workspaceId);
-    const ownerSocket = officeSocket({ ticket: ownerTicket, protocolVersion: 1 });
-    const memberSocket = officeSocket({ ticket: memberTicket, protocolVersion: 1 });
+    const ownerSocket = officeSocket({
+      ticket: ownerTicket,
+      protocolVersion: OFFICE_PROTOCOL_VERSION,
+    });
+    const memberSocket = officeSocket({
+      ticket: memberTicket,
+      protocolVersion: OFFICE_PROTOCOL_VERSION,
+    });
     let conflictSocket: Socket | undefined;
     let replacementSocket: Socket | undefined;
     try {
@@ -3536,7 +4092,10 @@ describe('office socket admission', () => {
       await memberReadyEvent;
 
       const { ticket: conflictTicket } = await issueTicket(owner, workspaceId);
-      conflictSocket = officeSocket({ ticket: conflictTicket, protocolVersion: 1 });
+      conflictSocket = officeSocket({
+        ticket: conflictTicket,
+        protocolVersion: OFFICE_PROTOCOL_VERSION,
+      });
       const conflict = new Promise<Error>((resolve) => {
         conflictSocket!.once('connect_error', resolve);
       });
@@ -3551,7 +4110,7 @@ describe('office socket admission', () => {
           participationId: ownerReady.participationId,
           officeEpoch: ownerReady.snapshot.officeEpoch,
           mapVersion: vivoManifest.mapVersion,
-          protocolVersion: 1,
+          protocolVersion: OFFICE_PROTOCOL_VERSION,
         },
       );
       status(referenceResponse, 201);
@@ -3565,7 +4124,7 @@ describe('office socket admission', () => {
         `/api/workspaces/${workspaceId}/offices/${office._id}/join-ticket/takeover`,
         {
           mapVersion: vivoManifest.mapVersion,
-          protocolVersion: 1,
+          protocolVersion: OFFICE_PROTOCOL_VERSION,
           takeover: {
             participationId: reference.participationId,
             officeEpoch: reference.officeEpoch,
@@ -3583,7 +4142,7 @@ describe('office socket admission', () => {
         `/api/workspaces/${workspaceId}/offices/${office._id}/join-ticket/takeover`,
         {
           mapVersion: vivoManifest.mapVersion,
-          protocolVersion: 1,
+          protocolVersion: OFFICE_PROTOCOL_VERSION,
           takeover: {
             participationId: reference.participationId,
             officeEpoch: reference.officeEpoch,
@@ -3599,7 +4158,10 @@ describe('office socket admission', () => {
       );
       const oldDisconnected = nextSocketEvent<string>(ownerSocket, 'disconnect');
       const memberDelta = nextSocketEvent<unknown>(memberSocket, 'world:delta');
-      replacementSocket = officeSocket({ ticket: replacementTicket, protocolVersion: 1 });
+      replacementSocket = officeSocket({
+        ticket: replacementTicket,
+        protocolVersion: OFFICE_PROTOCOL_VERSION,
+      });
       const replacementReadyEvent = nextSocketEvent<unknown>(replacementSocket, 'office:ready');
       await connectSocket(replacementSocket);
       const replacementReady = officeReadySchema.parse(await replacementReadyEvent);
@@ -3633,7 +4195,7 @@ describe('office socket admission', () => {
     const owner = await account();
     const workspaceId = await workspace(owner);
     const { ticket } = await issueTicket(owner, workspaceId);
-    const client = officeSocket({ ticket, protocolVersion: 1 });
+    const client = officeSocket({ ticket, protocolVersion: OFFICE_PROTOCOL_VERSION });
     try {
       const ready = nextSocketEvent<unknown>(client, 'office:ready');
       await connectSocket(client);
@@ -3654,7 +4216,7 @@ describe('office socket admission', () => {
     const workspaceId = await workspace(owner);
     await join(owner, workspaceId, member);
     const { ticket } = await issueTicket(member, workspaceId);
-    const client = officeSocket({ ticket, protocolVersion: 1 });
+    const client = officeSocket({ ticket, protocolVersion: OFFICE_PROTOCOL_VERSION });
     try {
       const ready = nextSocketEvent<unknown>(client, 'office:ready');
       await connectSocket(client);
@@ -3676,7 +4238,7 @@ describe('office socket admission', () => {
     const owner = await account();
     const workspaceId = await workspace(owner);
     const { ticket } = await issueTicket(owner, workspaceId);
-    const client = officeSocket({ ticket, protocolVersion: 1 });
+    const client = officeSocket({ ticket, protocolVersion: OFFICE_PROTOCOL_VERSION });
     try {
       const ready = nextSocketEvent<unknown>(client, 'office:ready');
       await connectSocket(client);
@@ -3696,7 +4258,7 @@ describe('office socket admission', () => {
     status(await owner.client.send('post', '/api/auth/reauthenticate', { password }), 200);
     const workspaceId = await workspace(owner);
     const { ticket } = await issueTicket(owner, workspaceId);
-    const client = officeSocket({ ticket, protocolVersion: 1 });
+    const client = officeSocket({ ticket, protocolVersion: OFFICE_PROTOCOL_VERSION });
     try {
       const ready = nextSocketEvent<unknown>(client, 'office:ready');
       await connectSocket(client);
@@ -3721,7 +4283,7 @@ describe('office socket admission', () => {
     const owner = await account();
     const workspaceId = await workspace(owner);
     const { ticket } = await issueTicket(owner, workspaceId);
-    const client = officeSocket({ ticket, protocolVersion: 1 });
+    const client = officeSocket({ ticket, protocolVersion: OFFICE_PROTOCOL_VERSION });
     try {
       const ready = nextSocketEvent<unknown>(client, 'office:ready');
       await connectSocket(client);
@@ -3750,7 +4312,7 @@ describe('office socket admission', () => {
     const owner = await account();
     const workspaceId = await workspace(owner);
     const { ticket } = await issueTicket(owner, workspaceId);
-    const client = officeSocket({ ticket, protocolVersion: 1 });
+    const client = officeSocket({ ticket, protocolVersion: OFFICE_PROTOCOL_VERSION });
     try {
       const ready = nextSocketEvent<unknown>(client, 'office:ready');
       await connectSocket(client);
@@ -3769,7 +4331,7 @@ describe('office socket admission', () => {
     const owner = await account();
     const workspaceId = await workspace(owner);
     const { ticket } = await issueTicket(owner, workspaceId);
-    const client = officeSocket({ ticket, protocolVersion: 1 });
+    const client = officeSocket({ ticket, protocolVersion: OFFICE_PROTOCOL_VERSION });
     try {
       const ready = nextSocketEvent<unknown>(client, 'office:ready');
       await connectSocket(client);
@@ -3788,7 +4350,7 @@ describe('office socket admission', () => {
     const owner = await account();
     const workspaceId = await workspace(owner);
     const { ticket } = await issueTicket(owner, workspaceId);
-    const client = officeSocket({ ticket, protocolVersion: 1 });
+    const client = officeSocket({ ticket, protocolVersion: OFFICE_PROTOCOL_VERSION });
     let releaseDelayedPolicy: (() => void) | undefined;
     const admission = app.get(OfficeAdmissionService);
     try {
@@ -3821,7 +4383,7 @@ describe('office socket admission', () => {
     const owner = await account();
     const workspaceId = await workspace(owner);
     const { ticket } = await issueTicket(owner, workspaceId);
-    const client = officeSocket({ ticket, protocolVersion: 1 });
+    const client = officeSocket({ ticket, protocolVersion: OFFICE_PROTOCOL_VERSION });
     const admission = app.get(OfficeAdmissionService);
     try {
       const ready = nextSocketEvent<unknown>(client, 'office:ready');
@@ -3847,7 +4409,7 @@ describe('office socket admission', () => {
     const owner = await account();
     const workspaceId = await workspace(owner);
     const { ticket: firstTicket } = await issueTicket(owner, workspaceId);
-    const first = officeSocket({ ticket: firstTicket, protocolVersion: 1 });
+    const first = officeSocket({ ticket: firstTicket, protocolVersion: OFFICE_PROTOCOL_VERSION });
     let replacement: Socket | undefined;
     try {
       const firstReadyEvent = nextSocketEvent<unknown>(first, 'office:ready');
@@ -3858,7 +4420,10 @@ describe('office socket admission', () => {
       await firstDisconnected;
 
       const { ticket: replacementTicket } = await issueTicket(owner, workspaceId);
-      replacement = officeSocket({ ticket: replacementTicket, protocolVersion: 1 });
+      replacement = officeSocket({
+        ticket: replacementTicket,
+        protocolVersion: OFFICE_PROTOCOL_VERSION,
+      });
       const replacementReadyEvent = nextSocketEvent<unknown>(replacement, 'office:ready');
       await connectSocket(replacement);
       const replacementReady = officeReadySchema.parse(await replacementReadyEvent);
@@ -3876,8 +4441,8 @@ describe('office socket admission', () => {
     const workspaceId = await workspace(owner);
     const { ticket } = await issueTicket(owner, workspaceId);
     const invalidOrigins = [
-      officeSocket({ ticket, protocolVersion: 1 }, null),
-      officeSocket({ ticket, protocolVersion: 1 }, 'https://evil.example'),
+      officeSocket({ ticket, protocolVersion: OFFICE_PROTOCOL_VERSION }, null),
+      officeSocket({ ticket, protocolVersion: OFFICE_PROTOCOL_VERSION }, 'https://evil.example'),
     ];
     try {
       for (const client of invalidOrigins) await expect(connectSocket(client)).rejects.toBeTruthy();
@@ -3892,7 +4457,11 @@ describe('office socket admission', () => {
   });
 
   it('rejects malformed handshake auth without exposing parser details', async () => {
-    const client = officeSocket({ ticket: 'invalid', protocolVersion: 1, role: 'owner' });
+    const client = officeSocket({
+      ticket: 'invalid',
+      protocolVersion: OFFICE_PROTOCOL_VERSION,
+      role: 'owner',
+    });
     try {
       await expect(connectSocket(client)).rejects.toMatchObject({ message: 'unauthorized' });
     } finally {
@@ -3903,7 +4472,7 @@ describe('office socket admission', () => {
   it('closes oversized raw handshake packets at the transport boundary', async () => {
     const client = officeSocket({
       ticket: 'a'.repeat(43),
-      protocolVersion: 1,
+      protocolVersion: OFFICE_PROTOCOL_VERSION,
       ignored: 'x'.repeat(5000),
     });
     try {
@@ -3942,9 +4511,12 @@ describe('office socket admission', () => {
     const workspaceId = await workspace(owner);
     const { ticket: firstTicket } = await issueTicket(owner, workspaceId);
     const { ticket: duplicateTicket } = await issueTicket(owner, workspaceId);
-    const first = officeSocket({ ticket: firstTicket, protocolVersion: 1 });
-    const replay = officeSocket({ ticket: firstTicket, protocolVersion: 1 });
-    const duplicate = officeSocket({ ticket: duplicateTicket, protocolVersion: 1 });
+    const first = officeSocket({ ticket: firstTicket, protocolVersion: OFFICE_PROTOCOL_VERSION });
+    const replay = officeSocket({ ticket: firstTicket, protocolVersion: OFFICE_PROTOCOL_VERSION });
+    const duplicate = officeSocket({
+      ticket: duplicateTicket,
+      protocolVersion: OFFICE_PROTOCOL_VERSION,
+    });
     try {
       await connectSocket(first);
       await expect(connectSocket(replay)).rejects.toMatchObject({ message: 'unauthorized' });
@@ -3962,7 +4534,7 @@ describe('office socket admission', () => {
     const owner = await account();
     const workspaceId = await workspace(owner);
     const { office, ticket: oldTicket } = await issueTicket(owner, workspaceId);
-    const oldSocket = officeSocket({ ticket: oldTicket, protocolVersion: 1 });
+    const oldSocket = officeSocket({ ticket: oldTicket, protocolVersion: OFFICE_PROTOCOL_VERSION });
     const oldReadyEvent = nextSocketEvent<unknown>(oldSocket, 'office:ready');
     let newSocket: Socket | undefined;
     try {
@@ -3975,7 +4547,7 @@ describe('office socket admission', () => {
       const oldDisconnectEvent = nextSocketEvent<string>(oldSocket, 'disconnect');
       app.get(OfficeEpochRegistry).rotate(office._id);
       const { ticket: newTicket } = await issueTicket(owner, workspaceId);
-      newSocket = officeSocket({ ticket: newTicket, protocolVersion: 1 });
+      newSocket = officeSocket({ ticket: newTicket, protocolVersion: OFFICE_PROTOCOL_VERSION });
       const newReadyEvent = nextSocketEvent<unknown>(newSocket, 'office:ready');
       await connectSocket(newSocket);
 
@@ -4001,14 +4573,20 @@ describe('office socket admission', () => {
     await join(owner, workspaceId, member);
     const { ticket: ownerTicket } = await issueTicket(owner, workspaceId);
     const { ticket: memberTicket } = await issueTicket(member, workspaceId);
-    const ownerSocket = officeSocket({ ticket: ownerTicket, protocolVersion: 1 });
+    const ownerSocket = officeSocket({
+      ticket: ownerTicket,
+      protocolVersion: OFFICE_PROTOCOL_VERSION,
+    });
     const ownerReadyEvent = nextSocketEvent<unknown>(ownerSocket, 'office:ready');
     let memberSocket: Socket | undefined;
     try {
       await connectSocket(ownerSocket);
       const ownerReady = officeReadySchema.parse(await ownerReadyEvent);
       const joinedEvent = nextSocketEvent<Record<string, unknown>>(ownerSocket, 'world:delta');
-      memberSocket = officeSocket({ ticket: memberTicket, protocolVersion: 1 });
+      memberSocket = officeSocket({
+        ticket: memberTicket,
+        protocolVersion: OFFICE_PROTOCOL_VERSION,
+      });
       const memberReadyEvent = nextSocketEvent<unknown>(memberSocket, 'office:ready');
       await connectSocket(memberSocket);
       const memberReady = officeReadySchema.parse(await memberReadyEvent);

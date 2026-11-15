@@ -1,4 +1,4 @@
-/** Experimental guard policy state. No JWT verification or SFU enforcement is provided here. */
+/** Guard policy state. Room retirement is confirmed by the caller before a new policy is acked. */
 export class PermitState {
   #epoch;
   #clock;
@@ -7,6 +7,7 @@ export class PermitState {
   #permits = new Map();
   #retired;
   #denied = new Set();
+  #pendingRetirements = new Set();
   constructor(epoch, clock, retirementStore = new Set()) {
     if (typeof epoch !== 'string' || !epoch || typeof clock !== 'function')
       throw new Error('invalid guard configuration');
@@ -20,6 +21,54 @@ export class PermitState {
     return { epoch: this.#epoch, nonce };
   }
   install({ epoch, nonce, sequence, permits }) {
+    const next = this.#prepare({ epoch, nonce, sequence, permits });
+    if (!next) return false;
+    this.#sequence = sequence;
+    this.#permits = next;
+    return true;
+  }
+
+  /** Retire changed generations and prove their SFU rooms empty before installing replacement grants. */
+  async installWithRetirement(snapshot, retireRoom) {
+    if (typeof retireRoom !== 'function') return false;
+    const next = this.#prepare(snapshot);
+    if (!next) return false;
+
+    const generations = new Set([...this.#permits.values()].map((permit) => permit.generation));
+    for (const generation of generations) {
+      const current = [...this.#permits.values()].filter(
+        (permit) => permit.generation === generation,
+      );
+      const replacement = [...next.values()].filter((permit) => permit.generation === generation);
+      if (!this.#sameGenerationPolicy(current, replacement)) {
+        this.#pendingRetirements.add(generation);
+        try {
+          this.retire(generation);
+        } catch {
+          return false;
+        }
+      }
+    }
+
+    for (const generation of [...this.#pendingRetirements]) {
+      let empty;
+      try {
+        this.retire(generation);
+        empty = await retireRoom(generation);
+      } catch {
+        return false;
+      }
+      if (empty !== true) return false;
+      this.#pendingRetirements.delete(generation);
+    }
+
+    if ([...next.values()].some((permit) => this.#denied.has(permit.generation))) return false;
+    this.#sequence = snapshot.sequence;
+    this.#permits = next;
+    return true;
+  }
+
+  #prepare({ epoch, nonce, sequence, permits }) {
     const pending = this.#pending;
     this.#pending = null;
     const now = this.#clock();
@@ -63,16 +112,28 @@ export class PermitState {
         deadline: pending.startedAt + 5000,
       });
     }
-    this.#sequence = sequence;
-    this.#permits = next;
-    return true;
+    return next;
+  }
+
+  #sameGenerationPolicy(current, next) {
+    if (current.length !== next.length) return false;
+    return current.every((permit) => {
+      const replacement = next.find((candidate) => candidate.identity === permit.identity);
+      return (
+        replacement &&
+        replacement.room === permit.room &&
+        replacement.version === permit.version &&
+        replacement.sources.length === permit.sources.length &&
+        replacement.sources.every((source) => permit.sources.includes(source))
+      );
+    });
   }
   retire(generation) {
     this.#denied.add(generation);
-    if (typeof this.#retired.retire === 'function') this.#retired.retire(generation);
-    else this.#retired.add(generation);
     for (const [key, permit] of this.#permits)
       if (permit.generation === generation) this.#permits.delete(key);
+    if (typeof this.#retired.retire === 'function') this.#retired.retire(generation);
+    else this.#retired.add(generation);
   }
   allows({ generation, identity, room, source, version }) {
     const permit = this.#permits.get(JSON.stringify([generation, identity]));

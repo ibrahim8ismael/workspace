@@ -159,6 +159,72 @@ test('application install ACK is signed and progress is reported only after acce
   assert.equal(state.allows({ ...permit, source: 'microphone' }), true);
 });
 
+test('application policy ACK waits for generation retirement and forwarding confirmation', async () => {
+  const state = new PermitState('epoch', () => 0);
+  const events = [];
+  let challenge;
+  const fetchImpl = async (endpoint, request) => {
+    if (endpoint.endsWith('/pull')) {
+      challenge = JSON.parse(request.body);
+      const body = JSON.stringify({ ...challenge, sequence: 1, permits: [permit] });
+      return new Response(body, {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CP07-Signature': policySignature(key, body),
+        },
+      });
+    }
+    assert.deepEqual(events, ['retirement-started', 'forwarding-confirmed']);
+    const body = JSON.stringify({ acknowledged: true, sequence: 1 });
+    return new Response(body, {
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CP07-Signature': policySignature(key, body),
+      },
+    });
+  };
+
+  assert.equal(
+    await pullPolicy({
+      endpoint: 'http://fixture/pull',
+      ackEndpoint: 'http://fixture/ack',
+      key,
+      state,
+      fetchImpl,
+      installPolicy: async (snapshot) => {
+        events.push('retirement-started');
+        assert.equal(snapshot.permits.length, 1);
+        events.push('forwarding-confirmed');
+        return state.install(snapshot);
+      },
+      onInstalled: () => events.push('acknowledged'),
+    }),
+    true,
+  );
+  assert.deepEqual(events, ['retirement-started', 'forwarding-confirmed', 'acknowledged']);
+});
+
+test('failed generation retirement cannot send an installation acknowledgement', async () => {
+  const state = new PermitState('epoch', () => 0);
+  let ackRequested = false;
+  const fetchImpl = async (endpoint, request) => {
+    if (endpoint.endsWith('/ack')) ackRequested = true;
+    return transport()(endpoint, request);
+  };
+  assert.equal(
+    await pullPolicy({
+      endpoint: 'http://fixture/pull',
+      ackEndpoint: 'http://fixture/ack',
+      key,
+      state,
+      fetchImpl,
+      installPolicy: async () => false,
+    }),
+    false,
+  );
+  assert.equal(ackRequested, false);
+});
+
 test('application ACK rejection suppresses supervisor progress and requires canonical 32-byte keys', async () => {
   const state = new PermitState('epoch', () => 0);
   let reportedProgress = false;

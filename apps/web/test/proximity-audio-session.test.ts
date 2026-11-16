@@ -62,6 +62,42 @@ function createRoom() {
 }
 
 describe('session-bound proximity audio client', () => {
+  it('forwards current speakers and clears them on reconnect and stop, ignoring stale callbacks', async () => {
+    const fake = createRoom();
+    let emit: ((identities: string[]) => void) | undefined;
+    const unsubscribe = vi.fn();
+    fake.room.onActiveSpeakersChanged = (listener) => {
+      emit = listener;
+      return unsubscribe;
+    };
+    const speakers = vi.fn();
+    const session = new ProximityAudioSession(
+      () => {},
+      () => vi.fn(),
+      async () => fake.room,
+      speakers,
+    );
+    await session.start(
+      async () => grant,
+      () => true,
+      2,
+      grant.generation,
+    );
+    emit?.(['local-person', 'remote-person']);
+    expect(speakers).toHaveBeenLastCalledWith(['local-person', 'remote-person']);
+    fake.handlers.reconnecting?.();
+    expect(speakers).toHaveBeenLastCalledWith([]);
+    emit?.(['remote-person']);
+    expect(speakers).toHaveBeenLastCalledWith([]);
+    fake.handlers.reconnected?.();
+    emit?.(['remote-person']);
+    expect(speakers).toHaveBeenLastCalledWith(['remote-person']);
+    await session.stop();
+    expect(unsubscribe).toHaveBeenCalledOnce();
+    emit?.(['remote-person']);
+    expect(speakers).toHaveBeenLastCalledWith([]);
+  });
+
   it('joins only after an explicit start, then publishes mic-only state and mutes on request', async () => {
     const statuses: ProximityAudioStatus[] = [];
     const fake = createRoom();

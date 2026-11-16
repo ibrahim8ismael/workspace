@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { OFFICE_PROTOCOL_VERSION } from '../../packages/contracts/dist/versions.js';
 
 const account = {
   id: '0d6c9f3e-4a2f-46cc-a66a-5f10d61c72ea',
@@ -218,7 +219,7 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
         officeId,
         workspaceId: workspace.id,
         mapVersion,
-        protocolVersion: 1,
+        protocolVersion: OFFICE_PROTOCOL_VERSION,
         manifest: officeManifest,
       });
     }
@@ -291,7 +292,7 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
             workspaceId: workspace.id,
             officeId,
             mapVersion,
-            protocolVersion: 1,
+            protocolVersion: OFFICE_PROTOCOL_VERSION,
             snapshot: {
               officeEpoch,
               stateVersion: 0,
@@ -642,7 +643,9 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   holdNextMediaSocket = true;
   await page.getByRole('button', { name: 'Opt in to nearby voice' }).click();
   await expect(
-    page.getByText('Paired with Office Teammate. Turn on your microphone when ready.'),
+    page.getByText(
+      'In a 2-person conversation with Office Teammate. Turn on your microphone when ready.',
+    ),
   ).toBeVisible();
   await page.getByRole('button', { name: 'Activate proximity microphone' }).click();
   await expect.poll(() => mediaTokenRequests).toHaveLength(2);

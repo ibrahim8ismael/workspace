@@ -191,3 +191,34 @@
     stroke-opacity: 1;
   }
 }
+
+.scene-speaking-indicator ellipse {
+  animation: scene-speaking-pulse 0.8s ease-in-out infinite alternate;
+}
+.scene-speaking-bar {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: scene-speaking-bars 0.55s ease-in-out infinite alternate;
+}
+@keyframes scene-speaking-pulse {
+  from {
+    opacity: 0.5;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes scene-speaking-bars {
+  from {
+    transform: scaleY(0.4);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .scene-speaking-indicator ellipse,
+  .scene-speaking-bar {
+    animation: none;
+  }
+}

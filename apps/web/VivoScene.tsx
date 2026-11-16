@@ -346,6 +346,28 @@ const STATIC: Layer[] = [
   })),
 ];
 
+function SpeakingIndicator() {
+  return (
+    <g className="scene-speaking-indicator" aria-hidden="true" pointerEvents="none">
+      <ellipse cx="0" cy="-3" rx="19" ry="8" fill="none" stroke="#64e8a3" strokeWidth="2.5" />
+      <g transform="translate(20 -38)" fill="#64e8a3">
+        {[0, 1, 2].map((bar) => (
+          <rect
+            key={bar}
+            className="scene-speaking-bar"
+            x={bar * 4}
+            y={(-bar % 2) * 3}
+            width="2.5"
+            height={6 + (bar % 2) * 6}
+            rx="1"
+            style={{ animationDelay: `${bar * -0.15}s` }}
+          />
+        ))}
+      </g>
+    </g>
+  );
+}
+
 function Avatar({
   person,
   self,
@@ -370,10 +392,11 @@ function Avatar({
   const width = Math.max(56, name.length * 7 + 30);
   return (
     <g
-      className={`scene-avatar${self ? ' is-self' : ''}${person.status === 'away' ? ' is-away' : ''}${moving ? ' is-walking' : ''}${person.seatId ? ' is-seated' : ''}`}
+      data-speaking={person.speaking || undefined}
+      className={`scene-avatar${person.speaking ? ' is-speaking' : ''}${self ? ' is-self' : ''}${person.status === 'away' ? ' is-away' : ''}${moving ? ' is-walking' : ''}${person.seatId ? ' is-seated' : ''}`}
       tabIndex={0}
       role="button"
-      aria-label={`${person.name}${self ? t(', tú') : ''}${person.seatId ? t(', sentado') : ''}. ${STATUS_LABEL[person.status]}`}
+      aria-label={`${person.name}${person.speaking ? ', speaking' : ''}${self ? t(', tú') : ''}${person.seatId ? t(', sentado') : ''}. ${STATUS_LABEL[person.status]}`}
       onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => {
         e.stopPropagation();
@@ -389,6 +412,7 @@ function Avatar({
       <title>
         {person.name} · {STATUS_LABEL[person.status]}
       </title>
+      {person.speaking && <SpeakingIndicator />}
       <image
         className="pixel-resource character-resource"
         href={frames?.[url] ?? url}
@@ -640,10 +664,16 @@ function SimpleAvatar({
     width = (name.length * 6.4 + 26) * k;
   return (
     <g
-      className="scene-avatar scene-simple-avatar"
+      className={`scene-avatar scene-simple-avatar${person.speaking ? ' is-speaking' : ''}`}
+      data-speaking={person.speaking || undefined}
       transform={`translate(${x} ${y})`}
       shapeRendering="auto"
     >
+      {person.speaking && (
+        <g transform={`scale(${k})`}>
+          <SpeakingIndicator />
+        </g>
+      )}
       <circle
         r={12 * k}
         fill={person.color || '#f6c08f'}

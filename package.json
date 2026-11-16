@@ -42,7 +42,7 @@
     "test:media-weak-network": "CP08_MEDIA_WEAK_NETWORK=1 pnpm test:media-live",
     "test:media-cross-company": "CP08_MEDIA_CROSS_COMPANY=1 pnpm test:media-live",
     "test:e2e:live": "LIVE_OFFICE_E2E=1 pnpm exec playwright test tests/e2e/live-office.spec.ts",
-    "test:e2e:live-media": "LIVE_OFFICE_E2E=1 LIVE_OFFICE_MEDIA_E2E=1 pnpm exec playwright test tests/e2e/live-office.spec.ts -g \"mounted Vivo office\"",
+    "test:e2e:live-media": "node tests/e2e/create-continuous-tone.mjs /private/tmp/gather-office-continuous-tone.wav && LIVE_OFFICE_E2E=1 LIVE_OFFICE_MEDIA_E2E=1 LIVE_OFFICE_FAKE_AUDIO_WAV=/private/tmp/gather-office-continuous-tone.wav pnpm exec playwright test tests/e2e/live-office.spec.ts -g \"mounted Vivo\"",
     "db:indexes": "pnpm build:packages && pnpm --filter @gather/api db:indexes",
     "test:contracts": "pnpm --filter @gather/contracts test",
     "test:world": "pnpm --filter @gather/world test",

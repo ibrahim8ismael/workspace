@@ -4,6 +4,7 @@ const executablePath = process.env['PLAYWRIGHT_CHROMIUM_EXECUTABLE'];
 const firefox = process.env['PLAYWRIGHT_BROWSER'] === 'firefox';
 const liveOfficeE2E = process.env['LIVE_OFFICE_E2E'] === '1';
 const liveOfficeMediaE2E = process.env['LIVE_OFFICE_MEDIA_E2E'] === '1';
+const liveOfficeFakeAudio = process.env['LIVE_OFFICE_FAKE_AUDIO_WAV'];
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -26,7 +27,13 @@ export default defineConfig({
                   },
                 }
               : {
-                  args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'],
+                  args: [
+                    '--use-fake-device-for-media-stream',
+                    '--use-fake-ui-for-media-stream',
+                    ...(liveOfficeFakeAudio
+                      ? [`--use-file-for-fake-audio-capture=${liveOfficeFakeAudio}`]
+                      : []),
+                  ],
                 }),
           }
         : {}),

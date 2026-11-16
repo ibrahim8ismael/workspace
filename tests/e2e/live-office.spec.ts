@@ -1904,3 +1904,203 @@ test('mounted Vivo office cuts off active audio when the member session logs out
     await sessionSecurityContext?.close();
   }
 });
+
+test('mounted Vivo joins an established pair into a three-person guarded audio group', async ({
+  browser,
+}) => {
+  test.skip(
+    !enabled || !mediaEnabled,
+    'Set LIVE_OFFICE_E2E=1 and LIVE_OFFICE_MEDIA_E2E=1 against a media-enabled deployment.',
+  );
+  test.setTimeout(480_000);
+
+  const fixtureId = randomUUID();
+  const emails = [
+    `codex-group-owner-${fixtureId}@example.test`,
+    `codex-group-member-a-${fixtureId}@example.test`,
+    `codex-group-member-b-${fixtureId}@example.test`,
+  ];
+  const clients: APIRequestContext[] = [];
+  const offices: Array<Awaited<ReturnType<typeof companyPage>>> = [];
+  const audioProbePages: Page[] = [];
+  try {
+    const owner = await createAccount(emails[0]!);
+    clients.push(owner.client);
+    const first = await createAccount(emails[1]!);
+    clients.push(first.client);
+    const third = await createAccount(emails[2]!);
+    clients.push(third.client);
+    const members = [first, third];
+
+    const workspaceResponse = await postJson(
+      owner.client,
+      '/api/workspaces',
+      {
+        name: `Codex group validation ${fixtureId.slice(0, 8)}`,
+        slug: `codex-group-${fixtureId.slice(0, 12)}`,
+      },
+      owner.csrf,
+      true,
+    );
+    expect(workspaceResponse.status()).toBe(201);
+    const workspaceBody = (await workspaceResponse.json()) as { workspace: { id: string } };
+    const workspaceId = workspaceBody.workspace.id;
+
+    for (const member of members) {
+      const invitationStartedAt = Date.now();
+      const invitation = await postJson(
+        owner.client,
+        `/api/workspaces/${workspaceId}/invitations`,
+        { email: member.email },
+        owner.csrf,
+        true,
+      );
+      expect(invitation.status()).toBe(201);
+      const invitationToken = await mailToken(member.email, 'Join a company', invitationStartedAt);
+      const accepted = await postJson(
+        member.client,
+        '/api/invitations/accept',
+        { token: invitationToken },
+        member.csrf,
+        true,
+      );
+      expect(accepted.status()).toBe(200);
+    }
+
+    for (const member of [owner, first, third])
+      offices.push(await companyPage(browser, member.client, workspaceId, false, false, true));
+    await Promise.all(
+      offices.map((office) =>
+        office.context.grantPermissions(['microphone'], { origin: appOrigin }),
+      ),
+    );
+
+    const pages = offices.map((office) => office.page);
+    for (const page of pages) await page.getByRole('button', { name: 'Join' }).click();
+    for (const page of pages)
+      await expect(page.getByText('3 people in the office')).toBeVisible({ timeout: 20_000 });
+
+    await pages[0]!.getByRole('button', { name: 'Activate proximity microphone' }).click();
+    await pages[1]!.getByRole('button', { name: 'Activate proximity microphone' }).click();
+    for (const index of [0, 1]) {
+      await expect(pages[index]!.locator('#office-microphone-help')).toHaveText(
+        'Your microphone is on.',
+        { timeout: 30_000 },
+      );
+      await expect(pages[index]!.locator('.office-proximity-audio-output audio')).toHaveCount(1, {
+        timeout: 20_000,
+      });
+    }
+    for (const index of [0, 1]) {
+      await startRemoteAudioProbe(pages[index]!);
+      audioProbePages.push(pages[index]!);
+      await expect
+        .poll(async () => (await readRemoteAudioProbe(pages[index]!)).activeSamples, {
+          timeout: 20_000,
+        })
+        .toBeGreaterThan(5);
+    }
+    await Promise.all(audioProbePages.map(stopRemoteAudioProbe));
+    audioProbePages.length = 0;
+
+    const thirdJoinStartedAt = Date.now();
+    await pages[2]!.getByRole('button', { name: 'Activate proximity microphone' }).click();
+    for (const page of pages) {
+      await expect(page.locator('.office-voice-status')).toContainText('3-person conversation', {
+        timeout: 30_000,
+      });
+      await expect(page.locator('#office-microphone-help')).toHaveText('Your microphone is on.');
+      await expect(page.locator('.office-proximity-audio-output audio')).toHaveCount(2, {
+        timeout: 20_000,
+      });
+      await expect(page.locator('.office-voice-members')).toContainText('3 participants');
+    }
+    const groupJoinLatencyMs = Date.now() - thirdJoinStartedAt;
+
+    for (const page of pages) {
+      await startRemoteAudioProbe(page);
+      audioProbePages.push(page);
+      await expect
+        .poll(async () => (await readRemoteAudioProbe(page)).activeSamples, { timeout: 20_000 })
+        .toBeGreaterThan(5);
+    }
+    const decodedAudioActiveSamples = await Promise.all(
+      pages.map(async (page) => (await readRemoteAudioProbe(page)).activeSamples),
+    );
+    const rtcObservations = await Promise.all(pages.map(readOfficeRtcDiagnostics));
+    const activePeersByParticipant = rtcObservations.map((peers) =>
+      peers.filter((peer) => peer.connectionState === 'connected'),
+    );
+    expect(activePeersByParticipant.every((peers) => peers.length > 0)).toBe(true);
+    expect(
+      activePeersByParticipant.every((peers) =>
+        peers.some((peer) => peer.iceState === 'connected'),
+      ),
+    ).toBe(true);
+    const selectedCandidateTypes = activePeersByParticipant
+      .flatMap((peers) => peers.flatMap((peer) => peer.pairs))
+      .filter((pair) => pair.selected || pair.nominated)
+      .map((pair) => `${pair.localType ?? 'unknown'}-${pair.remoteType ?? 'unknown'}`);
+    const inboundAudioStatsByParticipant = activePeersByParticipant.map((peers) =>
+      peers
+        .flatMap((peer) => peer.audioStreams)
+        .filter((stream) => stream.direction === 'inbound')
+        .map((stream) => ({
+          bytes: stream.bytes,
+          totalSamplesReceived: stream.totalSamplesReceived,
+        })),
+    );
+
+    console.info(
+      `three-person deployed Vivo audio: ${JSON.stringify({
+        participantCount: pages.length,
+        remoteTracksPerParticipant: [2, 2, 2],
+        decodedAudioActiveSamples,
+        connectedPeerConnectionsByParticipant: activePeersByParticipant.map(
+          (peers) => peers.length,
+        ),
+        inboundAudioStatsByParticipant,
+        selectedCandidateTypes,
+        groupJoinLatencyMs,
+      })}`,
+    );
+
+    await Promise.all(audioProbePages.map(stopRemoteAudioProbe));
+    audioProbePages.length = 0;
+    const removalStartedAt = Date.now();
+    await pages[2]!.getByRole('button', { name: 'Leave conversation' }).click();
+    await expect(pages[2]!.locator('.office-proximity-audio-output audio')).toHaveCount(0, {
+      timeout: 10_000,
+    });
+    const removedAudioElementMs = Date.now() - removalStartedAt;
+    for (const index of [0, 1]) {
+      await expect(pages[index]!.locator('.office-voice-status')).toContainText(
+        '2-person conversation',
+        { timeout: 30_000 },
+      );
+      await expect(pages[index]!.locator('.office-proximity-audio-output audio')).toHaveCount(1, {
+        timeout: 20_000,
+      });
+      await startRemoteAudioProbe(pages[index]!);
+      audioProbePages.push(pages[index]!);
+      await expect
+        .poll(async () => (await readRemoteAudioProbe(pages[index]!)).activeSamples, {
+          timeout: 20_000,
+        })
+        .toBeGreaterThan(5);
+    }
+    console.info(
+      `three-person deployed Vivo removal: ${JSON.stringify({
+        removedParticipantAudioElements: 0,
+        survivorParticipants: 2,
+        survivorRemoteTracks: [1, 1],
+        survivorDecodedAudioResumed: true,
+        removedAudioElementMs,
+      })}`,
+    );
+  } finally {
+    await Promise.all(audioProbePages.map((page) => stopRemoteAudioProbe(page).catch(() => {})));
+    await Promise.all(offices.map((office) => office.context.close()));
+    await Promise.all(clients.map((client) => client.dispose()));
+  }
+});

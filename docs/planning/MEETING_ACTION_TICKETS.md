@@ -34,11 +34,13 @@ Currently, meetings appear to support only one-to-one conversations. Users occup
 Allow more than two users standing near one another to participate in the same proximity-based voice conversation.
 
 **Acceptance Criteria:**
-- [ ] Nearby users can participate in a shared conversation instead of being limited to pairs.
-- [ ] Additional eligible users can join an existing conversation.
-- [ ] Each participant can hear the other authorized participants.
-- [ ] Joining and leaving are synchronized across connected clients.
-- [ ] Moving outside the permitted proximity area updates conversation membership according to the proximity rules.
+- [x] Nearby users can participate in a shared conversation instead of being limited to pairs.
+- [x] Additional eligible users can join an existing conversation.
+- [x] Each participant can hear the other authorized participants.
+- [x] Joining and leaving are synchronized across connected clients.
+- [x] Moving outside the permitted proximity area updates conversation membership according to the proximity rules.
+
+**Delivery evidence (2026-11-16):** Deployed to the Gather Lite pilot from `281ee3240ce8bdc419bc2a35c485ed20eac98f97`. The controlled public-host browser canary verified A+B followed by C joining their existing conversation, two remote audio tracks and advancing decoded audio per participant, connected ICE, and A+B continuity after C left. Join latency measured 1,514 ms; C's remote audio element was removed in 174 ms. The existing live-media proximity boundary E2E and pairing tests cover departure beyond the exit radius and re-entry. Separate-network/TURN-only testing remains a wider-rollout gate; see the [rollout evidence and rollback runbook](PROXIMITY_GROUP_ROLLOUT.md).
 
 ---
 
@@ -177,19 +179,19 @@ Display a visual animation or indicator when a user's avatar is speaking during 
 - Does “permission arrives too late” refer to the browser microphone prompt, backend authorization, or actual voice connection?
 - Which specific first page was described as fake?
 
-## GitHub Issue and PR Review — 2026-11-15
+## GitHub Issue and PR Review — 2026-11-16
 
-The tickets map to the repository's GitHub issues below. A repository-wide PR query returned no open or closed pull requests. The local proximity-group patch is still uncommitted, so there is no PR to attach yet. Keep issues open until the relevant change has a reviewable PR and its acceptance criteria are met; none should be closed based on this local worktree alone.
+The tickets map to the repository's GitHub issues below. Coordinate sync was delivered by PRs #10 and #11. The proximity-group implementation has no associated PR because it landed directly on `main`; it is included in deployed commit [`281ee324`](https://github.com/ibrahim8ismael/workspace/commit/281ee3240ce8bdc419bc2a35c485ed20eac98f97). The pilot three-person path has now been verified; the remaining wider-release network and scale gates are documented in the rollout runbook.
 
 | Ticket | GitHub issue | Work found in this repository | Disposition |
 | --- | --- | --- | --- |
 | TICKET-001 | [#3](https://github.com/ibrahim8ismael/workspace/issues/3) | Fixed meeting-zone group joining is not implemented by this patch. | Open; no PR. |
-| TICKET-002 | [#4](https://github.com/ibrahim8ismael/workspace/issues/4) | Proximity groups of 2–6 are implemented locally; a real local three-browser LiveKit test verifies two remote tracks per participant and safe member removal. | Open pending PR, review, and deployed-stack verification. |
-| TICKET-003 | [#5](https://github.com/ibrahim8ismael/workspace/issues/5) | No separate coordinate-sync fix was made. The group logic consumes server-owned positions, but the reported coordinate mismatch was not independently reproduced. | Open; investigate and test independently. |
+| TICKET-002 | [#4](https://github.com/ibrahim8ismael/workspace/issues/4) | Proximity groups of 2–6 are deployed at [commit `281ee324`](https://github.com/ibrahim8ismael/workspace/commit/281ee3240ce8bdc419bc2a35c485ed20eac98f97). Local real-SFU tests and the controlled pilot browser canary verify three-way audio, synchronized roster changes, member removal, and survivor continuity. | Closed after posting [pilot deployment evidence](https://github.com/ibrahim8ismael/workspace/issues/4#issuecomment-6914505267); no PR exists for this direct-to-main change. Wider release remains gated on separate-network/TURN tests. |
+| TICKET-003 | [#5](https://github.com/ibrahim8ismael/workspace/issues/5) | Fixed by [PR #10](https://github.com/ibrahim8ismael/workspace/pull/10), merged to `main`. Follow-up test [PR #11](https://github.com/ibrahim8ismael/workspace/pull/11) was merged into the coordinate-sync topic branch after #10 had already merged, so its additional live-test changes are not in current `main`. | Already closed by PR #10. No further close action. |
 | TICKET-004 | [#6](https://github.com/ibrahim8ismael/workspace/issues/6) | The third-user failure was traced to pair-only membership. Local group authorization measured 762 ms; browser-permission latency and an agreed activation target remain unverified. | Open; update diagnosis/target before closure. |
 | TICKET-005 | [#7](https://github.com/ibrahim8ismael/workspace/issues/7) | No first-page replacement work was made. | Open; no PR. |
 | TICKET-006 | [#8](https://github.com/ibrahim8ismael/workspace/issues/8) | A separate six-person proximity voice cap was added per the incident scope. The requested 20-person conversation cap and its meeting/proximity scope were not implemented. | Open; resolve scope and implement the requested rule. |
 | TICKET-007 | [#9](https://github.com/ibrahim8ismael/workspace/issues/9) | The backend uses a true circular two-tile join radius from the group centroid, with a three-tile leave radius and 500 ms positional debounce. The circle UI indicator is not implemented. | Open; finish UI criterion and review. |
 | TICKET-008 | [#2](https://github.com/ibrahim8ismael/workspace/issues/2) | No avatar speaking animation was added. | Open; no PR. |
 
-Parent roadmap: [#1](https://github.com/ibrahim8ismael/workspace/issues/1) remains open until the child issues are complete. No GitHub issue was closed in this review because there is no PR and the local-only work does not meet the production acceptance gate.
+Parent roadmap: [#1](https://github.com/ibrahim8ismael/workspace/issues/1) remains open until the remaining child issues are complete. Issue #5 is already closed by PR #10. Issue #4 was closed on 2026-11-16 after posting the pilot deployment evidence; issues #3, #6, #7, #8, and #9 remain open because their work is incomplete or requires clarification. Prior status comments with commit/PR links were posted to #1, #4, #6, #8, and #9.

@@ -1,4 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { Navigate, useNavigate } from 'react-router';
+import { AppLink } from '../../routing/AppLink';
+import { officePath, type OfficePage } from '../../routing/routes';
 import { ArrowLeft, LayoutGrid } from 'lucide-react';
 import type { AccountDto } from '@gather/contracts';
 import type { RefObject } from 'react';
@@ -24,34 +27,36 @@ type Props = {
   account: AccountDto;
   api: ApiClient;
   workspaceId: string;
+  page?: OfficePage | 'overview' | 'alias';
+  requestedOfficeId?: string;
   mutationPending: boolean;
   mutationLock: RefObject<boolean>;
   runMutation: <T>(action: () => Promise<T>) => Promise<T>;
   onBackToCompanies: () => void;
   onOpenSecurity: () => void;
   onUnauthorized: (notice?: string) => void;
-  onLostAccess: (workspaceId: string) => void;
 };
 
 export function CompanyOverview({
   account,
   api,
   workspaceId,
+  page = 'entry',
+  requestedOfficeId,
   mutationPending,
   mutationLock,
   runMutation,
   onBackToCompanies,
   onOpenSecurity,
   onUnauthorized,
-  onLostAccess,
 }: Props) {
+  const navigate = useNavigate();
   const [snapshot, setSnapshot] = useState<DetailSnapshot | null>(null);
   const requestGeneration = useRef(0);
   const requestController = useRef<AbortController | null>(null);
   const lastRefreshAt = useRef(0);
   const refreshRef = useRef<(deferLoading?: boolean) => Promise<void>>(() => Promise.resolve());
   const unauthorizedRef = useRef(onUnauthorized);
-  const lostAccessRef = useRef(onLostAccess);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const visibleSnapshot = snapshot?.workspaceId === workspaceId ? snapshot : null;
   const detail = visibleSnapshot?.detail ?? null;
@@ -59,8 +64,7 @@ export function CompanyOverview({
   const error = visibleSnapshot?.error ?? '';
   useEffect(() => {
     unauthorizedRef.current = onUnauthorized;
-    lostAccessRef.current = onLostAccess;
-  }, [onLostAccess, onUnauthorized]);
+  }, [onUnauthorized]);
 
   const cancelRequest = useCallback(() => {
     requestGeneration.current += 1;
@@ -87,6 +91,7 @@ export function CompanyOverview({
       try {
         const result = await api.workspaceDetail(workspaceId, controller.signal);
         if (generation !== requestGeneration.current) return;
+        if (result.id !== workspaceId) throw new Error('Company response mismatch');
         setSnapshot({ workspaceId, detail: result, loading: false, error: '' });
       } catch (caught) {
         if (generation !== requestGeneration.current || controller.signal.aborted) return;
@@ -98,7 +103,12 @@ export function CompanyOverview({
         ) {
           unauthorizedRef.current('Your session changed. Sign in again to continue.');
         } else if (caught instanceof ApiError && (caught.status === 403 || caught.status === 404)) {
-          lostAccessRef.current(workspaceId);
+          setSnapshot({
+            workspaceId,
+            detail: null,
+            loading: false,
+            error: 'Company not found or access denied.',
+          });
         } else {
           setSnapshot({
             workspaceId,
@@ -138,7 +148,26 @@ export function CompanyOverview({
     };
   }, [mutationLock]);
 
-  if (detail && canOpenOfficePreview(detail, workspaceId, false, error)) {
+  useEffect(() => {
+    titleRef.current?.focus();
+  }, [loading, error, page]);
+  if (
+    detail &&
+    ((requestedOfficeId && requestedOfficeId !== detail.officeId) ||
+      (page === 'invitations' && detail.role !== 'owner'))
+  ) {
+    return (
+      <main className="dashboard">
+        <section id="main-content" className="dashboard-body">
+          <h1 tabIndex={-1}>Office not found or access denied</h1>
+          <AppLink to="/companies">Back to companies</AppLink>
+        </section>
+      </main>
+    );
+  }
+  if (detail && page === 'alias')
+    return <Navigate replace to={officePath(workspaceId, detail.officeId, 'entry')} />;
+  if (detail && page !== 'overview' && canOpenOfficePreview(detail, workspaceId, false, error)) {
     return (
       <Suspense
         fallback={
@@ -148,6 +177,10 @@ export function CompanyOverview({
         }
       >
         <LazyCompanyOfficePreview
+          routePage={page === 'alias' ? 'entry' : page}
+          onNavigatePage={(next, replace = false) =>
+            navigate(officePath(workspaceId, detail.officeId, next), { replace })
+          }
           account={account}
           api={api}
           detail={detail}
@@ -167,39 +200,52 @@ export function CompanyOverview({
         Skip to main content
       </a>
       <header className="dashboard-bar">
-        <a className="dashboard-brand" href="/" aria-label={`${PRODUCT_NAME} home`}>
+        <AppLink className="dashboard-brand" to="/companies" aria-label={`${PRODUCT_NAME} home`}>
           <span className="workspace-logo" aria-hidden="true">
             <LayoutGrid size={18} />
           </span>
           <strong>{PRODUCT_NAME}</strong>
-        </a>
+        </AppLink>
         <div className="dashboard-account-actions">
           <span className="dashboard-account-name">{account.displayName}</span>
-          <button
+          <AppLink
+            to="/account/security"
             className="dashboard-secondary"
-            type="button"
             disabled={mutationPending}
-            onClick={onOpenSecurity}
+            onNavigate={onOpenSecurity}
           >
             Account security
-          </button>
-          <button
+          </AppLink>
+          <AppLink
+            to="/companies"
             className="dashboard-secondary"
-            type="button"
             disabled={mutationPending}
-            onClick={onBackToCompanies}
+            onNavigate={onBackToCompanies}
           >
             <ArrowLeft size={15} aria-hidden="true" />
             Back to companies
-          </button>
+          </AppLink>
         </div>
       </header>
 
       <div id="main-content" className="dashboard-body company-overview-content" tabIndex={-1}>
         <h1 ref={titleRef} tabIndex={-1}>
-          {loading ? 'Opening office…' : 'Could not open office'}
+          {loading ? 'Loading company…' : detail ? detail.name : 'Could not open company'}
         </h1>
 
+        {detail && page === 'overview' && (
+          <section className="dashboard-info-panel">
+            <p>
+              {detail.memberCount} company members · {detail.role === 'owner' ? 'Owner' : 'Member'}
+            </p>
+            <AppLink
+              className="dashboard-create"
+              to={officePath(workspaceId, detail.officeId, 'entry')}
+            >
+              Open office
+            </AppLink>
+          </section>
+        )}
         {error && (
           <p className="account-message is-error" role="alert">
             {error}

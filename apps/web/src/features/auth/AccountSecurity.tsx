@@ -1,3 +1,4 @@
+import { AppLink } from '../../routing/AppLink';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { ArrowLeft, LayoutGrid } from 'lucide-react';
 import type { AccountDto } from '@gather/contracts';
@@ -145,23 +146,23 @@ export function AccountSecurity({
         Skip to main content
       </a>
       <header className="dashboard-bar">
-        <a className="dashboard-brand" href="/" aria-label={`${PRODUCT_NAME} home`}>
+        <AppLink className="dashboard-brand" to="/companies" aria-label={`${PRODUCT_NAME} home`}>
           <span className="workspace-logo" aria-hidden="true">
             <LayoutGrid size={18} />
           </span>
           <strong>{PRODUCT_NAME}</strong>
-        </a>
+        </AppLink>
         <div className="dashboard-account-actions">
           <span className="dashboard-account-name">{account.displayName}</span>
-          <button
+          <AppLink
+            to="/companies"
             className="dashboard-secondary"
-            type="button"
             disabled={mutationPending}
-            onClick={onBack}
+            onNavigate={onBack}
           >
             <ArrowLeft size={15} aria-hidden="true" />
             Back to companies
-          </button>
+          </AppLink>
         </div>
       </header>
 

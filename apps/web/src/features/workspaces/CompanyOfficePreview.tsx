@@ -23,6 +23,8 @@ import type { Overrides } from '../../../../shared/office-objects.js';
 import ChatView from '../../../chat/ChatView';
 import type { ChatMessage, DirectoryUser, Participant } from '../../../types';
 import { EntryMicrophone } from '../office/entry-microphone';
+import { AppLink } from '../../routing/AppLink';
+import { officePath, type OfficePage } from '../../routing/routes';
 import { OfficeClient } from '../office/office-client';
 import { latestProximityConversation } from '../office/proximity-conversation';
 import {
@@ -68,6 +70,8 @@ function sceneAvatarForAppearance(appearance: { bodyId: string; paletteId: strin
 }
 
 type Props = {
+  routePage?: OfficePage;
+  onNavigatePage?: (page: OfficePage, replace?: boolean) => void;
   account: AccountDto;
   api: ApiClient;
   detail: OfficeWorkspaceDetail;
@@ -79,6 +83,8 @@ type Props = {
 };
 
 export function CompanyOfficePreview({
+  routePage,
+  onNavigatePage,
   account,
   api,
   detail,
@@ -137,7 +143,33 @@ export function CompanyOfficePreview({
     connected && proximityOptIn?.participationId === participationId && proximityOptIn.enabled,
   );
   const [zoom, setZoom] = useState(1.35);
-  const [section, setSection] = useState<OfficeSection>('office');
+  const [localSection, setLocalSection] = useState<OfficeSection>('office');
+  const section = routePage && routePage !== 'entry' ? routePage : localSection;
+  const setSection = (next: OfficeSection) =>
+    onNavigatePage ? onNavigatePage(next) : setLocalSection(next);
+  const joiningFromEntry = useRef(false);
+  const previousPage = useRef(routePage);
+  useEffect(() => {
+    if (routePage === 'entry' && previousPage.current !== 'entry') {
+      joiningFromEntry.current = false;
+      entryMicrophone.stop();
+      void proximityAudio.current?.stop();
+      client.close();
+    } else if (
+      routePage &&
+      routePage !== 'entry' &&
+      !['connected', 'connecting'].includes(client.getSnapshot().status)
+    ) {
+      void client.connect();
+    }
+    previousPage.current = routePage;
+  }, [routePage, client, entryMicrophone]);
+  useEffect(() => {
+    if (connected && joiningFromEntry.current) {
+      joiningFromEntry.current = false;
+      onNavigatePage?.('office');
+    }
+  }, [connected, onNavigatePage]);
   const [chatMessages, setChatMessages] = useState<OfficeMessage[]>([]);
   const [chatUsers, setChatUsers] = useState<DirectoryUser[]>([]);
   const [chatDraft, setChatDraft] = useState('');
@@ -377,17 +409,17 @@ export function CompanyOfficePreview({
           Skip to office entry
         </a>
         <header className="office-prejoin-header">
-          <button
+          <AppLink
+            to="/companies"
             className="office-prejoin-brand"
-            type="button"
             aria-label="Back to companies"
-            onClick={onBack}
+            onNavigate={onBack}
           >
             <span className="office-prejoin-logo" aria-hidden="true">
               <LayoutGrid size={19} />
             </span>
             <strong>{detail.name}</strong>
-          </button>
+          </AppLink>
           <div className="office-prejoin-account" title={account.email}>
             <span aria-hidden="true">{account.displayName.slice(0, 1).toUpperCase()}</span>
             <span>{account.email}</span>
@@ -408,6 +440,7 @@ export function CompanyOfficePreview({
               className="office-prejoin-form"
               onSubmit={(event) => {
                 event.preventDefault();
+                joiningFromEntry.current = true;
                 joinWithMicrophone.current = entryMicrophone.getSnapshot().status === 'on';
                 entryMicrophone.stop();
                 void client.connect();
@@ -501,9 +534,9 @@ export function CompanyOfficePreview({
               The office map or participant appearance is missing or unsupported in this frontend.
               Return to your companies and try again.
             </p>
-            <button className="primary" type="button" onClick={onBack}>
+            <AppLink to="/companies" className="primary" onNavigate={onBack}>
               Back to companies
-            </button>
+            </AppLink>
           </div>
         </section>
       </main>
@@ -591,78 +624,83 @@ export function CompanyOfficePreview({
           <span />
         </div>
         <div className="rail-main">
-          <button
+          <AppLink
+            to={officePath(detail.id, detail.officeId, 'office')}
             className={`nav-item${section === 'office' ? ' current' : ''}`}
-            type="button"
+
             aria-label="Office"
-            aria-pressed={section === 'office'}
+            aria-current={section === 'office' ? 'page' : undefined}
             title="Office"
-            onClick={() => setSection('office')}
+            onNavigate={() => setSection('office')}
           >
             <MapIcon size={22} />
-          </button>
-          <button
+          </AppLink>
+          <AppLink
+            to={officePath(detail.id, detail.officeId, 'chat')}
             className={`nav-item${section === 'chat' ? ' current' : ''}`}
-            type="button"
+
             aria-label="Messages"
-            aria-pressed={section === 'chat'}
+            aria-current={section === 'chat' ? 'page' : undefined}
             title="Messages"
-            onClick={() => setSection('chat')}
+            onNavigate={() => setSection('chat')}
           >
             <MessageCircle size={22} />
-          </button>
-          <button
+          </AppLink>
+          <AppLink
+            to={officePath(detail.id, detail.officeId, 'calendar')}
             className={`nav-item${section === 'calendar' ? ' current' : ''}`}
-            type="button"
+
             aria-label="Calendar"
-            aria-pressed={section === 'calendar'}
+            aria-current={section === 'calendar' ? 'page' : undefined}
             title="Calendar"
-            onClick={() => setSection('calendar')}
+            onNavigate={() => setSection('calendar')}
           >
             <CalendarDays size={22} />
-          </button>
-          <button
+          </AppLink>
+          <AppLink
+            to={officePath(detail.id, detail.officeId, 'activity')}
             className={`nav-item${section === 'activity' ? ' current' : ''}`}
-            type="button"
+
             aria-label="Activity"
-            aria-pressed={section === 'activity'}
+            aria-current={section === 'activity' ? 'page' : undefined}
             title="Activity"
-            onClick={() => setSection('activity')}
+            onNavigate={() => setSection('activity')}
           >
             <Bell size={22} />
-          </button>
+          </AppLink>
         </div>
         <div className="rail-bottom">
           {detail.role === 'owner' && (
-            <button
+            <AppLink
+              to={officePath(detail.id, detail.officeId, 'invitations')}
               className={`nav-item${section === 'invitations' ? ' current' : ''}`}
-              type="button"
+
               aria-label="Invite people"
-              aria-pressed={section === 'invitations'}
+              aria-current={section === 'invitations' ? 'page' : undefined}
               title="Invite people"
-              onClick={() => setSection('invitations')}
+              onNavigate={() => setSection('invitations')}
             >
               <UserPlus size={22} />
-            </button>
+            </AppLink>
           )}
-          <button
+          <AppLink
+            to="/companies"
             className="icon-button"
-            type="button"
             aria-label="Back to companies"
             title="Back to companies"
-            onClick={onBack}
+            onNavigate={onBack}
           >
             <ArrowLeft size={19} />
-          </button>
-          <button
+          </AppLink>
+          <AppLink
+            to="/account/security"
             className="icon-button"
-            type="button"
             aria-label="Account security"
             title="Account security"
-            onClick={onOpenSecurity}
+            onNavigate={onOpenSecurity}
           >
             <Settings2 size={19} />
-          </button>
+          </AppLink>
         </div>
       </nav>
 
@@ -689,13 +727,14 @@ export function CompanyOfficePreview({
             <div className="office-nav-placeholder">
               <strong>Invite people</strong>
               <p>Invite coworkers to {detail.name} and manage pending invitations.</p>
-              <button
+              <AppLink
+                to={officePath(detail.id, detail.officeId, 'office')}
                 className="dashboard-secondary"
-                type="button"
-                onClick={() => setSection('office')}
+
+                onNavigate={() => setSection('office')}
               >
                 Return to office
-              </button>
+              </AppLink>
             </div>
           ) : section === 'chat' ? (
             <div className="chat-sidebar office-chat-sidebar" aria-label="Message conversations">
@@ -1008,7 +1047,10 @@ export function CompanyOfficePreview({
                       aria-label="Leave office"
                       title="Leave office"
                       onClick={() =>
-                        void proximityAudio.current?.stop().finally(() => client.close())
+                        void proximityAudio.current?.stop().finally(() => {
+                          client.close();
+                          onNavigatePage?.('entry');
+                        })
                       }
                     >
                       <ArrowLeft size={19} />
@@ -1071,13 +1113,14 @@ export function CompanyOfficePreview({
                   ? 'Calendar events are not available until the company calendar API is connected.'
                   : 'Activity notifications are not available until the company activity API is connected.'}
               </p>
-              <button
+              <AppLink
+                to={officePath(detail.id, detail.officeId, 'office')}
                 className="dashboard-secondary"
-                type="button"
-                onClick={() => setSection('office')}
+
+                onNavigate={() => setSection('office')}
               >
                 Return to office
-              </button>
+              </AppLink>
             </section>
           )}
         </main>

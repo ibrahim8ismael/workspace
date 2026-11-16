@@ -47,6 +47,7 @@ const requestId = 'dbe6efea-048d-4b34-9111-d43880daf189';
 test('mocked-API UI E2E: sign in, open the company preview, and return cleanly', async ({
   page,
 }) => {
+  test.setTimeout(60_000);
   // This test mocks signaling; supply a silent synthetic capture track without device access.
   await page.addInitScript(() => {
     const captures: MediaStream[] = [];
@@ -463,14 +464,14 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
 
   await expect(page.getByText('E2E Company', { exact: true })).toBeVisible();
   await expect(page.getByText('SIGN-IN STATUS', { exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Account security' }).click();
+  await page.getByRole('link', { name: 'Account security' }).click();
   await expect(page.getByRole('heading', { name: 'Account security' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Signed-in sessions' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Verify password' })).toBeVisible();
-  await page.getByRole('button', { name: 'Back to companies' }).click();
+  await page.getByRole('link', { name: 'Back to companies' }).click();
   await expect(page.getByText('E2E Company', { exact: true })).toBeVisible();
   await expect(page.getByText('SIGN-IN STATUS', { exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Open office' }).click();
+  await page.getByRole('link', { name: 'Open office', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Company details' })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Employee invitations' })).toHaveCount(0);
   await expect(page.getByText('SIGN-IN STATUS', { exact: true })).toHaveCount(0);
@@ -497,14 +498,16 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await expect(page.getByRole('button', { name: 'Join' })).toBeVisible();
   await expect(page.locator('.office-scene, .office-map-heading')).toHaveCount(0);
   expect(officeBootstrapRequests).toBe(0);
+  await expect(page).toHaveURL(`/companies/${workspace.id}/offices/${officeId}/entry`);
 
   await page.getByRole('button', { name: 'Join' }).click();
   await expect(page.getByText('1 person in the office')).toBeVisible();
+  await expect(page).toHaveURL(`/companies/${workspace.id}/offices/${officeId}`);
   await expect(page.getByText('Live Vivo office', { exact: true })).toBeVisible();
   await expect(page.locator('.office-scene .office-map')).toHaveCount(1);
   await expect.poll(() => officeBootstrapRequests).toBe(1);
   await expect(page.getByRole('group', { name: 'Office connection controls' })).toBeVisible();
-  await page.getByRole('button', { name: 'Invite people', exact: true }).click();
+  await page.getByRole('link', { name: 'Invite people', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Employee invitations' })).toBeVisible();
   await expect(page.getByText('No invitations have been created for this company.')).toBeVisible();
   await page.getByRole('textbox', { name: 'Employee email' }).fill(invitation.email);
@@ -519,7 +522,7 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await page.getByRole('button', { name: `Revoke invitation for ${invitation.email}` }).click();
   await page.getByRole('button', { name: 'Confirm revoke' }).click();
   await expect(page.getByRole('list', { name: 'Company invitations' })).toContainText('Revoked');
-  await page.getByRole('button', { name: 'Return to office', exact: true }).click();
+  await page.getByRole('link', { name: 'Return to office', exact: true }).click();
   await expect(page.getByText('1 person in the office')).toBeVisible();
   expect(officeConnections).toBe(1);
   const officeSkipLink = page.getByRole('link', { name: 'Skip to office map' });
@@ -583,7 +586,7 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await expect(page.getByRole('region', { name: 'People in the office' })).toContainText(
     account.displayName,
   );
-  await page.getByRole('button', { name: 'Messages' }).click();
+  await page.getByRole('link', { name: 'Messages' }).click();
   await expect(page.getByRole('heading', { name: 'Welcome to #office' })).toBeVisible();
   await expect(page.getByText('Welcome to the team chat')).toBeVisible();
   await expect(page.getByText('Office Teammate').first()).toBeVisible();
@@ -597,9 +600,9 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   expect(sentOfficeMessages).toHaveLength(2);
   expect(sentOfficeMessages[0]?.text).toBe(sentOfficeMessages[1]?.text);
   expect(sentOfficeMessages[0]?.clientMessageId).toBe(sentOfficeMessages[1]?.clientMessageId);
-  await page.getByRole('button', { name: 'Office', exact: true }).click();
+  await page.getByRole('link', { name: 'Office', exact: true }).click();
   await expect(page.locator('.office-scene .office-map')).toHaveCount(1);
-  await page.getByRole('button', { name: 'Back to companies' }).focus();
+  await page.getByRole('link', { name: 'Back to companies' }).focus();
   await page.keyboard.press('Tab');
   await page.keyboard.press('Tab');
   await expect(page.getByRole('button', { name: 'Busy', exact: true })).toBeFocused();
@@ -627,9 +630,9 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await page.getByRole('button', { name: 'Join' }).click();
   await expect(page.getByText('1 person in the office')).toBeVisible();
   await expect(page.locator('.office-scene .office-map')).toHaveCount(1);
-  await page.getByRole('button', { name: 'Messages' }).click();
+  await page.getByRole('link', { name: 'Messages' }).click();
   await expect(page.getByText('This arrived during the reconnect')).toBeVisible();
-  await page.getByRole('button', { name: 'Office', exact: true }).click();
+  await page.getByRole('link', { name: 'Office', exact: true }).click();
   expect(officeBootstrapRequests).toBe(2);
   expect(officeTicketRequests).toBe(2);
   expect(officeConnections).toBe(2);
@@ -714,12 +717,29 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
     ),
   ).toBe(true);
   await page.getByRole('button', { name: 'Leave office' }).click();
+  await expect(page).toHaveURL(`/companies/${workspace.id}/offices/${officeId}/entry`);
+  await page.goBack();
+  await expect(page).toHaveURL(`/companies/${workspace.id}/offices/${officeId}`);
+  await expect(page.getByText('1 person in the office')).toBeVisible();
+  await page.reload();
+  await expect(page).toHaveURL(`/companies/${workspace.id}/offices/${officeId}`);
+  await expect(page.getByText('1 person in the office')).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Activate proximity microphone', exact: true }),
+  ).toHaveAttribute('aria-pressed', 'false');
+  await page.getByRole('link', { name: 'Messages', exact: true }).click();
+  await expect(page).toHaveURL(`/companies/${workspace.id}/offices/${officeId}/chat`);
+  await page.reload();
+  await expect(page.getByRole('textbox', { name: 'Message office' })).toBeVisible();
+  await expect(page).toHaveURL(`/companies/${workspace.id}/offices/${officeId}/chat`);
+  await page.getByRole('link', { name: 'Office', exact: true }).click();
+  await page.getByRole('button', { name: 'Leave office', exact: true }).click();
   // Leaving the entry screen also releases a microphone that was explicitly opened there.
   await page.getByRole('button', { name: 'Turn microphone on', exact: true }).click();
   await expect(
     page.getByRole('button', { name: 'Turn microphone off', exact: true }),
   ).toBeVisible();
-  await page.getByRole('button', { name: 'Back to companies' }).click();
+  await page.getByRole('link', { name: 'Back to companies' }).click();
   await expect(page.getByRole('heading', { name: 'Your companies' })).toBeVisible();
   expect(
     await page.evaluate(() =>

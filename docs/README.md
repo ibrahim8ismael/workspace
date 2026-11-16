@@ -12,6 +12,10 @@ B2B SaaS is an agreed requirement. Read the [B2B SaaS product plan](product/B2B_
 
 Current implementation checkpoints: CP00–CP07 have local implementation or experimental proof; production/release acceptance remains open. CP04 connects browser accounts/companies and delivery; CP05/CP06 add authoritative office realtime, the Vivo browser map, and CP06.11 office-wide text chat; CP07 is an isolated local media-enforcement proof, not product voice. See [owner decisions](decisions/README.md), [office v1 contract](contracts/OFFICE_V1.md), and [progress](planning/IMPLEMENTATION_PROGRESS.md). CP08 product media UX and remaining UI review are next.
 
+## Browser navigation
+
+See the [page-to-route map](navigation/ROUTES.md) for canonical URLs, protected links, office lifecycle behavior, legacy aliases, and SPA hosting.
+
 ## Start here
 
 1. Read the [source project brief](../GATHER_LITE_PROJECT_KNOWLEDGE.md).

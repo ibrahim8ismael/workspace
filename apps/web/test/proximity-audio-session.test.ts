@@ -124,6 +124,42 @@ describe('session-bound proximity audio client', () => {
     expect(statuses.at(-1)).toBe('off');
   });
 
+  it('reports authorization, capture, connection, publication stages and elapsed diagnostics', async () => {
+    const fake = createRoom();
+    fake.room.prepareMicrophone = vi.fn(async () => undefined);
+    const stages: string[] = [];
+    const diagnostics: Array<[string, number]> = [];
+    const session = new ProximityAudioSession(
+      () => undefined,
+      () => vi.fn(),
+      async () => fake.room,
+      () => {},
+      (stage) => stages.push(stage),
+      (stage, elapsedMs) => diagnostics.push([stage, elapsedMs]),
+    );
+
+    await session.start(
+      async () => grant,
+      () => true,
+      2,
+      grant.generation,
+    );
+
+    expect(stages).toEqual(['authorizing', 'loading', 'capturing', 'connecting', 'publishing']);
+    expect(diagnostics.map(([stage]) => stage)).toEqual([
+      'conversation-active',
+      'token-returned',
+      'sdk-ready',
+      'capture-requested',
+      'capture-resolved',
+      'room-connected',
+      'microphone-published',
+    ]);
+    expect(diagnostics.every(([, elapsedMs]) => Number.isFinite(elapsedMs))).toBe(true);
+    expect(JSON.stringify(diagnostics)).not.toContain(grant.token);
+    await session.stop();
+  });
+
   it('requests microphone consent before connecting and does not connect after denial', async () => {
     const fake = createRoom();
     const order: string[] = [];

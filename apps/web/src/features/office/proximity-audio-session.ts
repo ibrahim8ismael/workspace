@@ -27,6 +27,9 @@ export interface ProximityRoom {
 type RoomFactory = () => Promise<ProximityRoom>;
 type StateListener = (status: ProximityAudioStatus, error?: string) => void;
 type RemoteTrackBinder = (track: ProximityRemoteAudioTrack, identity: string) => () => void;
+export type ProximityAudioStage =
+  'authorizing' | 'loading' | 'capturing' | 'connecting' | 'publishing';
+export type ProximityAudioDiagnostic = (stage: string, elapsedMs: number) => void;
 
 function mediaError(error: unknown) {
   const name = error instanceof Error ? error.name : '';
@@ -154,6 +157,14 @@ export class ProximityAudioSession {
     private readonly bindRemoteTrack: RemoteTrackBinder,
     private readonly createRoom: RoomFactory = createLiveKitProximityRoom,
     private readonly onSpeakers: (identities: string[]) => void = () => {},
+    private readonly onStage: (stage: ProximityAudioStage) => void = () => {},
+    private readonly diagnose: ProximityAudioDiagnostic = (stage, elapsedMs) => {
+      if (
+        typeof window !== 'undefined' &&
+        new URLSearchParams(window.location.search).has('debugVoice')
+      )
+        console.debug('[proximity-audio]', stage, { elapsedMs, atMs: performance.now() });
+    },
   ) {}
 
   async start(
@@ -166,34 +177,47 @@ export class ProximityAudioSession {
     const attempt = ++this.generation;
     const request = new AbortController();
     this.request = request;
+    const startedAt = performance.now();
+    this.onStage('authorizing');
+    this.diagnose('conversation-active', 0);
     this.setState('connecting');
     let nextRoom: ProximityRoom | null = null;
     try {
       const grant = await fetchGrant(request.signal);
+      this.diagnose('token-returned', performance.now() - startedAt);
       if (!this.isCurrent(attempt, isCurrent)) return;
       if (grant.conversationVersion !== expectedVersion || grant.generation !== expectedGeneration)
         throw new Error('conversation_changed');
 
+      this.onStage('loading');
       nextRoom = await this.createRoom();
+      this.diagnose('sdk-ready', performance.now() - startedAt);
       if (!this.isCurrent(attempt, isCurrent)) {
         await nextRoom.disconnect().catch(() => undefined);
         return;
       }
       this.room = nextRoom;
       this.bindRoom(nextRoom, attempt);
+      this.onStage('capturing');
+      this.diagnose('capture-requested', performance.now() - startedAt);
       // Request capture before ICE: Firefox can withhold local candidates without device consent.
       // Publication still waits for the authorized guarded room connection.
       await nextRoom.prepareMicrophone?.();
+      this.diagnose('capture-resolved', performance.now() - startedAt);
       if (!this.isCurrent(attempt, isCurrent)) {
         await this.releaseRoom(nextRoom);
         return;
       }
+      this.onStage('connecting');
       await nextRoom.connect(grant.serverUrl, grant.token);
+      this.diagnose('room-connected', performance.now() - startedAt);
       if (!this.isCurrent(attempt, isCurrent)) {
         await this.releaseRoom(nextRoom);
         return;
       }
+      this.onStage('publishing');
       await nextRoom.setMicrophoneEnabled(true);
+      this.diagnose('microphone-published', performance.now() - startedAt);
       if (!this.isCurrent(attempt, isCurrent)) {
         await this.releaseRoom(nextRoom);
         return;

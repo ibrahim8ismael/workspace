@@ -2104,3 +2104,135 @@ test('mounted Vivo joins an established pair into a three-person guarded audio g
     await Promise.all(clients.map((client) => client.dispose()));
   }
 });
+
+test('mounted Vivo entry microphone opens and closes capture and preserves the choice after Join', async ({
+  browser,
+}) => {
+  test.skip(!enabled || !mediaEnabled, 'Requires the local OrbStack media stack.');
+  test.setTimeout(150_000);
+  const { owner, member, workspaceId } = await getLiveMediaOfficeFixture();
+  const offices: Awaited<ReturnType<typeof companyPage>>[] = [];
+  try {
+    for (const account of [owner, member]) {
+      const office = await companyPage(browser, account.client, workspaceId);
+      offices.push(office);
+      await office.context.grantPermissions(['microphone'], { origin: appOrigin });
+      await office.page.evaluate(() => {
+        // Observe native browser capture; do not synthesize streams or speaker events here.
+        const streams: MediaStream[] = [];
+        Object.assign(window, { __entryNativeStreams: streams });
+        const capture = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+        navigator.mediaDevices.getUserMedia = async (constraints) => {
+          const stream = await capture(constraints);
+          streams.push(stream);
+          return stream;
+        };
+      });
+      await expect(office.page.locator('.office-prejoin-camera, video')).toHaveCount(0);
+      await expect(office.page.getByRole('textbox', { name: 'Display name' })).toHaveValue(
+        account.account.displayName,
+      );
+    }
+    const [ownerOffice, memberOffice] = offices;
+    const ownerPage = ownerOffice!.page;
+    const memberPage = memberOffice!.page;
+    const captureState = (page: Page) =>
+      page.evaluate(() => {
+        const streams = (window as unknown as { __entryNativeStreams: MediaStream[] })
+          .__entryNativeStreams;
+        return {
+          streams: streams.length,
+          live: streams
+            .flatMap((stream) => stream.getAudioTracks())
+            .filter((track) => track.readyState === 'live' && track.enabled).length,
+        };
+      });
+    expect(await captureState(ownerPage)).toEqual({ streams: 0, live: 0 });
+    let started = Date.now();
+    await ownerPage.getByRole('button', { name: 'Turn microphone on', exact: true }).click();
+    await expect(
+      ownerPage.getByRole('button', { name: 'Turn microphone off', exact: true }),
+    ).toHaveAttribute('aria-pressed', 'true');
+    await expect.poll(async () => (await captureState(ownerPage)).live).toBe(1);
+    const microphoneOnMs = Date.now() - started;
+    started = Date.now();
+    await ownerPage.getByRole('button', { name: 'Turn microphone off', exact: true }).click();
+    await expect.poll(async () => (await captureState(ownerPage)).live).toBe(0);
+    const microphoneOffMs = Date.now() - started;
+    await ownerPage.getByRole('button', { name: 'Turn microphone on', exact: true }).click();
+    await expect(
+      ownerPage.getByRole('button', { name: 'Turn microphone off', exact: true }),
+    ).toBeVisible();
+    await ownerPage.screenshot({ path: test.info().outputPath('office-entry-microphone-on.png') });
+    await ownerPage.getByRole('button', { name: 'Join', exact: true }).click();
+    await expect(ownerPage.getByText('1 person in the office')).toBeVisible();
+    await expect(
+      ownerPage.getByRole('button', { name: 'Mute proximity microphone', exact: true }),
+    ).toHaveAttribute('aria-pressed', 'true');
+    await expect(ownerPage.locator('#office-microphone-help')).toContainText(
+      'waiting for a nearby coworker',
+    );
+    // Entry capture is released; publication waits for an authorized nearby conversation.
+    expect(await captureState(ownerPage)).toEqual({ streams: 2, live: 0 });
+    await memberPage.getByRole('button', { name: 'Join', exact: true }).click();
+    await expect(
+      memberPage.getByRole('button', { name: 'Activate proximity microphone', exact: true }),
+    ).toHaveAttribute('aria-pressed', 'false');
+    expect(await captureState(memberPage)).toEqual({ streams: 0, live: 0 });
+    started = Date.now();
+    await memberPage
+      .getByRole('button', { name: 'Activate proximity microphone', exact: true })
+      .click();
+    for (const { page } of offices) {
+      await expect(page.locator('#office-microphone-help')).toHaveText('Your microphone is on.', {
+        timeout: 25_000,
+      });
+      await expect(page.locator('.office-proximity-audio-output audio')).toHaveCount(1, {
+        timeout: 15_000,
+      });
+      await expect.poll(async () => (await captureState(page)).live).toBe(1);
+      const playback = page.getByRole('button', { name: 'Enable speaker audio' });
+      if (await playback.isVisible()) await playback.click();
+    }
+    const joinChoiceToLiveAudioMs = Date.now() - started;
+    await startRemoteAudioProbe(memberPage);
+    await expect
+      .poll(async () => (await readRemoteAudioProbe(memberPage)).activeSamples, { timeout: 20_000 })
+      .toBeGreaterThan(3);
+    const receivedAudioSamples = (await readRemoteAudioProbe(memberPage)).activeSamples;
+    await stopRemoteAudioProbe(memberPage);
+    await ownerPage.getByRole('button', { name: 'Mute proximity microphone', exact: true }).click();
+    await expect.poll(async () => (await captureState(ownerPage)).live).toBe(0);
+    for (const { page } of offices)
+      await page.getByRole('button', { name: 'Leave office', exact: true }).click();
+    for (const { page } of offices) {
+      await expect(
+        page.getByRole('button', { name: 'Turn microphone on', exact: true }),
+      ).toHaveAttribute('aria-pressed', 'false');
+      await expect.poll(async () => (await captureState(page)).live).toBe(0);
+    }
+    await ownerPage.getByRole('button', { name: 'Turn microphone on', exact: true }).click();
+    await expect(
+      ownerPage.getByRole('button', { name: 'Turn microphone off', exact: true }),
+    ).toBeVisible();
+    await ownerPage.getByRole('button', { name: 'Back to companies', exact: true }).click();
+    await expect.poll(async () => (await captureState(ownerPage)).live).toBe(0);
+    const measurements = {
+      microphoneOnMs,
+      microphoneOffMs,
+      joinChoiceToLiveAudioMs,
+      receivedAudioSamples,
+      offChoicePreserved: true,
+      onChoicePublishedWithoutSecondClick: true,
+      entryTracksReleasedOnJoin: true,
+      tracksReleasedOnExit: true,
+    };
+    console.info(`OrbStack entry microphone measurements: ${JSON.stringify(measurements)}`);
+    await test.info().attach('entry-microphone-measurements', {
+      body: JSON.stringify(measurements, null, 2),
+      contentType: 'application/json',
+    });
+  } finally {
+    for (const office of offices.reverse()) await office.context.close();
+  }
+});

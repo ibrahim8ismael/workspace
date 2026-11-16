@@ -24,10 +24,10 @@ Paths are shown relative to `/api`. The linked reference supplies status codes, 
 | `GET /health/live` | Process liveness only |
 | `GET /auth/csrf` | Safe anonymous or authenticated browser bootstrap |
 | `POST /auth/register` | Pending account registration |
-| `POST /auth/verify-email` | Single-use verification with pending password proof |
+| `POST /auth/verify-email` | Single-use email-scoped six-digit verification with pending password proof |
 | `POST /auth/resend-verification` | Generic verification request and supersession |
 | `POST /auth/forgot-password` | Generic recovery request |
-| `POST /auth/reset-password` | One-use password reset and invalidation of old sessions |
+| `POST /auth/reset-password` | One-use email-scoped six-digit password reset and invalidation of old sessions |
 | `POST /auth/login` | Verified active account, rotated session/CSRF |
 | `GET /auth/me` | Current authenticated account |
 | `GET /auth/sessions` | Current account's safe session list |

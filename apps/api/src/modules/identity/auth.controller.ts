@@ -90,10 +90,11 @@ export class AuthController {
   @Post('verify-email')
   @HttpCode(200)
   async verify(
-    @Body(new ValidationPipe(verifyEmailSchema)) body: { token: string; password: string },
+    @Body(new ValidationPipe(verifyEmailSchema))
+    body: { email: string; token: string; password: string },
     @Req() request: AuthRequest,
   ) {
-    await this.abuse.authRequest('verify', ip(request));
+    await this.abuse.authRequest('verify', ip(request), body.email);
     return this.auth.verifyEmail(body, browser(request));
   }
   @Public()
@@ -120,10 +121,11 @@ export class AuthController {
   @Post('reset-password')
   @HttpCode(200)
   async reset(
-    @Body(new ValidationPipe(resetPasswordSchema)) body: { token: string; newPassword: string },
+    @Body(new ValidationPipe(resetPasswordSchema))
+    body: { email: string; token: string; newPassword: string },
     @Req() request: AuthRequest,
   ) {
-    await this.abuse.authRequest('reset', ip(request));
+    await this.abuse.authRequest('reset', ip(request), body.email);
     return this.auth.resetPassword(body, browser(request));
   }
   @Public()

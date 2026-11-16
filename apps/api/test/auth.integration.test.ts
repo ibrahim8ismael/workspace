@@ -725,7 +725,7 @@ async function account(email = `person-${randomUUID()}@example.com`) {
     202,
   );
   const token = await mailCode(email, 'verify-email');
-  status(await client.send('post', '/api/auth/verify-email', { token, password }), 200);
+  status(await client.send('post', '/api/auth/verify-email', { email, token, password }), 200);
   const login = await client.send('post', '/api/auth/login', { email, password });
   status(login, 200);
   return { client, email, id: String(login.body.account.id) };
@@ -993,6 +993,7 @@ describe('backend account authentication', () => {
     const verify = await mailCode(email, 'verify-email');
     status(
       await attacker.send('post', '/api/auth/verify-email', {
+        email,
         token: verify,
         password: 'a different mailbox password',
       }),
@@ -1002,10 +1003,110 @@ describe('backend account authentication', () => {
     await legitimate.bootstrap();
     status(await legitimate.send('post', '/api/auth/forgot-password', { email }), 202);
     const token = await mailCode(email, 'reset-password');
-    status(await legitimate.send('post', '/api/auth/reset-password', { token, newPassword }), 200);
+    status(
+      await legitimate.send('post', '/api/auth/reset-password', { email, token, newPassword }),
+      200,
+    );
     status(await attacker.send('post', '/api/auth/login', { email, password }), 401);
     status(await legitimate.send('post', '/api/auth/login', { email, password: newPassword }), 200);
-    status(await attacker.send('post', '/api/auth/verify-email', { token: verify, password }), 400);
+    status(
+      await attacker.send('post', '/api/auth/verify-email', { email, token: verify, password }),
+      400,
+    );
+  });
+  it('accepts six-digit codes including leading zeroes with account-scoped digest lookup', async () => {
+    const firstEmail = `code-first-${randomUUID()}@example.com`;
+    const secondEmail = `code-second-${randomUUID()}@example.com`;
+    const first = new Client();
+    const second = new Client();
+    await Promise.all([first.bootstrap(), second.bootstrap()]);
+    for (const [client, email] of [
+      [first, firstEmail],
+      [second, secondEmail],
+    ] as const)
+      status(
+        await client.send('post', '/api/auth/register', {
+          email,
+          password,
+          displayName: 'Code Person',
+        }),
+        202,
+      );
+    const firstUser = await identities.users.findOne({ normalizedEmail: firstEmail }).lean();
+    const secondUser = await identities.users.findOne({ normalizedEmail: secondEmail }).lean();
+    expect(firstUser && secondUser).toBeTruthy();
+    const code = '038291';
+    for (const user of [firstUser!, secondUser!])
+      await identities.tokens.updateOne(
+        { userId: user._id, purpose: 'verify-email', consumedAt: null },
+        { $set: { tokenDigest: digest(`${user._id}:verify-email:${code}`) } },
+      );
+    status(
+      await first.send('post', '/api/auth/verify-email', {
+        email: firstEmail,
+        token: code,
+        password,
+      }),
+      200,
+    );
+    status(
+      await second.send('post', '/api/auth/verify-email', {
+        email: secondEmail,
+        token: code,
+        password,
+      }),
+      200,
+    );
+  });
+  it('limits incorrect verification attempts per account and keeps legacy long codes valid through expiry', async () => {
+    const email = `guess-${randomUUID()}@example.com`;
+    const client = new Client();
+    await client.bootstrap();
+    status(
+      await client.send('post', '/api/auth/register', {
+        email,
+        password,
+        displayName: 'Guess Person',
+      }),
+      202,
+    );
+    const issuedCode = await mailCode(email, 'verify-email');
+    const wrongCode = issuedCode === '000000' ? '000001' : '000000';
+    for (let attempt = 0; attempt < 10; attempt += 1)
+      status(
+        await client.send('post', '/api/auth/verify-email', { email, token: wrongCode, password }),
+        400,
+      );
+    status(
+      await client.send('post', '/api/auth/verify-email', { email, token: wrongCode, password }),
+      429,
+    );
+
+    const legacyEmail = `legacy-${randomUUID()}@example.com`;
+    const legacy = new Client();
+    await legacy.bootstrap();
+    status(
+      await legacy.send('post', '/api/auth/register', {
+        email: legacyEmail,
+        password,
+        displayName: 'Legacy Person',
+      }),
+      202,
+    );
+    const user = await identities.users.findOne({ normalizedEmail: legacyEmail }).lean();
+    const legacyToken = 'A'.repeat(43);
+    await identities.tokens.updateOne(
+      { userId: user!._id, purpose: 'verify-email', consumedAt: null },
+      { $set: { tokenDigest: digest(legacyToken) } },
+    );
+    status(
+      await legacy.send('post', '/api/auth/verify-email', {
+        email: legacyEmail,
+        token: legacyToken,
+        password,
+      }),
+      200,
+    );
   });
   it('rotates sessions and CSRF on login and reauthentication and exposes no digests', async () => {
     const user = await account();
@@ -1046,11 +1147,25 @@ describe('backend account authentication', () => {
     status(await a.send('post', '/api/auth/forgot-password', { email: user.email }), 202);
     const old = await mailCode(user.email, 'reset-password');
     status(await a.send('post', '/api/auth/forgot-password', { email: user.email }), 202);
+    expect(await mailCode(user.email, 'reset-password')).toBe(old);
+    // Simulate the client waiting through the resend cooldown before issuing another code.
+    await identities.tokens.updateOne(
+      { tokenDigest: digest(`${user.id}:reset-password:${old}`) },
+      { $set: { createdAt: new Date(Date.now() - 61_000) } },
+    );
+    status(await a.send('post', '/api/auth/forgot-password', { email: user.email }), 202);
     const token = await mailCode(user.email, 'reset-password');
-    status(await b.send('post', '/api/auth/reset-password', { token: old, newPassword }), 400);
+    status(
+      await b.send('post', '/api/auth/reset-password', {
+        email: user.email,
+        token: old,
+        newPassword,
+      }),
+      400,
+    );
     const results = await Promise.all([
-      a.send('post', '/api/auth/reset-password', { token, newPassword }),
-      b.send('post', '/api/auth/reset-password', { token, newPassword }),
+      a.send('post', '/api/auth/reset-password', { email: user.email, token, newPassword }),
+      b.send('post', '/api/auth/reset-password', { email: user.email, token, newPassword }),
     ]);
     expect(results.map((r) => r.status).sort()).toEqual([200, 400]);
     status(await user.client.get('/api/auth/me'), 401);
@@ -1066,11 +1181,22 @@ describe('backend account authentication', () => {
     status(await browser.send('post', '/api/auth/forgot-password', { email: user.email }), 202);
     const token = await mailCode(user.email, 'reset-password');
     await identities.tokens.updateOne(
-      { tokenDigest: digest(token) },
+      { tokenDigest: digest(`${user.id}:reset-password:${token}`) },
       { $set: { expiresAt: new Date(Date.now() - 1000) } },
     );
-    status(await browser.send('post', '/api/auth/reset-password', { token, newPassword }), 400);
-    expect(await identities.tokens.countDocuments({ tokenDigest: digest(token) })).toBe(1);
+    status(
+      await browser.send('post', '/api/auth/reset-password', {
+        email: user.email,
+        token,
+        newPassword,
+      }),
+      400,
+    );
+    expect(
+      await identities.tokens.countDocuments({
+        tokenDigest: digest(`${user.id}:reset-password:${token}`),
+      }),
+    ).toBe(1);
   });
   it('invalidates all sessions on logout-all and password change', async () => {
     const user = await account();
@@ -1395,7 +1521,9 @@ describe('company roles and isolation', () => {
       400,
     );
     status(
-      await member.client.send('post', '/api/invitations/accept', { token: invitation.token }),
+      await member.client.send('post', '/api/invitations/accept', {
+        token: `${invitation.token.slice(0, 4).toLowerCase()} ${invitation.token.slice(4).toLowerCase()}`,
+      }),
       200,
     );
     status(
@@ -1414,6 +1542,21 @@ describe('company roles and isolation', () => {
       'member',
       'owner',
     ]);
+  });
+  it('continues to accept an already-issued long invitation token until its original expiry', async () => {
+    const owner = await account();
+    const member = await account();
+    const workspaceId = await workspace(owner);
+    const invitation = await invite(owner, workspaceId, member);
+    const legacyToken = 'I'.repeat(43);
+    await tenancy.invitations.updateOne(
+      { _id: invitation.id },
+      { $set: { tokenDigest: digest(legacyToken) } },
+    );
+    status(
+      await member.client.send('post', '/api/invitations/accept', { token: legacyToken }),
+      200,
+    );
   });
   it('accepts the same invitation concurrently without double-counting membership', async () => {
     const owner = await account(),
@@ -1924,6 +2067,7 @@ describe('office join tickets', () => {
     const resetToken = await mailCode(member.email, 'reset-password');
     status(
       await resetBrowser.send('post', '/api/auth/reset-password', {
+        email: member.email,
         token: resetToken,
         newPassword,
       }),
@@ -2245,7 +2389,7 @@ describe('office socket admission', () => {
     const memberTicket = (await issueTicket(member, workspaceId)).ticket;
     const bystanderTicket = (await issueTicket(bystander, workspaceId)).ticket;
     const sockets = [ticket, memberTicket, bystanderTicket].map((ticket) =>
-      officeSocket({ ticket, protocolVersion: 1 }),
+      officeSocket({ ticket, protocolVersion: OFFICE_PROTOCOL_VERSION }),
     );
     const received: SpaceMessage[][] = [[], [], []];
     const base = `/api/workspaces/${workspaceId}/offices/${office._id}`;
@@ -4492,7 +4636,11 @@ describe('office socket admission', () => {
       );
       const token = await mailCode(owner.email, 'reset-password');
       status(
-        await resetBrowser.send('post', '/api/auth/reset-password', { token, newPassword }),
+        await resetBrowser.send('post', '/api/auth/reset-password', {
+          email: owner.email,
+          token,
+          newPassword,
+        }),
         200,
       );
       await expect(accessEnded).resolves.toMatchObject({ reason: 'authorization_ended' });
@@ -4835,7 +4983,11 @@ describe('credential concurrency and durable mail', () => {
       const pending = loginBrowser.send('post', '/api/auth/login', { email: user.email, password });
       await checked;
       status(
-        await resetBrowser.send('post', '/api/auth/reset-password', { token, newPassword }),
+        await resetBrowser.send('post', '/api/auth/reset-password', {
+          email: user.email,
+          token,
+          newPassword,
+        }),
         200,
       );
       release();
@@ -5264,7 +5416,14 @@ describe('additional session isolation', () => {
     await browser.bootstrap();
     status(await browser.send('post', '/api/auth/forgot-password', { email: user.email }), 202);
     const token = await mailCode(user.email, 'reset-password');
-    status(await browser.send('post', '/api/auth/reset-password', { token, newPassword }), 200);
+    status(
+      await browser.send('post', '/api/auth/reset-password', {
+        email: user.email,
+        token,
+        newPassword,
+      }),
+      200,
+    );
     status(
       await browser.send('post', '/api/auth/login', { email: user.email, password: newPassword }),
       401,

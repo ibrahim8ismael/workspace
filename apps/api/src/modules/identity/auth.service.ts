@@ -10,7 +10,7 @@ import type { ActorContext, BrowserContext } from './sessions/session.service.js
 import { DatabaseService } from '../../platform/database/database.service.js';
 import { OutboxService } from './delivery/outbox.service.js';
 import { AuditService } from '../audit/audit.service.js';
-import { digest, newSecret } from './security/secrets.js';
+import { digest, newOtp } from './security/secrets.js';
 import { fail, invariant } from '../../platform/http/errors.js';
 
 export const genericResponse = {
@@ -40,9 +40,19 @@ export class AuthService {
     tx: ClientSession,
   ) {
     const now = new Date();
-    const raw = newSecret();
+    let raw = newOtp();
+    let tokenDigest = digest(`${user._id}:${purpose}:${raw}`);
+    for (
+      let attempt = 0;
+      await this.models.tokens.exists({ tokenDigest }).session(tx);
+      attempt += 1
+    ) {
+      invariant(attempt < 8, 503, 'service_unavailable');
+      raw = newOtp();
+      tokenDigest = digest(`${user._id}:${purpose}:${raw}`);
+    }
     const expiresAt = new Date(
-      now.getTime() + (purpose === 'verify-email' ? 86400_000 : 15 * 60_000),
+      now.getTime() + (purpose === 'verify-email' ? 30 * 60_000 : 15 * 60_000),
     );
     await this.models.tokens.updateMany(
       { userId: user._id, purpose, consumedAt: null },
@@ -56,7 +66,7 @@ export class AuthService {
           _id: randomUUID(),
           userId: user._id,
           purpose,
-          tokenDigest: digest(raw),
+          tokenDigest,
           authVersion: user.authVersion,
           expiresAt,
           consumedAt: null,
@@ -129,7 +139,15 @@ export class AuthService {
           { session: tx, returnDocument: 'after' },
         )
         .lean();
-      if (user) await this.issue(user, purpose, tx);
+      if (user) {
+        const latest = await this.models.tokens
+          .findOne({ userId: user._id, purpose })
+          .sort({ createdAt: -1 })
+          .session(tx)
+          .lean();
+        if (!latest || Date.now() - latest.createdAt.getTime() >= 60_000)
+          await this.issue(user, purpose, tx);
+      }
     });
     return genericResponse;
   }
@@ -150,13 +168,23 @@ export class AuthService {
     );
     invariant(result.modifiedCount === 1, 401, 'credentials_changed');
   }
-  async verifyEmail(input: { token: string; password: string }, browser: BrowserContext) {
+  async verifyEmail(
+    input: { email: string; token: string; password: string },
+    browser: BrowserContext,
+  ) {
+    const userByEmail = await this.models.users.findOne({ normalizedEmail: input.email }).lean();
+    invariant(userByEmail, 400, 'invalid_token');
     const token = await this.models.tokens
       .findOne({
-        tokenDigest: digest(input.token),
+        userId: userByEmail._id,
         purpose: 'verify-email',
         consumedAt: null,
         expiresAt: { $gt: new Date() },
+        $or: [
+          { tokenDigest: digest(`${userByEmail._id}:verify-email:${input.token}`) },
+          // Existing 43-character codes remain usable until their original expiry.
+          ...(input.token.length === 43 ? [{ tokenDigest: digest(input.token) }] : []),
+        ],
       })
       .lean();
     invariant(token, 400, 'invalid_token');
@@ -235,17 +263,26 @@ export class AuthService {
     await this.outbox.expire(userId, 'verify-email', tx);
     await this.outbox.expire(userId, 'reset-password', tx);
   }
-  async resetPassword(input: { token: string; newPassword: string }, browser: BrowserContext) {
+  async resetPassword(
+    input: { email: string; token: string; newPassword: string },
+    browser: BrowserContext,
+  ) {
     const hash = await this.passwords.hash(input.newPassword);
+    const userByEmail = await this.models.users.findOne({ normalizedEmail: input.email }).lean();
+    invariant(userByEmail, 400, 'invalid_token');
     await this.db.transaction(async (tx) => {
       await this.sessions.lockBrowser(browser, tx);
       const token = await this.models.tokens
         .findOneAndUpdate(
           {
-            tokenDigest: digest(input.token),
+            userId: userByEmail._id,
             purpose: 'reset-password',
             consumedAt: null,
             expiresAt: { $gt: new Date() },
+            $or: [
+              { tokenDigest: digest(`${userByEmail._id}:reset-password:${input.token}`) },
+              ...(input.token.length === 43 ? [{ tokenDigest: digest(input.token) }] : []),
+            ],
           },
           { $set: { consumedAt: new Date() } },
           { session: tx, returnDocument: 'after' },

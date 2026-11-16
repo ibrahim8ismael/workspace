@@ -1,10 +1,19 @@
 import { describe, it, expect } from 'vitest';
 import { randomBytes } from 'node:crypto';
-import { registerSchema, createInvitationSchema } from '@gather/contracts';
+import {
+  acceptInvitationSchema,
+  registerSchema,
+  createInvitationSchema,
+  resetPasswordSchema,
+  verifyEmailSchema,
+} from '@gather/contracts';
 import { encryptMail, decryptMail, encryptionKey } from '@gather/delivery';
 import { PasswordService } from '../dist/modules/identity/security/password.service.js';
+import { retryInvitationTokenCollision } from '../dist/modules/tenancy/tenancy.service.js';
 import {
   newSecret,
+  newOtp,
+  newInvitationCode,
   digest,
   csrfToken,
   safeEqual,
@@ -35,12 +44,69 @@ describe('security primitives', () => {
     expect(safeEqual('same', 'same')).toBe(true);
     expect(safeEqual('a', 'long')).toBe(false);
   });
+  it('issues six-digit OTPs with leading zeroes preserved and scopes their digests by account and purpose', () => {
+    const codes = Array.from({ length: 500 }, newOtp);
+    expect(codes.every((code) => /^[0-9]{6}$/.test(code))).toBe(true);
+    expect(codes.some((code) => code.startsWith('0'))).toBe(true);
+    expect(digest(`account-a:verify-email:${codes[0]}`)).not.toBe(
+      digest(`account-b:verify-email:${codes[0]}`),
+    );
+    expect(digest(`account-a:verify-email:${codes[0]}`)).not.toBe(
+      digest(`account-a:reset-password:${codes[0]}`),
+    );
+    expect(
+      verifyEmailSchema.safeParse({ email: 'person@example.com', token: codes[0], password: 'x' })
+        .success,
+    ).toBe(true);
+    expect(
+      verifyEmailSchema.safeParse({ email: 'person@example.com', token: '12345', password: 'x' })
+        .success,
+    ).toBe(false);
+    expect(
+      resetPasswordSchema.safeParse({
+        email: 'person@example.com',
+        token: codes[0],
+        newPassword: 'a sufficiently long password',
+      }).success,
+    ).toBe(true);
+  });
+  it('creates normalized eight-character invitation codes and still accepts legacy codes during rollout', () => {
+    const code = newInvitationCode();
+    expect(code).toMatch(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$/);
+    expect(
+      acceptInvitationSchema.parse({
+        token: `  ${code.toLowerCase().slice(0, 4)} ${code.toLowerCase().slice(4)}  `,
+      }).token,
+    ).toBe(code);
+    expect(acceptInvitationSchema.parse({ token: newSecret() }).token).toHaveLength(43);
+  });
+  it('retries invitation token unique-index collisions as a complete transaction attempt', async () => {
+    let attempts = 0;
+    const committed: string[] = [];
+    const result = await retryInvitationTokenCollision(async () => {
+      attempts += 1;
+      if (attempts === 1) throw { code: 11000, keyPattern: { tokenDigest: 1 } };
+      committed.push('invitation-and-mail');
+      return 'created';
+    });
+    expect(result).toBe('created');
+    expect(attempts).toBe(2);
+    expect(committed).toEqual(['invitation-and-mail']);
+    let unrelatedAttempts = 0;
+    await expect(
+      retryInvitationTokenCollision(async () => {
+        unrelatedAttempts += 1;
+        throw { code: 11000, keyPattern: { slug: 1 } };
+      }),
+    ).rejects.toMatchObject({ code: 11000 });
+    expect(unrelatedAttempts).toBe(1);
+  });
   it('encrypts mail and rejects changed ciphertext or a different outbox identity', () => {
     const key = randomBytes(32);
     const value = {
       recipient: 'person@example.com',
       kind: 'verify-email' as const,
-      token: newSecret(),
+      token: newOtp(),
     };
     const encrypted = encryptMail('event-a', value, key);
     expect(JSON.stringify(encrypted).includes(value.token)).toBe(false);

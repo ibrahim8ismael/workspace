@@ -34,9 +34,31 @@ async function mockApi(page: Page, signedIn = false) {
       authenticated = true;
       return json({ account, csrfToken: 'B'.repeat(43) });
     }
+    if (
+      ['/api/auth/register', '/api/auth/forgot-password', '/api/auth/resend-verification'].includes(
+        pathname,
+      ) &&
+      method === 'POST'
+    )
+      return json({ message: 'If the request is eligible, instructions will be sent.' }, 202);
+    if (pathname === '/api/auth/verify-email' && method === 'POST') {
+      expect(route.request().postDataJSON()).toMatchObject({
+        email: account.email,
+      });
+      expect((route.request().postDataJSON() as { token: string }).token).toMatch(/^\d{6}$/);
+      return json({ message: 'Email verified. Sign in to continue.' });
+    }
     if (pathname === '/api/auth/reset-password' && method === 'POST') {
+      expect(route.request().postDataJSON()).toMatchObject({
+        email: account.email,
+      });
+      expect((route.request().postDataJSON() as { token: string }).token).toMatch(/^\d{6}$/);
       authenticated = false;
       return json({ message: 'Password changed. Sign in again.' });
+    }
+    if (pathname === '/api/invitations/accept' && method === 'POST') {
+      expect(route.request().postDataJSON()).toMatchObject({ token: 'ABCDEFGH' });
+      return json({ workspace: company });
     }
     if (pathname === '/api/auth/sessions')
       return json({
@@ -90,7 +112,7 @@ test('auth destinations have distinct URLs, support history and preserve token l
     await page.goto(path!);
     await expect(page.getByRole('heading', { name: heading!, exact: true })).toBeVisible();
   }
-  const code = 'Z'.repeat(43);
+  const code = '012345';
   await page.goto(`/auth/reset-password?token=${code}`);
   await expect(page).toHaveURL(`/reset-password?token=${code}`);
   await expect(page.getByLabel('Reset code', { exact: true })).toHaveValue(code);
@@ -98,6 +120,30 @@ test('auth destinations have distinct URLs, support history and preserve token l
   await expect(page.getByLabel('Reset code', { exact: true })).toHaveValue(code);
   await page.goto('/verify-email?code=' + code);
   await expect(page.getByLabel('Verification code', { exact: true })).toHaveValue(code);
+
+  await page.goto('/register');
+  await page.getByLabel('Name', { exact: true }).fill('Routing Person');
+  await page.getByLabel('Email', { exact: true }).fill(account.email);
+  await page.getByLabel('Password', { exact: true }).fill('a sufficiently long routing password');
+  await page.getByRole('button', { name: 'Create account', exact: true }).click();
+  await expect(page).toHaveURL(`/verify-email?email=${encodeURIComponent(account.email)}`);
+  await expect(page.getByLabel('Email', { exact: true })).toHaveValue(account.email);
+  await page.getByLabel('Verification code', { exact: true }).fill('000123');
+  await page
+    .getByLabel('Registration password', { exact: true })
+    .fill('a sufficiently long routing password');
+  await page.getByRole('button', { name: 'Verify email', exact: true }).click();
+  await expect(page).toHaveURL(`/login?email=${encodeURIComponent(account.email)}`);
+
+  await page.goto('/forgot-password');
+  await page.getByLabel('Email', { exact: true }).fill(account.email);
+  await page.getByRole('button', { name: 'Send reset code', exact: true }).click();
+  await expect(page).toHaveURL(`/reset-password?email=${encodeURIComponent(account.email)}`);
+  await expect(page.getByLabel('Email', { exact: true })).toHaveValue(account.email);
+  await page.getByLabel('Reset code', { exact: true }).fill('000123');
+  await page.getByLabel('New password', { exact: true }).fill('a new sufficiently long password');
+  await page.getByRole('button', { name: 'Reset password', exact: true }).click();
+  await expect(page).toHaveURL(`/login?email=${encodeURIComponent(account.email)}`);
 });
 test('protected links return to the intended company, survive refresh, and support Back/Forward', async ({
   page,
@@ -134,11 +180,22 @@ test('protected links return to the intended company, survive refresh, and suppo
   await page.goto('/companies/11111111-1111-4111-8111-111111111111');
   await expect(page.getByRole('alert')).toContainText('Company not found or access denied.');
 });
+
+test('company invitation entry normalizes a lowercase spaced code', async ({ page }) => {
+  await mockApi(page, true);
+  await page.goto('/companies');
+  await expect(page.getByRole('heading', { name: 'Your companies' })).toBeVisible();
+  await page.getByRole('button', { name: 'Join with invitation' }).first().click();
+  await page.getByLabel('Invitation code', { exact: true }).fill('abcd efgh');
+  await page.getByRole('button', { name: 'Join company', exact: true }).click();
+  await expect(page).toHaveURL('/companies');
+  await expect(page.getByRole('status')).toContainText('You joined Routing Company.');
+});
 test('invitation tokens survive login and unknown routes have a useful destination', async ({
   page,
 }) => {
   await mockApi(page);
-  const code = 'I'.repeat(43);
+  const code = 'ABCDEFGH';
   await page.goto('/invitations/accept?token=' + code);
   await expect(page).toHaveURL(/\/login\?returnTo=/);
   await login(page);
@@ -234,13 +291,21 @@ for (const signedIn of [true, false]) {
     page,
   }) => {
     await mockApi(page, signedIn);
-    const code = 'R'.repeat(43);
-    await page.goto('/reset-password?token=' + code + '&returnTo=%2Faccount%2Fsecurity');
+    const code = '012345';
+    await page.goto(
+      '/reset-password?token=' +
+        code +
+        '&email=' +
+        encodeURIComponent(account.email) +
+        '&returnTo=%2Faccount%2Fsecurity',
+    );
     await expect(page.getByRole('heading', { name: 'Choose a new password' })).toBeVisible();
     await page.getByLabel('New password', { exact: true }).fill('a newly changed routing password');
     await page.getByRole('button', { name: 'Reset password', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible();
-    await expect(page).toHaveURL('/login?returnTo=%2Faccount%2Fsecurity');
+    await expect(page).toHaveURL(
+      `/login?returnTo=%2Faccount%2Fsecurity&email=${encodeURIComponent(account.email)}`,
+    );
     await expect(page.getByRole('status')).toContainText('Your password has been reset.');
     await expect(page.getByText('Routing Company', { exact: true })).toHaveCount(0);
     await expect(page.getByRole('heading', { name: 'Account security', exact: true })).toHaveCount(
@@ -254,7 +319,7 @@ for (const dismissal of ['Close dialog', 'Cancel', 'Escape', 'backdrop']) {
     page,
   }) => {
     await mockApi(page, true);
-    await page.goto('/invitations/accept?token=' + 'I'.repeat(43));
+    await page.goto('/invitations/accept?token=ABCDEFGH');
     await expect(page.getByRole('dialog')).toBeVisible();
     if (dismissal === 'Escape') await page.keyboard.press('Escape');
     else if (dismissal === 'backdrop')

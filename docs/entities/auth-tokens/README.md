@@ -26,7 +26,7 @@ Source: [owning model](../../../apps/api/src/modules/identity/identity.models.ts
 - `consumedAt`
 - `createdAt`
 
-Supersession marks consumedAt rather than adding supersededAt. Worker emails contain codes/API instructions; browser token forms/routing and real delivery remain CP04 work.
+Supersession marks consumedAt rather than adding supersededAt. Worker emails contain one-time codes; browser verify/reset forms require the account email and code.
 
 ## Relationships
 
@@ -37,8 +37,10 @@ Supersession marks consumedAt rather than adding supersededAt. Worker emails con
 
 ## Invariants and lifecycle
 
-- Digest is unique; token purpose and expiry are checked explicitly.
-- Starting lifetimes: verification 24 hours, reset 15 minutes; resend supersedes older tokens.
+- Digest is unique and scoped with the account ID and purpose; token purpose and expiry are checked explicitly.
+- New verification codes have six numeric digits and expire after 30 minutes; reset codes have six numeric digits and expire after 15 minutes. Leading zeroes are significant.
+- Resend requests inside the 60-second cooldown retain the current code; later accepted resends supersede older tokens. Account and IP budgets limit guessing.
+- Previously issued 43-character tokens remain redeemable until their original expiry during rollout.
 - GET email links display forms; CSRF-protected POST performs redemption.
 - Verification also proves pending password knowledge; alternatively mailbox recovery replaces it before activation.
 - Recovery consumes token, replaces credentials and increments authVersion atomically; no automatic login.

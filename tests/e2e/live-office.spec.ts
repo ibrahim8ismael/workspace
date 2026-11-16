@@ -93,7 +93,7 @@ async function mailToken(email: string, subject: string, notBefore: number) {
         if (detailResponse.ok) {
           const detail = (await detailResponse.json()) as { Text?: string; HTML?: string };
           const code = `${detail.Text ?? ''}\n${detail.HTML ?? ''}`.match(
-            /One-time code:\s*([A-Za-z0-9_-]{43})/,
+            /One-time code:\s*([0-9]{6})/,
           );
           if (code?.[1]) return code[1];
         }
@@ -125,7 +125,7 @@ async function createAccount(email: string) {
   expect(register.status()).toBe(202);
   const verifyToken = await mailToken(email, 'Verify your email', registeredAt);
   const verified = await client.post('/api/auth/verify-email', {
-    data: { token: verifyToken, password },
+    data: { email, token: verifyToken, password },
     headers: { 'X-CSRF-Token': csrf },
   });
   expect(verified.status()).toBe(200);

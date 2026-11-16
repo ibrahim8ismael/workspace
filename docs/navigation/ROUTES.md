@@ -9,14 +9,14 @@ return destinations live in `apps/web/src/routing/routes.ts`.
 | Home | `/` redirects to `/login` or `/companies` after session resolution |
 | Sign in | `/login` |
 | Register | `/register` |
-| Verify email | `/verify-email?token=…` (`code` also accepted) |
+| Verify email | `/verify-email?token=…&email=…` (`code` also accepted; new codes are six digits) |
 | Resend verification | `/resend-verification` |
 | Request password reset | `/forgot-password` |
-| Reset password | `/reset-password?token=…` (`code` also accepted) |
+| Reset password | `/reset-password?token=…&email=…` (`code` also accepted; new codes are six digits) |
 | Company list | `/companies` |
 | Company overview | `/companies/:workspaceId` |
 | Account security | `/account/security` |
-| Accept invitation | `/invitations/accept?token=…` |
+| Accept invitation | `/invitations/accept?token=…` (new codes are eight uppercase unambiguous characters) |
 | Office entry | `/companies/:workspaceId/offices/:officeId/entry` |
 | Office map | `/companies/:workspaceId/offices/:officeId` |
 | Office chat | `/companies/:workspaceId/offices/:officeId/chat` |

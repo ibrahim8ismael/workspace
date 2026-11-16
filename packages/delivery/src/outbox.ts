@@ -7,10 +7,25 @@ export const mailPayloadSchema = z
   .object({
     recipient: z.email(),
     kind: z.enum(['verify-email', 'reset-password', 'invitation']),
-    token: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+    token: z
+      .string()
+      .regex(/^(?:[0-9]{6}|[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}|[A-Za-z0-9_-]{43})$/),
     companyName: z.string().max(80).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, ctx) => {
+    const validForKind =
+      value.kind === 'invitation'
+        ? /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$/.test(value.token) ||
+          /^[A-Za-z0-9_-]{43}$/.test(value.token)
+        : /^[0-9]{6}$/.test(value.token) || /^[A-Za-z0-9_-]{43}$/.test(value.token);
+    if (!validForKind)
+      ctx.addIssue({
+        code: 'custom',
+        path: ['token'],
+        message: 'Token format does not match mail kind',
+      });
+  });
 export type MailPayload = z.infer<typeof mailPayloadSchema>;
 export interface EncryptedPayload {
   iv: string;

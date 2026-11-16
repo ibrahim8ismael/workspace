@@ -25,6 +25,7 @@ export type Participant = {
   facing?: Facing;
   seatId?: string;
   status: Status;
+  speaking?: boolean;
   mic?: boolean;
   camera?: boolean;
   screen?: boolean;

@@ -123,6 +123,7 @@ export function CompanyOfficePreview({
   const [microphoneAttempt, setMicrophoneAttempt] = useState(0);
   const remoteAudioContainer = useRef<HTMLDivElement>(null);
   const mediaContextKey = useRef<string | null>(null);
+  const [speakingIds, setSpeakingIds] = useState<string[]>([]);
   const proximityAudio = useRef<ProximityAudioSession | null>(null);
   const proximityOptedIn = Boolean(
     connected && proximityOptIn?.participationId === participationId && proximityOptIn.enabled,
@@ -152,6 +153,8 @@ export function CompanyOfficePreview({
         setProximityAudioError(error ?? '');
       },
       (track, identity) => audioPlayback.attach(track, identity, remoteAudioContainer.current),
+      undefined,
+      setSpeakingIds,
     );
     proximityAudio.current = session;
     return () => {
@@ -505,6 +508,7 @@ export function CompanyOfficePreview({
   );
   const sceneParticipants: Participant[] = snapshot.participants.map((participant) => ({
     id: participant.participationId,
+    speaking: Boolean(activeVoiceContextKey) && speakingIds.includes(participant.participationId),
     name: participant.displayName,
     color: '#f6c08f',
     avatar: sceneAvatarForAppearance(participant.appearance),

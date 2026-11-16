@@ -25,7 +25,7 @@ export function useSpaceChat(
   workspaceId: string,
   officeId: string,
   selfId: string,
-  events: SpaceMessage[],
+  events: Record<string, SpaceMessage[]>,
   connected: boolean,
   onUnauthorized: (notice?: string) => void,
 ) {
@@ -34,6 +34,10 @@ export function useSpaceChat(
     id: 'general',
   });
   const key = spaceConversationKey(conversation);
+  const realtimeKey =
+    conversation.kind === 'channel'
+      ? `channel:${conversation.id}`
+      : `dm:${[selfId, conversation.userId].sort().join(':')}`;
   const [directoryError, setDirectoryError] = useState(false);
   const [users, setUsers] = useState<DirectoryUser[]>([]);
   const [states, setStates] = useState<Record<string, ChatState>>({});
@@ -103,7 +107,9 @@ export function useSpaceChat(
   const state = cached?.requestKey === requestKey ? cached : EMPTY;
   const messages: ChatMessage[] = mergeSpaceMessages(
     state.messages,
-    events.filter((message) => messageBelongsTo(message, conversation, selfId)),
+    (events[realtimeKey] ?? []).filter((message) =>
+      messageBelongsTo(message, conversation, selfId),
+    ),
   ).map((message) => ({
     id: message.id,
     participantId: message.senderId,

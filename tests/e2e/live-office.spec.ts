@@ -2236,3 +2236,116 @@ test('mounted Vivo entry microphone opens and closes capture and preserves the c
     for (const office of offices.reverse()) await office.context.close();
   }
 });
+
+test('mounted Vivo talking animation follows live speech, silence, mute and reduced motion on two clients', async ({
+  browser,
+}) => {
+  test.skip(!enabled || !mediaEnabled, 'Requires the OrbStack media-e2e stack.');
+  test.setTimeout(150_000);
+  const { owner, member, workspaceId } = await getLiveMediaOfficeFixture();
+  const offices: Awaited<ReturnType<typeof companyPage>>[] = [];
+  try {
+    for (const account of [owner, member]) {
+      const office = await companyPage(browser, account.client, workspaceId);
+      offices.push(office);
+      await office.page.evaluate(() => {
+        let context: AudioContext | undefined;
+        let gain: GainNode | undefined;
+        // A real Web Audio capture stream goes through normal LiveKit publication and SFU VAD.
+        // Only the microphone source is controlled; no speaker events are mocked.
+        Object.assign(window, {
+          __setTalkingSource: (audible: boolean) => {
+            if (gain && context) gain.gain.setValueAtTime(audible ? 0.35 : 0, context.currentTime);
+          },
+        });
+        navigator.mediaDevices.getUserMedia = async () => {
+          context = new AudioContext();
+          await context.resume();
+          const oscillator = context.createOscillator();
+          oscillator.frequency.value = 440;
+          gain = context.createGain();
+          gain.gain.value = 0;
+          const output = context.createMediaStreamDestination();
+          oscillator.connect(gain).connect(output);
+          oscillator.start();
+          return output.stream;
+        };
+      });
+      await office.page.getByRole('button', { name: 'Join', exact: true }).click();
+    }
+    for (const { page } of offices) {
+      await expect(page.getByText('2 people in the office')).toBeVisible();
+      await page.getByRole('button', { name: 'Activate proximity microphone' }).click();
+    }
+    for (const { page } of offices) {
+      await expect(page.locator('#office-microphone-help')).toHaveText('Your microphone is on.', {
+        timeout: 25_000,
+      });
+      await expect(page.locator('.office-proximity-audio-output audio')).toHaveCount(1);
+    }
+    const speaking = (page: Page, self: boolean) =>
+      page.locator(`.scene-avatar${self ? '.is-self' : ':not(.is-self)'}[data-speaking="true"]`);
+    const source = (page: Page, audible: boolean) =>
+      page.evaluate((value) => {
+        (window as unknown as { __setTalkingSource: (value: boolean) => void }).__setTalkingSource(
+          value,
+        );
+      }, audible);
+    const metrics: Record<string, number> = {};
+    for (let speaker = 0; speaker < offices.length; speaker++) {
+      const sender = offices[speaker]!.page;
+      const receiver = offices[1 - speaker]!.page;
+      for (const { page } of offices)
+        await expect(page.locator('[data-speaking="true"]')).toHaveCount(0);
+      let started = Date.now();
+      await source(sender, true);
+      await expect(speaking(sender, true)).toHaveCount(1, { timeout: 10_000 });
+      await expect(speaking(receiver, false)).toHaveCount(1, { timeout: 10_000 });
+      metrics[`client${speaker + 1}SpeechMs`] = Date.now() - started;
+      // Both views animate the same participant without animating the silent partner.
+      await expect(speaking(sender, false)).toHaveCount(0);
+      await expect(speaking(receiver, true)).toHaveCount(0);
+      expect(
+        await speaking(receiver, false)
+          .locator('.scene-speaking-bar')
+          .first()
+          .evaluate((el) => getComputedStyle(el).animationName),
+      ).toBe('scene-speaking-bars');
+      await receiver.screenshot({
+        path: test.info().outputPath(`client-${speaker + 1}-talking.png`),
+      });
+      started = Date.now();
+      await source(sender, false);
+      for (const { page } of offices)
+        await expect(page.locator('[data-speaking="true"]')).toHaveCount(0, { timeout: 10_000 });
+      metrics[`client${speaker + 1}SilenceMs`] = Date.now() - started;
+      await source(sender, true);
+      await expect(speaking(receiver, false)).toHaveCount(1, { timeout: 10_000 });
+      await receiver.emulateMedia({ reducedMotion: 'reduce' });
+      expect(
+        await speaking(receiver, false)
+          .locator('.scene-speaking-bar')
+          .first()
+          .evaluate((el) => getComputedStyle(el).animationName),
+      ).toBe('none');
+      await receiver.emulateMedia({ reducedMotion: 'no-preference' });
+      started = Date.now();
+      await sender.getByRole('button', { name: 'Mute proximity microphone', exact: true }).click();
+      for (const { page } of offices)
+        await expect(page.locator('[data-speaking="true"]')).toHaveCount(0, { timeout: 10_000 });
+      metrics[`client${speaker + 1}MuteMs`] = Date.now() - started;
+      await source(sender, false);
+      await sender
+        .getByRole('button', { name: 'Unmute proximity microphone', exact: true })
+        .click();
+      await expect(sender.locator('#office-microphone-help')).toHaveText('Your microphone is on.');
+    }
+    console.info(`Talking animation two-client measurements: ${JSON.stringify(metrics)}`);
+    await test.info().attach('talking-animation-measurements', {
+      body: JSON.stringify(metrics, null, 2),
+      contentType: 'application/json',
+    });
+  } finally {
+    for (const office of offices.reverse()) await office.context.close();
+  }
+});

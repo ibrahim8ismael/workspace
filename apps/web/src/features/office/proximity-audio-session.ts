@@ -14,6 +14,7 @@ export interface ProximityRoom {
   connect(serverUrl: string, token: string): Promise<void>;
   disconnect(): Promise<void>;
   setMicrophoneEnabled(enabled: boolean): Promise<void>;
+  onActiveSpeakersChanged?(listener: (identities: string[]) => void): () => void;
   onTrackSubscribed(
     listener: (track: ProximityRemoteAudioTrack, identity: string) => void,
   ): () => void;
@@ -84,6 +85,23 @@ export async function createLiveKitProximityRoom(
         await room.localParticipant.setMicrophoneEnabled(enabled);
       }
     },
+    onActiveSpeakersChanged: (listener) => {
+      const handler = (speakers: import('livekit-client').Participant[]) =>
+        listener(
+          speakers
+            .filter((speaker) => speaker.isMicrophoneEnabled)
+            .map((speaker) => speaker.identity),
+        );
+      const refresh = () => handler(room.activeSpeakers);
+      room.on(RoomEvent.ActiveSpeakersChanged, handler);
+      room.on(RoomEvent.TrackMuted, refresh);
+      room.on(RoomEvent.ParticipantDisconnected, refresh);
+      return () => {
+        room.off(RoomEvent.ActiveSpeakersChanged, handler);
+        room.off(RoomEvent.TrackMuted, refresh);
+        room.off(RoomEvent.ParticipantDisconnected, refresh);
+      };
+    },
     onTrackSubscribed: (listener) => {
       const handler = (
         track: import('livekit-client').RemoteTrack,
@@ -135,6 +153,7 @@ export class ProximityAudioSession {
     private readonly onState: StateListener,
     private readonly bindRemoteTrack: RemoteTrackBinder,
     private readonly createRoom: RoomFactory = createLiveKitProximityRoom,
+    private readonly onSpeakers: (identities: string[]) => void = () => {},
   ) {}
 
   async start(
@@ -222,6 +241,18 @@ export class ProximityAudioSession {
 
   private bindRoom(room: ProximityRoom, attempt: number) {
     this.listeners = [
+      ...(room.onActiveSpeakersChanged
+        ? [
+            room.onActiveSpeakersChanged((identities) => {
+              if (
+                this.room === room &&
+                attempt === this.generation &&
+                ['live', 'muted'].includes(this.status)
+              )
+                this.onSpeakers(identities);
+            }),
+          ]
+        : []),
       room.onTrackSubscribed((track, identity) => {
         if (this.room !== room || attempt !== this.generation || this.remoteTracks.has(track))
           return;
@@ -248,6 +279,7 @@ export class ProximityAudioSession {
   private async releaseRoom(room: ProximityRoom) {
     if (this.room !== room) return;
     this.room = null;
+    this.onSpeakers([]);
     for (const unsubscribe of this.listeners.splice(0)) unsubscribe();
     for (const track of this.remoteTracks.keys()) this.detachRemoteTrack(track);
     this.microphoneEnabled = false;
@@ -267,6 +299,7 @@ export class ProximityAudioSession {
   }
 
   private setState(status: ProximityAudioStatus, error?: string) {
+    if (!['live', 'muted'].includes(status)) this.onSpeakers([]);
     this.status = status;
     this.onState(status, error);
   }

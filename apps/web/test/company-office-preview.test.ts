@@ -143,7 +143,12 @@ describe('company office preview selection', () => {
     expect(html).not.toContain('Employee invitations');
     expect(html).toContain('Welcome to Example Company');
     expect(html).toContain('person@example.test');
-    expect(html).toContain('Your camera is off');
+    expect(html).not.toContain('Your camera is off');
+    expect(html).not.toContain('Camera preview');
+    expect(html).toContain('3');
+    expect(html).toContain('company');
+    expect(html).toContain('Microphone off');
+    expect(html).toContain('Turn microphone on');
     expect(html).toContain('Display name');
     expect(html).not.toContain('data-testid="openoffice-vivo-scene"');
     expect(html).not.toContain('Commons office');

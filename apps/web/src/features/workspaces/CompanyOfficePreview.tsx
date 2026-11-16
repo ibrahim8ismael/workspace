@@ -3,7 +3,6 @@ import {
   ArrowLeft,
   Bell,
   CalendarDays,
-  ChevronDown,
   Hash,
   LayoutGrid,
   Map as MapIcon,
@@ -11,7 +10,6 @@ import {
   MicOff,
   MessageCircle,
   Settings2,
-  VideoOff,
   UserPlus,
   Volume2,
 } from 'lucide-react';
@@ -24,6 +22,7 @@ import VivoScene from '../../../VivoScene';
 import type { Overrides } from '../../../../shared/office-objects.js';
 import ChatView from '../../../chat/ChatView';
 import type { ChatMessage, DirectoryUser, Participant } from '../../../types';
+import { EntryMicrophone } from '../office/entry-microphone';
 import { OfficeClient } from '../office/office-client';
 import { latestProximityConversation } from '../office/proximity-conversation';
 import {
@@ -96,6 +95,15 @@ export function CompanyOfficePreview({
   );
   const state = useSyncExternalStore(client.subscribe, client.getSnapshot, client.getSnapshot);
   const connected = state.status === 'connected';
+  const [entryMicrophone] = useState(() => new EntryMicrophone());
+  const entryAudio = useSyncExternalStore(
+    entryMicrophone.subscribe,
+    entryMicrophone.getSnapshot,
+    entryMicrophone.getSnapshot,
+  );
+  const joinWithMicrophone = useRef(false);
+  useEffect(() => () => entryMicrophone.stop(), [entryMicrophone]);
+
   const participationId = connected ? (state.ready?.participationId ?? null) : null;
   const latestConversation = latestProximityConversation(
     state.conversationUpdates,
@@ -236,6 +244,32 @@ export function CompanyOfficePreview({
     return () => controller.abort();
   }, [api, connected, detail.id, detail.officeId]);
 
+  useEffect(() => {
+    if (!participationId || !joinWithMicrophone.current) return;
+    joinWithMicrophone.current = false;
+    let current = true;
+    setProximityPending(true);
+    void client
+      .setProximityOptIn(true)
+      .then(() => {
+        if (!current) return;
+        setProximityOptIn({ participationId, enabled: true });
+        setMicrophoneIntent(participationId);
+      })
+      .catch(() => {
+        if (current)
+          setProximityAudioError(
+            'Could not enable nearby voice. Use the microphone button to retry.',
+          );
+      })
+      .finally(() => {
+        if (current) setProximityPending(false);
+      });
+    return () => {
+      current = false;
+    };
+  }, [client, participationId]);
+
   async function runOfficeAction(action: () => Promise<void>) {
     setOfficeActionError('');
     setOfficeActionPending(true);
@@ -361,42 +395,25 @@ export function CompanyOfficePreview({
         </header>
 
         <section className="office-prejoin-content" aria-label="Join the office">
-          <div className="office-prejoin-camera" aria-label="Camera preview">
-            <p>Your camera is off</p>
-            <div className="office-prejoin-device-controls" aria-label="Media controls">
-              <button
-                type="button"
-                aria-label="Microphone unavailable in this release"
-                title="Microphone unavailable in this release"
-                disabled
-              >
-                <MicOff size={17} />
-                <ChevronDown size={12} />
-              </button>
-              <button
-                type="button"
-                aria-label="Camera unavailable in this release"
-                title="Camera unavailable in this release"
-                disabled
-              >
-                <VideoOff size={17} />
-                <ChevronDown size={12} />
-              </button>
-            </div>
-          </div>
-
           <div className="office-prejoin-form-wrap">
             <h1 id="company-office-preview-title" ref={titleRef} tabIndex={-1}>
               Welcome to {detail.name}
             </h1>
+            <p className="office-prejoin-summary">
+              {detail.memberCount} company {detail.memberCount === 1 ? 'member' : 'members'} ·{' '}
+              {detail.role === 'owner' ? 'Owner' : 'Member'}
+            </p>
             <form
               id="join-office-form"
               className="office-prejoin-form"
               onSubmit={(event) => {
                 event.preventDefault();
+                joinWithMicrophone.current = entryMicrophone.getSnapshot().status === 'on';
+                entryMicrophone.stop();
                 void client.connect();
               }}
             >
+              <label htmlFor="office-display-name">Joining as</label>
               <input
                 id="office-display-name"
                 type="text"
@@ -406,6 +423,41 @@ export function CompanyOfficePreview({
                 aria-readonly="true"
                 autoComplete="name"
               />
+              <div className="office-entry-audio">
+                <button
+                  type="button"
+                  className="office-entry-microphone"
+                  aria-pressed={entryAudio.status === 'on'}
+                  aria-label={
+                    entryAudio.status === 'on'
+                      ? 'Turn microphone off'
+                      : entryAudio.status === 'requesting'
+                        ? 'Cancel microphone access'
+                        : 'Turn microphone on'
+                  }
+                  disabled={state.status === 'connecting' || !proximityVoiceEnabled}
+                  onClick={() => void entryMicrophone.toggle()}
+                >
+                  {entryAudio.status === 'on' ? <Mic size={20} /> : <MicOff size={20} />}
+                  {entryAudio.status === 'on'
+                    ? 'Microphone on'
+                    : entryAudio.status === 'requesting'
+                      ? 'Requesting access…'
+                      : 'Microphone off'}
+                </button>
+                <p role="status" aria-live="polite">
+                  {!proximityVoiceEnabled
+                    ? 'Nearby voice is unavailable in this deployment.'
+                    : entryAudio.status === 'on'
+                      ? 'Ready for nearby voice. No audio is sent until you join a conversation.'
+                      : 'You can join with your microphone off and turn it on inside the office.'}
+                </p>
+                {entryAudio.message && (
+                  <p role="alert" className="office-prejoin-error">
+                    {entryAudio.message}
+                  </p>
+                )}
+              </div>
               {state.message && state.status !== 'connecting' && (
                 <p className="office-prejoin-error" role="alert">
                   {state.message}
@@ -416,7 +468,11 @@ export function CompanyOfficePreview({
                   Connecting to the office…
                 </p>
               )}
-              <button className="primary" type="submit" disabled={state.status === 'connecting'}>
+              <button
+                className="primary"
+                type="submit"
+                disabled={state.status === 'connecting' || entryAudio.status === 'requesting'}
+              >
                 {state.status === 'connecting' ? 'Joining…' : 'Join'}
               </button>
             </form>

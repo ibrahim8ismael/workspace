@@ -49,9 +49,13 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
 }) => {
   // This test mocks signaling; supply a silent synthetic capture track without device access.
   await page.addInitScript(() => {
+    const captures: MediaStream[] = [];
+    Object.assign(window, { __entryCaptures: captures });
     navigator.mediaDevices.getUserMedia = async () => {
       const context = new AudioContext();
-      return context.createMediaStreamDestination().stream;
+      const stream = context.createMediaStreamDestination().stream;
+      captures.push(stream);
+      return stream;
     };
   });
   let authenticated = false;
@@ -471,7 +475,24 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await expect(page.getByRole('heading', { name: 'Employee invitations' })).toHaveCount(0);
   await expect(page.getByText('SIGN-IN STATUS', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Welcome to E2E Company' })).toBeVisible();
-  await expect(page.getByText('Your camera is off')).toBeVisible();
+  await expect(page.getByText('Your camera is off')).toHaveCount(0);
+  await expect(page.locator('.office-prejoin-camera')).toHaveCount(0);
+  const entryMicrophone = page.getByRole('button', { name: 'Turn microphone on', exact: true });
+  await expect(entryMicrophone).toHaveAttribute('aria-pressed', 'false');
+  await entryMicrophone.click();
+  await expect(
+    page.getByRole('button', { name: 'Turn microphone off', exact: true }),
+  ).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'Turn microphone off', exact: true }).click();
+  await expect(entryMicrophone).toHaveAttribute('aria-pressed', 'false');
+  expect(
+    await page.evaluate(() =>
+      (window as unknown as { __entryCaptures: MediaStream[] }).__entryCaptures.every((stream) =>
+        stream.getTracks().every((track) => track.readyState === 'ended'),
+      ),
+    ),
+  ).toBe(true);
+  await page.screenshot({ path: test.info().outputPath('office-entry.png') });
   await expect(page.getByRole('textbox', { name: 'Display name' })).toHaveValue('E2E Person');
   await expect(page.getByRole('button', { name: 'Join' })).toBeVisible();
   await expect(page.locator('.office-scene, .office-map-heading')).toHaveCount(0);
@@ -672,8 +693,41 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await expect(page.locator('.office-scene .office-map')).toHaveCount(0);
   await expect.poll(() => officeEvents.filter((event) => event === 'disconnect').length).toBe(3);
 
+  // An explicit microphone choice at entry carries into nearby voice after admission.
+  holdPair = true;
+  await page.getByRole('button', { name: 'Turn microphone on', exact: true }).click();
+  await expect(
+    page.getByRole('button', { name: 'Turn microphone off', exact: true }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Join', exact: true }).click();
+  await expect(
+    page.getByRole('button', { name: 'Mute proximity microphone', exact: true }),
+  ).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#office-microphone-help')).toContainText(
+    'waiting for a nearby coworker',
+  );
+  expect(
+    await page.evaluate(() =>
+      (window as unknown as { __entryCaptures: MediaStream[] }).__entryCaptures.every((stream) =>
+        stream.getTracks().every((track) => track.readyState === 'ended'),
+      ),
+    ),
+  ).toBe(true);
+  await page.getByRole('button', { name: 'Leave office' }).click();
+  // Leaving the entry screen also releases a microphone that was explicitly opened there.
+  await page.getByRole('button', { name: 'Turn microphone on', exact: true }).click();
+  await expect(
+    page.getByRole('button', { name: 'Turn microphone off', exact: true }),
+  ).toBeVisible();
   await page.getByRole('button', { name: 'Back to companies' }).click();
   await expect(page.getByRole('heading', { name: 'Your companies' })).toBeVisible();
+  expect(
+    await page.evaluate(() =>
+      (window as unknown as { __entryCaptures: MediaStream[] }).__entryCaptures.every((stream) =>
+        stream.getTracks().every((track) => track.readyState === 'ended'),
+      ),
+    ),
+  ).toBe(true);
   await expect(page.locator('.office-scene .office-map')).toHaveCount(0);
   expect(unexpectedApiCalls).toEqual([]);
   expect(officeEvents).toContain('connect');

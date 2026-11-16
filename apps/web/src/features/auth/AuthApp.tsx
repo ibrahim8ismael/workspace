@@ -52,6 +52,10 @@ function Field({
   minLength,
   maxLength,
   defaultValue,
+  inputMode,
+  pattern,
+  placeholder,
+  onChange,
 }: {
   label: string;
   name: string;
@@ -61,12 +65,15 @@ function Field({
   minLength?: number;
   maxLength?: number;
   defaultValue?: string;
+  inputMode?: 'numeric' | 'text';
+  pattern?: string;
+  placeholder?: string;
+  onChange?: (value: string) => void;
 }) {
   return (
     <label>
       <span>{label}</span>
       <input
-        defaultValue={defaultValue}
         name={name}
         type={type}
         spellCheck={type === 'email' || name === 'token' ? false : undefined}
@@ -74,6 +81,11 @@ function Field({
         required={required}
         minLength={minLength}
         maxLength={maxLength}
+        defaultValue={defaultValue}
+        inputMode={inputMode}
+        pattern={pattern}
+        placeholder={placeholder}
+        onChange={onChange ? (event) => onChange(event.target.value) : undefined}
       />
     </label>
   );
@@ -100,8 +112,14 @@ function AuthFlow({
   const view = route.kind === 'auth' ? route.view : 'login';
   const query = new URLSearchParams(location.search);
   const returnTo = query.get('returnTo');
-  const pathFor = (next: AuthView) =>
-    authPaths[next] + (returnTo ? `?returnTo=${encodeURIComponent(safeReturnTo(returnTo))}` : '');
+  const pathFor = (next: AuthView, email = address) => {
+    const params = new URLSearchParams();
+    if (returnTo) params.set('returnTo', safeReturnTo(returnTo));
+    if (email) params.set('email', email);
+    const queryString = params.toString();
+    return authPaths[next] + (queryString ? `?${queryString}` : '');
+  };
+  const [address, setAddress] = useState(query.get('email') ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState(
@@ -120,9 +138,9 @@ function AuthFlow({
     [],
   );
 
-  function move(next: AuthView, message = '') {
+  function move(next: AuthView, message = '', email = address) {
     generation.current += 1;
-    navigate(pathFor(next), { state: { notice: message } });
+    navigate(pathFor(next, email), { state: { notice: message } });
     setBusy(false);
     setError('');
     setNotice(message);
@@ -167,7 +185,14 @@ function AuthFlow({
           })
         }
       >
-        <Field label="Email" name="email" type="email" autoComplete="email" />
+        <Field
+          label="Email"
+          name="email"
+          type="email"
+          autoComplete="email"
+          defaultValue={address}
+          onChange={setAddress}
+        />
         <Field label="Password" name="password" type="password" autoComplete="current-password" />
         <button className="primary enter-button" disabled={busy} type="submit">
           {busy ? 'Signing in…' : 'Sign in'}
@@ -187,15 +212,25 @@ function AuthFlow({
               password: values.get('password'),
             });
             if (!isCurrent()) return;
+            const email = String(values.get('email') ?? '');
+            setAddress(email);
             move(
               'verify',
               'If the address can be registered, instructions will be sent. Enter your verification code to continue.',
+              email,
             );
           })
         }
       >
         <Field label="Name" name="displayName" autoComplete="name" minLength={2} maxLength={80} />
-        <Field label="Email" name="email" type="email" autoComplete="email" />
+        <Field
+          label="Email"
+          name="email"
+          type="email"
+          autoComplete="email"
+          defaultValue={address}
+          onChange={setAddress}
+        />
         <Field
           label="Password"
           name="password"
@@ -216,19 +251,34 @@ function AuthFlow({
       <form
         onSubmit={(event) =>
           void submit(event, async (values, isCurrent) => {
-            await api.verify({ token: values.get('token'), password: values.get('password') });
+            await api.verify({
+              email: String(values.get('email') ?? ''),
+              token: values.get('token'),
+              password: values.get('password'),
+            });
             if (!isCurrent()) return;
             move('login', 'Your account is verified. Sign in to continue.');
           })
         }
       >
         <Field
+          label="Email"
+          name="email"
+          type="email"
+          autoComplete="email"
+          defaultValue={address}
+          onChange={setAddress}
+        />
+        <Field
           label="Verification code"
           name="token"
           defaultValue={query.get('token') ?? query.get('code') ?? ''}
           autoComplete="one-time-code"
-          minLength={43}
+          placeholder="6-digit code"
+          pattern="(?:[0-9]{6}|[A-Za-z0-9_-]{43})"
+          minLength={6}
           maxLength={43}
+          inputMode="numeric"
         />
         <Field
           label="Registration password"
@@ -254,7 +304,14 @@ function AuthFlow({
           })
         }
       >
-        <Field label="Email" name="email" type="email" autoComplete="email" />
+        <Field
+          label="Email"
+          name="email"
+          type="email"
+          autoComplete="email"
+          defaultValue={address}
+          onChange={setAddress}
+        />
         <button className="primary enter-button" disabled={busy} type="submit">
           {busy ? 'Sending…' : 'Resend code'}
         </button>
@@ -267,13 +324,22 @@ function AuthFlow({
       <form
         onSubmit={(event) =>
           void submit(event, async (values, isCurrent) => {
-            await api.forgotPassword({ email: values.get('email') });
+            const email = String(values.get('email') ?? '');
+            await api.forgotPassword({ email });
             if (!isCurrent()) return;
-            move('reset', 'If the address has an account, reset instructions will be sent.');
+            setAddress(email);
+            move('reset', 'If the address has an account, reset instructions will be sent.', email);
           })
         }
       >
-        <Field label="Email" name="email" type="email" autoComplete="email" />
+        <Field
+          label="Email"
+          name="email"
+          type="email"
+          autoComplete="email"
+          defaultValue={address}
+          onChange={setAddress}
+        />
         <button className="primary enter-button" disabled={busy} type="submit">
           {busy ? 'Sending…' : 'Send reset code'}
         </button>
@@ -287,6 +353,7 @@ function AuthFlow({
         onSubmit={(event) =>
           void submit(event, async (values, isCurrent) => {
             await api.resetPassword({
+              email: String(values.get('email') ?? ''),
               token: values.get('token'),
               newPassword: values.get('newPassword'),
             });
@@ -298,12 +365,23 @@ function AuthFlow({
         }
       >
         <Field
+          label="Email"
+          name="email"
+          type="email"
+          autoComplete="email"
+          defaultValue={address}
+          onChange={setAddress}
+        />
+        <Field
           label="Reset code"
           name="token"
           defaultValue={query.get('token') ?? query.get('code') ?? ''}
           autoComplete="one-time-code"
-          minLength={43}
+          placeholder="6-digit code"
+          pattern="(?:[0-9]{6}|[A-Za-z0-9_-]{43})"
+          minLength={6}
           maxLength={43}
+          inputMode="numeric"
         />
         <Field
           label="New password"

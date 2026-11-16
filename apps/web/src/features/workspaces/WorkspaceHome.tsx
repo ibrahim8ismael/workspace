@@ -518,9 +518,11 @@ export function WorkspaceHome({
                     <input
                       autoFocus
                       autoComplete="one-time-code"
+                      placeholder="8-character code"
                       maxLength={43}
-                      minLength={43}
+                      minLength={8}
                       name="token"
+                      inputMode="text"
                       spellCheck={false}
                       disabled={mutating}
                       onChange={(event) => {

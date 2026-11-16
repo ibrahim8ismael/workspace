@@ -11,7 +11,7 @@ import type { ActorContext } from '../identity/sessions/session.service.js';
 import { OutboxService } from '../identity/delivery/outbox.service.js';
 import { DatabaseService } from '../../platform/database/database.service.js';
 import { AuditService } from '../audit/audit.service.js';
-import { digest, newSecret } from '../identity/security/secrets.js';
+import { digest, newInvitationCode } from '../identity/security/secrets.js';
 import { invariant } from '../../platform/http/errors.js';
 import { APPROVED_OFFICE_MAP_VERSION } from '../office/office-map-registry.js';
 
@@ -23,6 +23,25 @@ function dto(workspace: WorkspaceRecord, role: MembershipRecord['role']): Worksp
     role,
     memberCount: workspace.memberCount,
   };
+}
+export async function retryInvitationTokenCollision<T>(work: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try {
+      return await work();
+    } catch (error) {
+      const collision =
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        error.code === 11000 &&
+        'keyPattern' in error &&
+        typeof error.keyPattern === 'object' &&
+        error.keyPattern !== null &&
+        'tokenDigest' in error.keyPattern;
+      if (!collision || attempt === 3) throw error;
+    }
+  }
+  invariant(false, 503, 'service_unavailable');
 }
 @Injectable()
 export class TenancyService {
@@ -224,6 +243,9 @@ export class TenancyService {
     });
   }
   async invite(context: ActorContext, id: string, email: string, key: string) {
+    return retryInvitationTokenCollision(() => this.inviteOnce(context, id, email, key));
+  }
+  private async inviteOnce(context: ActorContext, id: string, email: string, key: string) {
     return this.db.transaction(async (tx) => {
       await this.lockAccess(context, id, tx, true);
       return this.operation(context, `invitation.create:${id}`, key, { email }, tx, async () => {
@@ -259,7 +281,17 @@ export class TenancyService {
         }
         const workspace = await this.models.workspaces.findById(id).session(tx).lean();
         invariant(workspace, 403, 'workspace_unavailable');
-        const raw = newSecret();
+        let raw = newInvitationCode();
+        let tokenDigest = digest(`${email}:${raw}`);
+        for (
+          let attempt = 0;
+          await this.models.invitations.exists({ tokenDigest, email }).session(tx);
+          attempt += 1
+        ) {
+          invariant(attempt < 8, 503, 'service_unavailable');
+          raw = newInvitationCode();
+          tokenDigest = digest(`${email}:${raw}`);
+        }
         const expiresAt = new Date(Date.now() + 7 * 86400_000);
         const invitationId = randomUUID();
         await this.models.invitations.create(
@@ -268,7 +300,7 @@ export class TenancyService {
               _id: invitationId,
               workspaceId: id,
               email,
-              tokenDigest: digest(raw),
+              tokenDigest,
               createdBy: context.user._id,
               expiresAt,
               consumedAt: null,
@@ -350,7 +382,10 @@ export class TenancyService {
         async () => {
           const invitation = await this.models.invitations
             .findOne({
-              tokenDigest: digest(token),
+              $or: [
+                { tokenDigest: digest(`${context.user.normalizedEmail}:${token}`) },
+                { tokenDigest: digest(token) },
+              ],
               email: context.user.normalizedEmail,
               revokedAt: null,
               expiresAt: { $gt: new Date() },

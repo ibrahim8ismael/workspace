@@ -28,20 +28,21 @@ export function mailContent(payload: MailPayload, expiresAt: Date) {
       : payload.kind === 'reset-password'
         ? 'Reset your password'
         : 'Join a company';
-  const endpoint =
-    payload.kind === 'verify-email'
-      ? '/api/auth/verify-email'
-      : payload.kind === 'reset-password'
-        ? '/api/auth/reset-password'
-        : '/api/invitations/accept';
+  const codeLabel =
+    payload.token.length === 43
+      ? 'existing long code'
+      : payload.kind === 'invitation'
+        ? '8-character company invitation code'
+        : '6-digit one-time code';
   return {
     subject: `Gather Lite: ${action}`,
     text: [
       action,
       payload.companyName ? `Company: ${payload.companyName}` : '',
       `One-time code: ${payload.token}`,
+      `This is your ${codeLabel.toLowerCase()}.`,
       `Expires: ${expiresAt.toISOString()}`,
-      `Submit the code to ${endpoint} using the documented backend API.`,
+      `Enter the code in the Gather Lite app to ${action.toLowerCase()}.`,
       `If you did not request this, ignore the message.`,
     ]
       .filter(Boolean)

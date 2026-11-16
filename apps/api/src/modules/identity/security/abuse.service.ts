@@ -26,8 +26,8 @@ export class AbuseService {
       await this.consume(
         `auth-account:${kind}`,
         email,
-        kind === 'login' ? 5 : 3,
-        kind === 'login' ? 15 * 60_000 : 60 * 60_000,
+        kind === 'login' ? 5 : kind === 'verify' || kind === 'reset' ? 10 : 3,
+        kind === 'login' || kind === 'verify' || kind === 'reset' ? 15 * 60_000 : 60 * 60_000,
       );
   }
 }

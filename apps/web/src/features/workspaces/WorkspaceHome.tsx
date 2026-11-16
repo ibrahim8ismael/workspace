@@ -426,7 +426,7 @@ export function WorkspaceHome({
               type="button"
               aria-label="Close dialog"
               disabled={creating || accepting || mutationPending}
-              onClick={() => setDialog(null)}
+              onClick={closeDialog}
             >
               <X size={17} />
             </button>
@@ -488,7 +488,7 @@ export function WorkspaceHome({
                       className="dashboard-secondary"
                       type="button"
                       disabled={creating || mutationPending}
-                      onClick={() => setDialog(null)}
+                      onClick={closeDialog}
                     >
                       Cancel
                     </button>
@@ -541,7 +541,7 @@ export function WorkspaceHome({
                       className="dashboard-secondary"
                       type="button"
                       disabled={accepting || mutationPending}
-                      onClick={() => setDialog(null)}
+                      onClick={closeDialog}
                     >
                       Cancel
                     </button>

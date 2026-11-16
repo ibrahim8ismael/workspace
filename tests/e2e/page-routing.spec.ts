@@ -34,6 +34,10 @@ async function mockApi(page: Page, signedIn = false) {
       authenticated = true;
       return json({ account, csrfToken: 'B'.repeat(43) });
     }
+    if (pathname === '/api/auth/reset-password' && method === 'POST') {
+      authenticated = false;
+      return json({ message: 'Password changed. Sign in again.' });
+    }
     if (pathname === '/api/auth/sessions')
       return json({
         sessions: [
@@ -224,3 +228,43 @@ test('office invitation URLs reject members and mismatched company responses sta
   await expect(page.getByRole('heading', { name: 'Could not open company' })).toBeVisible();
   await expect(page.getByText('Other Company Secret')).toHaveCount(0);
 });
+
+for (const signedIn of [true, false]) {
+  test(`password reset returns to sign in when previously ${signedIn ? 'signed in' : 'signed out'}`, async ({
+    page,
+  }) => {
+    await mockApi(page, signedIn);
+    const code = 'R'.repeat(43);
+    await page.goto('/reset-password?token=' + code + '&returnTo=%2Faccount%2Fsecurity');
+    await expect(page.getByRole('heading', { name: 'Choose a new password' })).toBeVisible();
+    await page.getByLabel('New password', { exact: true }).fill('a newly changed routing password');
+    await page.getByRole('button', { name: 'Reset password', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible();
+    await expect(page).toHaveURL('/login?returnTo=%2Faccount%2Fsecurity');
+    await expect(page.getByRole('status')).toContainText('Your password has been reset.');
+    await expect(page.getByText('Routing Company', { exact: true })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Account security', exact: true })).toHaveCount(
+      0,
+    );
+  });
+}
+
+for (const dismissal of ['Close dialog', 'Cancel', 'Escape', 'backdrop']) {
+  test(`invitation dismissal via ${dismissal} leaves the invitation URL and stays closed on refresh`, async ({
+    page,
+  }) => {
+    await mockApi(page, true);
+    await page.goto('/invitations/accept?token=' + 'I'.repeat(43));
+    await expect(page.getByRole('dialog')).toBeVisible();
+    if (dismissal === 'Escape') await page.keyboard.press('Escape');
+    else if (dismissal === 'backdrop')
+      await page.locator('.dashboard-backdrop').click({ position: { x: 4, y: 4 } });
+    else await page.getByRole('button', { name: dismissal, exact: true }).click();
+    await expect(page).toHaveURL('/companies');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Your companies', exact: true })).toBeVisible();
+    await expect(page).toHaveURL('/companies');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+  });
+}

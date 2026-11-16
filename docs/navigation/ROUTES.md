@@ -82,3 +82,15 @@ handling remains separate. Unknown frontend paths render an application 404 page
 
 Local verification layered compiled frontend output and the Caddy config onto the
 existing local runtime image. It was not a clean Dockerfile build or a production deployment.
+
+## Review regression coverage — 2026-11-16
+
+Successful password reset now clears the parent account, company cache and session
+state before moving to sign-in. Browser tests cover reset from both authenticated
+and signed-out states, including preservation of the intended post-login destination.
+All invitation dismissal controls use the same close handler; tests cover Close,
+Cancel, Escape and backdrop clicks, with refresh verifying the invitation stays closed.
+
+The signed-in reset, Close and Cancel cases were reproduced as failing tests before
+applying the fixes. Afterwards all 13 standard browser cases passed (10 opt-in live
+cases skipped), as did 57 web tests, formatting, lint and web TypeScript checks.

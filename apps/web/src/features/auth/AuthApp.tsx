@@ -82,12 +82,14 @@ function Field({
 function AuthFlow({
   api,
   onLogin,
+  onPasswordReset,
   initialNotice,
   initialRetry,
   onRetry,
 }: {
   api: ApiClient;
   onLogin: (account: AccountDto) => Promise<void>;
+  onPasswordReset: (notice: string) => void;
   initialNotice: string;
   initialRetry: boolean;
   onRetry: () => void;
@@ -289,7 +291,9 @@ function AuthFlow({
               newPassword: values.get('newPassword'),
             });
             if (!isCurrent()) return;
-            move('login', 'Your password has been reset. Sign in with the new password.');
+            const message = 'Your password has been reset. Sign in with the new password.';
+            onPasswordReset(message);
+            move('login', message);
           })
         }
       >
@@ -726,6 +730,7 @@ function RoutedApp() {
         key={location.pathname + location.search}
         api={api}
         onLogin={signedIn}
+        onPasswordReset={signedOut}
         initialNotice={status}
         initialRetry={canRetryBoot}
         onRetry={retryBoot}

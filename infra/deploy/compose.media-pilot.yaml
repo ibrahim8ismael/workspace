@@ -1,0 +1,168 @@
+# Same-origin proximity voice for the Gather Lite pilot. The only public
+# signaling path is Nginx -> Caddy -> media guard; LiveKit's API port stays private.
+services:
+  api:
+    environment:
+      LIVEKIT_URL: ${LIVEKIT_URL:?set LIVEKIT_URL in infra/deploy/.env}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:?set LIVEKIT_API_KEY in infra/deploy/.env}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?set LIVEKIT_API_SECRET in infra/deploy/.env}
+      MEDIA_MACHINE_KEY: ${MEDIA_MACHINE_KEY:?set MEDIA_MACHINE_KEY in infra/deploy/.env}
+    networks:
+      - edge
+      - data
+      - media-control
+
+  caddy:
+    build:
+      args:
+        VITE_PROXIMITY_VOICE_ENABLED: 'true'
+        CADDYFILE: infra/deploy/Caddyfile
+    depends_on:
+      api:
+        condition: service_healthy
+      media-guard:
+        condition: service_healthy
+
+  media-state-init:
+    image: node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d
+    profiles: [media-pilot]
+    user: '0:0'
+    entrypoint: [node, --input-type=module, -e]
+    command:
+      - >-
+        import { chownSync, mkdirSync } from 'node:fs';
+        for (const path of ['/retirements', '/lease']) {
+          mkdirSync(path, { recursive: true, mode: 0o700 });
+          chownSync(path, 1000, 1000);
+        }
+    volumes:
+      - media-retirements:/retirements
+      - media-lease:/lease
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN]
+    security_opt: [no-new-privileges:true]
+    restart: 'no'
+
+  media-livekit:
+    image: livekit/livekit-server:v1.13.11@sha256:25cd902de7cacbd5f1f779f6a6ac1eae20ba8f56b0935934ce6b0ab80d1e3d20
+    profiles: [media-pilot]
+    entrypoint: [/bin/sh, /sfu-lease.sh]
+    environment:
+      CP07_SFU_EPOCH: ${MEDIA_SFU_EPOCH:?set MEDIA_SFU_EPOCH in infra/deploy/.env}
+      LIVEKIT_CONFIG: |-
+        port: 7880
+        log_level: info
+        bind_addresses: [0.0.0.0]
+        rtc:
+          tcp_port: 17881
+          udp_port: 17882-17889
+          node_ip: ${MEDIA_PUBLIC_IP:?set MEDIA_PUBLIC_IP in infra/deploy/.env}
+          use_external_ip: false
+        turn:
+          enabled: true
+          domain: ${APP_DOMAIN:?set APP_DOMAIN in infra/deploy/.env}
+          udp_port: 17890
+          relay_range_start: 17891
+          relay_range_end: 17954
+        keys:
+          "${LIVEKIT_API_KEY:?set LIVEKIT_API_KEY in infra/deploy/.env}": "${LIVEKIT_API_SECRET:?set LIVEKIT_API_SECRET in infra/deploy/.env}"
+        webhook:
+          api_key: "${LIVEKIT_API_KEY:?set LIVEKIT_API_KEY in infra/deploy/.env}"
+          urls:
+            - http://api:3000/api/internal/media/livekit/webhook
+    depends_on:
+      media-state-init:
+        condition: service_completed_successfully
+    expose: ['7880']
+    ports:
+      - ${MEDIA_PUBLIC_IP:?set MEDIA_PUBLIC_IP in infra/deploy/.env}:17881:17881/tcp
+      - ${MEDIA_PUBLIC_IP:?set MEDIA_PUBLIC_IP in infra/deploy/.env}:17882-17889:17882-17889/udp
+      - ${MEDIA_PUBLIC_IP:?set MEDIA_PUBLIC_IP in infra/deploy/.env}:17890:17890/udp
+      - ${MEDIA_PUBLIC_IP:?set MEDIA_PUBLIC_IP in infra/deploy/.env}:17891-17954:17891-17954/udp
+    volumes:
+      - ../../spikes/media-enforcement/sfu-lease.sh:/sfu-lease.sh:ro
+      - media-lease:/lease:ro
+    networks:
+      media-control:
+        aliases: [media-livekit]
+    restart: unless-stopped
+    user: '1000:1000'
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+
+  media-guard:
+    image: ${GATHER_MEDIA_GUARD_IMAGE:?set GATHER_MEDIA_GUARD_IMAGE in infra/deploy/.env}
+    build:
+      context: ../..
+      dockerfile: infra/Dockerfile
+      target: media-guard-runtime
+    profiles: [media-pilot]
+    environment:
+      CP07_KEY: ${LIVEKIT_API_KEY:?set LIVEKIT_API_KEY in infra/deploy/.env}
+      CP07_SECRET: ${LIVEKIT_API_SECRET:?set LIVEKIT_API_SECRET in infra/deploy/.env}
+      CP07_ORIGIN: https://${APP_DOMAIN:?set APP_DOMAIN in infra/deploy/.env}
+      CP07_RETIREMENTS: /var/lib/gather/media-retirements
+      CP07_APPLICATION_POLICY: '1'
+      CP07_POLICY_ENDPOINT: http://api:3000/api/media/internal/policy/pull
+      CP07_POLICY_ACK_ENDPOINT: http://api:3000/api/media/internal/policy/ack
+      CP07_POLICY_KEY: ${MEDIA_MACHINE_KEY:?set MEDIA_MACHINE_KEY in infra/deploy/.env}
+      CP07_SFU_UPSTREAM: http://media-livekit:7880
+      CP07_GUARD_HOST: 0.0.0.0
+      CP07_GUARD_PORT: '7885'
+      CP07_LEASE_PATH: /lease/current
+      CP07_SFU_EPOCH: ${MEDIA_SFU_EPOCH:?set MEDIA_SFU_EPOCH in infra/deploy/.env}
+    depends_on:
+      api:
+        condition: service_healthy
+      media-livekit:
+        condition: service_started
+      media-state-init:
+        condition: service_completed_successfully
+    expose: ['7885']
+    ports:
+      - 127.0.0.1:18885:7885
+    volumes:
+      - media-retirements:/var/lib/gather/media-retirements
+      - media-lease:/lease
+    networks: [edge, media-control]
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    user: '1000:1000'
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          --input-type=module,
+          -e,
+          "import net from 'node:net'; const s=net.connect(7885,'127.0.0.1'); s.on('connect',()=>{s.destroy();process.exit(0)}); s.on('error',()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 2s
+      retries: 6
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+volumes:
+  media-retirements:
+  media-lease:
+
+networks:
+  media-control:
+    driver: bridge

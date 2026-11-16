@@ -46,7 +46,13 @@ https://localhost:8443 {
 
 	handle {
 		root * /srv
-		try_files {path} /index.html
-		file_server
+		route {
+			try_files {path} /index.html
+			@html path / /index.html
+			header @html Cache-Control "no-cache, no-store, must-revalidate"
+			@assets path /assets/*
+			header @assets Cache-Control "public, max-age=31536000, immutable"
+			file_server
+		}
 	}
 }

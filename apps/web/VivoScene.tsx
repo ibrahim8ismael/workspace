@@ -46,6 +46,11 @@ import { ObjectArt, ObjectForeground, hasForeground, type MapObjectData } from '
 import { AVATAR_FRAME_URLS, AVATAR_SPRITE, avatarFrame, walkFrameAt } from './avatarSprite';
 import { t } from './i18n';
 import { lookFrames, lookKey, sanitizeLook } from './avatarLook';
+import { MovementIntentSender } from './src/features/office/movement-intent-sender';
+import {
+  directionToWaypoint,
+  updateWaypointArrival,
+} from './src/features/office/navigation-progress';
 
 type Seat = ReturnType<typeof getOfficeSeats>[number];
 type Props = {
@@ -61,6 +66,9 @@ type Props = {
   navigationTarget?: Point & { nonce: number };
   resetViewKey?: number;
   onMove: (x: number, y: number) => void;
+  /** Render this participant from accepted office snapshots rather than a local simulation. */
+  authoritativeMovement?: boolean;
+  authoritativeRevision?: { epoch: string; version: number };
   /** Server-authoritative movement intent, emitted for each local navigation step. */
   onMovementIntent?: (dx: -1 | 0 | 1, dy: -1 | 0 | 1) => void;
   onPlace: (x: number, y: number, free?: boolean) => void;
@@ -94,7 +102,14 @@ export const MIN_ZOOM = 0.45;
 /** Below this zoom the office switches to the simplified view, as the reference does when you zoom out. */
 export const SIMPLE_BELOW = 0.74;
 type Motion = { facing: Facing; moving: boolean; frame: number };
-type Remote = { from: Point; to: Point; startedAt: number; facing: Facing; lastMoved: number };
+type Remote = {
+  from: Point;
+  to: Point;
+  startedAt: number;
+  facing: Facing;
+  lastMoved: number;
+  seatId?: string | null;
+};
 
 const STATUS_COLOR: Record<Participant['status'], string> = {
   available: '#3ac07a',
@@ -331,6 +346,28 @@ const STATIC: Layer[] = [
   })),
 ];
 
+function SpeakingIndicator() {
+  return (
+    <g className="scene-speaking-indicator" aria-hidden="true" pointerEvents="none">
+      <ellipse cx="0" cy="-3" rx="19" ry="8" fill="none" stroke="#64e8a3" strokeWidth="2.5" />
+      <g transform="translate(20 -38)" fill="#64e8a3">
+        {[0, 1, 2].map((bar) => (
+          <rect
+            key={bar}
+            className="scene-speaking-bar"
+            x={bar * 4}
+            y={(-bar % 2) * 3}
+            width="2.5"
+            height={6 + (bar % 2) * 6}
+            rx="1"
+            style={{ animationDelay: `${bar * -0.15}s` }}
+          />
+        ))}
+      </g>
+    </g>
+  );
+}
+
 function Avatar({
   person,
   self,
@@ -355,10 +392,11 @@ function Avatar({
   const width = Math.max(56, name.length * 7 + 30);
   return (
     <g
-      className={`scene-avatar${self ? ' is-self' : ''}${person.status === 'away' ? ' is-away' : ''}${moving ? ' is-walking' : ''}${person.seatId ? ' is-seated' : ''}`}
+      data-speaking={person.speaking || undefined}
+      className={`scene-avatar${person.speaking ? ' is-speaking' : ''}${self ? ' is-self' : ''}${person.status === 'away' ? ' is-away' : ''}${moving ? ' is-walking' : ''}${person.seatId ? ' is-seated' : ''}`}
       tabIndex={0}
       role="button"
-      aria-label={`${person.name}${self ? t(', tú') : ''}${person.seatId ? t(', sentado') : ''}. ${STATUS_LABEL[person.status]}`}
+      aria-label={`${person.name}${person.speaking ? ', speaking' : ''}${self ? t(', tú') : ''}${person.seatId ? t(', sentado') : ''}. ${STATUS_LABEL[person.status]}`}
       onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => {
         e.stopPropagation();
@@ -374,6 +412,7 @@ function Avatar({
       <title>
         {person.name} · {STATUS_LABEL[person.status]}
       </title>
+      {person.speaking && <SpeakingIndicator />}
       <image
         className="pixel-resource character-resource"
         href={frames?.[url] ?? url}
@@ -625,10 +664,16 @@ function SimpleAvatar({
     width = (name.length * 6.4 + 26) * k;
   return (
     <g
-      className="scene-avatar scene-simple-avatar"
+      className={`scene-avatar scene-simple-avatar${person.speaking ? ' is-speaking' : ''}`}
+      data-speaking={person.speaking || undefined}
       transform={`translate(${x} ${y})`}
       shapeRendering="auto"
     >
+      {person.speaking && (
+        <g transform={`scale(${k})`}>
+          <SpeakingIndicator />
+        </g>
+      )}
       <circle
         r={12 * k}
         fill={person.color || '#f6c08f'}
@@ -714,6 +759,8 @@ export default function VivoScene({
   navigationTarget,
   resetViewKey,
   onMove,
+  authoritativeMovement = false,
+  authoritativeRevision,
   onMovementIntent,
   onPlace,
   onSelect,
@@ -859,6 +906,8 @@ export default function VivoScene({
   movementIntent.current = onMovementIntent;
   const currentSelf = useRef(self);
   currentSelf.current = self;
+  const currentSelfId = useRef(selfId);
+  currentSelfId.current = selfId;
   const editing = useRef<string | null>(editKind);
   editing.current = editingMode ? (editKind ?? 'editor') : null;
 
@@ -866,6 +915,9 @@ export default function VivoScene({
   const tile = useRef<Tile>({ tx: 20, ty: 39 });
   const step = useRef<{ from: Point; to: Point; startedAt: number; duration: number } | null>(null);
   const route = useRef<Tile[]>([]);
+  const routeAxisReached = useRef<[boolean, boolean]>([false, false]);
+  const previousRoutePosition = useRef<Point | null>(null);
+  const routeProgress = useRef<{ position: Point; at: number } | null>(null);
   const pendingSeat = useRef<string | null>(null);
   const pendingNavigation = useRef<{ tile: Tile; seatId?: string } | null>(null);
   const standingRequested = useRef(false);
@@ -874,6 +926,7 @@ export default function VivoScene({
   const [local, setLocal] = useState<Point>(tileCenter(tile.current));
   const [motion, setMotion] = useState<Motion>({ facing: 'south', moving: false, frame: 0 });
   const [destination, setDestination] = useState<Tile | null>(null);
+  const lastIntent = useRef({ dx: 0, dy: 0, sentAt: 0 });
 
   // Remote avatars interpolate between received tiles at the same pace.
   const remotes = useRef(new Map<string, Remote>());
@@ -952,17 +1005,18 @@ export default function VivoScene({
     const now = performance.now();
     const present = new Set<string>();
     for (const person of participants) {
-      if (person.id === selfId) continue;
+      if (!authoritativeMovement && person.id === selfId) continue;
       present.add(person.id);
       const previous = remotes.current.get(person.id);
       const target = { x: person.x, y: person.y };
-      if (!previous) {
+      if (!previous || previous.seatId !== person.seatId) {
         remotes.current.set(person.id, {
           from: target,
           to: target,
           startedAt: now,
           facing: person.facing ?? 'south',
           lastMoved: 0,
+          seatId: person.seatId,
         });
         continue;
       }
@@ -979,12 +1033,14 @@ export default function VivoScene({
           startedAt: now,
           facing: person.facing ?? facingFor(target.x - from.x, target.y - from.y),
           lastMoved: person.seatId ? 0 : now,
+          seatId: person.seatId,
         });
       } else
         remotes.current.set(person.id, {
           ...previous,
           facing: person.facing ?? previous.facing,
           lastMoved: person.status === 'away' || person.seatId ? 0 : previous.lastMoved,
+          seatId: person.seatId,
         });
     }
     for (const id of remotes.current.keys()) if (!present.has(id)) remotes.current.delete(id);
@@ -998,6 +1054,7 @@ export default function VivoScene({
   };
   const cancelRoute = () => {
     route.current = [];
+    routeAxisReached.current = [false, false];
     pendingSeat.current = null;
     setDestination(null);
   };
@@ -1012,6 +1069,13 @@ export default function VivoScene({
     const path = findTilePath(tile.current, target, currentBlocked.current);
     keys.current.clear();
     route.current = path;
+    routeAxisReached.current = [false, false];
+    previousRoutePosition.current = currentSelf.current
+      ? { x: currentSelf.current.x, y: currentSelf.current.y }
+      : null;
+    routeProgress.current = previousRoutePosition.current
+      ? { position: previousRoutePosition.current, at: performance.now() }
+      : null;
     pendingSeat.current = path.length || sameTile(tile.current, target) ? (seatId ?? null) : null;
     setDestination(path.length ? target : null);
     following.current = true;
@@ -1032,7 +1096,12 @@ export default function VivoScene({
 
   useEffect(() => {
     if (!self) return;
-    if (self.seatId || previousSeat.current) {
+    if (authoritativeMovement) {
+      tile.current = tileOf(self);
+      setLocal({ x: self.x, y: self.y });
+      setMotion({ facing: self.facing ?? 'south', moving: false, frame: 0 });
+      if (self.seatId || previousSeat.current) cancelRoute();
+    } else if (self.seatId || previousSeat.current) {
       tile.current = tileOf(self);
       step.current = null;
       setLocal(tileCenter(tile.current));
@@ -1046,7 +1115,7 @@ export default function VivoScene({
       pendingNavigation.current = null;
       if (pending) navigateTo(pending.tile, pending.seatId);
     }
-  }, [selfId, self?.seatId]);
+  }, [selfId, self?.seatId, authoritativeMovement]);
   useEffect(() => {
     if (navigationTarget) navigateTo(tileOf(navigationTarget));
   }, [navigationTarget?.nonce]);
@@ -1066,8 +1135,9 @@ export default function VivoScene({
     const p = currentSelf.current;
     if (p) {
       tile.current = tileOf(p);
-      setLocal(tileCenter(tile.current));
-      if (!pinned) setCamera(tileCenter(tile.current));
+      const origin = authoritativeMovement ? { x: p.x, y: p.y } : tileCenter(tile.current);
+      setLocal(origin);
+      if (!pinned) setCamera(origin);
     }
     step.current = null;
     keys.current.clear();
@@ -1075,9 +1145,19 @@ export default function VivoScene({
     pendingNavigation.current = null;
     standingRequested.current = false;
     previousSeat.current = undefined;
-  }, [selfId]);
+  }, [selfId, authoritativeMovement]);
 
   useEffect(() => {
+    const intentSender = new MovementIntentSender((direction) =>
+      movementIntent.current?.(direction.dx, direction.dy),
+    );
+    const sendIntent = (dx: number, dy: number, now = performance.now()) => {
+      if (intentSender.trySend({ dx: dx as -1 | 0 | 1, dy: dy as -1 | 0 | 1 }, now)) {
+        lastIntent.current = { dx, dy, sentAt: now };
+        return true;
+      }
+      return false;
+    };
     const down = (event: KeyboardEvent) => {
       const key = event.key.toLowerCase();
       if (
@@ -1110,12 +1190,26 @@ export default function VivoScene({
       }
       if (KEY_DIRECTION[key] || key === 'shift') {
         event.preventDefault();
+        if (event.repeat) return;
         keys.current.add(key);
         if (key !== 'shift') {
           cancelRoute();
           pendingNavigation.current = null;
           requestStand();
           following.current = true;
+          if (
+            authoritativeMovement &&
+            key !== 'shift' &&
+            !currentSelf.current?.seatId &&
+            !standingRequested.current &&
+            !editing.current
+          ) {
+            const [dx, dy] = KEY_DIRECTION[key]!;
+            const now = performance.now();
+            const last = lastIntent.current;
+            if ((dx !== last.dx || dy !== last.dy) && now - last.sentAt >= 50)
+              sendIntent(dx, dy, now);
+          }
         }
       }
     };
@@ -1123,22 +1217,122 @@ export default function VivoScene({
       const key = event.key.toLowerCase();
       const wasMovementKey = KEY_DIRECTION[key] !== undefined && keys.current.has(key);
       keys.current.delete(key);
-      if (wasMovementKey && ![...keys.current].some((held) => KEY_DIRECTION[held]))
-        movementIntent.current?.(0, 0);
+      if (wasMovementKey) {
+        const held = [...keys.current].map((heldKey) => KEY_DIRECTION[heldKey]).filter(Boolean);
+        if (!held.length) {
+          if (lastIntent.current.dx || lastIntent.current.dy) sendIntent(0, 0);
+        } else if (authoritativeMovement) {
+          const [dx, dy] = held[held.length - 1];
+          const now = performance.now();
+          const last = lastIntent.current;
+          if ((dx !== last.dx || dy !== last.dy) && now - last.sentAt >= 50)
+            sendIntent(dx, dy, now);
+        }
+      }
     };
     const blur = () => {
       keys.current.clear();
-      movementIntent.current?.(0, 0);
+      if (lastIntent.current.dx || lastIntent.current.dy) sendIntent(0, 0);
       cancelRoute();
       pendingNavigation.current = null;
+    };
+    const visibility = () => {
+      if (document.visibilityState === 'hidden') blur();
     };
     const focus = (event: FocusEvent) => {
       if (typing(event.target)) blur();
     };
+    const movementTimer = authoritativeMovement
+      ? window.setInterval(() => {
+          const participant = currentSelf.current;
+          const held = [...keys.current].map((key) => KEY_DIRECTION[key]).filter(Boolean);
+          let desired: [number, number] = [0, 0];
+          if (
+            held.length &&
+            participant &&
+            !participant.seatId &&
+            participant.status !== 'away' &&
+            !standingRequested.current &&
+            !editing.current
+          ) {
+            const [dx, dy] = held[held.length - 1];
+            desired = [dx, dy];
+          } else if (
+            participant &&
+            !participant.seatId &&
+            participant.status !== 'away' &&
+            !standingRequested.current &&
+            !editing.current &&
+            route.current.length
+          ) {
+            const previous = previousRoutePosition.current ?? {
+              x: participant.x,
+              y: participant.y,
+            };
+            if (Math.hypot(participant.x - previous.x, participant.y - previous.y) > 0.5) {
+              routeProgress.current = {
+                position: { x: participant.x, y: participant.y },
+                at: performance.now(),
+              };
+            } else if (
+              routeProgress.current &&
+              performance.now() - routeProgress.current.at > 1000
+            ) {
+              cancelRoute();
+              pendingSeat.current = null;
+            }
+            if (route.current.length) {
+              let waypointAdvanced = false;
+              const waypoint = tileCenter(route.current[0]!);
+              routeAxisReached.current = updateWaypointArrival(
+                routeAxisReached.current,
+                previous,
+                { x: participant.x, y: participant.y },
+                waypoint,
+              );
+              if (routeAxisReached.current[0] && routeAxisReached.current[1]) {
+                route.current.shift();
+                routeAxisReached.current = [false, false];
+                waypointAdvanced = true;
+              }
+              previousRoutePosition.current = { x: participant.x, y: participant.y };
+              const next = route.current[0];
+              if (next) {
+                const target = tileCenter(next);
+                if (waypointAdvanced)
+                  routeAxisReached.current = updateWaypointArrival(
+                    [false, false],
+                    participant,
+                    participant,
+                    target,
+                  );
+                desired = directionToWaypoint(participant, target, routeAxisReached.current);
+              }
+            }
+          }
+          const [dx, dy] = desired;
+          const last = lastIntent.current;
+          const now = performance.now();
+          if (
+            dx !== last.dx ||
+            dy !== last.dy ||
+            ((dx !== 0 || dy !== 0) && now - last.sentAt >= 100)
+          ) {
+            sendIntent(dx, dy, now);
+          }
+          if (!route.current.length && dx === 0 && dy === 0) {
+            setDestination(null);
+            const seatId = pendingSeat.current;
+            pendingSeat.current = null;
+            if (seatId) seatActions.current.onSit(seatId);
+          }
+        }, 100)
+      : null;
     window.addEventListener('keydown', down);
     window.addEventListener('keyup', up);
     window.addEventListener('blur', blur);
     window.addEventListener('focusin', focus);
+    document.addEventListener('visibilitychange', visibility);
     let frame = 0,
       wasMoving = false,
       lastTick = 0;
@@ -1175,6 +1369,14 @@ export default function VivoScene({
           });
         return changed ? rendered : previous;
       });
+      const currentId = currentSelfId.current;
+      const selfRender = authoritativeMovement && currentId ? rendered[currentId] : undefined;
+      if (selfRender) {
+        setLocal({ x: selfRender.x, y: selfRender.y });
+        if (following.current) setCamera({ x: selfRender.x, y: selfRender.y });
+      }
+      const participant = currentSelf.current;
+      if (authoritativeMovement && participant) tile.current = tileOf(participant);
       // Traffic stops for anyone in its lane: where people are now and the tile they are stepping onto.
       if (VEHICLES_ON_STREET.length) {
         const people: Point[] = [tileCenter(tile.current)];
@@ -1191,7 +1393,7 @@ export default function VivoScene({
         !currentSelf.current.seatId &&
         !standingRequested.current &&
         !editing.current;
-      if (step.current) {
+      if (!authoritativeMovement && step.current) {
         const progress = clamp((time - step.current.startedAt) / step.current.duration, 0, 1);
         const position = {
           x: step.current.from.x + (step.current.to.x - step.current.from.x) * progress,
@@ -1207,7 +1409,7 @@ export default function VivoScene({
             movementIntent.current?.(0, 0);
         }
       }
-      if (!step.current && canMove) {
+      if (!authoritativeMovement && !step.current && canMove) {
         let next: Tile | null = null;
         let facing: Facing | null = null;
         const held = [...keys.current].map((key) => KEY_DIRECTION[key]).filter(Boolean);
@@ -1299,8 +1501,13 @@ export default function VivoScene({
       window.removeEventListener('keyup', up);
       window.removeEventListener('blur', blur);
       window.removeEventListener('focusin', focus);
+      document.removeEventListener('visibilitychange', visibility);
+      if (movementTimer !== null) window.clearInterval(movementTimer);
+      if (authoritativeMovement) {
+        if (lastIntent.current.dx || lastIntent.current.dy) sendIntent(0, 0);
+      }
     };
-  }, []);
+  }, [authoritativeMovement]);
 
   const worldPoint = (clientX: number, clientY: number): Point | null => {
     const svg = svgRef.current,
@@ -1531,6 +1738,10 @@ export default function VivoScene({
           order: 3,
           node: (
             <g
+              data-world-x={position.x}
+              data-world-y={position.y}
+              data-authoritative-x={person.x}
+              data-authoritative-y={person.y}
               transform={`translate(${Math.round(position.x)} ${Math.round(footOf(position).y) + (person.seatId ? -2 : 0)})`}
             >
               <Avatar
@@ -1686,10 +1897,16 @@ export default function VivoScene({
       if (person.id === selfId)
         return avatarLayer(
           person,
-          person.seatId ? tileCenter(tileOf(person)) : local,
-          person.seatId ? (person.facing ?? motion.facing) : motion.facing,
-          !person.seatId && motion.moving,
-          motion.frame,
+          authoritativeMovement ? local : person.seatId ? tileCenter(tileOf(person)) : local,
+          authoritativeMovement
+            ? (remoteRender[person.id]?.facing ?? person.facing ?? motion.facing)
+            : person.seatId
+              ? (person.facing ?? motion.facing)
+              : motion.facing,
+          authoritativeMovement
+            ? (remoteRender[person.id]?.moving ?? false)
+            : !person.seatId && motion.moving,
+          authoritativeMovement ? (remoteRender[person.id]?.frame ?? 0) : motion.frame,
         );
       const remote = remoteRender[person.id];
       return avatarLayer(
@@ -1710,6 +1927,8 @@ export default function VivoScene({
       <svg
         ref={svgRef}
         className="office-map"
+        data-authoritative-epoch={authoritativeRevision?.epoch}
+        data-authoritative-version={authoritativeRevision?.version}
         viewBox={`${viewX} ${viewY} ${viewWidth} ${viewHeight}`}
         role="group"
         tabIndex={0}

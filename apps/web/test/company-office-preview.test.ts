@@ -5,6 +5,7 @@ import { createCommonsSceneCleanup } from '../commons-preview/scene-lifecycle';
 import type { OfficeWorkspaceDetail } from '../src/lib/api';
 import { canOpenOfficePreview } from '../src/features/workspaces/company-overview-view';
 import { latestProximityConversation } from '../src/features/office/proximity-conversation';
+import { acceptsConversationUpdate } from '../src/features/office/office-client';
 import { CompanyOfficePreview } from '../src/features/workspaces/CompanyOfficePreview';
 import { ApiClient } from '../src/lib/api';
 import type { AccountDto, ConversationUpdate } from '@gather/contracts';
@@ -68,10 +69,59 @@ describe('company office preview selection', () => {
       participants: [],
     };
     expect(latestProximityConversation([joining, active], participationId)).toEqual(active);
-    expect(latestProximityConversation([ended], participationId)).toBeNull();
+    expect(latestProximityConversation([joining, ended], participationId)).toBeNull();
+    const nextConversation = {
+      ...active,
+      conversationId: '4a090f91-19db-4d92-81c1-aed5e9e39d7c',
+      generation: '77017341-6b80-4051-b7fa-4bdc7709c5ee',
+    };
+    expect(latestProximityConversation([nextConversation, ended], participationId)).toEqual(
+      nextConversation,
+    );
     expect(
       latestProximityConversation([joining], '5f83f099-34df-457c-a3e3-75437fafaf26'),
     ).toBeNull();
+  });
+
+  it('ignores duplicate, stale, ended-call resurrection and old-epoch conversation updates', () => {
+    const participationId = '8f34d8de-bddb-489d-9cde-f03f1a98b68e';
+    const joining: ConversationUpdate = {
+      officeEpoch: '668bde07-cc48-4623-a58c-2efbc8ac21d5',
+      conversationId: 'd65d5a55-c917-448b-a203-1a226bc76319',
+      kind: 'proximity',
+      state: 'joining',
+      version: 1,
+      generation: 'a371c42a-aa7d-4082-ad22-74e1816af053',
+      mediaReady: false,
+      participants: [
+        { participationId, displayName: 'Office Person' },
+        { participationId: '41bbf5d6-37d7-4468-9892-9776ff19e008', displayName: 'Coworker' },
+      ],
+    };
+    const active = { ...joining, state: 'active' as const, version: 2, mediaReady: true };
+    const ended = {
+      ...active,
+      state: 'ended' as const,
+      version: 3,
+      mediaReady: false,
+      participants: [],
+    };
+    const marker = { officeEpoch: joining.officeEpoch, version: active.version, ended: false };
+
+    expect(acceptsConversationUpdate(undefined, joining, joining.officeEpoch)).toBe(true);
+    expect(acceptsConversationUpdate(marker, joining, joining.officeEpoch)).toBe(false);
+    expect(acceptsConversationUpdate(marker, active, joining.officeEpoch)).toBe(false);
+    expect(
+      acceptsConversationUpdate(
+        { officeEpoch: ended.officeEpoch, version: ended.version, ended: true },
+        { ...active, version: 4 },
+        joining.officeEpoch,
+      ),
+    ).toBe(false);
+    expect(acceptsConversationUpdate(undefined, joining, 'old-office-epoch')).toBe(false);
+    expect(acceptsConversationUpdate(marker, { ...active, version: 3 }, joining.officeEpoch)).toBe(
+      true,
+    );
   });
 
   it('renders the authenticated company in the supplied office shell', () => {
@@ -93,7 +143,12 @@ describe('company office preview selection', () => {
     expect(html).not.toContain('Employee invitations');
     expect(html).toContain('Welcome to Example Company');
     expect(html).toContain('person@example.test');
-    expect(html).toContain('Your camera is off');
+    expect(html).not.toContain('Your camera is off');
+    expect(html).not.toContain('Camera preview');
+    expect(html).toContain('3');
+    expect(html).toContain('company');
+    expect(html).toContain('Microphone off');
+    expect(html).toContain('Turn microphone on');
     expect(html).toContain('Display name');
     expect(html).not.toContain('data-testid="openoffice-vivo-scene"');
     expect(html).not.toContain('Commons office');

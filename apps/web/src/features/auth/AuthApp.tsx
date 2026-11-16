@@ -1,4 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { BrowserRouter, Navigate, useLocation, useNavigate } from 'react-router';
+import { AppLink } from '../../routing/AppLink';
+import {
+  authPaths,
+  parseRoute,
+  safeReturnTo,
+  isProtected,
+  officeAliasPath,
+  type AuthView,
+} from '../../routing/routes';
 import { LayoutGrid } from 'lucide-react';
 import type { AccountDto, WorkspaceDto } from '@gather/contracts';
 import { PRODUCT_NAME } from '../../brand';
@@ -12,9 +22,7 @@ import { useSessionGuard } from './use-session-guard';
 import { useSessionExpiry } from './use-session-expiry';
 import './account.css';
 
-type AuthView = 'login' | 'register' | 'verify' | 'resend' | 'forgot' | 'reset';
 type AccountState = 'loading' | 'signed-out' | 'signed-in';
-type AppScreen = 'companies' | 'company' | 'security';
 
 function Shell({ children }: { children: ReactNode }) {
   return (
@@ -43,6 +51,7 @@ function Field({
   required = true,
   minLength,
   maxLength,
+  defaultValue,
 }: {
   label: string;
   name: string;
@@ -51,11 +60,13 @@ function Field({
   required?: boolean;
   minLength?: number;
   maxLength?: number;
+  defaultValue?: string;
 }) {
   return (
     <label>
       <span>{label}</span>
       <input
+        defaultValue={defaultValue}
         name={name}
         type={type}
         spellCheck={type === 'email' || name === 'token' ? false : undefined}
@@ -71,20 +82,31 @@ function Field({
 function AuthFlow({
   api,
   onLogin,
+  onPasswordReset,
   initialNotice,
   initialRetry,
   onRetry,
 }: {
   api: ApiClient;
   onLogin: (account: AccountDto) => Promise<void>;
+  onPasswordReset: (notice: string) => void;
   initialNotice: string;
   initialRetry: boolean;
   onRetry: () => void;
 }) {
-  const [view, setView] = useState<AuthView>('login');
+  const location = useLocation();
+  const navigate = useNavigate();
+  const route = parseRoute(location.pathname);
+  const view = route.kind === 'auth' ? route.view : 'login';
+  const query = new URLSearchParams(location.search);
+  const returnTo = query.get('returnTo');
+  const pathFor = (next: AuthView) =>
+    authPaths[next] + (returnTo ? `?returnTo=${encodeURIComponent(safeReturnTo(returnTo))}` : '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState(initialNotice);
+  const [notice, setNotice] = useState(
+    (location.state as { notice?: string } | null)?.notice ?? initialNotice,
+  );
   const generation = useRef(0);
   const titleRef = useRef<HTMLHeadingElement>(null);
 
@@ -100,7 +122,7 @@ function AuthFlow({
 
   function move(next: AuthView, message = '') {
     generation.current += 1;
-    setView(next);
+    navigate(pathFor(next), { state: { notice: message } });
     setBusy(false);
     setError('');
     setNotice(message);
@@ -108,7 +130,7 @@ function AuthFlow({
 
   async function submit(
     event: FormEvent<HTMLFormElement>,
-    action: (values: FormData) => Promise<void>,
+    action: (values: FormData, isCurrent: () => boolean) => Promise<void>,
   ) {
     event.preventDefault();
     const form = event.currentTarget;
@@ -117,7 +139,7 @@ function AuthFlow({
     setError('');
     setNotice('');
     try {
-      await action(new FormData(event.currentTarget));
+      await action(new FormData(event.currentTarget), () => generation.current === current);
       if (generation.current !== current) return;
     } catch (caught) {
       if (generation.current === current) {
@@ -136,12 +158,12 @@ function AuthFlow({
     form = (
       <form
         onSubmit={(event) =>
-          void submit(event, async (values) => {
+          void submit(event, async (values, isCurrent) => {
             const account = await api.login({
               email: values.get('email'),
               password: values.get('password'),
             });
-            await onLogin(account);
+            if (isCurrent()) await onLogin(account);
           })
         }
       >
@@ -158,12 +180,13 @@ function AuthFlow({
     form = (
       <form
         onSubmit={(event) =>
-          void submit(event, async (values) => {
+          void submit(event, async (values, isCurrent) => {
             await api.register({
               email: values.get('email'),
               displayName: values.get('displayName'),
               password: values.get('password'),
             });
+            if (!isCurrent()) return;
             move(
               'verify',
               'If the address can be registered, instructions will be sent. Enter your verification code to continue.',
@@ -192,8 +215,9 @@ function AuthFlow({
     form = (
       <form
         onSubmit={(event) =>
-          void submit(event, async (values) => {
+          void submit(event, async (values, isCurrent) => {
             await api.verify({ token: values.get('token'), password: values.get('password') });
+            if (!isCurrent()) return;
             move('login', 'Your account is verified. Sign in to continue.');
           })
         }
@@ -201,6 +225,7 @@ function AuthFlow({
         <Field
           label="Verification code"
           name="token"
+          defaultValue={query.get('token') ?? query.get('code') ?? ''}
           autoComplete="one-time-code"
           minLength={43}
           maxLength={43}
@@ -222,8 +247,9 @@ function AuthFlow({
     form = (
       <form
         onSubmit={(event) =>
-          void submit(event, async (values) => {
+          void submit(event, async (values, isCurrent) => {
             await api.resendVerification({ email: values.get('email') });
+            if (!isCurrent()) return;
             setNotice('If the address needs verification, a new code will be sent.');
           })
         }
@@ -240,8 +266,9 @@ function AuthFlow({
     form = (
       <form
         onSubmit={(event) =>
-          void submit(event, async (values) => {
+          void submit(event, async (values, isCurrent) => {
             await api.forgotPassword({ email: values.get('email') });
+            if (!isCurrent()) return;
             move('reset', 'If the address has an account, reset instructions will be sent.');
           })
         }
@@ -258,18 +285,22 @@ function AuthFlow({
     form = (
       <form
         onSubmit={(event) =>
-          void submit(event, async (values) => {
+          void submit(event, async (values, isCurrent) => {
             await api.resetPassword({
               token: values.get('token'),
               newPassword: values.get('newPassword'),
             });
-            move('login', 'Your password has been reset. Sign in with the new password.');
+            if (!isCurrent()) return;
+            const message = 'Your password has been reset. Sign in with the new password.';
+            onPasswordReset(message);
+            move('login', message);
           })
         }
       >
         <Field
           label="Reset code"
           name="token"
+          defaultValue={query.get('token') ?? query.get('code') ?? ''}
           autoComplete="one-time-code"
           minLength={43}
           maxLength={43}
@@ -337,14 +368,9 @@ function AuthFlow({
             {links.map(({ label, next }, index) => (
               <span key={next}>
                 {index > 0 && ' · '}
-                <button
-                  className="link-button"
-                  disabled={busy}
-                  type="button"
-                  onClick={() => move(next)}
-                >
+                <AppLink className="link-button" disabled={busy} to={pathFor(next)}>
                   {label}
-                </button>
+                </AppLink>
               </span>
             ))}
             {initialRetry && view === 'login' && (
@@ -362,6 +388,24 @@ function AuthFlow({
 }
 
 export default function AuthApp() {
+  return (
+    <BrowserRouter>
+      <RoutedApp />
+    </BrowserRouter>
+  );
+}
+
+function RoutedApp() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const route = parseRoute(location.pathname);
+  const screen =
+    route.kind === 'security'
+      ? 'security'
+      : ['company', 'office', 'office-alias'].includes(route.kind)
+        ? 'company'
+        : 'companies';
+  const selectedCompanyId = 'workspaceId' in route ? route.workspaceId : null;
   const api = useMemo(() => new ApiClient(), []);
   const generation = useRef(0);
   const [state, setState] = useState<AccountState>('loading');
@@ -374,8 +418,6 @@ export default function AuthApp() {
   const [bootAttempt, setBootAttempt] = useState(0);
   const [canRetryBoot, setCanRetryBoot] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
-  const [screen, setScreen] = useState<AppScreen>('companies');
-  const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
   const [mutationPending, setMutationPending] = useState(false);
   const mutationLock = useRef(false);
   const mutationGeneration = useRef(0);
@@ -383,7 +425,7 @@ export default function AuthApp() {
     account?.id ?? null,
     state === 'signed-in',
     api,
-    signedOut,
+    (notice) => signedOut(notice),
     mutationLock,
   );
 
@@ -401,11 +443,36 @@ export default function AuthApp() {
   );
 
   useEffect(() => {
-    document.title =
-      state === 'signed-in'
-        ? `${screen === 'security' ? 'Account security' : screen === 'company' ? 'Company' : 'Companies'} · ${PRODUCT_NAME}`
-        : PRODUCT_NAME;
-  }, [screen, state]);
+    const currentRoute = parseRoute(location.pathname);
+    const titles: Record<string, string> = {
+      '/login': 'Sign in',
+      '/register': 'Create account',
+      '/verify-email': 'Verify email',
+      '/resend-verification': 'Resend verification',
+      '/forgot-password': 'Forgot password',
+      '/reset-password': 'Reset password',
+      '/account/security': 'Account security',
+      '/companies': 'Companies',
+      '/invitations/accept': 'Accept invitation',
+    };
+    const officeTitles = {
+      entry: 'Enter office',
+      office: 'Office map',
+      chat: 'Office messages',
+      calendar: 'Office calendar',
+      activity: 'Office activity',
+      invitations: 'Office invitations',
+    };
+    document.title = `${titles[location.pathname] ?? (currentRoute.kind === 'office' ? officeTitles[currentRoute.page] : currentRoute.kind === 'company' ? 'Company' : currentRoute.kind === 'office-alias' ? 'Opening office' : currentRoute.kind === 'home' ? 'Home' : 'Page not found')} · ${PRODUCT_NAME}`;
+    const frame = requestAnimationFrame(() => {
+      const heading = document.querySelector<HTMLElement>('h1');
+      if (heading) {
+        heading.tabIndex = -1;
+        heading.focus();
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [location.pathname, state]);
 
   useEffect(() => {
     const current = ++generation.current;
@@ -458,8 +525,7 @@ export default function AuthApp() {
     setAccount(found);
     setWorkspaces([]);
     setState('signed-in');
-    setScreen('companies');
-    setSelectedCompanyId(null);
+    navigate(safeReturnTo(new URLSearchParams(location.search).get('returnTo')), { replace: true });
     setLoadingWorkspaces(true);
     setStatus('');
     setWorkspaceError('');
@@ -498,8 +564,6 @@ export default function AuthApp() {
     setCanRetryBoot(false);
     setLoggingOut(false);
     setMutationPending(false);
-    setScreen('companies');
-    setSelectedCompanyId(null);
     setState('signed-out');
   }
 
@@ -539,7 +603,6 @@ export default function AuthApp() {
         return null;
       }
       setAccount(verified);
-      setSelectedCompanyId(null);
       const accepted = await sessionGuard.acceptReauthenticatedSession();
       if (current !== generation.current || !accepted) return null;
       return verified;
@@ -602,34 +665,19 @@ export default function AuthApp() {
 
   function openCompany(workspaceId: string) {
     if (mutationLock.current) return;
-    setSelectedCompanyId(workspaceId);
-    setScreen('company');
+    navigate(officeAliasPath(workspaceId));
     setStatus('');
     setWorkspaceError('');
   }
 
   function backToCompanies() {
     if (mutationLock.current) return;
-    setSelectedCompanyId(null);
-    setScreen('companies');
+    navigate('/companies');
   }
 
   function openSecurity() {
     if (mutationLock.current) return;
-    setSelectedCompanyId(null);
-    setScreen('security');
-  }
-
-  function lostCompanyAccess(workspaceId: string) {
-    setSelectedCompanyId(null);
-    setScreen('companies');
-    setWorkspaces((rows) => rows.filter((workspace) => workspace.id !== workspaceId));
-    setWorkspaceError('');
-    setWorkspaceLoadError('');
-    setStatus(
-      'This company is no longer available to your account. Your company list will be checked again.',
-    );
-    void retryWorkspaces();
+    navigate('/account/security');
   }
 
   function retryBoot() {
@@ -640,6 +688,21 @@ export default function AuthApp() {
     setBootAttempt((attempt) => attempt + 1);
   }
 
+  if (route.kind === 'redirect') return <Navigate replace to={route.to + location.search} />;
+  if (route.kind === 'home')
+    return (
+      <Navigate replace to={(state === 'signed-in' ? '/companies' : '/login') + location.search} />
+    );
+  if (route.kind === 'not-found')
+    return (
+      <Shell>
+        <section id="main-content" className="dashboard-body">
+          <h1 tabIndex={-1}>Page not found</h1>
+          <p>This address does not match a page.</p>
+          <AppLink to={account ? '/companies' : '/login'}>Return home</AppLink>
+        </section>
+      </Shell>
+    );
   if (state === 'loading')
     return (
       <Shell>
@@ -650,11 +713,24 @@ export default function AuthApp() {
         </div>
       </Shell>
     );
-  if (state === 'signed-out')
+  if (state === 'signed-out' && isProtected(route))
+    return (
+      <Navigate
+        replace
+        to={`/login?returnTo=${encodeURIComponent(location.pathname + location.search)}`}
+      />
+    );
+  if (state === 'signed-in' && route.kind === 'auth' && ['login', 'register'].includes(route.view))
+    return (
+      <Navigate replace to={safeReturnTo(new URLSearchParams(location.search).get('returnTo'))} />
+    );
+  if (state === 'signed-out' || route.kind === 'auth')
     return (
       <AuthFlow
+        key={location.pathname + location.search}
         api={api}
         onLogin={signedIn}
+        onPasswordReset={signedOut}
         initialNotice={status}
         initialRetry={canRetryBoot}
         onRetry={retryBoot}
@@ -669,13 +745,22 @@ export default function AuthApp() {
         account={account}
         api={api}
         workspaceId={selectedCompanyId}
+        page={
+          route.kind === 'company'
+            ? 'overview'
+            : route.kind === 'office-alias'
+              ? 'alias'
+              : route.kind === 'office'
+                ? route.page
+                : 'entry'
+        }
+        requestedOfficeId={route.kind === 'office' ? route.officeId : undefined}
         mutationPending={mutationPending}
         mutationLock={mutationLock}
         runMutation={runMutation}
         onBackToCompanies={backToCompanies}
         onOpenSecurity={openSecurity}
         onUnauthorized={signedOut}
-        onLostAccess={lostCompanyAccess}
       />
     );
 
@@ -700,6 +785,10 @@ export default function AuthApp() {
 
   return (
     <WorkspaceHome
+      key={location.pathname + location.search}
+      invitationRoute={route.kind === 'invitation'}
+      invitationToken={new URLSearchParams(location.search).get('token') ?? ''}
+      onCloseInvitation={backToCompanies}
       account={account}
       api={api}
       workspaces={workspaces}

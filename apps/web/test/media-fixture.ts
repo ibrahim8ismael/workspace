@@ -20,7 +20,10 @@ declare global {
       statusHistory: string[];
       error: string;
       remoteIdentities: string[];
+      remoteTrackIdentities: string[];
       activeAudioSamples: number;
+      decodedAudioSamples: number;
+      lastDecodedAudioAt: number;
       lastActiveAudioAt: number;
       startedAt: number;
       gatheredCandidateTypes: string[];
@@ -37,7 +40,10 @@ window.__mediaFixture = {
   statusHistory: [],
   error: '',
   remoteIdentities: [],
+  remoteTrackIdentities: [],
   activeAudioSamples: 0,
+  decodedAudioSamples: 0,
+  lastDecodedAudioAt: 0,
   lastActiveAudioAt: 0,
   startedAt: 0,
   gatheredCandidateTypes: [],
@@ -48,9 +54,13 @@ window.__mediaFixture = {
 };
 
 const NativeRTCPeerConnection = window.RTCPeerConnection;
+const mediaPeerConnections: RTCPeerConnection[] = [];
+const lastInboundSamples = new Map<string, number>();
+let samplingInboundAudio = false;
 window.RTCPeerConnection = new Proxy(NativeRTCPeerConnection, {
   construct(target, args, newTarget) {
     const peer = Reflect.construct(target, args, newTarget);
+    mediaPeerConnections.push(peer);
     peer.addEventListener('icecandidate', (event: Event) => {
       const candidate = (event as RTCPeerConnectionIceEvent).candidate;
       const type = candidate?.type;
@@ -71,6 +81,48 @@ window.RTCPeerConnection = new Proxy(NativeRTCPeerConnection, {
   },
 });
 
+window.setInterval(() => {
+  if (samplingInboundAudio) return;
+  samplingInboundAudio = true;
+  void Promise.all(
+    mediaPeerConnections.map(async (peer, peerIndex) => {
+      const report = await peer.getStats();
+      let samples = 0;
+      report.forEach((stat) => {
+        if (
+          stat.type === 'inbound-rtp' &&
+          'kind' in stat &&
+          stat.kind === 'audio' &&
+          'totalSamplesReceived' in stat &&
+          typeof stat.totalSamplesReceived === 'number'
+        ) {
+          const key = `${peerIndex}:${stat.id}`;
+          const previous = lastInboundSamples.get(key);
+          samples +=
+            previous === undefined
+              ? stat.totalSamplesReceived
+              : stat.totalSamplesReceived >= previous
+                ? stat.totalSamplesReceived - previous
+                : stat.totalSamplesReceived;
+          lastInboundSamples.set(key, stat.totalSamplesReceived);
+        }
+      });
+      return samples;
+    }),
+  )
+    .then((increments) => {
+      const decodedAudioSamples = increments.reduce((total, value) => total + value, 0);
+      if (decodedAudioSamples > 0) {
+        window.__mediaFixture.decodedAudioSamples += decodedAudioSamples;
+        window.__mediaFixture.lastDecodedAudioAt = Date.now();
+      }
+    })
+    .catch(() => undefined)
+    .finally(() => {
+      samplingInboundAudio = false;
+    });
+}, 100);
+
 const relayOnly = new URLSearchParams(location.search).get('ice') === 'relay';
 
 const session = new ProximityAudioSession(
@@ -89,6 +141,7 @@ const session = new ProximityAudioSession(
       ...window.__mediaFixture.remoteIdentities.filter((candidate) => candidate !== identity),
       identity,
     ];
+    window.__mediaFixture.remoteTrackIdentities.push(identity);
 
     const audioTrack = (track as ProximityRemoteAudioTrack & { mediaStreamTrack: MediaStreamTrack })
       .mediaStreamTrack;
@@ -114,6 +167,8 @@ const session = new ProximityAudioSession(
       window.__mediaFixture.remoteIdentities = window.__mediaFixture.remoteIdentities.filter(
         (candidate) => candidate !== identity,
       );
+      const trackIndex = window.__mediaFixture.remoteTrackIdentities.indexOf(identity);
+      if (trackIndex >= 0) window.__mediaFixture.remoteTrackIdentities.splice(trackIndex, 1);
       void context.close();
     };
   },

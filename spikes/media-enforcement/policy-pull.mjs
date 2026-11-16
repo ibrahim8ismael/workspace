@@ -97,6 +97,7 @@ export async function pullPolicy({
   onRequest = () => {},
   onInstalled = () => {},
   onVerified = () => {},
+  installPolicy,
 }) {
   decodePolicyKey(key);
   const challenge = state.beginPull(randomBytes(32).toString('hex'));
@@ -154,7 +155,8 @@ export async function pullPolicy({
     )
       return false;
     onVerified(snapshot);
-    if (!state.install(snapshot)) return false;
+    const installed = installPolicy ? await installPolicy(snapshot) : state.install(snapshot);
+    if (!installed) return false;
     if (
       ackEndpoint &&
       !(await acknowledgePolicyInstallation({ endpoint: ackEndpoint, key, snapshot, fetchImpl }))

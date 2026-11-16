@@ -3,14 +3,12 @@ import {
   ArrowLeft,
   Bell,
   CalendarDays,
-  ChevronDown,
   LayoutGrid,
   Map as MapIcon,
   Mic,
   MicOff,
   MessageCircle,
   Settings2,
-  VideoOff,
   UserPlus,
   Volume2,
 } from 'lucide-react';
@@ -23,6 +21,9 @@ import type { Overrides } from '../../../../shared/office-objects.js';
 import { SpaceChatNavigation, SpaceChatView } from './space-chat';
 import { useSpaceChat } from './use-space-chat';
 import type { Participant } from '../../../types';
+import { EntryMicrophone } from '../office/entry-microphone';
+import { AppLink } from '../../routing/AppLink';
+import { officePath, type OfficePage } from '../../routing/routes';
 import { OfficeClient } from '../office/office-client';
 import { latestProximityConversation } from '../office/proximity-conversation';
 import {
@@ -45,6 +46,7 @@ const LiveCommonsScene = lazy(() =>
 );
 
 type OfficeSection = 'office' | 'chat' | 'calendar' | 'activity' | 'invitations';
+const proximityVoiceEnabled = import.meta.env.VITE_PROXIMITY_VOICE_ENABLED !== 'false';
 function sceneAvatarForAppearance(appearance: { bodyId: string; paletteId: string }) {
   if (appearance.bodyId === 'commons-worker' && appearance.paletteId === 'teal')
     return DEFAULT_LOOK;
@@ -52,6 +54,8 @@ function sceneAvatarForAppearance(appearance: { bodyId: string; paletteId: strin
 }
 
 type Props = {
+  routePage?: OfficePage;
+  onNavigatePage?: (page: OfficePage, replace?: boolean) => void;
   account: AccountDto;
   api: ApiClient;
   detail: OfficeWorkspaceDetail;
@@ -63,6 +67,8 @@ type Props = {
 };
 
 export function CompanyOfficePreview({
+  routePage,
+  onNavigatePage,
   account,
   api,
   detail,
@@ -79,6 +85,15 @@ export function CompanyOfficePreview({
   );
   const state = useSyncExternalStore(client.subscribe, client.getSnapshot, client.getSnapshot);
   const connected = state.status === 'connected';
+  const [entryMicrophone] = useState(() => new EntryMicrophone());
+  const entryAudio = useSyncExternalStore(
+    entryMicrophone.subscribe,
+    entryMicrophone.getSnapshot,
+    entryMicrophone.getSnapshot,
+  );
+  const joinWithMicrophone = useRef(false);
+  useEffect(() => () => entryMicrophone.stop(), [entryMicrophone]);
+
   const participationId = connected ? (state.ready?.participationId ?? null) : null;
   const latestConversation = latestProximityConversation(
     state.conversationUpdates,
@@ -106,12 +121,39 @@ export function CompanyOfficePreview({
   const [microphoneAttempt, setMicrophoneAttempt] = useState(0);
   const remoteAudioContainer = useRef<HTMLDivElement>(null);
   const mediaContextKey = useRef<string | null>(null);
+  const [speakingIds, setSpeakingIds] = useState<string[]>([]);
   const proximityAudio = useRef<ProximityAudioSession | null>(null);
   const proximityOptedIn = Boolean(
     connected && proximityOptIn?.participationId === participationId && proximityOptIn.enabled,
   );
   const [zoom, setZoom] = useState(1.35);
-  const [section, setSection] = useState<OfficeSection>('office');
+  const [localSection, setLocalSection] = useState<OfficeSection>('office');
+  const section = routePage && routePage !== 'entry' ? routePage : localSection;
+  const setSection = (next: OfficeSection) =>
+    onNavigatePage ? onNavigatePage(next) : setLocalSection(next);
+  const joiningFromEntry = useRef(false);
+  const previousPage = useRef(routePage);
+  useEffect(() => {
+    if (routePage === 'entry' && previousPage.current !== 'entry') {
+      joiningFromEntry.current = false;
+      entryMicrophone.stop();
+      void proximityAudio.current?.stop();
+      client.close();
+    } else if (
+      routePage &&
+      routePage !== 'entry' &&
+      !['connected', 'connecting'].includes(client.getSnapshot().status)
+    ) {
+      void client.connect();
+    }
+    previousPage.current = routePage;
+  }, [routePage, client, entryMicrophone]);
+  useEffect(() => {
+    if (connected && joiningFromEntry.current) {
+      joiningFromEntry.current = false;
+      onNavigatePage?.('office');
+    }
+  }, [connected, onNavigatePage]);
   const chat = useSpaceChat(
     api,
     detail.id,
@@ -137,6 +179,8 @@ export function CompanyOfficePreview({
         setProximityAudioError(error ?? '');
       },
       (track, identity) => audioPlayback.attach(track, identity, remoteAudioContainer.current),
+      undefined,
+      setSpeakingIds,
     );
     proximityAudio.current = session;
     return () => {
@@ -189,6 +233,31 @@ export function CompanyOfficePreview({
     activeVoiceContextKey,
   ]);
 
+  useEffect(() => {
+    if (!participationId || !joinWithMicrophone.current) return;
+    joinWithMicrophone.current = false;
+    let current = true;
+    setProximityPending(true);
+    void client
+      .setProximityOptIn(true)
+      .then(() => {
+        if (!current) return;
+        setProximityOptIn({ participationId, enabled: true });
+        setMicrophoneIntent(participationId);
+      })
+      .catch(() => {
+        if (current)
+          setProximityAudioError(
+            'Could not enable nearby voice. Use the microphone button to retry.',
+          );
+      })
+      .finally(() => {
+        if (current) setProximityPending(false);
+      });
+    return () => {
+      current = false;
+    };
+  }, [client, participationId]);
   async function runOfficeAction(action: () => Promise<void>) {
     setOfficeActionError('');
     setOfficeActionPending(true);
@@ -261,17 +330,17 @@ export function CompanyOfficePreview({
           Skip to office entry
         </a>
         <header className="office-prejoin-header">
-          <button
+          <AppLink
+            to="/companies"
             className="office-prejoin-brand"
-            type="button"
             aria-label="Back to companies"
-            onClick={onBack}
+            onNavigate={onBack}
           >
             <span className="office-prejoin-logo" aria-hidden="true">
               <LayoutGrid size={19} />
             </span>
             <strong>{detail.name}</strong>
-          </button>
+          </AppLink>
           <div className="office-prejoin-account" title={account.email}>
             <span aria-hidden="true">{account.displayName.slice(0, 1).toUpperCase()}</span>
             <span>{account.email}</span>
@@ -279,42 +348,26 @@ export function CompanyOfficePreview({
         </header>
 
         <section className="office-prejoin-content" aria-label="Join the office">
-          <div className="office-prejoin-camera" aria-label="Camera preview">
-            <p>Your camera is off</p>
-            <div className="office-prejoin-device-controls" aria-label="Media controls">
-              <button
-                type="button"
-                aria-label="Microphone unavailable in this release"
-                title="Microphone unavailable in this release"
-                disabled
-              >
-                <MicOff size={17} />
-                <ChevronDown size={12} />
-              </button>
-              <button
-                type="button"
-                aria-label="Camera unavailable in this release"
-                title="Camera unavailable in this release"
-                disabled
-              >
-                <VideoOff size={17} />
-                <ChevronDown size={12} />
-              </button>
-            </div>
-          </div>
-
           <div className="office-prejoin-form-wrap">
             <h1 id="company-office-preview-title" ref={titleRef} tabIndex={-1}>
               Welcome to {detail.name}
             </h1>
+            <p className="office-prejoin-summary">
+              {detail.memberCount} company {detail.memberCount === 1 ? 'member' : 'members'} ·{' '}
+              {detail.role === 'owner' ? 'Owner' : 'Member'}
+            </p>
             <form
               id="join-office-form"
               className="office-prejoin-form"
               onSubmit={(event) => {
                 event.preventDefault();
+                joiningFromEntry.current = true;
+                joinWithMicrophone.current = entryMicrophone.getSnapshot().status === 'on';
+                entryMicrophone.stop();
                 void client.connect();
               }}
             >
+              <label htmlFor="office-display-name">Joining as</label>
               <input
                 id="office-display-name"
                 type="text"
@@ -324,6 +377,41 @@ export function CompanyOfficePreview({
                 aria-readonly="true"
                 autoComplete="name"
               />
+              <div className="office-entry-audio">
+                <button
+                  type="button"
+                  className="office-entry-microphone"
+                  aria-pressed={entryAudio.status === 'on'}
+                  aria-label={
+                    entryAudio.status === 'on'
+                      ? 'Turn microphone off'
+                      : entryAudio.status === 'requesting'
+                        ? 'Cancel microphone access'
+                        : 'Turn microphone on'
+                  }
+                  disabled={state.status === 'connecting' || !proximityVoiceEnabled}
+                  onClick={() => void entryMicrophone.toggle()}
+                >
+                  {entryAudio.status === 'on' ? <Mic size={20} /> : <MicOff size={20} />}
+                  {entryAudio.status === 'on'
+                    ? 'Microphone on'
+                    : entryAudio.status === 'requesting'
+                      ? 'Requesting access…'
+                      : 'Microphone off'}
+                </button>
+                <p role="status" aria-live="polite">
+                  {!proximityVoiceEnabled
+                    ? 'Nearby voice is unavailable in this deployment.'
+                    : entryAudio.status === 'on'
+                      ? 'Ready for nearby voice. No audio is sent until you join a conversation.'
+                      : 'You can join with your microphone off and turn it on inside the office.'}
+                </p>
+                {entryAudio.message && (
+                  <p role="alert" className="office-prejoin-error">
+                    {entryAudio.message}
+                  </p>
+                )}
+              </div>
               {state.message && state.status !== 'connecting' && (
                 <p className="office-prejoin-error" role="alert">
                   {state.message}
@@ -334,7 +422,11 @@ export function CompanyOfficePreview({
                   Connecting to the office…
                 </p>
               )}
-              <button className="primary" type="submit" disabled={state.status === 'connecting'}>
+              <button
+                className="primary"
+                type="submit"
+                disabled={state.status === 'connecting' || entryAudio.status === 'requesting'}
+              >
                 {state.status === 'connecting' ? 'Joining…' : 'Join'}
               </button>
             </form>
@@ -363,9 +455,9 @@ export function CompanyOfficePreview({
               The office map or participant appearance is missing or unsupported in this frontend.
               Return to your companies and try again.
             </p>
-            <button className="primary" type="button" onClick={onBack}>
+            <AppLink to="/companies" className="primary" onNavigate={onBack}>
               Back to companies
-            </button>
+            </AppLink>
           </div>
         </section>
       </main>
@@ -375,46 +467,58 @@ export function CompanyOfficePreview({
   const { bootstrap, ready, snapshot } = state;
   const mapId = bootstrap.manifest.mapId;
   const participantCount = snapshot.participants.length;
-  const pairedName = activeProximityConversation?.participants.find(
-    (participant) => participant.participationId !== ready.participationId,
-  )?.displayName;
-  const nearbyVoiceSummary = activeProximityConversation
-    ? proximityAudioStatus === 'live'
-      ? `Microphone on with ${pairedName ?? 'your teammate'}.`
-      : proximityAudioStatus === 'muted'
-        ? `Connected to ${pairedName ?? 'your teammate'}; microphone is off.`
-        : `Paired with ${pairedName ?? 'your teammate'}. Turn on your microphone when ready.`
-    : latestConversation?.state === 'joining'
-      ? 'Pair found. Preparing guarded voice…'
-      : proximityOptedIn
-        ? 'Looking for a nearby coworker. Your microphone is off.'
-        : 'Nearby voice is off. Your microphone will stay off until you turn it on.';
+  const conversationMembers = activeProximityConversation?.participants ?? [];
+  const conversationMemberNames = conversationMembers.map((participant) =>
+    participant.participationId === ready.participationId
+      ? `${participant.displayName} (you)`
+      : participant.displayName,
+  );
+  const conversationPartnerNames = conversationMembers
+    .filter((participant) => participant.participationId !== ready.participationId)
+    .map((participant) => participant.displayName);
+  const conversationPartners = conversationPartnerNames.join(', ');
+  const nearbyVoiceSummary = !proximityVoiceEnabled
+    ? 'Nearby voice is unavailable in this deployment.'
+    : activeProximityConversation
+      ? proximityAudioStatus === 'live'
+        ? `Microphone on in a ${conversationMembers.length}-person conversation with ${conversationPartners}.`
+        : proximityAudioStatus === 'muted'
+          ? `Connected to ${conversationMembers.length}-person conversation with ${conversationPartners}; microphone is off.`
+          : `In a ${conversationMembers.length}-person conversation with ${conversationPartners}. Turn on your microphone when ready.`
+      : latestConversation?.state === 'joining'
+        ? 'Nearby group found. Preparing guarded voice…'
+        : proximityOptedIn
+          ? 'Looking for a nearby coworker. Your microphone is off.'
+          : 'Nearby voice is off. Your microphone will stay off until you turn it on.';
   const microphoneEnabled =
-    proximityAudioStatus === 'live' ||
-    (microphoneIntent === participationId &&
-      proximityOptedIn &&
-      proximityAudioStatus !== 'error' &&
-      proximityAudioStatus !== 'muted');
-  const microphoneHelp =
-    proximityAudioError ||
-    (proximityAudioStatus === 'connecting'
-      ? 'Connecting microphone…'
-      : proximityAudioStatus === 'reconnecting'
-        ? 'Reconnecting voice…'
-        : proximityAudioStatus === 'live'
-          ? 'Your microphone is on.'
-          : proximityAudioStatus === 'muted'
-            ? 'Your microphone is muted. Click to unmute.'
-            : activeProximityConversation
-              ? 'Ready to talk. Click the microphone and allow browser access.'
-              : proximityOptedIn
-                ? 'Voice enabled; waiting for a nearby coworker. No microphone audio is being captured yet.'
-                : 'Turn on your microphone to enable nearby voice. Coworkers must enable voice and move nearby.');
+    proximityVoiceEnabled &&
+    (proximityAudioStatus === 'live' ||
+      (microphoneIntent === participationId &&
+        proximityOptedIn &&
+        proximityAudioStatus !== 'error' &&
+        proximityAudioStatus !== 'muted'));
+  const microphoneHelp = !proximityVoiceEnabled
+    ? 'Nearby voice is unavailable in this deployment.'
+    : proximityAudioError ||
+      (proximityAudioStatus === 'connecting'
+        ? 'Connecting microphone…'
+        : proximityAudioStatus === 'reconnecting'
+          ? 'Reconnecting voice…'
+          : proximityAudioStatus === 'live'
+            ? 'Your microphone is on.'
+            : proximityAudioStatus === 'muted'
+              ? 'Your microphone is muted. Click to unmute.'
+              : activeProximityConversation
+                ? 'Ready to talk. Click the microphone and allow browser access.'
+                : proximityOptedIn
+                  ? 'Voice enabled; waiting for a nearby coworker. No microphone audio is being captured yet.'
+                  : 'Turn on your microphone to enable nearby voice. Coworkers must enable voice and move nearby.');
   const self = snapshot.participants.find(
     (participant) => participant.participationId === ready.participationId,
   );
   const sceneParticipants: Participant[] = snapshot.participants.map((participant) => ({
     id: participant.participationId,
+    speaking: Boolean(activeVoiceContextKey) && speakingIds.includes(participant.participationId),
     name: participant.displayName,
     color: '#f6c08f',
     avatar: sceneAvatarForAppearance(participant.appearance),
@@ -441,78 +545,83 @@ export function CompanyOfficePreview({
           <span />
         </div>
         <div className="rail-main">
-          <button
+          <AppLink
+            to={officePath(detail.id, detail.officeId, 'office')}
             className={`nav-item${section === 'office' ? ' current' : ''}`}
-            type="button"
+
             aria-label="Office"
-            aria-pressed={section === 'office'}
+            aria-current={section === 'office' ? 'page' : undefined}
             title="Office"
-            onClick={() => setSection('office')}
+            onNavigate={() => setSection('office')}
           >
             <MapIcon size={22} />
-          </button>
-          <button
+          </AppLink>
+          <AppLink
+            to={officePath(detail.id, detail.officeId, 'chat')}
             className={`nav-item${section === 'chat' ? ' current' : ''}`}
-            type="button"
+
             aria-label="Messages"
-            aria-pressed={section === 'chat'}
+            aria-current={section === 'chat' ? 'page' : undefined}
             title="Messages"
-            onClick={() => setSection('chat')}
+            onNavigate={() => setSection('chat')}
           >
             <MessageCircle size={22} />
-          </button>
-          <button
+          </AppLink>
+          <AppLink
+            to={officePath(detail.id, detail.officeId, 'calendar')}
             className={`nav-item${section === 'calendar' ? ' current' : ''}`}
-            type="button"
+
             aria-label="Calendar"
-            aria-pressed={section === 'calendar'}
+            aria-current={section === 'calendar' ? 'page' : undefined}
             title="Calendar"
-            onClick={() => setSection('calendar')}
+            onNavigate={() => setSection('calendar')}
           >
             <CalendarDays size={22} />
-          </button>
-          <button
+          </AppLink>
+          <AppLink
+            to={officePath(detail.id, detail.officeId, 'activity')}
             className={`nav-item${section === 'activity' ? ' current' : ''}`}
-            type="button"
+
             aria-label="Activity"
-            aria-pressed={section === 'activity'}
+            aria-current={section === 'activity' ? 'page' : undefined}
             title="Activity"
-            onClick={() => setSection('activity')}
+            onNavigate={() => setSection('activity')}
           >
             <Bell size={22} />
-          </button>
+          </AppLink>
         </div>
         <div className="rail-bottom">
           {detail.role === 'owner' && (
-            <button
+            <AppLink
+              to={officePath(detail.id, detail.officeId, 'invitations')}
               className={`nav-item${section === 'invitations' ? ' current' : ''}`}
-              type="button"
+
               aria-label="Invite people"
-              aria-pressed={section === 'invitations'}
+              aria-current={section === 'invitations' ? 'page' : undefined}
               title="Invite people"
-              onClick={() => setSection('invitations')}
+              onNavigate={() => setSection('invitations')}
             >
               <UserPlus size={22} />
-            </button>
+            </AppLink>
           )}
-          <button
+          <AppLink
+            to="/companies"
             className="icon-button"
-            type="button"
             aria-label="Back to companies"
             title="Back to companies"
-            onClick={onBack}
+            onNavigate={onBack}
           >
             <ArrowLeft size={19} />
-          </button>
-          <button
+          </AppLink>
+          <AppLink
+            to="/account/security"
             className="icon-button"
-            type="button"
             aria-label="Account security"
             title="Account security"
-            onClick={onOpenSecurity}
+            onNavigate={onOpenSecurity}
           >
             <Settings2 size={19} />
-          </button>
+          </AppLink>
         </div>
       </nav>
 
@@ -539,13 +648,14 @@ export function CompanyOfficePreview({
             <div className="office-nav-placeholder">
               <strong>Invite people</strong>
               <p>Invite coworkers to {detail.name} and manage pending invitations.</p>
-              <button
+              <AppLink
+                to={officePath(detail.id, detail.officeId, 'office')}
                 className="dashboard-secondary"
-                type="button"
-                onClick={() => setSection('office')}
+
+                onNavigate={() => setSection('office')}
               >
                 Return to office
-              </button>
+              </AppLink>
             </div>
           ) : section === 'chat' ? (
             <SpaceChatNavigation chat={chat} selfId={account.id} />
@@ -584,24 +694,32 @@ export function CompanyOfficePreview({
               </div>
               <div role="group" aria-labelledby="office-proximity-title">
                 <h3 id="office-proximity-title">Nearby voice</h3>
-                <p className="office-voice-help">
-                  Opt in to pair with an available coworker nearby. Pairing never turns on your
-                  microphone by itself.
-                </p>
+                {proximityVoiceEnabled ? (
+                  <p className="office-voice-help">
+                    Opt in to join a nearby group conversation with up to six coworkers. Joining
+                    never turns on your microphone by itself.
+                  </p>
+                ) : (
+                  <p className="office-voice-help" role="status">
+                    Nearby voice is unavailable in this deployment.
+                  </p>
+                )}
                 <div className="office-world-control-row">
-                  <button
-                    className="dashboard-secondary"
-                    type="button"
-                    aria-pressed={proximityOptedIn}
-                    disabled={proximityPending}
-                    onClick={() => void changeProximityOptIn()}
-                  >
-                    {proximityPending
-                      ? 'Updating…'
-                      : proximityOptedIn
-                        ? 'Opt out of nearby voice'
-                        : 'Opt in to nearby voice'}
-                  </button>
+                  {proximityVoiceEnabled && (
+                    <button
+                      className="dashboard-secondary"
+                      type="button"
+                      aria-pressed={proximityOptedIn}
+                      disabled={proximityPending}
+                      onClick={() => void changeProximityOptIn()}
+                    >
+                      {proximityPending
+                        ? 'Updating…'
+                        : proximityOptedIn
+                          ? 'Opt out of nearby voice'
+                          : 'Opt in to nearby voice'}
+                    </button>
+                  )}
                   {activeProximityConversation && (
                     <button
                       className="dashboard-secondary"
@@ -616,6 +734,11 @@ export function CompanyOfficePreview({
                 <p className="office-voice-status" role="status" aria-live="polite">
                   {nearbyVoiceSummary}
                 </p>
+                {activeProximityConversation && (
+                  <p className="office-voice-members" aria-label="Conversation participants">
+                    {conversationMembers.length} participants: {conversationMemberNames.join(', ')}
+                  </p>
+                )}
                 {proximityAudioError && (
                   <p className="office-action-error" role="alert">
                     {proximityAudioError}
@@ -738,6 +861,11 @@ export function CompanyOfficePreview({
                     selectedObject={null}
                     editorOpen={false}
                     overrides={noOverrides}
+                    authoritativeMovement
+                    authoritativeRevision={{
+                      epoch: state.snapshot.officeEpoch,
+                      version: state.snapshot.stateVersion,
+                    }}
                     onMove={() => {}}
                     onMovementIntent={(dx, dy) => client.move(dx, dy)}
                     onPlace={() => {}}
@@ -807,16 +935,18 @@ export function CompanyOfficePreview({
                       className={`media-control ${microphoneEnabled ? 'enabled' : 'muted'}`}
                       type="button"
                       aria-label={
-                        microphoneEnabled
-                          ? 'Mute proximity microphone'
-                          : proximityAudioStatus === 'muted'
-                            ? 'Unmute proximity microphone'
-                            : 'Activate proximity microphone'
+                        !proximityVoiceEnabled
+                          ? 'Nearby voice unavailable in this deployment'
+                          : microphoneEnabled
+                            ? 'Mute proximity microphone'
+                            : proximityAudioStatus === 'muted'
+                              ? 'Unmute proximity microphone'
+                              : 'Activate proximity microphone'
                       }
                       title={microphoneHelp}
                       aria-describedby="office-microphone-help"
                       aria-pressed={microphoneEnabled}
-                      disabled={proximityPending}
+                      disabled={!proximityVoiceEnabled || proximityPending}
                       onClick={toggleProximityMicrophone}
                     >
                       {microphoneEnabled ? <Mic size={19} /> : <MicOff size={19} />}
@@ -827,7 +957,10 @@ export function CompanyOfficePreview({
                       aria-label="Leave office"
                       title="Leave office"
                       onClick={() =>
-                        void proximityAudio.current?.stop().finally(() => client.close())
+                        void proximityAudio.current?.stop().finally(() => {
+                          client.close();
+                          onNavigatePage?.('entry');
+                        })
                       }
                     >
                       <ArrowLeft size={19} />
@@ -870,13 +1003,14 @@ export function CompanyOfficePreview({
                   ? 'Calendar events are not available until the company calendar API is connected.'
                   : 'Activity notifications are not available until the company activity API is connected.'}
               </p>
-              <button
+              <AppLink
+                to={officePath(detail.id, detail.officeId, 'office')}
                 className="dashboard-secondary"
-                type="button"
-                onClick={() => setSection('office')}
+
+                onNavigate={() => setSection('office')}
               >
                 Return to office
-              </button>
+              </AppLink>
             </section>
           )}
         </main>

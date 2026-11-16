@@ -69,3 +69,89 @@ test('invalid snapshots are atomic and empty snapshots revoke existing permits',
   assert.equal(install(3, []), true);
   assert.equal(state.allows(query), false);
 });
+
+test('replacement policy waits for the old generation forwarding cutoff', async () => {
+  const { state } = fixture();
+  const replacement = { ...permit, generation: 'g2', room: 'r2' };
+  const firstPull = state.beginPull('initial');
+  assert.equal(
+    await state.installWithRetirement(
+      { ...firstPull, sequence: 1, permits: [permit] },
+      async () => true,
+    ),
+    true,
+  );
+  assert.equal(state.allows(query), true);
+
+  const nextPull = state.beginPull('replacement');
+  let roomWasClosed = false;
+  assert.equal(
+    await state.installWithRetirement(
+      { ...nextPull, sequence: 2, permits: [replacement] },
+      async (generation) => {
+        assert.equal(generation, 'g1');
+        assert.equal(state.allows(query), false);
+        assert.equal(state.allows({ ...replacement, source: 'microphone' }), false);
+        roomWasClosed = true;
+        return true;
+      },
+    ),
+    true,
+  );
+  assert.equal(roomWasClosed, true);
+  assert.equal(state.allows({ ...replacement, source: 'microphone' }), true);
+  assert.equal(state.allows(query), false);
+
+  const replay = state.beginPull('replay-retired');
+  assert.equal(
+    await state.installWithRetirement(
+      { ...replay, sequence: 3, permits: [permit] },
+      async () => true,
+    ),
+    false,
+  );
+});
+
+test('failed room retirement leaves the guard denied and does not install replacement permits', async () => {
+  const { state } = fixture();
+  const firstPull = state.beginPull('initial');
+  assert.equal(state.install({ ...firstPull, sequence: 1, permits: [permit] }), true);
+  const replacement = { ...permit, generation: 'g2', room: 'r2' };
+  const failedPull = state.beginPull('failed-retirement');
+  assert.equal(
+    await state.installWithRetirement(
+      { ...failedPull, sequence: 2, permits: [replacement] },
+      async () => false,
+    ),
+    false,
+  );
+  assert.equal(state.allows(query), false);
+  assert.equal(state.allows({ ...replacement, source: 'microphone' }), false);
+
+  const retry = state.beginPull('retry-retirement');
+  assert.equal(
+    await state.installWithRetirement(
+      { ...retry, sequence: 3, permits: [replacement] },
+      async (generation) => generation === 'g1',
+    ),
+    true,
+  );
+  assert.equal(state.allows({ ...replacement, source: 'microphone' }), true);
+});
+
+test('membership changes cannot narrow permits inside a still-active generation', async () => {
+  const { state } = fixture();
+  const firstPull = state.beginPull('initial');
+  assert.equal(state.install({ ...firstPull, sequence: 1, permits: [permit] }), true);
+  const changedRoster = { ...permit, identity: 'u2' };
+  const update = state.beginPull('same-generation-roster-change');
+  assert.equal(
+    await state.installWithRetirement(
+      { ...update, sequence: 2, permits: [permit, changedRoster] },
+      async (generation) => generation === 'g1',
+    ),
+    false,
+  );
+  assert.equal(state.allows(query), false);
+  assert.equal(state.allows({ ...changedRoster, source: 'microphone' }), false);
+});

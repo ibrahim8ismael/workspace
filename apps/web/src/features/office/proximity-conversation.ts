@@ -9,9 +9,20 @@ export function latestProximityConversation(
     const update = updates[index]!;
     if (
       update.kind === 'proximity' &&
+      update.state !== 'ended' &&
       update.participants.some((participant) => participant.participationId === participationId)
-    )
+    ) {
+      const terminal = updates.some(
+        (candidate) =>
+          candidate.kind === 'proximity' &&
+          candidate.state === 'ended' &&
+          candidate.conversationId === update.conversationId &&
+          candidate.officeEpoch === update.officeEpoch &&
+          candidate.version >= update.version,
+      );
+      if (terminal) continue;
       return update;
+    }
   }
   return null;
 }

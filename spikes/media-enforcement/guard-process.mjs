@@ -8,14 +8,25 @@ import { applicationTokenAllowed } from './application-token-authorization.mjs';
 import { PermitState } from './permit-state.mjs';
 import { pullPolicy } from './policy-pull.mjs';
 import { RetirementStore } from './retirement-store.mjs';
+import { retireSfuGeneration as retireRoomGeneration } from './sfu-generation-retirement.mjs';
+import { RoomServiceClient } from '../../apps/api/node_modules/livekit-server-sdk/dist/RoomServiceClient.js';
 const { CP07_KEY, CP07_SECRET, CP07_ORIGIN, CP07_RETIREMENTS } = process.env;
 if (!CP07_KEY || !CP07_SECRET || !CP07_ORIGIN || !CP07_RETIREMENTS)
   throw new Error('missing fixture configuration');
 const verifier = new TokenVerifier(CP07_KEY, CP07_SECRET);
 const policyEnabled = Boolean(process.env.CP07_POLICY_ENDPOINT);
 const applicationPolicy = process.env.CP07_APPLICATION_POLICY === '1';
-if (applicationPolicy && (!policyEnabled || !process.env.CP07_POLICY_ACK_ENDPOINT))
+if (
+  applicationPolicy &&
+  (!policyEnabled || !process.env.CP07_POLICY_ACK_ENDPOINT || !process.env.CP07_SFU_UPSTREAM)
+)
   throw new Error('application media policy requires pull and installation-ACK endpoints');
+const roomService = applicationPolicy
+  ? new RoomServiceClient(process.env.CP07_SFU_UPSTREAM, CP07_KEY, CP07_SECRET, {
+      requestTimeout: 1000,
+      failover: false,
+    })
+  : null;
 const epoch = process.env.CP07_GUARD_EPOCH;
 if (!/^[a-f0-9]{64}$/.test(epoch ?? '')) throw new Error('missing unique guard boot epoch');
 const permits = new PermitState(
@@ -24,6 +35,19 @@ const permits = new PermitState(
   new RetirementStore(CP07_RETIREMENTS),
 );
 let pulling = false;
+async function retireSfuGeneration(generation) {
+  if (!roomService) return false;
+  const result = await retireRoomGeneration({ roomService, generation, timeoutMs: 3000 });
+  process.stdout.write(
+    JSON.stringify({
+      kind: result.retired ? 'retired' : 'retirement_pending',
+      generation,
+      participants: result.retired ? 0 : 'unknown_or_nonzero',
+      durationMs: result.durationMs,
+    }) + '\n',
+  );
+  return result.retired;
+}
 const pull = async () => {
   if (!policyEnabled || pulling) return;
   pulling = true;
@@ -42,6 +66,9 @@ const pull = async () => {
       },
       onVerified: ({ nonce, sequence }) =>
         process.stdout.write(JSON.stringify({ kind: 'expect', nonce, version: sequence }) + '\n'),
+      installPolicy: applicationPolicy
+        ? (snapshot) => permits.installWithRetirement(snapshot, retireSfuGeneration)
+        : undefined,
       onInstalled: ({ nonce, sequence }) => {
         if (process.env.CP07_LEASE_PATH) {
           const path = process.env.CP07_LEASE_PATH;

@@ -1,6 +1,6 @@
 # Gather Lite project documentation
 
-Current review (2026-11-10): read the [CP06.11 documentation/code drift review](planning/2026-11-10_DRIFT_REPORT.md), [full MVP completion plan](planning/PROJECT_COMPLETION_PLAN.md), and [OpenOfficeForAll UI integration plan](migration/OPENOFFICE_UI_INTEGRATION.md) for the current baseline, remaining work, dependencies and evidence gates. Historical evidence retains its original dates; current documentation corrections are tracked in the [implementation progress](planning/IMPLEMENTATION_PROGRESS.md). The drift review is scoped to CP06.11 files, and the completion plan is proposed delivery work, not approval of open decisions or release signoff.
+Current review (2026-11-10): read the [CP06.11 documentation/code drift review](planning/2026-11-10_DRIFT_REPORT.md), [full MVP completion plan](planning/PROJECT_COMPLETION_PLAN.md), and [OpenOfficeForAll UI integration plan](migration/OPENOFFICE_UI_INTEGRATION.md) for the current baseline, remaining work, dependencies and evidence gates. The [meeting action tickets](planning/MEETING_ACTION_TICKETS.md) record newly reported tasks and suggested priorities for team review. Historical evidence retains its original dates; current documentation corrections are tracked in the [implementation progress](planning/IMPLEMENTATION_PROGRESS.md). The drift review is scoped to CP06.11 files, and the completion plan is proposed delivery work, not approval of open decisions or release signoff.
 
 Status: CP00–CP07 locally implemented/proven; authenticated OpenOfficeForAll-style app, Vivo map, and first office-chat slice integrated; product media and release acceptance pending · Updated: 2026-11-10
 
@@ -11,6 +11,10 @@ Gather Lite is a **B2B SaaS virtual office for companies and their teams**, deli
 B2B SaaS is an agreed requirement. Read the [B2B SaaS product plan](product/B2B_SAAS.md) for company tenancy, onboarding, administration and commercial scope. The owner accepted one company/workspace/office and verified-user self-service onboarding on 2026-11-08; a future organization hierarchy requires a separate decision. Payments remain excluded from MVP.
 
 Current implementation checkpoints: CP00–CP07 have local implementation or experimental proof; production/release acceptance remains open. CP04 connects browser accounts/companies and delivery; CP05/CP06 add authoritative office realtime, the Vivo browser map, and CP06.11 office-wide text chat; CP07 is an isolated local media-enforcement proof, not product voice. See [owner decisions](decisions/README.md), [office v1 contract](contracts/OFFICE_V1.md), and [progress](planning/IMPLEMENTATION_PROGRESS.md). CP08 product media UX and remaining UI review are next.
+
+## Browser navigation
+
+See the [page-to-route map](navigation/ROUTES.md) for canonical URLs, protected links, office lifecycle behavior, legacy aliases, and SPA hosting.
 
 ## Start here
 

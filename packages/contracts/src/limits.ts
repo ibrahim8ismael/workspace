@@ -2,6 +2,7 @@
 export const OFFICE_LIMITS = Object.freeze({
   maxParticipants: 20,
   maxMeetingParticipants: 6,
+  maxProximityParticipants: 6,
   maxInboundEventBytes: 4096,
   maxSnapshotBytes: 65536,
   maxWorldDimension: 32768,

@@ -22,7 +22,7 @@ import {
 } from '@gather/contracts';
 import { io, type Socket } from 'socket.io-client';
 import { ApiClient } from '../../lib/api';
-import { applyWorldDelta } from './world-state';
+import { applyWorldDelta, isSnapshotMonotonic } from './world-state';
 
 export type OfficeConnectionStatus =
   'idle' | 'connecting' | 'connected' | 'disconnected' | 'ended' | 'error';
@@ -37,6 +37,26 @@ export type OfficeClientState = {
   spaceChatEvents: Record<string, SpaceMessage[]>;
   conversationUpdates: ConversationUpdate[];
 };
+
+export type ConversationVersionMarker = {
+  readonly officeEpoch: string;
+  readonly version: number;
+  readonly ended: boolean;
+};
+
+export function acceptsConversationUpdate(
+  previous: ConversationVersionMarker | undefined,
+  update: ConversationUpdate,
+  officeEpoch: string | null,
+) {
+  if (officeEpoch && update.officeEpoch !== officeEpoch) return false;
+  return (
+    !previous ||
+    (previous.officeEpoch === update.officeEpoch &&
+      !previous.ended &&
+      update.version > previous.version)
+  );
+}
 
 const EMPTY_STATE: OfficeClientState = {
   status: 'idle',
@@ -54,6 +74,7 @@ export class OfficeClient {
   private state = EMPTY_STATE;
   private socket: Socket | null = null;
   private readonly listeners = new Set<() => void>();
+  private readonly conversationVersions = new Map<string, ConversationVersionMarker>();
   private connectGeneration = 0;
   private resyncPending = false;
   private inputSequence = 0;
@@ -94,6 +115,7 @@ export class OfficeClient {
       spaceChatEvents: {},
       conversationUpdates: [],
     });
+    this.conversationVersions.clear();
     try {
       const bootstrap = await this.api.officeBootstrap(this.workspaceId, this.officeId);
       if (!this.isCurrent(generation)) return;
@@ -121,6 +143,7 @@ export class OfficeClient {
       });
       this.socket = socket;
       socket.on('office:ready', (raw: unknown) => {
+        if (!this.isCurrent(generation) || this.socket !== socket) return;
         const ready = officeReadySchema.safeParse(raw);
         if (!ready.success || !this.bootstrapMatches(ready.data, bootstrap)) {
           this.fail('The office returned an invalid session.');
@@ -135,6 +158,7 @@ export class OfficeClient {
         });
       });
       socket.on('world:delta', (raw: unknown) => {
+        if (!this.isCurrent(generation) || this.socket !== socket) return;
         const current = this.state.snapshot;
         if (!current) return;
         const result = applyWorldDelta(current, raw);
@@ -172,19 +196,35 @@ export class OfficeClient {
       socket.on('conversation:update', (raw: unknown) => {
         const parsed = conversationUpdateSchema.safeParse(raw);
         if (!parsed.success) return;
+        const update = parsed.data;
+        const previous = this.conversationVersions.get(update.conversationId);
+        if (
+          !acceptsConversationUpdate(
+            previous,
+            update,
+            this.state.ready?.snapshot.officeEpoch ?? null,
+          )
+        )
+          return;
+        this.conversationVersions.set(update.conversationId, {
+          officeEpoch: update.officeEpoch,
+          version: update.version,
+          ended: update.state === 'ended',
+        });
         this.update({
           conversationUpdates: [
             ...this.state.conversationUpdates.filter(
-              (candidate) => candidate.conversationId !== parsed.data.conversationId,
+              (candidate) => candidate.conversationId !== update.conversationId,
             ),
-            parsed.data,
+            update,
           ].slice(-5),
         });
       });
       socket.on('world:snapshot', (raw: unknown) => {
+        if (!this.isCurrent(generation) || this.socket !== socket) return;
         const parsed = worldSnapshotSchema.safeParse(raw);
         const current = this.state.snapshot;
-        if (!parsed.success || (current && parsed.data.officeEpoch !== current.officeEpoch)) {
+        if (!parsed.success || (current && !isSnapshotMonotonic(current, parsed.data))) {
           this.requestResync();
           return;
         }
@@ -228,6 +268,7 @@ export class OfficeClient {
     this.connectGeneration += 1;
     this.resyncPending = false;
     this.inputSequence = 0;
+    this.conversationVersions.clear();
     this.socket?.disconnect();
     this.socket = null;
     this.state = EMPTY_STATE;

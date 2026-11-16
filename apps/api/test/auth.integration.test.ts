@@ -42,6 +42,9 @@ import {
   takeoverReferenceResponseSchema,
   OFFICE_LIMITS,
   officeMessageSchema,
+  spaceMessageSchema,
+  spaceMessagesResponseSchema,
+  type SpaceMessage,
   officeMessagesResponseSchema,
   officeChatMessageEventSchema,
   OFFICE_CHAT_RETENTION_DAYS,
@@ -2146,6 +2149,197 @@ describe('office socket admission', () => {
     } finally {
       ownerSocket.disconnect();
       memberSocket.disconnect();
+    }
+  });
+
+  it('refuses to serve scoped chat without exact uniqueness, history and retention indexes', async () => {
+    const models = app.get(ConversationModels);
+    const config = app.get(ConfigService);
+    const previous = config.get('DB_AUTO_INDEX');
+    config.set('DB_AUTO_INDEX', 'false');
+    const service = app.get(IndexesService);
+    const indexes = await models.scopedMessages.collection.indexes();
+    const unique = indexes.find((index) => index.unique && index.key['conversationKey'] === 1)!;
+    const ttl = indexes.find((index) => index.expireAfterSeconds === 0)!;
+    const history = indexes.find((index) => index.key['createdAt'] === -1)!;
+    try {
+      await models.scopedMessages.collection.dropIndex(unique.name!);
+      await expect(service.onApplicationBootstrap()).rejects.toThrow(
+        'space message idempotency index',
+      );
+      await models.createIndexes();
+      await models.scopedMessages.collection.dropIndex(history.name!);
+      await expect(service.onApplicationBootstrap()).rejects.toThrow('space message history index');
+      await models.createIndexes();
+      await models.scopedMessages.collection.dropIndex(ttl.name!);
+      await expect(service.onApplicationBootstrap()).rejects.toThrow('space message TTL index');
+    } finally {
+      await models.createIndexes();
+      config.set('DB_AUTO_INDEX', previous);
+    }
+  });
+
+  it('isolates General, Social and private DMs, preserves legacy history and denies revoked members', async () => {
+    const owner = await account();
+    const member = await account();
+    const bystander = await account();
+    const outsider = await account();
+    const workspaceId = await workspace(owner);
+    await join(owner, workspaceId, member);
+    await join(owner, workspaceId, bystander);
+    const { office, ticket } = await issueTicket(owner, workspaceId);
+    const memberTicket = (await issueTicket(member, workspaceId)).ticket;
+    const bystanderTicket = (await issueTicket(bystander, workspaceId)).ticket;
+    const sockets = [ticket, memberTicket, bystanderTicket].map((ticket) =>
+      officeSocket({ ticket, protocolVersion: 1 }),
+    );
+    const received: SpaceMessage[][] = [[], [], []];
+    const base = `/api/workspaces/${workspaceId}/offices/${office._id}`;
+    const general = `${base}/channels/general/messages`;
+    const social = `${base}/channels/social/messages`;
+    const dm = (userId: string) => `${base}/direct-messages/${userId}/messages`;
+    const send = async (
+      client: typeof owner.client,
+      path: string,
+      text: string,
+      clientMessageId = randomUUID(),
+    ) => {
+      const result = await client.send('post', path, { text, clientMessageId });
+      status(result, 201);
+      return spaceMessageSchema.parse(result.body.message);
+    };
+    try {
+      for (const [index, socket] of sockets.entries()) {
+        socket.on('space:message', (payload) =>
+          received[index]!.push(spaceMessageSchema.parse(payload)),
+        );
+        const ready = nextSocketEvent<unknown>(socket, 'office:ready');
+        await connectSocket(socket);
+        await ready;
+      }
+      const legacy = await owner.client.send('post', `${base}/messages`, {
+        clientMessageId: randomUUID(),
+        text: 'Existing office history',
+      });
+      status(legacy, 201);
+      const migrated = spaceMessagesResponseSchema.parse(
+        (await member.client.get(general)).body,
+      ).messages;
+      expect(migrated).toEqual([
+        { ...legacy.body.message, scope: { kind: 'channel', id: 'general' } },
+      ]);
+
+      const socialEvent = nextSocketEvent<unknown>(sockets[1]!, 'space:message');
+      const retryId = randomUUID();
+      const socialMessage = await send(owner.client, social, 'Social only', retryId);
+      expect(await socialEvent).toEqual(socialMessage);
+      expect(await send(owner.client, social, 'Social only', retryId)).toEqual(socialMessage);
+      status(
+        await owner.client.send('post', social, { clientMessageId: retryId, text: 'Changed' }),
+        409,
+      );
+      const generalMessage = await send(owner.client, general, 'General only', retryId);
+      expect(generalMessage.id).not.toBe(socialMessage.id);
+      expect(
+        spaceMessagesResponseSchema.parse((await member.client.get(social)).body).messages,
+      ).toEqual([socialMessage]);
+      expect(
+        spaceMessagesResponseSchema.parse((await owner.client.get(general)).body).messages,
+      ).not.toContainEqual(socialMessage);
+
+      const privateEvent = nextSocketEvent<unknown>(sockets[1]!, 'space:message');
+      const privateMessage = await send(owner.client, dm(member.id), 'Only the two of us', retryId);
+      expect(await privateEvent).toEqual(privateMessage);
+      expect(privateMessage.scope).toEqual({ kind: 'dm', userIds: [owner.id, member.id].sort() });
+      expect(await send(owner.client, dm(member.id), 'Only the two of us', retryId)).toEqual(
+        privateMessage,
+      );
+      status(
+        await owner.client.send('post', dm(member.id), {
+          clientMessageId: retryId,
+          text: 'Changed private message',
+        }),
+        409,
+      );
+      const reply = await send(member.client, dm(owner.id), 'A private reply');
+      for (const [client, peerId] of [
+        [owner.client, member.id],
+        [member.client, owner.id],
+      ] as const) {
+        expect(
+          spaceMessagesResponseSchema.parse((await client.get(dm(peerId))).body).messages,
+        ).toEqual([privateMessage, reply]);
+      }
+      expect(
+        spaceMessagesResponseSchema.parse((await bystander.client.get(dm(member.id))).body)
+          .messages,
+      ).toEqual([]);
+      expect(received[2]!.filter((message) => message.scope.kind === 'dm')).toEqual([]);
+      status(await outsider.client.get(dm(owner.id)), 403);
+      status(await owner.client.get(dm(outsider.id)), 404);
+      status(
+        await owner.client.send('post', dm(outsider.id), {
+          clientMessageId: randomUUID(),
+          text: 'Cross-space',
+        }),
+        404,
+      );
+      status(
+        await owner.client.send('post', dm(member.id), {
+          clientMessageId: randomUUID(),
+          text: 'Forged',
+          userIds: [owner.id, bystander.id],
+        }),
+        400,
+      );
+      status(await owner.client.get(`${base}/channels/unknown/messages`), 400);
+      status(await owner.client.get(dm(owner.id)), 400);
+      const stored = await app
+        .get(ConversationModels)
+        .scopedMessages.findById(privateMessage.id)
+        .lean();
+      expect(stored!.expiresAt.getTime() - stored!.createdAt.getTime()).toBe(
+        90 * 24 * 60 * 60 * 1000,
+      );
+      await app.get(ConversationModels).scopedMessages.create({
+        ...stored!,
+        _id: randomUUID(),
+        clientMessageId: randomUUID(),
+        text: 'Expired',
+        expiresAt: new Date(Date.now() - 1000),
+      });
+      expect(
+        spaceMessagesResponseSchema.parse((await owner.client.get(dm(member.id))).body).messages,
+      ).toEqual([privateMessage, reply]);
+
+      status(
+        await owner.client.send('delete', `/api/workspaces/${workspaceId}/members/${member.id}`),
+        200,
+      );
+      status(await member.client.get(general), 403);
+      status(await member.client.get(social), 403);
+      status(await member.client.get(dm(owner.id)), 403);
+      status(
+        await member.client.send('post', dm(owner.id), {
+          clientMessageId: randomUUID(),
+          text: 'After removal',
+        }),
+        403,
+      );
+      status(await owner.client.get(dm(member.id)), 404);
+      status(
+        await owner.client.send('post', dm(member.id), {
+          clientMessageId: randomUUID(),
+          text: 'Removed recipient',
+        }),
+        404,
+      );
+      const afterRevocation = nextSocketEvent<unknown>(sockets[2]!, 'space:message');
+      const after = await send(owner.client, social, 'After removal');
+      expect(await afterRevocation).toEqual(after);
+      expect(received[1]!.some((message) => message.id === after.id)).toBe(false);
+    } finally {
+      for (const socket of sockets) socket.disconnect();
     }
   });
 

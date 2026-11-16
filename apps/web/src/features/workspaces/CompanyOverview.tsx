@@ -148,6 +148,7 @@ export function CompanyOverview({
         }
       >
         <LazyCompanyOfficePreview
+          key={detail.id}
           account={account}
           api={api}
           detail={detail}

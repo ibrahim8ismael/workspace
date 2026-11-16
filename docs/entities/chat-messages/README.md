@@ -1,42 +1,39 @@
-# Office chat messages
+# Space chat messages
 
-Status: implemented for one company-wide office channel · CP06.11 · Updated: 2026-11-10
+Status: General, Social and private DMs implemented · Issue #17 · Updated: 2026-11-16
 
-## Responsibility
+## Responsibility and storage
 
-Store and deliver text messages for the fixed office-wide channel. The current slice does not implement direct messages, nearby chat, meeting chat, attachments, channel creation, edits, deletion, moderation, or search.
+The conversations module persists and delivers text chat through the supplied OpenOfficeForAll chat UI.
 
-- Owning module: `apps/api/src/modules/conversations/`.
-- Durable state: MongoDB collection `office_messages`.
-- Realtime delivery: `chat:message` to the current office's admitted Socket.IO room.
-- UI: the supplied OpenOfficeForAll `ChatView` and chat styles, connected through this repository's `ApiClient` and `OfficeClient`.
+- General reuses the original `office_messages` collection. Existing office history and legacy message routes retain their IDs, timestamps and retry semantics.
+- Social and DMs use `space_messages`, adding a `conversationKey` to the same message fields.
+- Fields: `id`, `workspaceId`, `officeId`, `senderId`, `senderName`, `clientMessageId`, `text`, `createdAt`, `expiresAt`.
+- The server derives `channel:social` or `dm:<sorted-user-id>:<sorted-user-id>`; the browser cannot supply a trusted participant list.
+- Both collections have history, unique idempotency and TTL indexes. Run `pnpm db:indexes` against an existing installation before serving the new routes. No destructive migration or General history backfill is required.
 
-## Data
+## Retention and retries
 
-- `id`, `workspaceId`, `officeId`
-- `senderId`, `senderName`
-- `clientMessageId` (sender-scoped idempotency key)
-- `text` (trimmed, 1–4000 characters)
-- `createdAt`, `expiresAt`
+Text is trimmed and limited to 1–4000 characters. History returns the latest 100 messages in chronological order. All messages expire exactly 90 days after creation; queries filter expired messages before asynchronous MongoDB TTL deletion.
 
-Messages expire exactly 90 days after creation. Queries filter `expiresAt > now` because MongoDB TTL cleanup is asynchronous. A TTL index provides physical deletion. History returns at most the latest 100 unexpired messages in chronological order.
+Idempotency is scoped to the sender, workspace, office and conversation. An unchanged retry returns the original message; changing the text for the same key returns `409 idempotency_conflict`. The browser preserves a failed draft and retry ID per conversation, prevents overlapping duplicate sends, and clears only the sent conversation's unchanged draft on success.
 
 ## Authorization and delivery
 
-- Both reads and writes resolve the authenticated verified actor and validate active membership plus the exact office/workspace relationship.
-- Message insertion locks current session/account/workspace membership in the same MongoDB transaction as the write.
-- A retry with the same sender, workspace, office and client message ID returns the original message; changing the body under that key returns `409 idempotency_conflict`. The UI retains the client message ID across retries of an unchanged draft and creates a new one if the draft text changes.
-- New messages are emitted only after the database transaction commits and only to `office:<workspaceId>:<officeId>`. The office gateway admits sockets using the existing one-use ticket flow. The history HTTP API remains available to authorized members who are not currently connected to the map.
-- The POST route is CSRF protected and limited to 60 requests per minute per actor/workspace.
+Reads and writes validate the authenticated verified actor, active workspace membership and exact office ownership. DMs additionally lock/check the peer's active membership and active verified account in the same transaction. Both participants use the same canonical pair history. Another member querying the same peer opens their own pair, never the original conversation.
 
-## Interface
+Messages publish after transaction commit. `space:message` contains the safe message DTO plus `scope: { kind: 'channel', id: 'general' | 'social' }` or `{ kind: 'dm', userIds: [firstId, secondId] }`. Delivery targets only currently authorized admitted sockets for that workspace/office; DMs further restrict delivery to the pair. The publisher rechecks current socket authorization before emission and fails closed on policy-store errors. General also emits the legacy `chat:message` projection for compatibility.
 
-- `GET /api/workspaces/:workspaceId/offices/:officeId/messages` → `{ messages }`
-- `POST /api/workspaces/:workspaceId/offices/:officeId/messages` with `{ clientMessageId, text }` → `{ message }`
-- Socket.IO server event: `chat:message` with the same strict, secret-free message DTO.
+Realtime uses the existing admitted `/office` connection. HTTP history/send remain available to authorized members outside the live map. Reconnect reloads history; failed history/member loads have explicit retry controls. Other space members cannot access DM content through history or realtime.
 
-Shared request, response and event schemas are in `packages/contracts/src/http/chat.ts`. Only the built-in `office` channel is exposed; its scope comes from the route's workspace and office IDs, not a caller-selected channel ID.
+## Interfaces
 
-## Remaining work
+All routes are under `/api/workspaces/:workspaceId/offices/:officeId`:
 
-Extend this feature only after deciding the matching authorization and retention rules for additional surfaces. CP08/CP09 cover private conversation/meeting media, while calendar and activity require separate data/API work. See [PLAN.md](PLAN.md), the [OpenOfficeForAll UI integration](../../migration/OPENOFFICE_UI_INTEGRATION.md), and [implementation progress](../../planning/IMPLEMENTATION_PROGRESS.md).
+- `GET/POST /channels/:channelId/messages` (`general` or `social`).
+- `GET/POST /direct-messages/:recipientId/messages` (another active space member).
+- Legacy `GET/POST /messages` remains General's compatible alias.
+
+POST bodies are strict `{ clientMessageId, text }`, protected by CSRF and a shared 60-per-minute actor/workspace budget across all conversation routes. New responses use `spaceMessageSchema` / `spaceMessagesResponseSchema`; legacy responses retain the old DTO. Contracts are in `packages/contracts/src/http/chat.ts`.
+
+Attachments, reactions, edits/deletion, moderation, search, pagination, group DMs and custom channels remain outside this issue. See [implementation evidence](PLAN.md).

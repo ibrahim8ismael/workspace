@@ -1,21 +1,13 @@
 # Chat channels implementation plan
 
-Status: fixed office channel implemented; customer-managed channels remain deferred · CP06.11 · Updated: 2026-11-10
+Status: Issue #17 implemented · Updated: 2026-11-16
 
-## Implementation tasks
+- [x] Expose General and Social as built-in channels with active space membership and exact office scope.
+- [x] Preserve the original office history as General without migrating or duplicating records.
+- [x] Open private DMs from the space member directory using a server-derived participant pair.
+- [x] Keep channel/DM selection, messages, drafts and retry IDs separate.
+- [x] Check both DM participants and each realtime recipient against current authorization.
+- [x] Verify persistence, retention, retry conflicts, channel isolation, DM privacy, cross-space denial and membership revocation through the real API/MongoDB/Socket.IO integration harness.
+- [x] Verify channel/DM navigation, draft isolation, delayed-send switching, private realtime reply, failed-send retry and reconnect history through mocked-API Chromium E2E.
 
-- [x] Record scope: one built-in company-wide `office` channel; no channel CRUD or customer-managed channel records.
-- [x] Define workspace/office-scoped authorization, 90-day message retention and the request/event contracts.
-- [x] Connect channel projection and message history/send to the fixed office UI.
-
-## Acceptance criteria
-
-- [x] MVP exposes only the fixed office channel; unsupported DMs, nearby chat, meeting chat and channel management stay absent.
-- [x] Message endpoints resolve active workspace membership and exact office scope; detailed evidence is in [chat messages](../chat-messages/PLAN.md).
-
-## Dependencies and completion
-
-- Follow the relationships and invariants in the [entity specification](README.md).
-- Additional channels still require visibility, membership and retention decisions.
-- Message DTOs and errors are frozen in [HTTP](../../contracts/HTTP.md) / [realtime](../../contracts/REALTIME.md) contracts.
-- The fixed-channel slice is implemented; full composed-browser verification remains pending because Docker is currently unavailable. See the [acceptance register](../../planning/ACCEPTANCE.md).
+Custom channels, group DMs, nearby/meeting text chat and channel administration remain outside this issue. See the [entity specification](README.md) and [message implementation](../chat-messages/PLAN.md).

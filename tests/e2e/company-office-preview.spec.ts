@@ -1,3 +1,4 @@
+import type { SpaceMessage } from '@gather/contracts';
 import { expect, test } from '@playwright/test';
 
 const account = {
@@ -77,6 +78,8 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
       createdAt: '2026-11-10T17:00:00.000Z',
     },
   ];
+  let finishDirectSend: (() => void) | undefined;
+  const scopedHistory: Record<string, SpaceMessage[]> = {};
   let officeBootstrapRequests = 0;
   let officeTicketRequests = 0;
   let officeConnections = 0;
@@ -148,11 +151,19 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
           },
         ],
       });
-    if (method === 'GET' && path === `/api/workspaces/${workspace.id}/offices/${officeId}/messages`)
-      return json({ messages: officeHistory });
+    if (
+      method === 'GET' &&
+      path === `/api/workspaces/${workspace.id}/offices/${officeId}/channels/general/messages`
+    )
+      return json({
+        messages: officeHistory.map((message) => ({
+          ...message,
+          scope: { kind: 'channel', id: 'general' },
+        })),
+      });
     if (
       method === 'POST' &&
-      path === `/api/workspaces/${workspace.id}/offices/${officeId}/messages`
+      path === `/api/workspaces/${workspace.id}/offices/${officeId}/channels/general/messages`
     ) {
       const body = request.postDataJSON() as { clientMessageId: string; text: string };
       sentOfficeMessages.push(body);
@@ -175,9 +186,36 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
           senderId: account.id,
           senderName: account.displayName,
           text: body.text,
+          scope: { kind: 'channel', id: 'general' },
           createdAt: '2026-11-10T17:01:00.000Z',
         },
       });
+    }
+    if (path.endsWith('/channels/social/messages') || path.includes('/direct-messages/')) {
+      if (method === 'GET') return json({ messages: scopedHistory[path] ?? [] });
+      const body = request.postDataJSON() as { clientMessageId: string; text: string };
+      if (body.text === 'Slow private send')
+        await new Promise<void>((resolve) => {
+          finishDirectSend = resolve;
+        });
+      const message: SpaceMessage = {
+        id: crypto.randomUUID(),
+        senderId: account.id,
+        senderName: account.displayName,
+        text: body.text,
+        createdAt: new Date().toISOString(),
+        scope: path.includes('/direct-messages/')
+          ? {
+              kind: 'dm',
+              userIds: [account.id, '41bbf5d6-37d7-4468-9892-9776ff19e008'].sort() as [
+                string,
+                string,
+              ],
+            }
+          : { kind: 'channel', id: 'social' },
+      };
+      scopedHistory[path] = [...(scopedHistory[path] ?? []), message];
+      return json({ message }, 201);
     }
     if (method === 'POST' && path === `/api/conversations/${proximityConversationId}/media-token`) {
       const body = request.postDataJSON() as {
@@ -555,10 +593,10 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
     account.displayName,
   );
   await page.getByRole('button', { name: 'Messages' }).click();
-  await expect(page.getByRole('heading', { name: 'Welcome to #office' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Welcome to #General' })).toBeVisible();
   await expect(page.getByText('Welcome to the team chat')).toBeVisible();
   await expect(page.getByText('Office Teammate').first()).toBeVisible();
-  const officeMessageBox = page.getByRole('textbox', { name: 'Message office' });
+  const officeMessageBox = page.getByRole('textbox', { name: 'Message General' });
   await officeMessageBox.fill('A message that should survive a retry');
   await page.getByRole('button', { name: 'Send message' }).click();
   await expect(page.locator('.chat-view-status')).toContainText('could not be sent');
@@ -568,6 +606,55 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   expect(sentOfficeMessages).toHaveLength(2);
   expect(sentOfficeMessages[0]?.text).toBe(sentOfficeMessages[1]?.text);
   expect(sentOfficeMessages[0]?.clientMessageId).toBe(sentOfficeMessages[1]?.clientMessageId);
+  await expect(officeMessageBox).toHaveValue('');
+  await officeMessageBox.fill('General draft stays here');
+  await page.getByRole('button', { name: 'Social', exact: true }).click();
+  const socialBox = page.getByRole('textbox', { name: 'Message Social' });
+  await expect(socialBox).toHaveValue('');
+  await expect(page.getByText('Welcome to the team chat')).toHaveCount(0);
+  await socialBox.fill('Social channel message');
+  await page.getByRole('button', { name: 'Send message' }).click();
+  await expect(page.getByText('Social channel message', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Office Teammate', exact: true }).click();
+  const directBox = page.getByRole('textbox', { name: 'Message Office Teammate' });
+  await expect(directBox).toBeEnabled();
+  await expect(page.getByText('Social channel message', { exact: true })).toHaveCount(0);
+  await directBox.fill('Private message to my teammate');
+  await page.getByRole('button', { name: 'Send message' }).click();
+  await expect(page.getByText('Private message to my teammate', { exact: true })).toBeVisible();
+  officeServerSocket?.send(
+    `42/office,["space:message",${JSON.stringify({
+      id: '92b2c7c6-e6cd-45e1-8e2d-b6b5f7b7dcb1',
+      senderId: teammateParticipationId,
+      senderName: 'Office Teammate',
+      text: 'Realtime private reply',
+      createdAt: new Date().toISOString(),
+      scope: { kind: 'dm', userIds: [account.id, teammateParticipationId].sort() },
+    })}]`,
+  );
+  await expect(page.getByText('Realtime private reply')).toBeVisible();
+  await directBox.fill('Slow private send');
+  await page.getByRole('button', { name: 'Send message' }).click();
+  await expect.poll(() => Boolean(finishDirectSend)).toBe(true);
+  await page.getByRole('button', { name: 'General', exact: true }).click();
+  await expect(officeMessageBox).toHaveValue('General draft stays here');
+  await officeMessageBox.fill('General draft edited during a private send');
+  finishDirectSend!();
+  await expect
+    .poll(() =>
+      Object.values(scopedHistory)
+        .flat()
+        .some((message) => message.text === 'Slow private send'),
+    )
+    .toBe(true);
+  await expect(officeMessageBox).toHaveValue('General draft edited during a private send');
+  await expect(page.getByText('Private message to my teammate', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Realtime private reply')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Social', exact: true }).click();
+  await expect(page.getByText('Social channel message', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Office Teammate', exact: true }).click();
+  await expect(page.getByText('Private message to my teammate', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'General', exact: true }).click();
   await page.getByRole('button', { name: 'Office', exact: true }).click();
   await expect(page.locator('.office-scene .office-map')).toHaveCount(1);
   await page.getByRole('button', { name: 'Back to companies' }).focus();

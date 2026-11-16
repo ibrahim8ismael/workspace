@@ -80,6 +80,9 @@ type Props = {
   topicEditable?: boolean;
   showChannelTools?: boolean;
   statusMessage?: string;
+  onRetryLoad?: (() => void) | undefined;
+  /** Let the owning feature clear the exact conversation draft after an async send. */
+  clearDraftOnSend?: boolean;
 };
 
 /** The reference's chat page: header, conversation introduction, grouped messages and a formatting composer. */
@@ -99,11 +102,15 @@ export default function ChatView({
   topicEditable = true,
   showChannelTools = true,
   statusMessage = '',
+  onRetryLoad,
+  clearDraftOnSend = true,
 }: Props) {
   const t = englishOnly ? tEnglish : appTranslate;
   const formatLocale = englishOnly ? 'en' : locale();
   const box = useRef<HTMLTextAreaElement>(null);
   const end = useRef<HTMLDivElement>(null);
+  const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [editingTopic, setEditingTopic] = useState(false);
@@ -145,12 +152,17 @@ export default function ChatView({
   }, [conversation]);
 
   const send = async () => {
-    if (!draft.trim() || !online) return;
+    if (!draft.trim() || !online || sendingRef.current) return;
+    sendingRef.current = true;
+    setSending(true);
     try {
       await onSend(draft.trim());
-      onDraft('');
+      if (clearDraftOnSend) onDraft('');
     } catch {
       // The owning feature reports its error and leaves the draft available for retry.
+    } finally {
+      sendingRef.current = false;
+      setSending(false);
     }
   };
   const keyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -305,6 +317,11 @@ export default function ChatView({
       {statusMessage && (
         <p className="chat-view-status" role="status" aria-live="polite">
           {statusMessage}
+          {onRetryLoad && (
+            <button className="dashboard-secondary" type="button" onClick={onRetryLoad}>
+              Retry loading messages
+            </button>
+          )}
         </p>
       )}
       <div className="chat-scroll">
@@ -555,7 +572,7 @@ export default function ChatView({
             className="chat-send"
             title={t('Enviar (Intro)')}
             aria-label={t('Enviar mensaje')}
-            disabled={!online || !draft.trim()}
+            disabled={!online || !draft.trim() || sending}
           >
             <Send size={15} />
           </button>

@@ -1,38 +1,31 @@
 # Chat channels
 
-Status: one built-in office channel only · Updated: 2026-11-10 · Target: CP06
+Status: General, Social and private direct messages implemented · Issue #17 · Updated: 2026-11-16
 
 ## Responsibility
 
-Provide the fixed company-wide `office` channel for the first messaging slice. Channel identity is resolved from the workspace and office route; there is no customer-managed channel collection or CRUD.
+Provide two built-in channels for each space's office: **General** and **Social**. Active space members can read and send in both. The member directory also opens private one-to-one conversations with another active member of that same space.
 
-- Owning UI: supplied OpenOfficeForAll chat view.
-- State location: one built-in channel projection; messages are persisted in `office_messages`.
-- Direct messages, nearby chat, meeting channels and channel administration remain unimplemented.
+- Owning UI: supplied OpenOfficeForAll chat view, connected through `CompanyOfficePreview` and the space-chat adapter.
+- No channel collection or channel administration API is needed for these fixed channels.
+- Nearby chat, meeting chat and custom channels remain deferred.
 
-## Runtime representation
+## General transition
 
-The built-in channel is a UI projection (`id: office`, `name: office`), not a persisted channel record. Workspace and office IDs are resolved from the authorized route. Durable message rows own `workspaceId`, `officeId`, sender identity and retention timestamps.
+General is the display name and explicit channel route for the existing `office` channel. It reads and writes the same `office_messages` rows, preserving message IDs, original timestamps, expiry and idempotency keys. The legacy `/messages` endpoints remain compatible aliases; there is no copy/backfill, duplicate channel or history reset.
+
+Social uses `space_messages` with `conversationKey: channel:social`. DMs use that collection with a server-derived key containing the two sorted user IDs, scoped by workspace and office. Opening the same peer from either side returns the same history without creating duplicate conversation records.
+
+## Authorization and lifecycle
+
+- Channel reads/writes require an authenticated verified actor, active workspace membership and an office belonging to that workspace.
+- DMs require both members to remain active in the same workspace. Self-DMs and recipients outside the space are rejected. A removed or suspended recipient cannot be used to open/send a DM; an active member who rejoins can access the retained pair history again.
+- Only those two users receive DM events. Each realtime recipient's current session, account, membership grant and office binding is rechecked before delivery.
+- History is limited to the latest 100 unexpired messages, retained for 90 days. See [chat messages](../chat-messages/README.md).
 
 ## Relationships
 
 - [Workspaces](../workspaces/README.md)
 - [Offices](../offices/README.md)
 - [Chat Messages](../chat-messages/README.md)
-
-## Invariants and lifecycle
-
-- Channel messages inherit active workspace membership and exact office scope.
-- History retention is 90 days. See [chat messages](../chat-messages/README.md).
-
-## Interface outline
-
-- No channel CRUD endpoint exists. Message history/send routes use the scoped office API, and `chat:message` broadcasts to that admitted office room.
-
-## Planning question
-
-Additional channels require product rules for visibility, membership, permissions and retention before API work.
-
-## Next work
-
-See [implementation plan](PLAN.md), [milestones](../../planning/ROADMAP.md) and [decision register](../../decisions/README.md).
+- [Implementation evidence](PLAN.md)

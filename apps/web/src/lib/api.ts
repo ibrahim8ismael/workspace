@@ -18,6 +18,11 @@ import {
   membersResponseSchema,
   officeMessageResponseSchema,
   officeMessagesResponseSchema,
+  spaceMessagesResponseSchema,
+  spaceMessageResponseSchema,
+  spaceChannelIdSchema,
+  type SpaceConversation,
+  type SpaceMessage,
   registerSchema,
   reauthenticateSchema,
   resetPasswordSchema,
@@ -319,6 +324,52 @@ export class ApiClient {
         signal,
       )
     ).message;
+  }
+
+  async spaceMessages(
+    workspaceId: string,
+    officeId: string,
+    conversation: SpaceConversation,
+    signal?: AbortSignal,
+  ): Promise<SpaceMessage[]> {
+    return (
+      await this.get(
+        this.spaceMessagesPath(workspaceId, officeId, conversation),
+        spaceMessagesResponseSchema,
+        signal,
+      )
+    ).messages;
+  }
+
+  async sendSpaceMessage(
+    workspaceId: string,
+    officeId: string,
+    conversation: SpaceConversation,
+    input: SendOfficeMessage,
+    signal?: AbortSignal,
+  ): Promise<SpaceMessage> {
+    return (
+      await this.mutate(
+        this.spaceMessagesPath(workspaceId, officeId, conversation),
+        input,
+        sendOfficeMessageSchema,
+        spaceMessageResponseSchema,
+        undefined,
+        signal,
+      )
+    ).message;
+  }
+
+  private spaceMessagesPath(
+    workspaceId: string,
+    officeId: string,
+    conversation: SpaceConversation,
+  ) {
+    // Validate both route scopes before constructing the URL.
+    const base = this.officeMessagesPath(workspaceId, officeId).replace(/\/messages$/, '');
+    return conversation.kind === 'channel'
+      ? `${base}/channels/${spaceChannelIdSchema.parse(conversation.id)}/messages`
+      : `${base}/direct-messages/${encodeURIComponent(idSchema.parse(conversation.userId))}/messages`;
   }
 
   private officeMessagesPath(workspaceId: string, officeId: string) {

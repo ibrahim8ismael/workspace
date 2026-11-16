@@ -4,7 +4,6 @@ import {
   Bell,
   CalendarDays,
   ChevronDown,
-  Hash,
   LayoutGrid,
   Map as MapIcon,
   Mic,
@@ -16,14 +15,14 @@ import {
   Volume2,
 } from 'lucide-react';
 import type { AccountDto } from '@gather/contracts';
-import type { OfficeMessage } from '@gather/contracts';
 import type { OfficeWorkspaceDetail } from '../../lib/api';
 import { ApiClient } from '../../lib/api';
 import { DEFAULT_LOOK } from '../../../avatarLook';
 import VivoScene from '../../../VivoScene';
 import type { Overrides } from '../../../../shared/office-objects.js';
-import ChatView from '../../../chat/ChatView';
-import type { ChatMessage, DirectoryUser, Participant } from '../../../types';
+import { SpaceChatNavigation, SpaceChatView } from './space-chat';
+import { useSpaceChat } from './use-space-chat';
+import type { Participant } from '../../../types';
 import { OfficeClient } from '../office/office-client';
 import { latestProximityConversation } from '../office/proximity-conversation';
 import {
@@ -46,21 +45,6 @@ const LiveCommonsScene = lazy(() =>
 );
 
 type OfficeSection = 'office' | 'chat' | 'calendar' | 'activity' | 'invitations';
-const OFFICE_CHANNEL = {
-  id: 'office',
-  name: 'office',
-  topic: 'Company-wide office chat · Messages are retained for 90 days.',
-};
-const MEMBER_COLORS = ['#7968e6', '#54a98f', '#d18b49', '#6888bf', '#bd6b83'];
-
-function mergeOfficeMessages(current: OfficeMessage[], incoming: OfficeMessage[]) {
-  const merged = new Map(current.map((message) => [message.id, message]));
-  for (const message of incoming) merged.set(message.id, message);
-  return [...merged.values()]
-    .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
-    .slice(-100);
-}
-
 function sceneAvatarForAppearance(appearance: { bodyId: string; paletteId: string }) {
   if (appearance.bodyId === 'commons-worker' && appearance.paletteId === 'teal')
     return DEFAULT_LOOK;
@@ -128,13 +112,15 @@ export function CompanyOfficePreview({
   );
   const [zoom, setZoom] = useState(1.35);
   const [section, setSection] = useState<OfficeSection>('office');
-  const [chatMessages, setChatMessages] = useState<OfficeMessage[]>([]);
-  const [chatUsers, setChatUsers] = useState<DirectoryUser[]>([]);
-  const [chatDraft, setChatDraft] = useState('');
-  const [chatLoading, setChatLoading] = useState(true);
-  const [chatAvailable, setChatAvailable] = useState(false);
-  const [chatError, setChatError] = useState('');
-  const pendingChatMessage = useRef<{ text: string; id: string } | null>(null);
+  const chat = useSpaceChat(
+    api,
+    detail.id,
+    detail.officeId,
+    account.id,
+    state.spaceChatEvents,
+    connected,
+    onUnauthorized,
+  );
 
   useEffect(() => {
     titleRef.current?.focus();
@@ -203,35 +189,6 @@ export function CompanyOfficePreview({
     activeVoiceContextKey,
   ]);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    void Promise.all([
-      api.officeMessages(detail.id, detail.officeId, controller.signal),
-      api.workspaceMembers(detail.id, controller.signal),
-    ])
-      .then(([messages, members]) => {
-        if (controller.signal.aborted) return;
-        setChatMessages((current) => mergeOfficeMessages(current, messages));
-        setChatUsers(
-          members.map((member, index) => ({
-            userId: member.userId,
-            name: member.displayName,
-            color: MEMBER_COLORS[index % MEMBER_COLORS.length] ?? MEMBER_COLORS[0]!,
-          })),
-        );
-        setChatAvailable(true);
-        setChatError('');
-      })
-      .catch(() => {
-        if (controller.signal.aborted) return;
-        setChatError('Could not load office messages. Check your connection and retry.');
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setChatLoading(false);
-      });
-    return () => controller.abort();
-  }, [api, connected, detail.id, detail.officeId]);
-
   async function runOfficeAction(action: () => Promise<void>) {
     setOfficeActionError('');
     setOfficeActionPending(true);
@@ -296,41 +253,6 @@ export function CompanyOfficePreview({
       if (!proximityOptedIn) void changeProximityOptIn();
     }
   }
-
-  async function sendChatMessage(text: string) {
-    setChatError('');
-    const pendingMessage =
-      pendingChatMessage.current?.text === text
-        ? pendingChatMessage.current
-        : { text, id: crypto.randomUUID() };
-    pendingChatMessage.current = pendingMessage;
-    try {
-      const message = await api.sendOfficeMessage(detail.id, detail.officeId, {
-        clientMessageId: pendingMessage.id,
-        text,
-      });
-      setChatMessages((current) => mergeOfficeMessages(current, [message]));
-      pendingChatMessage.current = null;
-    } catch {
-      setChatError('Your message could not be sent. Check your connection and try again.');
-      throw new Error('office_message_send_failed');
-    }
-  }
-
-  const chatViewMessages: ChatMessage[] = useMemo(
-    () =>
-      mergeOfficeMessages(chatMessages, state.chatEvents).map((message) => ({
-        id: message.id,
-        participantId: message.senderId,
-        userId: message.senderId,
-        name: message.senderName,
-        text: message.text,
-        channel: 'channel',
-        channelId: OFFICE_CHANNEL.id,
-        createdAt: message.createdAt,
-      })),
-    [chatMessages, state.chatEvents],
-  );
 
   if (!connected) {
     return (
@@ -626,18 +548,7 @@ export function CompanyOfficePreview({
               </button>
             </div>
           ) : section === 'chat' ? (
-            <div className="chat-sidebar office-chat-sidebar" aria-label="Message conversations">
-              <p className="chat-section">
-                <span>CHANNELS</span>
-              </p>
-              <button className="chat-nav-row is-active" type="button" aria-current="page">
-                <Hash size={16} />
-                <span>{OFFICE_CHANNEL.name}</span>
-              </button>
-              <p className="office-sidebar-summary">
-                One company-wide office channel. Messages are retained for 90 days.
-              </p>
-            </div>
+            <SpaceChatNavigation chat={chat} selfId={account.id} />
           ) : (
             <div className="office-nav-placeholder">
               <strong>{section === 'calendar' ? 'Calendar' : 'Activity'}</strong>
@@ -946,27 +857,7 @@ export function CompanyOfficePreview({
             </div>
           ) : section === 'chat' ? (
             <>
-              <ChatView
-                conversation={{ kind: 'channel', id: OFFICE_CHANNEL.id }}
-                channels={[OFFICE_CHANNEL]}
-                users={chatUsers}
-                participants={[]}
-                selfUserId={account.id}
-                messages={chatViewMessages}
-                online={chatAvailable}
-                draft={chatDraft}
-                onDraft={setChatDraft}
-                onSend={sendChatMessage}
-                onTopic={() => {}}
-                englishOnly
-                topicEditable={false}
-                showChannelTools={false}
-                statusMessage={
-                  chatLoading
-                    ? 'Loading recent office messages…'
-                    : chatError || (chatAvailable ? '' : 'Office messages are unavailable.')
-                }
-              />
+              <SpaceChatView chat={chat} selfId={account.id} />
             </>
           ) : (
             <section className="office-section-placeholder" aria-live="polite">

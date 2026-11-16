@@ -41,7 +41,7 @@ Use Engine.IO admission and namespace policy together. Socket.IO documentation e
 | CP08.1 | `conversation:leave` | Client → server | Implemented against current conversation ID/version; ends the pair and suppresses rematching until eligibility or distance resets |
 | M4 | `meeting:join`, `meeting:leave` | Client → server | Fixed zone ID and current version where applicable. Enforce physical/access/capacity policy. Membership and media readiness arrive via `conversation:update` |
 
-Optional bounded reactions require a separate scope decision. Direct/nearby/meeting chat and SDP/ICE relay are outside the selected application event inventory. The fixed office text channel is persisted through HTTP and only its committed message is broadcast over Socket.IO. D02 was explicitly accepted on 2026-11-08: LiveKit handles media for both call types; there is no new production P2P relay path.
+Optional bounded reactions require a separate scope decision. Nearby/meeting text chat and SDP/ICE relay are outside the selected application event inventory. General, Social and private DM messages are persisted through HTTP and delivered after commit using the scoped messaging events described below. D02 was explicitly accepted on 2026-11-08: LiveKit handles media for both call types; there is no new production P2P relay path.
 
 ## Runtime and continuing authority
 
@@ -50,3 +50,9 @@ Optional bounded reactions require a separate scope decision. Direct/nearby/meet
 - Independently recheck session/account/workspace/membership on the proposed one-second cadence with at most a five-second lease, bounded by actual session expiry. Use monotonic request-start deadlines and ordered replies. A late result cannot revive expired participation. Immediate revocation signals accelerate cleanup, and expiry handles missed signals and authority loss.
 - On disconnect, revoke, takeover, drain or lease expiry, release the participation and seat, retire affected conversation permissions and unsubscribe. Exclude ended participation from all later broadcasts and grants. MongoDB loss denies new admission and existing leases expire within their bounded policy.
 - Verify exact-Origin upgrades, ticket replay/expiry, last-slot admission, duplicate commands, unauthorized event spoofing, seat conflicts, stale leases, reconnect/version gaps and two-company isolation with real Socket.IO clients. Track A04/A05/A11 in the [acceptance register](../planning/ACCEPTANCE.md).
+
+## Space messaging (Issue #17)
+
+The admitted `/office` socket receives `space:message` after a successful message commit. Its strict projection is the existing safe message fields plus `scope: { kind: 'channel', id: 'general' | 'social' }` or `{ kind: 'dm', userIds: [firstId, secondId] }` with sorted IDs. DMs emit only to sockets belonging to those two users in the exact workspace/office; no private payload is broadcast to the office room. Every candidate socket's session, account, membership grant and office authorization is rechecked before delivery. Policy-check errors suppress delivery; committed history remains recoverable over authenticated HTTP.
+
+General additionally emits the compatible legacy `chat:message` payload. New UI clients consume `space:message`, merge by message ID only into the matching conversation, discard events from stale socket generations, and reload selected history on reconnect. There is no client-selected room join or participant list for messaging. This extension uses the existing single-process office runtime; durable cross-instance event delivery is not added by this issue.

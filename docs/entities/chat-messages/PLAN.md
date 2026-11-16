@@ -1,24 +1,20 @@
 # Chat messages implementation plan
 
-Status: first company-wide office-channel slice implemented · CP06.11 · Updated: 2026-11-10
+Status: Issue #17 implemented · Updated: 2026-11-16
 
-## Completed in CP06.11
-
-- [x] Freeze bounded send/history/event schemas and 90-day retention.
-- [x] Add MongoDB model, scoped history/send APIs, sender-scoped idempotency, abuse budget and TTL/history indexes.
-- [x] Broadcast committed messages to admitted clients in the matching office room.
-- [x] Connect the supplied OpenOfficeForAll chat view and navigation to the project-owned API and Socket.IO adapter.
-- [x] Preserve the draft and its idempotency key after a failed send so the user can retry without duplicating a committed message.
-- [x] Keep unsupported DMs, nearby chat, attachments, topic editing, calendar, activity and media unavailable rather than fabricating functionality.
+- [x] Preserve existing General history and legacy message contracts.
+- [x] Add Social/DM storage with conversation-scoped idempotency, history indexes and 90-day TTL.
+- [x] Add strict channel/DM HTTP contracts and private realtime projections.
+- [x] Validate current actor, space/office and DM recipient in database transactions.
+- [x] Recheck recipient socket policy and emit DMs only to the two participants.
+- [x] Connect navigation, directory, history, realtime, per-conversation drafts and retry controls.
 
 ## Evidence
 
-The contract tests validate message lengths, IDs, page bounds and the 90-day constant. The API integration test covers persistence/expiry, repeat submission, body conflict, company isolation, history access and live Socket.IO delivery. The mocked Chromium E2E covers the supplied navigation/history UI, failed-send retry stability and history refresh after office reconnect. See the [implementation progress](../../planning/IMPLEMENTATION_PROGRESS.md) and [acceptance register](../../planning/ACCEPTANCE.md).
+`apps/api/test/auth.integration.test.ts` verifies the legacy General transition, Social separation, bidirectional DM history, unauthorized third-party/cross-space access, forged payloads, invalid channels, self-DM rejection, idempotent retries/conflicts, expiry filtering and access/delivery after membership revocation against temporary MongoDB and real HTTP/Socket.IO servers.
+
+`tests/e2e/company-office-preview.spec.ts` verifies the supplied browser UI using mocked HTTP/signaling: General/Social/DM navigation, saved history, failed-send retry IDs, per-conversation drafts, a delayed private send while editing General, a private realtime reply and reconnect history.
 
 ## Remaining work
 
-- [ ] Add authorization, lifecycle and retention policy before direct messages, nearby chat, meetings, attachments, edits, deletion, moderation or search.
-- [ ] Add unread state/pagination only after requirements and bounded behavior are specified.
-- [ ] Verify live UI behavior against the composed local app and Chrome/Edge after the current Docker daemon is available.
-
-No additional chat surface is implied by this first slice.
+Unread state, pagination, attachments, group DMs, custom channels and live deployment acceptance are separate work. Browser E2E mocks the API; the API integration suite supplies actual persistence/authorization/delivery evidence. No live deployment is implied by these checks.

@@ -129,6 +129,36 @@ export class IndexesService implements OnApplicationBootstrap {
     if (!exactIndex({ expiresAt: 1 }, (index) => index.expireAfterSeconds === 0))
       throw new Error('Missing exact office message TTL index. Run db:indexes.');
 
+    const scopedIndexes = await this.conversations.scopedMessages.collection.indexes().catch(() => {
+      throw new Error('Missing space message indexes. Run db:indexes.');
+    });
+    const exactScopedIndex = (
+      key: Record<string, 1 | -1>,
+      predicate: (index: (typeof scopedIndexes)[number]) => boolean = () => true,
+    ) =>
+      scopedIndexes.some(
+        (index) =>
+          Object.keys(index.key).length === Object.keys(key).length &&
+          Object.entries(key).every(([field, direction]) => index.key[field] === direction) &&
+          !index.sparse &&
+          !index.partialFilterExpression &&
+          (!index.collation || index.collation.locale === 'simple') &&
+          predicate(index),
+      );
+    if (
+      !exactScopedIndex(
+        { workspaceId: 1, officeId: 1, conversationKey: 1, senderId: 1, clientMessageId: 1 },
+        (index) => index.unique === true,
+      )
+    )
+      throw new Error('Missing exact unique space message idempotency index. Run db:indexes.');
+    if (
+      !exactScopedIndex({ workspaceId: 1, officeId: 1, conversationKey: 1, createdAt: -1, _id: -1 })
+    )
+      throw new Error('Missing exact space message history index. Run db:indexes.');
+    if (!exactScopedIndex({ expiresAt: 1 }, (index) => index.expireAfterSeconds === 0))
+      throw new Error('Missing exact space message TTL index. Run db:indexes.');
+
     await this.requireExactTtlIndex(this.mediaWebhooks.events, 'expiresAt', 'media webhook dedupe');
   }
 

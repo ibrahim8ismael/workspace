@@ -42,7 +42,7 @@ Paths are shown relative to `/api`. The linked reference supplies status codes, 
 | `GET /workspaces/:workspaceId` | Current member/owner reads selected company |
 | `GET /workspaces/:workspaceId/members` | Current member/owner reads safe directory |
 | `GET /workspaces/:workspaceId/offices/:officeId/messages` | Current workspace member reads the latest 100 unexpired messages from that exact office |
-| `POST /workspaces/:workspaceId/offices/:officeId/messages` | Current workspace member sends to the fixed office channel; scoped idempotency, 60/minute budget and 90-day retention |
+| `POST /workspaces/:workspaceId/offices/:officeId/messages` | Current workspace member sends to General through the legacy alias; scoped idempotency, 60/minute budget and 90-day retention |
 | `GET /workspaces/:workspaceId/invitations` | Current owner lists safe invitation metadata |
 | `POST /workspaces/:workspaceId/invitations` | Current owner issues recipient-bound invitation through outbox |
 | `DELETE /workspaces/:workspaceId/invitations/:invitationId` | Current owner revokes a scoped pending invitation |
@@ -77,6 +77,14 @@ Company switching uses the existing workspace list and scoped requests, with the
 | Guard and supervisor | Private machine-auth policy pull, installed-version acknowledgement and revoke/shutdown controls. Contract and failure behavior are in the [media plan](MEDIA.md) |
 | Mail, jobs, audit | Transactional MongoDB outbox and restricted audit writes, stable BullMQ job IDs and private operational metrics/recovery. No generic browser CRUD for credentials, tokens, jobs, audit evidence or media permits |
 | Static resources | Approved immutable map/asset versions are served through manifest references. Live presence, seats, meetings and conversations use [Socket.IO](REALTIME.md) |
-| Deferred or conditional | Map override writes require D08. Attachments, DMs, nearby/meeting chat, channel CRUD, calendar, desk assignment, billing, recording and enterprise identity have no MVP HTTP routes. The first office-channel messaging slice is implemented; see [chat messages](../entities/chat-messages/README.md) |
+| Deferred or conditional | Map override writes require D08. Attachments, nearby/meeting chat, channel CRUD, calendar, desk assignment, billing, recording and enterprise identity have no MVP HTTP routes. General/Social channels and private DMs are implemented; see [chat messages](../entities/chat-messages/README.md) |
 
 Before shipping a route, record owner, request/response schema, error and retry behavior, limit, applicable audit action and tests for success, invalid input, denied actor, crossed IDs and concurrent mutation where relevant. Use the [acceptance register](../planning/ACCEPTANCE.md) to record actual evidence.
+
+## Space messaging (Issue #17)
+
+Under `/api/workspaces/:workspaceId/offices/:officeId`, `GET/POST /channels/:channelId/messages` supports `general` and `social`, and `GET/POST /direct-messages/:recipientId/messages` addresses a private conversation with another current space member. The server derives the DM pair from the authenticated actor and validated peer; it does not accept conversation IDs or participant arrays from the caller.
+
+POST uses strict `{ clientMessageId, text }`, CSRF protection and a shared actor/workspace budget of 60 attempts/minute across legacy and scoped routes. Text is trimmed, 1–4000 characters. Retries with the same sender/workspace/office/conversation/key return the original row; changed text returns `409 idempotency_conflict`. History returns at most 100 unexpired messages with a 90-day TTL. New projections include `scope` (channel ID or the canonical DM pair), and are defined in `packages/contracts/src/http/chat.ts`.
+
+General reuses the legacy `/messages` storage/history; the old routes and projections remain compatible. Social/DM indexes are provisioned by `pnpm db:indexes` in the new `space_messages` collection. Invalid channels/self-DMs fail validation; recipients outside active space membership return `404 not_found`; actors lacking membership receive `403 membership_required`. See [message authorization and storage](../entities/chat-messages/README.md).

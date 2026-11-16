@@ -177,6 +177,7 @@ export function CompanyOverview({
         }
       >
         <LazyCompanyOfficePreview
+          key={detail.id}
           routePage={page === 'alias' ? 'entry' : page}
           onNavigatePage={(next, replace = false) =>
             navigate(officePath(workspaceId, detail.officeId, next), { replace })

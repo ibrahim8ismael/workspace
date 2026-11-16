@@ -4,6 +4,8 @@ import {
   officeSocketAuthSchema,
   officeCommandAckSchema,
   officeChatMessageEventSchema,
+  spaceMessageSchema,
+  type SpaceMessage,
   conversationLeaveEventSchema,
   conversationUpdateSchema,
   presenceUpdateEventSchema,
@@ -32,6 +34,7 @@ export type OfficeClientState = {
   snapshot: WorldSnapshot | null;
   message: string;
   chatEvents: OfficeMessage[];
+  spaceChatEvents: Record<string, SpaceMessage[]>;
   conversationUpdates: ConversationUpdate[];
 };
 
@@ -62,6 +65,7 @@ const EMPTY_STATE: OfficeClientState = {
   snapshot: null,
   message: '',
   chatEvents: [],
+  spaceChatEvents: {},
   conversationUpdates: [],
 };
 
@@ -108,6 +112,7 @@ export class OfficeClient {
       snapshot: null,
       message: '',
       chatEvents: [],
+      spaceChatEvents: {},
       conversationUpdates: [],
     });
     this.conversationVersions.clear();
@@ -167,6 +172,26 @@ export class OfficeClient {
         const parsed = officeChatMessageEventSchema.safeParse(raw);
         if (!parsed.success) return;
         this.update({ chatEvents: mergeChatMessage(this.state.chatEvents, parsed.data) });
+      });
+      socket.on('space:message', (raw: unknown) => {
+        if (!this.isCurrent(generation) || this.socket !== socket) return;
+        const parsed = spaceMessageSchema.safeParse(raw);
+        if (!parsed.success) return;
+        const scope = parsed.data.scope;
+        const conversationKey =
+          scope.kind === 'channel'
+            ? `channel:${scope.id}`
+            : `dm:${[...scope.userIds].sort().join(':')}`;
+        const current = this.state.spaceChatEvents[conversationKey] ?? [];
+        this.update({
+          spaceChatEvents: {
+            ...this.state.spaceChatEvents,
+            [conversationKey]: [
+              ...current.filter((message) => message.id !== parsed.data.id),
+              parsed.data,
+            ].slice(-500),
+          },
+        });
       });
       socket.on('conversation:update', (raw: unknown) => {
         const parsed = conversationUpdateSchema.safeParse(raw);

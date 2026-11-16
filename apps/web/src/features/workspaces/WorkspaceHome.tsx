@@ -1,12 +1,17 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { ArrowRight, Building2, LayoutGrid, Plus, Search, Users, X } from 'lucide-react';
 import type { AccountDto, WorkspaceDto } from '@gather/contracts';
 import { ApiClient, ApiError } from '../../lib/api';
 import { SubmissionKey } from '../../lib/idempotency';
 import { messageForApi } from '../auth/messages';
+import { AppLink } from '../../routing/AppLink';
+import { companyPath, officeAliasPath } from '../../routing/routes';
 import { PRODUCT_NAME } from '../../brand';
 
 type Props = {
+  invitationRoute?: boolean;
+  invitationToken?: string;
+  onCloseInvitation?: () => void;
   account: AccountDto;
   api: ApiClient;
   workspaces: WorkspaceDto[];
@@ -42,6 +47,9 @@ function displayError(error: unknown) {
 }
 
 export function WorkspaceHome({
+  invitationRoute = false,
+  invitationToken = '',
+  onCloseInvitation,
   account,
   api,
   workspaces,
@@ -63,9 +71,13 @@ export function WorkspaceHome({
 }: Props) {
   const [companyName, setCompanyName] = useState('');
   const [slug, setSlug] = useState('');
-  const [inviteCode, setInviteCode] = useState('');
+  const [inviteCode, setInviteCode] = useState(invitationToken);
   const [companyQuery, setCompanyQuery] = useState('');
-  const [dialog, setDialog] = useState<'create' | 'join' | null>(null);
+  const [dialog, setDialog] = useState<'create' | 'join' | null>(invitationRoute ? 'join' : null);
+  const closeDialog = useCallback(() => {
+    setDialog(null);
+    if (invitationRoute) onCloseInvitation?.();
+  }, [invitationRoute, onCloseInvitation]);
   const [creating, setCreating] = useState(false);
   const [accepting, setAccepting] = useState(false);
   const [createUncertain, setCreateUncertain] = useState(false);
@@ -91,7 +103,7 @@ export function WorkspaceHome({
   useEffect(() => {
     if (!dialog) return;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !creating && !accepting && !mutationPending) setDialog(null);
+      if (event.key === 'Escape' && !creating && !accepting && !mutationPending) closeDialog();
       if (event.key !== 'Tab') return;
       const focusable = dialogElement.current?.querySelectorAll<HTMLElement>(
         'button:not(:disabled), input:not(:disabled), [href], [tabindex]:not([tabindex="-1"])',
@@ -109,7 +121,7 @@ export function WorkspaceHome({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [accepting, creating, dialog, mutationPending]);
+  }, [accepting, creating, dialog, mutationPending, closeDialog]);
 
   function expireSession() {
     lifecycle.current += 1;
@@ -138,7 +150,7 @@ export function WorkspaceHome({
       setCreateUncertain(false);
       setCompanyName('');
       setSlug('');
-      setDialog(null);
+      closeDialog();
       onWorkspaces((rows) => [
         result.workspace,
         ...rows.filter((row) => row.id !== result.workspace.id),
@@ -184,7 +196,7 @@ export function WorkspaceHome({
       acceptKey.current.clear();
       setAcceptUncertain(false);
       setInviteCode('');
-      setDialog(null);
+      closeDialog();
       onWorkspaces((rows) => [
         result.workspace,
         ...rows.filter((row) => row.id !== result.workspace.id),
@@ -221,22 +233,22 @@ export function WorkspaceHome({
         Skip to main content
       </a>
       <header className="dashboard-bar">
-        <a className="dashboard-brand" href="/" aria-label={`${PRODUCT_NAME} home`}>
+        <AppLink className="dashboard-brand" to="/companies" aria-label={`${PRODUCT_NAME} home`}>
           <span className="workspace-logo" aria-hidden="true">
             <LayoutGrid size={18} />
           </span>
           <strong>{PRODUCT_NAME}</strong>
-        </a>
+        </AppLink>
         <div className="dashboard-account-actions">
           <span className="dashboard-account-name">{account.displayName}</span>
-          <button
+          <AppLink
+            to="/account/security"
             className="dashboard-secondary"
-            type="button"
             disabled={mutating}
-            onClick={onOpenSecurity}
+            onNavigate={onOpenSecurity}
           >
             Account security
-          </button>
+          </AppLink>
           <button
             className="dashboard-secondary"
             type="button"
@@ -260,7 +272,9 @@ export function WorkspaceHome({
       <div id="main-content" className="dashboard-body" tabIndex={-1}>
         <section className="dashboard-heading">
           <div>
-            <h1>Your companies</h1>
+            <h1 tabIndex={-1}>
+              {invitationRoute ? 'Accept a company invitation' : 'Your companies'}
+            </h1>
             <p>Choose a company office or join a team with an invitation.</p>
           </div>
           <button
@@ -344,14 +358,17 @@ export function WorkspaceHome({
                     <Users size={14} aria-hidden="true" />
                     {workspace.memberCount} {workspace.memberCount === 1 ? 'member' : 'members'}
                   </span>
-                  <button
+                  <AppLink className="dashboard-secondary" to={companyPath(workspace.id)}>
+                    Company details
+                  </AppLink>
+                  <AppLink
                     className="dashboard-company-open"
-                    type="button"
                     disabled={mutationPending}
-                    onClick={() => onViewCompany(workspace.id)}
+                    to={officeAliasPath(workspace.id)}
+                    onNavigate={() => onViewCompany(workspace.id)}
                   >
                     Open office <ArrowRight size={15} aria-hidden="true" />
-                  </button>
+                  </AppLink>
                 </div>
               </article>
             ))}
@@ -394,7 +411,7 @@ export function WorkspaceHome({
           className="dashboard-backdrop"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget && !creating && !accepting && !mutationPending)
-              setDialog(null);
+              closeDialog();
           }}
         >
           <section
@@ -409,7 +426,7 @@ export function WorkspaceHome({
               type="button"
               aria-label="Close dialog"
               disabled={creating || accepting || mutationPending}
-              onClick={() => setDialog(null)}
+              onClick={closeDialog}
             >
               <X size={17} />
             </button>
@@ -471,7 +488,7 @@ export function WorkspaceHome({
                       className="dashboard-secondary"
                       type="button"
                       disabled={creating || mutationPending}
-                      onClick={() => setDialog(null)}
+                      onClick={closeDialog}
                     >
                       Cancel
                     </button>
@@ -524,7 +541,7 @@ export function WorkspaceHome({
                       className="dashboard-secondary"
                       type="button"
                       disabled={accepting || mutationPending}
-                      onClick={() => setDialog(null)}
+                      onClick={closeDialog}
                     >
                       Cancel
                     </button>

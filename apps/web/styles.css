@@ -5068,3 +5068,29 @@ button .avatar {
     grid-template-columns: 1fr;
   }
 }
+
+.app-route-link {
+  text-decoration: none;
+}
+.app-route-link.dashboard-secondary,
+.app-route-link.dashboard-create,
+.app-route-link.primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.app-route-link.dashboard-company-open {
+  padding: 0 10px;
+}
+.app-route-link.link-button {
+  text-decoration: underline;
+}
+.app-route-link[aria-disabled='true'] {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+.app-route-link:focus-visible {
+  outline: 3px solid #3045e8;
+  outline-offset: 3px;
+}

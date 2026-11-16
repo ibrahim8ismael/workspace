@@ -629,8 +629,9 @@ async function companyPage(
   });
   await page
     .locator(`[data-workspace-id="${workspaceId}"]`)
-    .getByRole('button', { name: 'Open office' })
+    .getByRole('link', { name: 'Open office', exact: true })
     .click();
+  await expect(page).toHaveURL(new RegExp(`/companies/${workspaceId}/offices/[^/]+/entry$`));
   await expect(page.getByRole('button', { name: 'Join' })).toBeVisible();
   await expect(page.getByText('SIGN-IN STATUS', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Company details' })).toHaveCount(0);
@@ -927,12 +928,12 @@ test('live two-browser Vivo admission, movement, seats, recovery, and company is
     await expect(ownerRoster).toContainText(ownerName);
     await expect(ownerRoster).not.toContainText(memberName);
 
-    await ownerSecondPage.getByRole('button', { name: 'Back to companies' }).click();
+    await ownerSecondPage.getByRole('link', { name: 'Back to companies' }).click();
     await expect(ownerSecondPage.getByRole('heading', { name: 'Your companies' })).toBeVisible();
     await expect(ownerSecondPage.locator('.office-scene svg.office-map')).toHaveCount(0);
     await ownerSecondPage
       .locator(`[data-workspace-id="${secondWorkspaceBody.workspace.id}"]`)
-      .getByRole('button', { name: 'Open office' })
+      .getByRole('link', { name: 'Open office', exact: true })
       .click();
     await ownerSecondPage.getByRole('button', { name: 'Join' }).click();
     await expect(ownerSecondPage.getByText('1 person in the office')).toBeVisible();
@@ -1822,7 +1823,7 @@ test('mounted Vivo office cuts off active audio when the member session logs out
     });
     const sessionSecurityPage = await sessionSecurityContext.newPage();
     await sessionSecurityPage.goto(appOrigin);
-    await sessionSecurityPage.getByRole('button', { name: 'Account security' }).click();
+    await sessionSecurityPage.getByRole('link', { name: 'Account security' }).click();
     await expect(
       sessionSecurityPage.getByRole('heading', { name: 'Account security' }),
     ).toBeVisible();
@@ -2215,7 +2216,7 @@ test('mounted Vivo entry microphone opens and closes capture and preserves the c
     await expect(
       ownerPage.getByRole('button', { name: 'Turn microphone off', exact: true }),
     ).toBeVisible();
-    await ownerPage.getByRole('button', { name: 'Back to companies', exact: true }).click();
+    await ownerPage.getByRole('link', { name: 'Back to companies', exact: true }).click();
     await expect.poll(async () => (await captureState(ownerPage)).live).toBe(0);
     const measurements = {
       microphoneOnMs,
@@ -2347,5 +2348,64 @@ test('mounted Vivo talking animation follows live speech, silence, mute and redu
     });
   } finally {
     for (const office of offices.reverse()) await office.context.close();
+  }
+});
+
+test('deployed SPA routes retain auth destinations, reload nested pages and deny mismatched offices', async ({
+  browser,
+}) => {
+  test.skip(!enabled, 'Requires the authorized local OrbStack stack.');
+  test.setTimeout(90_000);
+  const { owner, workspaceId } = await getLiveMediaOfficeFixture();
+  const office = await companyPage(browser, owner.client, workspaceId);
+  const anonymous = await browser.newContext({ ignoreHTTPSErrors: true });
+  try {
+    const entry = new URL(office.page.url()).pathname;
+    expect(entry).toMatch(new RegExp(`^/companies/${workspaceId}/offices/[^/]+/entry$`));
+    const response = await office.page.reload();
+    expect(response?.status()).toBe(200);
+    expect(response?.headers()['cache-control']).toContain('no-store');
+    const assetPath = await office.page.locator('script[type="module"][src]').getAttribute('src');
+    expect(assetPath).toMatch(/^\/assets\//);
+    const asset = await office.page.request.get(appOrigin + assetPath);
+    expect(asset.headers()['cache-control']).toContain('immutable');
+    await expect(
+      office.page.getByRole('heading', { name: `Welcome to`, exact: false }),
+    ).toBeVisible();
+    await expect(office.page).toHaveURL(appOrigin + entry);
+    await office.page.goto(`${appOrigin}/account/security`);
+    await expect(
+      office.page.getByRole('heading', { name: 'Account security', exact: true }),
+    ).toBeVisible();
+    await office.page.reload();
+    await expect(
+      office.page.getByRole('heading', { name: 'Account security', exact: true }),
+    ).toBeVisible();
+    await office.page.goBack();
+    await expect(office.page).toHaveURL(appOrigin + entry);
+    const page = await anonymous.newPage();
+    await page.goto(appOrigin + entry);
+    await expect(page).toHaveURL(new RegExp('/login\\?returnTo='));
+    await page.getByLabel('Email', { exact: true }).fill(owner.email);
+    await page.getByLabel('Password', { exact: true }).fill(password);
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await expect(page).toHaveURL(appOrigin + entry);
+    await expect(page.getByRole('textbox', { name: 'Display name' })).toHaveValue(
+      owner.account.displayName,
+    );
+    await page.goto(
+      `${appOrigin}/companies/${workspaceId}/offices/11111111-1111-4111-8111-111111111111/entry`,
+    );
+    await expect(
+      page.getByRole('heading', { name: 'Office not found or access denied' }),
+    ).toBeVisible();
+    await page.goto(appOrigin + '/a-missing-page');
+    await expect(page.getByRole('heading', { name: 'Page not found' })).toBeVisible();
+    console.info(
+      'OrbStack SPA routing: native login return, nested reload, no-store HTML, browser Back, office ID authorization and unknown page all passed.',
+    );
+  } finally {
+    await anonymous.close();
+    await office.context.close();
   }
 });

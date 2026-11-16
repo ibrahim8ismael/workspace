@@ -22,6 +22,7 @@ import { SpaceChatNavigation, SpaceChatView } from './space-chat';
 import { useSpaceChat } from './use-space-chat';
 import type { Participant } from '../../../types';
 import { EntryMicrophone } from '../office/entry-microphone';
+import { MicrophonePermission } from '../office/microphone-permission';
 import { AppLink } from '../../routing/AppLink';
 import { officePath, type OfficePage } from '../../routing/routes';
 import { OfficeClient } from '../office/office-client';
@@ -86,13 +87,26 @@ export function CompanyOfficePreview({
   const state = useSyncExternalStore(client.subscribe, client.getSnapshot, client.getSnapshot);
   const connected = state.status === 'connected';
   const [entryMicrophone] = useState(() => new EntryMicrophone());
+  const [microphonePermission] = useState(() => new MicrophonePermission());
+  const permissionState = useSyncExternalStore(
+    microphonePermission.subscribe,
+    microphonePermission.getSnapshot,
+    microphonePermission.getSnapshot,
+  );
+  const [permissionWaitLong, setPermissionWaitLong] = useState(false);
   const entryAudio = useSyncExternalStore(
     entryMicrophone.subscribe,
     entryMicrophone.getSnapshot,
     entryMicrophone.getSnapshot,
   );
   const joinWithMicrophone = useRef(false);
-  useEffect(() => () => entryMicrophone.stop(), [entryMicrophone]);
+  useEffect(
+    () => () => {
+      entryMicrophone.stop();
+      microphonePermission.cancel();
+    },
+    [entryMicrophone, microphonePermission],
+  );
 
   const participationId = connected ? (state.ready?.participationId ?? null) : null;
   const latestConversation = latestProximityConversation(
@@ -123,6 +137,7 @@ export function CompanyOfficePreview({
   const mediaContextKey = useRef<string | null>(null);
   const [speakingIds, setSpeakingIds] = useState<string[]>([]);
   const proximityAudio = useRef<ProximityAudioSession | null>(null);
+  const [proximityAudioStage, setProximityAudioStage] = useState('authorizing');
   const proximityOptedIn = Boolean(
     connected && proximityOptIn?.participationId === participationId && proximityOptIn.enabled,
   );
@@ -137,6 +152,8 @@ export function CompanyOfficePreview({
     if (routePage === 'entry' && previousPage.current !== 'entry') {
       joiningFromEntry.current = false;
       entryMicrophone.stop();
+      microphonePermission.cancel();
+      setMicrophoneIntent(null);
       void proximityAudio.current?.stop();
       client.close();
     } else if (
@@ -147,7 +164,7 @@ export function CompanyOfficePreview({
       void client.connect();
     }
     previousPage.current = routePage;
-  }, [routePage, client, entryMicrophone]);
+  }, [routePage, client, entryMicrophone, microphonePermission]);
   useEffect(() => {
     if (connected && joiningFromEntry.current) {
       joiningFromEntry.current = false;
@@ -177,10 +194,15 @@ export function CompanyOfficePreview({
         if (!active) return;
         setProximityAudioStatus(status);
         setProximityAudioError(error ?? '');
+        if (status === 'error') microphonePermission.cancel();
       },
       (track, identity) => audioPlayback.attach(track, identity, remoteAudioContainer.current),
       undefined,
       setSpeakingIds,
+      (stage) => {
+        setProximityAudioStage(stage);
+        if (stage === 'capturing') setPermissionWaitLong(false);
+      },
     );
     proximityAudio.current = session;
     return () => {
@@ -188,7 +210,7 @@ export function CompanyOfficePreview({
       void session.stop();
       proximityAudio.current = null;
     };
-  }, [audioPlayback]);
+  }, [audioPlayback, microphonePermission]);
 
   useEffect(() => {
     mediaContextKey.current = activeVoiceContextKey;
@@ -199,12 +221,26 @@ export function CompanyOfficePreview({
   }, [activeVoiceContextKey]);
 
   useEffect(() => {
+    if (!participationId) microphonePermission.cancel();
+  }, [participationId, microphonePermission]);
+
+  useEffect(() => {
+    const waitingForCapture =
+      permissionState.status === 'requesting' ||
+      (proximityAudioStatus === 'connecting' && proximityAudioStage === 'capturing');
+    if (!waitingForCapture) return;
+    const timer = window.setTimeout(() => setPermissionWaitLong(true), 5000);
+    return () => window.clearTimeout(timer);
+  }, [permissionState.status, proximityAudioStatus, proximityAudioStage]);
+
+  useEffect(() => {
     if (
       !participationId ||
       microphoneIntent !== participationId ||
       !proximityOptedIn ||
       !activeProximityConversation ||
-      !activeVoiceContextKey
+      !activeVoiceContextKey ||
+      permissionState.status !== 'granted'
     )
       return;
     const contextKey = activeVoiceContextKey;
@@ -231,6 +267,7 @@ export function CompanyOfficePreview({
     proximityOptedIn,
     activeProximityConversation,
     activeVoiceContextKey,
+    permissionState.status,
   ]);
 
   useEffect(() => {
@@ -242,6 +279,7 @@ export function CompanyOfficePreview({
       .setProximityOptIn(true)
       .then(() => {
         if (!current) return;
+        microphonePermission.markGranted();
         setProximityOptIn({ participationId, enabled: true });
         setMicrophoneIntent(participationId);
       })
@@ -257,7 +295,7 @@ export function CompanyOfficePreview({
     return () => {
       current = false;
     };
-  }, [client, participationId]);
+  }, [client, participationId, microphonePermission]);
   async function runOfficeAction(action: () => Promise<void>) {
     setOfficeActionError('');
     setOfficeActionPending(true);
@@ -280,6 +318,7 @@ export function CompanyOfficePreview({
     setProximityPending(true);
     setProximityAudioError('');
     if (!enabled) {
+      microphonePermission.cancel();
       setMicrophoneIntent(null);
       await proximityAudio.current?.stop();
     }
@@ -294,6 +333,7 @@ export function CompanyOfficePreview({
   }
 
   async function leaveProximityConversation() {
+    microphonePermission.cancel();
     setMicrophoneIntent(null);
     if (!activeProximityConversation) return;
     await proximityAudio.current?.stop();
@@ -308,18 +348,40 @@ export function CompanyOfficePreview({
   function toggleProximityMicrophone() {
     const session = proximityAudio.current;
     if (!session || !participationId) return;
+    if (permissionState.status === 'requesting') {
+      microphonePermission.cancel();
+      setPermissionWaitLong(false);
+      setMicrophoneIntent(null);
+      void session.stop();
+      return;
+    }
     if (proximityAudioStatus === 'live') {
       setMicrophoneIntent(null);
       void session.toggleMicrophone();
+    } else if (proximityAudioStatus === 'muted') {
+      setMicrophoneIntent(participationId);
+      void session.toggleMicrophone();
     } else if (microphoneIntent === participationId && proximityAudioStatus !== 'error') {
+      microphonePermission.cancel();
       setMicrophoneIntent(null);
       void session.stop();
       if (!activeProximityConversation && proximityOptedIn) void changeProximityOptIn();
     } else {
-      setMicrophoneIntent(participationId);
-      setMicrophoneAttempt((attempt) => attempt + 1);
-      if (proximityAudioStatus === 'muted') void session.toggleMicrophone();
-      if (!proximityOptedIn) void changeProximityOptIn();
+      setPermissionWaitLong(false);
+      setProximityAudioError('');
+      void microphonePermission.request().then((granted) => {
+        const current = client.getSnapshot();
+        if (
+          !granted ||
+          current.status !== 'connected' ||
+          current.ready?.participationId !== participationId
+        )
+          return;
+        setPermissionWaitLong(false);
+        setMicrophoneIntent(participationId);
+        setMicrophoneAttempt((attempt) => attempt + 1);
+        if (!proximityOptedIn) void changeProximityOptIn();
+      });
     }
   }
 
@@ -499,20 +561,39 @@ export function CompanyOfficePreview({
         proximityAudioStatus !== 'muted'));
   const microphoneHelp = !proximityVoiceEnabled
     ? 'Nearby voice is unavailable in this deployment.'
-    : proximityAudioError ||
-      (proximityAudioStatus === 'connecting'
-        ? 'Connecting microphone…'
-        : proximityAudioStatus === 'reconnecting'
-          ? 'Reconnecting voice…'
-          : proximityAudioStatus === 'live'
-            ? 'Your microphone is on.'
-            : proximityAudioStatus === 'muted'
-              ? 'Your microphone is muted. Click to unmute.'
-              : activeProximityConversation
-                ? 'Ready to talk. Click the microphone and allow browser access.'
-                : proximityOptedIn
-                  ? 'Voice enabled; waiting for a nearby coworker. No microphone audio is being captured yet.'
-                  : 'Turn on your microphone to enable nearby voice. Coworkers must enable voice and move nearby.');
+    : permissionState.status === 'requesting'
+      ? permissionWaitLong
+        ? 'Waiting for browser microphone access. Allow the request in the browser, or cancel and check site permissions in browser and device settings.'
+        : 'Waiting for browser microphone access…'
+      : permissionState.status === 'error'
+        ? permissionState.message
+        : proximityAudioError
+          ? proximityAudioError
+          : proximityAudioStatus === 'connecting'
+            ? proximityAudioStage === 'authorizing'
+              ? 'Authorizing voice…'
+              : proximityAudioStage === 'loading'
+                ? 'Loading voice connection…'
+                : proximityAudioStage === 'capturing'
+                  ? permissionWaitLong
+                    ? 'Waiting for microphone access or device setup. Allow any browser request, or cancel and check site permissions and connected devices.'
+                    : 'Preparing microphone…'
+                  : proximityAudioStage === 'connecting'
+                    ? 'Connecting to coworker…'
+                    : 'Starting microphone…'
+            : proximityAudioStatus === 'error'
+              ? proximityAudioError
+              : proximityAudioStatus === 'reconnecting'
+                ? 'Reconnecting voice…'
+                : proximityAudioStatus === 'live'
+                  ? 'Your microphone is on.'
+                  : proximityAudioStatus === 'muted'
+                    ? 'Your microphone is muted. Click to unmute.'
+                    : activeProximityConversation
+                      ? 'Ready to talk. Click the microphone and allow browser access.'
+                      : proximityOptedIn
+                        ? 'Voice enabled; waiting for a nearby coworker. Your permission check is complete and no microphone audio is being captured.'
+                        : 'Turn on your microphone to enable nearby voice. Coworkers must enable voice and move nearby.';
   const self = snapshot.participants.find(
     (participant) => participant.participationId === ready.participationId,
   );
@@ -937,11 +1018,16 @@ export function CompanyOfficePreview({
                       aria-label={
                         !proximityVoiceEnabled
                           ? 'Nearby voice unavailable in this deployment'
-                          : microphoneEnabled
-                            ? 'Mute proximity microphone'
-                            : proximityAudioStatus === 'muted'
-                              ? 'Unmute proximity microphone'
-                              : 'Activate proximity microphone'
+                          : permissionState.status === 'requesting'
+                            ? 'Cancel microphone access'
+                            : proximityAudioStatus === 'connecting' &&
+                                microphoneIntent === participationId
+                              ? 'Cancel microphone setup'
+                              : microphoneEnabled
+                                ? 'Mute proximity microphone'
+                                : proximityAudioStatus === 'muted'
+                                  ? 'Unmute proximity microphone'
+                                  : 'Activate proximity microphone'
                       }
                       title={microphoneHelp}
                       aria-describedby="office-microphone-help"

@@ -48,12 +48,31 @@ const requestId = 'dbe6efea-048d-4b34-9111-d43880daf189';
 test('mocked-API UI E2E: sign in, open the company preview, and return cleanly', async ({
   page,
 }) => {
-  test.setTimeout(60_000);
+  test.setTimeout(90_000);
   // This test mocks signaling; supply a silent synthetic capture track without device access.
   await page.addInitScript(() => {
     const captures: MediaStream[] = [];
     Object.assign(window, { __entryCaptures: captures });
+    let resolveCapture: (() => void) | undefined;
+    const microphoneTest = {
+      holdNext: false,
+      denyNext: false,
+      requests: 0,
+      release: () => resolveCapture?.(),
+    };
+    Object.assign(window, { __microphoneTest: microphoneTest });
     navigator.mediaDevices.getUserMedia = async () => {
+      microphoneTest.requests += 1;
+      if (microphoneTest.denyNext) {
+        microphoneTest.denyNext = false;
+        throw new DOMException('Denied', 'NotAllowedError');
+      }
+      if (microphoneTest.holdNext) {
+        microphoneTest.holdNext = false;
+        await new Promise<void>((resolve) => {
+          resolveCapture = resolve;
+        });
+      }
       const context = new AudioContext();
       const stream = context.createMediaStreamDestination().stream;
       captures.push(stream);
@@ -575,14 +594,84 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
     0,
   );
   await expect.poll(() => liveKitSocketAttempts).toBe(0);
-  // One icon enables voice while alone; a second click cancels without opening media.
+  // A microphone click requests browser access even while pairing is held and no token exists.
+  const captureRequestsBeforePermission = await page.evaluate(() => {
+    const controls = (
+      window as Window & {
+        __microphoneTest: { holdNext: boolean; requests: number };
+      }
+    ).__microphoneTest;
+    controls.holdNext = true;
+    return controls.requests;
+  });
+  await microphoneButton.click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as Window & { __microphoneTest: { requests: number } }).__microphoneTest.requests,
+      ),
+    )
+    .toBe(captureRequestsBeforePermission + 1);
+  await expect(page.locator('#office-microphone-help')).toContainText(
+    'Waiting for browser microphone access',
+  );
+  expect(mediaTokenRequests).toHaveLength(0);
+  expect(liveKitSocketAttempts).toBe(0);
+  await expect(page.locator('#office-microphone-help')).toContainText('check site permissions', {
+    timeout: 7000,
+  });
+  await page.getByRole('button', { name: 'Cancel microphone access', exact: true }).click();
+  const capturesBeforeLateGrant = await page.evaluate(() => {
+    const count = (window as Window & { __entryCaptures: MediaStream[] }).__entryCaptures.length;
+    (window as Window & { __microphoneTest: { release: () => void } }).__microphoneTest.release();
+    return count;
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as Window & { __entryCaptures: MediaStream[] }).__entryCaptures.length,
+      ),
+    )
+    .toBe(capturesBeforeLateGrant + 1);
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as Window & { __entryCaptures: MediaStream[] }).__entryCaptures.every((stream) =>
+          stream.getTracks().every((track) => track.readyState === 'ended'),
+        ),
+      ),
+    )
+    .toBe(true);
+  await expect(microphoneButton).toHaveAttribute('aria-pressed', 'false');
+  expect(mediaTokenRequests).toHaveLength(0);
+  expect(liveKitSocketAttempts).toBe(0);
+  // Denial is actionable, does not opt in or authorize media, and permits a fresh retry.
+  await page.evaluate(() => {
+    (window as Window & { __microphoneTest: { denyNext: boolean } }).__microphoneTest.denyNext =
+      true;
+  });
+  await microphoneButton.click();
+  await expect(page.locator('#office-microphone-help')).toContainText(
+    'Microphone access was denied',
+  );
+  expect(mediaTokenRequests).toHaveLength(0);
+  expect(liveKitSocketAttempts).toBe(0);
+  // After consent, the probe is stopped while waiting for a coworker; a second click cancels voice.
   await microphoneButton.click();
   const enabledMicrophone = page.getByRole('button', { name: 'Mute proximity microphone' });
   await expect(enabledMicrophone).toHaveAttribute('aria-pressed', 'true');
   await expect(enabledMicrophone.locator('svg')).toHaveClass(/lucide-mic/);
   await expect(page.locator('#office-microphone-help')).toContainText(
-    'No microphone audio is being captured yet',
+    'no microphone audio is being captured',
   );
+  expect(
+    await page.evaluate(() =>
+      (window as Window & { __entryCaptures: MediaStream[] }).__entryCaptures.every((stream) =>
+        stream.getTracks().every((track) => track.readyState === 'ended'),
+      ),
+    ),
+  ).toBe(true);
   expect(mediaTokenRequests).toHaveLength(0);
   await enabledMicrophone.click();
   await expect(microphoneButton).toHaveAttribute('aria-pressed', 'false');
@@ -762,6 +851,9 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await expect.poll(() => mediaTokenRequests).toHaveLength(2);
   await expect.poll(() => liveKitSocketAttempts).toBe(2);
   await expect.poll(() => heldLiveKitSocketClosed).toBe(false);
+  await expect(
+    page.getByRole('button', { name: 'Cancel microphone setup', exact: true }),
+  ).toBeVisible();
   officeServerSocket?.send(
     `42/office,["office:access-ended",${JSON.stringify({
       officeEpoch,
@@ -817,7 +909,7 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await page.getByRole('link', { name: 'Messages', exact: true }).click();
   await expect(page).toHaveURL(`/companies/${workspace.id}/offices/${officeId}/chat`);
   await page.reload();
-  await expect(page.getByRole('textbox', { name: 'Message office' })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Message General' })).toBeVisible();
   await expect(page).toHaveURL(`/companies/${workspace.id}/offices/${officeId}/chat`);
   await page.getByRole('link', { name: 'Office', exact: true }).click();
   await page.getByRole('button', { name: 'Leave office', exact: true }).click();

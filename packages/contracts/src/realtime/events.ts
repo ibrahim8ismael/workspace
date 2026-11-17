@@ -13,8 +13,12 @@ import {
 import {
   conversationLeaveEventSchema,
   conversationUpdateSchema,
+  meetingInvitationSchema,
   meetingJoinEventSchema,
   meetingLeaveEventSchema,
+  meetingInviteEventSchema,
+  meetingInvitationResponseEventSchema,
+  meetingInvitationCancelEventSchema,
   proximityOptInEventSchema,
 } from './conversations.js';
 
@@ -28,6 +32,9 @@ export const officeClientEventNameSchema = z.enum([
   'conversation:leave',
   'meeting:join',
   'meeting:leave',
+  'meeting:invite',
+  'meeting:invitation:respond',
+  'meeting:invitation:cancel',
 ]);
 export const officeClientEventSchemas = Object.freeze({
   'world:input': worldInputEventSchema,
@@ -39,6 +46,9 @@ export const officeClientEventSchemas = Object.freeze({
   'conversation:leave': conversationLeaveEventSchema,
   'meeting:join': meetingJoinEventSchema,
   'meeting:leave': meetingLeaveEventSchema,
+  'meeting:invite': meetingInviteEventSchema,
+  'meeting:invitation:respond': meetingInvitationResponseEventSchema,
+  'meeting:invitation:cancel': meetingInvitationCancelEventSchema,
 });
 export const officeServerEventSchemas = Object.freeze({
   'office:ready': officeReadySchema,
@@ -46,4 +56,5 @@ export const officeServerEventSchemas = Object.freeze({
   'world:delta': worldDeltaSchema,
   'office:access-ended': officeAccessEndedSchema,
   'conversation:update': conversationUpdateSchema,
+  'meeting:invitation': meetingInvitationSchema,
 });

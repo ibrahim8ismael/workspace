@@ -65,7 +65,7 @@ export class OfficeGateway
   private readonly simulationTimers = new Map<string, ReturnType<typeof setInterval>>();
   private readonly waveStates = new Map<
     string,
-    { lastWaveAt: number; eventIds: Map<string, number> }
+    { lastWaveAt: number; attempts: number[]; eventIds: Map<string, number> }
   >();
 
   @WebSocketServer()
@@ -661,7 +661,7 @@ export class OfficeGateway
     this.pruneWaveStates(authorizedAt);
     let state = this.waveStates.get(key);
     if (!state) {
-      state = { lastWaveAt: 0, eventIds: new Map() };
+      state = { lastWaveAt: 0, attempts: [], eventIds: new Map() };
       this.waveStates.set(key, state);
     }
     for (const [id, at] of state.eventIds) {
@@ -671,7 +671,8 @@ export class OfficeGateway
       this.reply(acknowledge, command.eventId, null);
       return;
     }
-    if (state.lastWaveAt && authorizedAt - state.lastWaveAt < 2000) {
+    state.attempts = state.attempts.filter((at) => authorizedAt - at < 1000);
+    if (state.attempts.length >= OFFICE_LIMITS.wavesPerSecond) {
       this.reply(acknowledge, command.eventId, 'rate_limited');
       return;
     }
@@ -692,6 +693,7 @@ export class OfficeGateway
       this.reply(acknowledge, command.eventId, 'conflict');
       return;
     }
+    state.attempts.push(authorizedAt);
     state.lastWaveAt = authorizedAt;
     state.eventIds.set(command.eventId, authorizedAt);
     if (state.eventIds.size > OFFICE_LIMITS.replayCacheEntries)

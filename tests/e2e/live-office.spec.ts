@@ -790,7 +790,9 @@ test('live two-browser Vivo admission, movement, seats, recovery, and company is
       .getByRole('listitem')
       .filter({ hasText: ownerName });
 
-    await memberPage.getByRole('button', { name: `Wave to ${ownerName}`, exact: true }).click();
+    await memberOwnerRow.getByRole('button').click();
+    const memberActions = memberPage.getByRole('dialog', { name: 'Member actions' });
+    await memberActions.getByRole('button', { name: `Wave to ${ownerName}`, exact: true }).click();
     await expect(ownerPage.getByText(`${memberName} waved to you.`, { exact: true })).toBeVisible();
 
     const initialPosition = await participantPosition(memberPage, ownerName);

@@ -2710,7 +2710,7 @@ describe('office socket admission', () => {
     }
   });
 
-  it('routes live waves within the current office and deduplicates repeats before cooldown', async () => {
+  it('routes live waves within the current office and allows repeated greetings with bounded bursts', async () => {
     const owner = await account();
     const member = await account();
     const observer = await account();
@@ -2802,11 +2802,10 @@ describe('office socket admission', () => {
       );
       expect(officeCommandAckSchema.parse(spamAck)).toMatchObject({
         eventId: spam.eventId,
-        ok: false,
-        error: { code: 'rate_limited' },
+        ok: true,
       });
 
-      // A new sender starting after the cache lifetime must still share one atomic cooldown.
+      // A fresh sender can send multiple greetings concurrently; replay protection stays atomic.
       const ownerWave = nextSocketEvent<unknown>(ownerSocket, 'office:wave');
       const burst = [randomUUID(), randomUUID()].map((eventId) => ({
         eventId,
@@ -2823,14 +2822,45 @@ describe('office socket admission', () => {
       expect(
         parsedAcks.filter((ack) => ack.ok),
         JSON.stringify(parsedAcks),
-      ).toHaveLength(1);
+      ).toHaveLength(2);
       expect(parsedAcks.filter((ack) => !ack.ok && ack.error.code === 'rate_limited')).toHaveLength(
-        1,
+        0,
       );
       expect(officeWaveSchema.parse(await ownerWave)).toMatchObject({
         senderParticipationId: observerReady.participationId,
         recipientParticipationId: ownerReady.participationId,
       });
+      const floodAcks = await Promise.all(
+        Array.from(
+          { length: 10 },
+          () =>
+            new Promise<unknown>((resolve) =>
+              observerSocket.emit(
+                'office:wave',
+                {
+                  ...burst[0],
+                  eventId: randomUUID(),
+                },
+                resolve,
+              ),
+            ),
+        ),
+      );
+      const flood = floodAcks.map((ack) => officeCommandAckSchema.parse(ack));
+      expect(flood.filter((ack) => ack.ok)).toHaveLength(6);
+      expect(flood.filter((ack) => !ack.ok && ack.error.code === 'rate_limited')).toHaveLength(4);
+      lateClock.mockReturnValue(91_001);
+      const recovered = await new Promise<unknown>((resolve) =>
+        observerSocket.emit(
+          'office:wave',
+          {
+            ...burst[0],
+            eventId: randomUUID(),
+          },
+          resolve,
+        ),
+      );
+      expect(officeCommandAckSchema.parse(recovered).ok).toBe(true);
       lateClock.mockRestore();
 
       const offlineId = memberReady.participationId;

@@ -25,6 +25,7 @@ import {
   Volume2,
 } from 'lucide-react';
 import type { AccountDto } from '@gather/contracts';
+import { COMMONS_GEOMETRY, VIVO_GEOMETRY, pixelToTile } from '@gather/world';
 import type { OfficeWorkspaceDetail } from '../../lib/api';
 import { ApiClient } from '../../lib/api';
 import { DEFAULT_LOOK } from '../../../avatarLook';
@@ -135,6 +136,7 @@ export function CompanyOfficePreview({
   const [officeActionError, setOfficeActionError] = useState('');
   const [officeActionPending, setOfficeActionPending] = useState(false);
   const [wavePending, setWavePending] = useState(false);
+  const [meetingActionPending, setMeetingActionPending] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [memberActionMessage, setMemberActionMessage] = useState('');
   const [navigationTarget, setNavigationTarget] = useState<
@@ -291,7 +293,7 @@ export function CompanyOfficePreview({
     if (
       !participationId ||
       microphoneIntent !== participationId ||
-      !proximityOptedIn ||
+      (activeProximityConversation?.kind === 'proximity' && !proximityOptedIn) ||
       !activeProximityConversation ||
       !activeVoiceContextKey ||
       permissionState.status !== 'granted'
@@ -434,7 +436,8 @@ export function CompanyOfficePreview({
         setPermissionWaitLong(false);
         setMicrophoneIntent(participationId);
         setMicrophoneAttempt((attempt) => attempt + 1);
-        if (!proximityOptedIn) void changeProximityOptIn();
+        if (activeProximityConversation?.kind !== 'meeting' && !proximityOptedIn)
+          void changeProximityOptIn();
       });
     }
   }
@@ -610,7 +613,7 @@ export function CompanyOfficePreview({
     proximityVoiceEnabled &&
     (proximityAudioStatus === 'live' ||
       (microphoneIntent === participationId &&
-        proximityOptedIn &&
+        (proximityOptedIn || activeProximityConversation?.kind === 'meeting') &&
         proximityAudioStatus !== 'error' &&
         proximityAudioStatus !== 'muted'));
   const microphoneHelp = !proximityVoiceEnabled
@@ -651,6 +654,23 @@ export function CompanyOfficePreview({
   const self = snapshot.participants.find(
     (participant) => participant.participationId === ready.participationId,
   );
+  const meetingGeometry = mapId === 'vivo' ? VIVO_GEOMETRY : COMMONS_GEOMETRY;
+  const selfTile = self ? pixelToTile(self.position) : null;
+  const currentMeetingZone = selfTile
+    ? meetingGeometry.zones.find(
+        (zone) =>
+          zone.kind === 'meeting' &&
+          selfTile.tx >= zone.bounds.tx &&
+          selfTile.tx < zone.bounds.tx + zone.bounds.width &&
+          selfTile.ty >= zone.bounds.ty &&
+          selfTile.ty < zone.bounds.ty + zone.bounds.height,
+      )
+    : undefined;
+  const incomingMeetingInvitations = state.meetingInvitations.filter(
+    (invitation) =>
+      invitation.recipientParticipationId === participationId &&
+      ['pending', 'arriving'].includes(invitation.status),
+  );
   const sceneParticipants: Participant[] = snapshot.participants.map((participant) => ({
     id: participant.participationId,
     speaking: Boolean(activeVoiceContextKey) && speakingIds.includes(participant.participationId),
@@ -681,6 +701,13 @@ export function CompanyOfficePreview({
   const waveNotice = state.waves
     .filter((wave) => wave.recipientParticipationId === ready.participationId)
     .at(-1);
+  const recipientMeetingNotice = state.meetingInvitations
+    .filter((invitation) => invitation.recipientParticipationId === participationId)
+    .at(-1);
+  const senderMeetingNotice = state.meetingInvitations
+    .filter((invitation) => invitation.senderParticipationId === participationId)
+    .at(-1);
+  const displayMeetingInvitation = incomingMeetingInvitations.at(-1) ?? recipientMeetingNotice;
 
   return (
     <div className="app-shell office-shell" data-workspace-id={detail.id}>
@@ -698,6 +725,58 @@ export function CompanyOfficePreview({
           {waveNotice.senderName} waved to you.
         </div>
       )}
+      {displayMeetingInvitation &&
+        displayMeetingInvitation.recipientParticipationId === participationId && (
+          <div className="office-wave-toast" role="status" aria-live="polite">
+            {displayMeetingInvitation.status === 'pending'
+              ? `${displayMeetingInvitation.senderDisplayName} invited you to ${displayMeetingInvitation.zoneLabel}.`
+              : displayMeetingInvitation.status === 'arriving'
+                ? `Walking to ${displayMeetingInvitation.zoneLabel}…`
+                : displayMeetingInvitation.status === 'joined'
+                  ? `You arrived at ${displayMeetingInvitation.zoneLabel}.`
+                  : displayMeetingInvitation.reason === 'obstructed'
+                    ? 'The meeting route was interrupted.'
+                    : displayMeetingInvitation.reason === 'destination_full'
+                      ? 'The meeting room is full.'
+                      : displayMeetingInvitation.reason === 'destination_unavailable'
+                        ? 'The meeting room is unavailable.'
+                        : displayMeetingInvitation.reason === 'disconnected'
+                          ? 'The meeting ended because a participant disconnected.'
+                          : displayMeetingInvitation.status === 'expired'
+                            ? 'The meeting invitation expired.'
+                            : 'The meeting invitation ended.'}
+            {displayMeetingInvitation.status === 'pending' && (
+              <span className="meeting-invitation-actions">
+                <button
+                  type="button"
+                  onClick={() =>
+                    void runOfficeAction(() =>
+                      client.respondToMeetingInvitation(
+                        displayMeetingInvitation.invitationId,
+                        'accept',
+                      ),
+                    )
+                  }
+                >
+                  Accept
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    void runOfficeAction(() =>
+                      client.respondToMeetingInvitation(
+                        displayMeetingInvitation.invitationId,
+                        'decline',
+                      ),
+                    )
+                  }
+                >
+                  Decline
+                </button>
+              </span>
+            )}
+          </div>
+        )}
       <nav className="rail" aria-label="Office navigation">
         <div className="brand" aria-hidden="true">
           <span />
@@ -906,6 +985,73 @@ export function CompanyOfficePreview({
                   </p>
                 )}
               </div>
+              {currentMeetingZone && (
+                <div role="group" aria-labelledby="office-meeting-title">
+                  <h3 id="office-meeting-title">{currentMeetingZone.label}</h3>
+                  <p className="office-voice-help">
+                    Join this room to start a shared meeting. You stay muted until you turn on your
+                    microphone.
+                  </p>
+                  <div className="office-world-control-row">
+                    {!latestConversation || latestConversation.kind !== 'meeting' ? (
+                      <button
+                        className="dashboard-secondary"
+                        type="button"
+                        disabled={meetingActionPending || self.availability !== 'available'}
+                        onClick={() => {
+                          setMeetingActionPending(true);
+                          void client
+                            .joinMeeting(currentMeetingZone.zoneId)
+                            .catch((error: unknown) =>
+                              setOfficeActionError(
+                                error instanceof Error
+                                  ? `Could not join meeting (${error.message}).`
+                                  : 'Could not join meeting.',
+                              ),
+                            )
+                            .finally(() => setMeetingActionPending(false));
+                        }}
+                      >
+                        {meetingActionPending ? 'Joining…' : 'Join meeting'}
+                      </button>
+                    ) : (
+                      <button
+                        className="dashboard-secondary"
+                        type="button"
+                        onClick={() =>
+                          void runOfficeAction(() =>
+                            client.leaveMeeting(
+                              latestConversation.conversationId,
+                              latestConversation.version,
+                            ),
+                          )
+                        }
+                      >
+                        Leave meeting
+                      </button>
+                    )}
+                  </div>
+                  {senderMeetingNotice &&
+                    ['pending', 'arriving'].includes(senderMeetingNotice.status) && (
+                      <p className="office-voice-status" role="status">
+                        Invitation {senderMeetingNotice.status}:{' '}
+                        {senderMeetingNotice.recipientDisplayName} ·{' '}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void client
+                              .cancelMeetingInvitation(senderMeetingNotice.invitationId)
+                              .catch(() =>
+                                setOfficeActionError('Could not cancel meeting invitation.'),
+                              )
+                          }
+                        >
+                          Cancel
+                        </button>
+                      </p>
+                    )}
+                </div>
+              )}
               {mapId === 'commons' && (
                 <div role="group" aria-labelledby="office-seats-title">
                   <h3 id="office-seats-title">Seats</h3>
@@ -1048,6 +1194,37 @@ export function CompanyOfficePreview({
                   </button>
                 </div>
                 <div className="member-actions-buttons">
+                  {latestConversation?.kind === 'meeting' && currentMeetingZone && (
+                    <button
+                      type="button"
+                      className="dashboard-secondary"
+                      disabled={meetingActionPending || !selectedMemberIsLive}
+                      onClick={() => {
+                        setMeetingActionPending(true);
+                        setMemberActionMessage('');
+                        void client
+                          .inviteToMeeting(
+                            selectedMember.participationId,
+                            currentMeetingZone.zoneId,
+                          )
+                          .then(() =>
+                            setMemberActionMessage(
+                              `Invitation sent to ${selectedMember.displayName}.`,
+                            ),
+                          )
+                          .catch((error: unknown) =>
+                            setMemberActionMessage(
+                              error instanceof Error
+                                ? `Could not invite ${selectedMember.displayName} (${error.message}).`
+                                : 'Could not send meeting invitation.',
+                            ),
+                          )
+                          .finally(() => setMeetingActionPending(false));
+                      }}
+                    >
+                      Invite to meeting
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="member-action-wave"

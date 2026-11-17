@@ -7,6 +7,12 @@ import {
   spaceMessageSchema,
   type SpaceMessage,
   conversationLeaveEventSchema,
+  meetingJoinEventSchema,
+  meetingInviteEventSchema,
+  meetingInvitationResponseEventSchema,
+  meetingInvitationCancelEventSchema,
+  meetingInvitationSchema,
+  meetingLeaveEventSchema,
   officeWaveSchema,
   waveEventSchema,
   conversationUpdateSchema,
@@ -22,6 +28,7 @@ import {
   type OfficeWave,
   type ConversationUpdate,
   type WorldSnapshot,
+  type MeetingInvitation,
 } from '@gather/contracts';
 import { io, type Socket } from 'socket.io-client';
 import { ApiClient } from '../../lib/api';
@@ -40,6 +47,7 @@ export type OfficeClientState = {
   spaceChatEvents: Record<string, SpaceMessage[]>;
   conversationUpdates: ConversationUpdate[];
   waves: OfficeWave[];
+  meetingInvitations: MeetingInvitation[];
 };
 
 export type ConversationVersionMarker = {
@@ -72,6 +80,7 @@ const EMPTY_STATE: OfficeClientState = {
   spaceChatEvents: {},
   conversationUpdates: [],
   waves: [],
+  meetingInvitations: [],
 };
 
 /** Cookie-authenticated HTTP bootstrap followed by a one-use-ticket Socket.IO session. */
@@ -122,6 +131,7 @@ export class OfficeClient {
       spaceChatEvents: {},
       conversationUpdates: [],
       waves: [],
+      meetingInvitations: [],
     });
     this.clearWaves();
     this.conversationVersions.clear();
@@ -258,6 +268,20 @@ export class OfficeClient {
           ].slice(-5),
         });
       });
+      socket.on('meeting:invitation', (raw: unknown) => {
+        if (!this.isCurrent(generation) || this.socket !== socket) return;
+        const parsed = meetingInvitationSchema.safeParse(raw);
+        if (!parsed.success || parsed.data.officeEpoch !== this.state.ready?.snapshot.officeEpoch)
+          return;
+        this.update({
+          meetingInvitations: [
+            ...this.state.meetingInvitations.filter(
+              (item) => item.invitationId !== parsed.data.invitationId,
+            ),
+            parsed.data,
+          ].slice(-50),
+        });
+      });
       socket.on('world:snapshot', (raw: unknown) => {
         if (!this.isCurrent(generation) || this.socket !== socket) return;
         const parsed = worldSnapshotSchema.safeParse(raw);
@@ -382,6 +406,13 @@ export class OfficeClient {
     });
   }
 
+  leaveMeeting(conversationId: string, conversationVersion: number) {
+    return this.sendCommand('meeting:leave', meetingLeaveEventSchema, {
+      conversationId,
+      conversationVersion,
+    });
+  }
+
   sit(seatId: string) {
     return this.sendCommand('seat:sit', seatSitEventSchema, { seatId });
   }
@@ -392,6 +423,30 @@ export class OfficeClient {
 
   wave(targetParticipationId: string) {
     return this.sendCommand('office:wave', waveEventSchema, { targetParticipationId });
+  }
+
+  joinMeeting(zoneId: string) {
+    return this.sendCommand('meeting:join', meetingJoinEventSchema, { zoneId });
+  }
+
+  inviteToMeeting(targetParticipationId: string, zoneId: string) {
+    return this.sendCommand('meeting:invite', meetingInviteEventSchema, {
+      targetParticipationId,
+      zoneId,
+    });
+  }
+
+  respondToMeetingInvitation(invitationId: string, decision: 'accept' | 'decline') {
+    return this.sendCommand('meeting:invitation:respond', meetingInvitationResponseEventSchema, {
+      invitationId,
+      decision,
+    });
+  }
+
+  cancelMeetingInvitation(invitationId: string) {
+    return this.sendCommand('meeting:invitation:cancel', meetingInvitationCancelEventSchema, {
+      invitationId,
+    });
   }
 
   private clearWaves() {

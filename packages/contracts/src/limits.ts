@@ -1,8 +1,9 @@
 /** Initial engineering budgets; realtime admission and leases are enforced by the API. */
 export const OFFICE_LIMITS = Object.freeze({
   maxParticipants: 20,
-  maxMeetingParticipants: 6,
+  maxMeetingParticipants: 20,
   maxProximityParticipants: 6,
+  meetingInvitationLifetimeMs: 60_000,
   maxInboundEventBytes: 4096,
   maxSnapshotBytes: 65536,
   maxWorldDimension: 32768,

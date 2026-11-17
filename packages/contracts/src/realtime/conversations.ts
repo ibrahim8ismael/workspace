@@ -62,4 +62,40 @@ export const meetingJoinEventSchema = officeCommandSchema(
 );
 export const meetingLeaveEventSchema = conversationLeaveEventSchema;
 
+export const meetingInviteEventSchema = officeCommandSchema(
+  z.object({ targetParticipationId: idSchema, zoneId: staticIdSchema }).strict(),
+);
+export const meetingInvitationResponseEventSchema = officeCommandSchema(
+  z.object({ invitationId: idSchema, decision: z.enum(['accept', 'decline']) }).strict(),
+);
+export const meetingInvitationCancelEventSchema = officeCommandSchema(
+  z.object({ invitationId: idSchema }).strict(),
+);
+export const meetingInvitationSchema = z
+  .object({
+    invitationId: idSchema,
+    officeEpoch: idSchema,
+    senderParticipationId: idSchema,
+    senderDisplayName: z.string().min(2).max(80),
+    recipientParticipationId: idSchema,
+    recipientDisplayName: z.string().min(2).max(80),
+    zoneId: staticIdSchema,
+    zoneLabel: z.string().min(1).max(80),
+    status: z.enum([
+      'pending',
+      'accepted',
+      'declined',
+      'expired',
+      'cancelled',
+      'arriving',
+      'joined',
+    ]),
+    expiresAt: z.number().int().min(0),
+    reason: z
+      .enum(['destination_unavailable', 'destination_full', 'obstructed', 'disconnected'])
+      .optional(),
+  })
+  .strict();
+
 export type ConversationUpdate = z.infer<typeof conversationUpdateSchema>;
+export type MeetingInvitation = z.infer<typeof meetingInvitationSchema>;

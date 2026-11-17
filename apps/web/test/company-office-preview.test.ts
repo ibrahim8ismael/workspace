@@ -83,6 +83,27 @@ describe('company office preview selection', () => {
     ).toBeNull();
   });
 
+  it('selects authorized meeting conversations while preserving terminal version checks', () => {
+    const participationId = '8f34d8de-bddb-489d-9cde-f03f1a98b68e';
+    const meeting: ConversationUpdate = {
+      officeEpoch: '668bde07-cc48-4623-a58c-2efbc8ac21d5',
+      conversationId: 'd65d5a55-c917-448b-a203-1a226bc76319',
+      kind: 'meeting',
+      state: 'active',
+      version: 4,
+      generation: 'a371c42a-aa7d-4082-ad22-74e1816af053',
+      mediaReady: true,
+      participants: [{ participationId, displayName: 'Office Person' }],
+    };
+    expect(latestProximityConversation([meeting], participationId)).toEqual(meeting);
+    expect(
+      latestProximityConversation(
+        [meeting, { ...meeting, state: 'ended', version: 5, mediaReady: false, participants: [] }],
+        participationId,
+      ),
+    ).toBeNull();
+  });
+
   it('ignores duplicate, stale, ended-call resurrection and old-epoch conversation updates', () => {
     const participationId = '8f34d8de-bddb-489d-9cde-f03f1a98b68e';
     const joining: ConversationUpdate = {

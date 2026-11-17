@@ -39,6 +39,7 @@ import {
   officeReadySchema,
   officeCommandAckSchema,
   officeWaveSchema,
+  meetingInvitationSchema,
   worldDeltaSchema,
   worldSnapshotSchema,
   takeoverReferenceResponseSchema,
@@ -65,6 +66,10 @@ import { OfficeJoinTicketModels } from '../dist/modules/office/join-ticket.model
 import { ConversationModels } from '../dist/modules/conversations/conversation.models.js';
 import { MediaWebhookModels } from '../dist/modules/media/media-webhook.models.js';
 import { OfficeRuntimeService } from '../dist/modules/office/runtime/office-runtime.service.js';
+import { trustedOfficeMap } from '../dist/modules/office/office-map-registry.js';
+import { MediaPolicyService } from '../dist/modules/media/media-policy.service.js';
+import { VIVO_GEOMETRY, canStep } from '@gather/world';
+import type { WorldSnapshot } from '@gather/contracts';
 import { OutboxService } from '../dist/modules/identity/delivery/outbox.service.js';
 import { AuditService } from '../dist/modules/audit/audit.service.js';
 import { PasswordService } from '../dist/modules/identity/security/password.service.js';
@@ -2201,22 +2206,22 @@ describe('office join tickets', () => {
   });
 });
 
-describe('office socket admission', () => {
-  async function issueTicket(user: Awaited<ReturnType<typeof account>>, workspaceId: string) {
-    const office = await tenancy.offices.findOne({ workspaceId }).lean();
-    if (!office) throw new Error('Office missing');
-    const response = await user.client.send(
-      'post',
-      `/api/workspaces/${workspaceId}/offices/${office._id}/join-ticket`,
-      { mapVersion: vivoManifest.mapVersion, protocolVersion: OFFICE_PROTOCOL_VERSION },
-    );
-    status(response, 201);
-    return {
-      office,
-      ticket: joinTicketResponseSchema.parse(response.body).ticket,
-    };
-  }
+async function issueTicket(user: Awaited<ReturnType<typeof account>>, workspaceId: string) {
+  const office = await tenancy.offices.findOne({ workspaceId }).lean();
+  if (!office) throw new Error('Office missing');
+  const response = await user.client.send(
+    'post',
+    `/api/workspaces/${workspaceId}/offices/${office._id}/join-ticket`,
+    { mapVersion: vivoManifest.mapVersion, protocolVersion: OFFICE_PROTOCOL_VERSION },
+  );
+  status(response, 201);
+  return {
+    office,
+    ticket: joinTicketResponseSchema.parse(response.body).ticket,
+  };
+}
 
+describe('office socket admission', () => {
   it('admits a valid ticket and emits a safe contract-valid ready snapshot', async () => {
     const owner = await account();
     const workspaceId = await workspace(owner);
@@ -2741,7 +2746,8 @@ describe('office socket admission', () => {
     observerSocket.on('office:wave', (event) => received.push(event));
     try {
       // Keep the monotonic clock past the replay window while sockets connect and wave commands race.
-      const lateClock = vi.spyOn(performance, 'now').mockReturnValue(90_000);
+      const lateNow = performance.now() + 90_000;
+      const lateClock = vi.spyOn(performance, 'now').mockReturnValue(lateNow);
       const ownerReadyEvent = nextSocketEvent<unknown>(ownerSocket, 'office:ready');
       await connectSocket(ownerSocket);
       const ownerReady = officeReadySchema.parse(await ownerReadyEvent);
@@ -2839,7 +2845,7 @@ describe('office socket admission', () => {
       const flood = floodAcks.map((ack) => officeCommandAckSchema.parse(ack));
       expect(flood.filter((ack) => ack.ok)).toHaveLength(6);
       expect(flood.filter((ack) => !ack.ok && ack.error.code === 'rate_limited')).toHaveLength(4);
-      lateClock.mockReturnValue(91_001);
+      lateClock.mockReturnValue(lateNow + 1001);
       const recovered = await new Promise<unknown>((resolve) =>
         observerSocket.emit(
           'office:wave',
@@ -5660,6 +5666,193 @@ describe('database authorization constraints', () => {
       await identities.users.collection.dropIndex('incorrect_email_constraint');
       await identities.users.createIndexes();
       config.set('DB_AUTO_INDEX', previous);
+    }
+  });
+});
+
+describe('meeting invitation socket flow', () => {
+  it('keeps invitations private, declines without movement, then admits after shared authoritative travel', async () => {
+    const owner = await account();
+    const member = await account();
+    const observer = await account();
+    const workspaceId = await workspace(owner);
+    await join(owner, workspaceId, member);
+    await join(owner, workspaceId, observer);
+    const tickets = await Promise.all(
+      [owner, member, observer].map((client) => issueTicket(client, workspaceId)),
+    );
+    const sockets = tickets.map(({ ticket }) =>
+      officeSocket({ ticket, protocolVersion: OFFICE_PROTOCOL_VERSION }),
+    );
+    const ready = [];
+    const outsiderInvites: unknown[] = [];
+    sockets[2]!.on('meeting:invitation', (event) => outsiderInvites.push(event));
+    try {
+      for (const socket of sockets) {
+        const notice = nextSocketEvent<unknown>(socket, 'office:ready');
+        await connectSocket(socket);
+        ready.push(officeReadySchema.parse(await notice));
+      }
+      const [sender, recipient] = ready;
+      if (!sender || !recipient) throw new Error('Missing clients');
+      const runtime = app.get(OfficeRuntimeService);
+      const map = trustedOfficeMap(vivoManifest.mapVersion)!;
+      const room = VIVO_GEOMETRY.zones.find((zone) => zone.kind === 'meeting')!;
+      const contains = (tile: { tx: number; ty: number }) =>
+        tile.tx >= room.bounds.tx &&
+        tile.tx < room.bounds.tx + room.bounds.width &&
+        tile.ty >= room.bounds.ty &&
+        tile.ty < room.bounds.ty + room.bounds.height;
+      const free = (tile: { tx: number; ty: number }) =>
+        map.validated.isReachable(tile) &&
+        !map.seats.some((seat) => seat.tile.tx === tile.tx && seat.tile.ty === tile.ty);
+      const roomTiles = Array.from(
+        { length: room.bounds.width * room.bounds.height },
+        (_, index) => ({
+          tx: room.bounds.tx + (index % room.bounds.width),
+          ty: room.bounds.ty + Math.floor(index / room.bounds.width),
+        }),
+      ).filter(free);
+      const entry = roomTiles.flatMap((tile) =>
+        [
+          { tx: tile.tx - 1, ty: tile.ty },
+          { tx: tile.tx + 1, ty: tile.ty },
+          { tx: tile.tx, ty: tile.ty - 1 },
+          { tx: tile.tx, ty: tile.ty + 1 },
+        ]
+          .filter(
+            (outside) =>
+              !contains(outside) &&
+              free(outside) &&
+              canStep(outside, tile, map.validated.bounds, map.validated.collision),
+          )
+          .map((outside) => ({ tile, outside })),
+      )[0]!;
+      const hostTile = roomTiles.find(
+        (tile) => tile.tx !== entry.tile.tx || tile.ty !== entry.tile.ty,
+      )!;
+      const office = (
+        runtime as unknown as {
+          offices: Map<
+            string,
+            { participants: Map<string, { publicState: WorldSnapshot['participants'][number] }> }
+          >;
+        }
+      ).offices.get(sender.officeId)!;
+      const person = (id: string) => office.participants.get(id)!.publicState;
+      const pixel = (tile: { tx: number; ty: number }) => ({
+        x: tile.tx * 32 + 16,
+        y: tile.ty * 32 + 16,
+      });
+      person(sender.participationId).position = pixel(hostTile);
+      person(recipient.participationId).position = pixel(entry.outside);
+      const command = async (index: number, event: string, payload: object) =>
+        officeCommandAckSchema.parse(
+          await new Promise<unknown>((resolve) =>
+            sockets[index]!.emit(
+              event,
+              { eventId: randomUUID(), officeEpoch: sender.snapshot.officeEpoch, payload },
+              resolve,
+            ),
+          ),
+        );
+      expect(await command(0, 'meeting:join', { zoneId: room.zoneId })).toMatchObject({ ok: true });
+      const policy = app.get(MediaPolicyService);
+      const installPolicy = async () => {
+        await new Promise((resolve) => setTimeout(resolve, 120));
+        const challenge = { epoch: 'a'.repeat(64), nonce: randomBytes(32).toString('hex') };
+        const snapshot = mediaPolicySnapshotSchema.parse(
+          JSON.parse(policy.issueSnapshot(challenge).body),
+        );
+        policy.acknowledgeInstallation({ ...challenge, sequence: snapshot.sequence });
+        return snapshot;
+      };
+      await installPolicy();
+      const before = { ...person(recipient.participationId).position };
+      let pendingNotice = nextSocketEvent<unknown>(sockets[1]!, 'meeting:invitation');
+      expect(
+        await command(0, 'meeting:invite', {
+          targetParticipationId: recipient.participationId,
+          zoneId: room.zoneId,
+        }),
+      ).toMatchObject({ ok: true });
+      const pending = meetingInvitationSchema.parse(await pendingNotice);
+      expect(pending.status).toBe('pending');
+      expect(
+        runtime
+          .proximityMediaPermits()
+          .some((permit) => permit.identity === recipient.participationId),
+      ).toBe(false);
+      expect(
+        await command(1, 'meeting:invitation:respond', {
+          invitationId: pending.invitationId,
+          decision: 'decline',
+        }),
+      ).toMatchObject({ ok: true });
+      expect(person(recipient.participationId).position).toEqual(before);
+      expect(
+        await command(1, 'meeting:invitation:respond', {
+          invitationId: pending.invitationId,
+          decision: 'accept',
+        }),
+      ).toMatchObject({ ok: false });
+      pendingNotice = nextSocketEvent<unknown>(sockets[1]!, 'meeting:invitation');
+      expect(
+        await command(0, 'meeting:invite', {
+          targetParticipationId: recipient.participationId,
+          zoneId: room.zoneId,
+        }),
+      ).toMatchObject({ ok: true });
+      const second = meetingInvitationSchema.parse(await pendingNotice);
+      const observedPositions: { x: number; y: number }[][] = [[], []];
+      for (const [index, socket] of [sockets[0]!, sockets[2]!].entries())
+        socket.on('world:delta', (raw) => {
+          const delta = worldDeltaSchema.parse(raw);
+          const moved = delta.participants.find(
+            (participant) => participant.participationId === recipient.participationId,
+          );
+          if (moved) observedPositions[index]!.push(moved.position);
+        });
+      expect(
+        await command(1, 'meeting:invitation:respond', {
+          invitationId: second.invitationId,
+          decision: 'accept',
+        }),
+      ).toMatchObject({ ok: true });
+      expect(
+        runtime
+          .proximityMediaPermits()
+          .some((permit) => permit.identity === recipient.participationId),
+      ).toBe(false);
+      await expect
+        .poll(
+          () =>
+            runtime
+              .proximityMediaPermits()
+              .some((permit) => permit.identity === recipient.participationId),
+          { timeout: 5000 },
+        )
+        .toBe(true);
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      expect(observedPositions[0]!.length).toBeGreaterThan(1);
+      expect(observedPositions[0]).toEqual(observedPositions[1]);
+      expect(outsiderInvites).toEqual([]);
+      const snapshot = await installPolicy();
+      const senderPermit = snapshot.permits.find(
+        (permit) => permit.identity === sender.participationId,
+      )!;
+      expect(
+        snapshot.permits.find((permit) => permit.identity === recipient.participationId)
+          ?.generation,
+      ).toBe(senderPermit.generation);
+      expect(
+        await command(1, 'meeting:invitation:respond', {
+          invitationId: second.invitationId,
+          decision: 'accept',
+        }),
+      ).toMatchObject({ ok: false });
+    } finally {
+      for (const socket of sockets) socket.disconnect();
     }
   });
 });

@@ -427,6 +427,22 @@
   font-weight: 600;
 }
 
+.meeting-invitation-actions {
+  display: inline-flex;
+  gap: 8px;
+  margin-left: 12px;
+}
+.meeting-invitation-actions button {
+  min-height: 30px;
+  padding: 4px 10px;
+  border: 1px solid #ffffffaa;
+  border-radius: 7px;
+  color: #fff;
+  background: #ffffff22;
+  font: inherit;
+  cursor: pointer;
+}
+
 .office-wave-button {
   border: 0;
   border-radius: 999px;
@@ -591,6 +607,9 @@
   font-size: 14px;
   font-weight: 650;
   cursor: pointer;
+}
+.member-actions-buttons button.dashboard-secondary {
+  grid-column: 1 / -1;
 }
 .member-action-wave {
   display: grid;

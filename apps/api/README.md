@@ -20,6 +20,12 @@ pnpm dev:api
 
 See [backend API guide](../../docs/contracts/AUTH_AND_ROLES_API.md) for routes, headers, cookie behavior and examples.
 
+## Live meeting invitations
+
+The `/office` realtime protocol supports explicit `meeting:join`, `meeting:invite`, `meeting:invitation:respond`, `meeting:invitation:cancel` and `meeting:leave` commands. A member must be in an authorized office session and physically inside a fixed meeting zone to join it. Only an active member of that meeting can invite another available member in the same office; the recipient must accept before movement starts. Pending invitations expire after 60 seconds and do not reserve capacity. Each recipient can have one pending or arriving invitation. A new invite conflicts while the member is already handling one. Accepted movement has a separate 120-second travel deadline; cancellation, disconnect, obstruction or destination loss stops the route and reports a reason.
+
+The server checks destination capacity at acceptance and again at arrival, then updates all office clients from the same authoritative movement state. Meeting zones cap at 20 participants. This is a meeting-only limit: proximity groups remain capped at six. The current meeting policy uses the office's existing membership authorization; it does not add per-room access lists. Joining, accepting or arriving does not itself request microphone capture. If a member already made an explicit microphone choice, that intent may resume after the new meeting generation is admitted and its media policy is installed. Meeting audio uses the guarded media-policy installation and token path.
+
 ## Checks
 
 `pnpm test:api` builds shared/server packages and runs real HTTP/Mongo transaction tests plus security primitive checks. It uses a temporary MongoDB 8.2.6 replica set downloaded into the ignored `.cache/mongodb-binaries` directory, then stops it. This is real MongoDB, not an auth mock, and does not use Docker. No SMTP message is sent during tests.

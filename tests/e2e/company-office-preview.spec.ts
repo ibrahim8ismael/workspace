@@ -391,6 +391,8 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
                 dx?: number;
                 dy?: number;
                 enabled?: boolean;
+                invitationId?: string;
+                decision?: 'accept' | 'decline';
               };
             },
           ];
@@ -479,6 +481,28 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
                 participants: [],
               })}]`,
             );
+          } else if (
+            packet[0] === 'meeting:invitation:respond' &&
+            packet[1].payload?.invitationId
+          ) {
+            const status = packet[1].payload.decision === 'accept' ? 'arriving' : 'declined';
+            const response = {
+              invitationId: packet[1].payload.invitationId,
+              officeEpoch,
+              senderParticipationId: teammateParticipationId,
+              senderDisplayName: 'Office Teammate',
+              recipientParticipationId: participationId,
+              recipientDisplayName: account.displayName,
+              zoneId: 'vivo-094907c0',
+              zoneLabel: 'Media room',
+              status,
+              expiresAt: Date.now() + 60_000,
+            };
+            socket.send(`42/office,["meeting:invitation",${JSON.stringify(response)}]`);
+            if (status === 'arriving')
+              socket.send(
+                `42/office,["meeting:invitation",${JSON.stringify({ ...response, status: 'joined' })}]`,
+              );
           } else if (packet[0] === 'seat:sit' && packet[1].payload?.seatId) {
             sittingAt = packet[1].payload.seatId;
             emitWorldDelta();
@@ -564,6 +588,48 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await expect(page.locator('.office-scene .office-map')).toHaveCount(1);
   await expect.poll(() => officeBootstrapRequests).toBe(1);
   await expect(page.getByRole('group', { name: 'Office connection controls' })).toBeVisible();
+  const microphoneRequestsBeforeInvites = await page.evaluate(
+    () =>
+      (window as unknown as { __microphoneTest: { requests: number } }).__microphoneTest.requests,
+  );
+  const inviteTeammate = (invitationId: string) =>
+    officeServerSocket?.send(
+      `42/office,["meeting:invitation",${JSON.stringify({
+        invitationId,
+        officeEpoch,
+        senderParticipationId: teammateParticipationId,
+        senderDisplayName: 'Office Teammate',
+        recipientParticipationId: participationId,
+        recipientDisplayName: account.displayName,
+        zoneId: 'vivo-094907c0',
+        zoneLabel: 'Media room',
+        status: 'pending',
+        expiresAt: Date.now() + 60_000,
+      })}]`,
+    );
+  inviteTeammate('c9f5cc47-d7c9-4300-967b-0dfb94d71340');
+  await expect(page.getByText('Office Teammate invited you to Media room.')).toBeVisible();
+  expect(mediaTokenRequests).toHaveLength(0);
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { __microphoneTest: { requests: number } }).__microphoneTest.requests,
+    ),
+  ).toBe(microphoneRequestsBeforeInvites);
+  await page.getByRole('button', { name: 'Accept', exact: true }).click();
+  await expect(page.getByText('You arrived at Media room.')).toBeVisible();
+  expect(mediaTokenRequests).toHaveLength(0);
+  inviteTeammate('346a6c3e-e1df-491b-a63d-8bb1c48df701');
+  await expect(page.getByText('Office Teammate invited you to Media room.')).toBeVisible();
+  await page.getByRole('button', { name: 'Decline', exact: true }).click();
+  await expect(page.getByText('The meeting invitation ended.')).toBeVisible();
+  expect(mediaTokenRequests).toHaveLength(0);
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { __microphoneTest: { requests: number } }).__microphoneTest.requests,
+    ),
+  ).toBe(microphoneRequestsBeforeInvites);
   await page.getByRole('link', { name: 'Invite people', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Employee invitations' })).toBeVisible();
   await expect(page.getByText('No invitations have been created for this company.')).toBeVisible();

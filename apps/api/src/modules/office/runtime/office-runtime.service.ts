@@ -625,12 +625,6 @@ export class OfficeRuntimeService {
     ).length;
     if ((existing?.members.length ?? 0) + reserved >= OFFICE_LIMITS.maxMeetingParticipants)
       return 'room_full' as const;
-    const notices = office.proximity.setOptIn(
-      participationId,
-      false,
-      this.proximityCandidates(office),
-      performance.now(),
-    );
     const group = existing ?? {
       conversationId: randomUUID(),
       generation: randomUUID(),
@@ -653,6 +647,7 @@ export class OfficeRuntimeService {
     group.active = false;
     office.meetingGroups.set(zoneId, group);
     office.meetingNotices.push(this.meetingNotice(office, group, 'joining'));
+    const notices = office.proximity.reconcile(this.proximityCandidates(office), performance.now());
     return { notices };
   }
 
@@ -832,19 +827,14 @@ export class OfficeRuntimeService {
       key = parent.get(key) ?? null;
     }
     if (route.length && route[0]!.tx === start.tx && route[0]!.ty === start.ty) route.shift();
-    office.meetingNotices.push(
-      ...office.proximity.setOptIn(
-        recipientParticipationId,
-        false,
-        this.proximityCandidates(office),
-        performance.now(),
-      ),
-    );
     this.removeMeetingMember(office, recipientParticipationId);
     recipient.inputIntent = { dx: 0, dy: 0, expiresAt: 0 };
     recipient.meetingRoute = route;
     recipient.meetingInvitationId = invitationId;
     invite.status = 'arriving';
+    office.meetingNotices.push(
+      ...office.proximity.reconcile(this.proximityCandidates(office), performance.now()),
+    );
     invite.deadlineMonotonic = performance.now() + 120_000;
     this.queueMeetingInvitationNotice(office, invitationId, 'arriving', recipient.socketId);
     this.queueMeetingInvitationNotice(office, invitationId, 'arriving', sender.socketId);

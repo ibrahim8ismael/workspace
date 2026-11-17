@@ -40,7 +40,7 @@ type Participant = {
   meetingRoute?: { tx: number; ty: number }[];
   meetingInvitationId?: string;
 };
-function fixture(recipientInside = false) {
+function fixture(recipientInside = false, nearbyBeforeJoin = false) {
   const runtime = new OfficeRuntimeService();
   const people = [1, 2, 3].map((number) => {
     const ticket = {
@@ -71,6 +71,30 @@ function fixture(recipientInside = false) {
     ? pixel(roomTiles[1]!)
     : { ...VIVO_GEOMETRY.spawn };
   state(other.id).publicState.position = pixel(tiles.find((tile) => !inside(tile.tx, tile.ty))!);
+  if (nearbyBeforeJoin) {
+    const neighbour = roomTiles.find((tile) =>
+      canStep(roomTiles[0]!, tile, map.validated.bounds, map.validated.collision),
+    )!;
+    state(other.id).publicState.position = pixel(neighbour);
+    runtime.setProximityOptIn(
+      officeId,
+      workspaceId,
+      sender.ticket.userId,
+      sender.socketId,
+      sender.id,
+      officeEpoch,
+      true,
+    );
+    runtime.setProximityOptIn(
+      officeId,
+      workspaceId,
+      other.ticket.userId,
+      other.socketId,
+      other.id,
+      officeEpoch,
+      true,
+    );
+  }
   const join = runtime.joinMeetingZone(
     officeId,
     workspaceId,
@@ -84,7 +108,7 @@ function fixture(recipientInside = false) {
   const generation = runtime
     .proximityMediaPermits()
     .find((permit) => permit.identity === sender.id)!.generation;
-  runtime.activateProximityGeneration(generation);
+  const meetingActive = runtime.activateProximityGeneration(generation)[0]!.update;
   runtime.drainMeetingNotices();
   const invite = () =>
     runtime.createMeetingInvitation(
@@ -110,7 +134,7 @@ function fixture(recipientInside = false) {
     );
   let now = performance.now();
   const tick = () => runtime.tick(officeId, (now += 50));
-  return { runtime, sender, recipient, other, state, invite, respond, tick };
+  return { runtime, sender, recipient, other, state, invite, respond, tick, meetingActive };
 }
 
 describe('meeting invitation review regressions', () => {
@@ -418,5 +442,80 @@ describe('meeting invitation review regressions', () => {
         .filter((notice) => notice.socketIds.includes(f.sender.socketId))
         .map((notice) => notice.update.state),
     ).toEqual(['retiring', 'joining']);
+  });
+  it('restores a prior nearby-voice preference after leaving a meeting', () => {
+    const f = fixture(false, true);
+    expect(
+      f.runtime.proximityMediaPermits().filter((permit) => permit.identity === f.sender.id),
+    ).toHaveLength(1);
+    f.runtime.leaveProximityConversation(
+      officeId,
+      workspaceId,
+      f.sender.ticket.userId,
+      f.sender.socketId,
+      f.sender.id,
+      officeEpoch,
+      f.meetingActive.conversationId,
+      f.meetingActive.version,
+    );
+    f.runtime.reconcileProximity(officeId);
+    const permits = f.runtime.proximityMediaPermits();
+    const senderPermit = permits.find((permit) => permit.identity === f.sender.id)!;
+    expect(senderPermit).toBeDefined();
+    expect(permits.find((permit) => permit.identity === f.other.id)?.generation).toBe(
+      senderPermit.generation,
+    );
+  });
+
+  it('restores nearby voice after an accepted invitation route is cancelled', () => {
+    const f = fixture();
+    const spawnTile = {
+      tx: Math.floor(VIVO_GEOMETRY.spawn.x / 32),
+      ty: Math.floor(VIVO_GEOMETRY.spawn.y / 32),
+    };
+    const neighbour = tiles.find((tile) =>
+      canStep(spawnTile, tile, map.validated.bounds, map.validated.collision),
+    )!;
+    f.state(f.other.id).publicState.position = pixel(neighbour);
+    f.runtime.setProximityOptIn(
+      officeId,
+      workspaceId,
+      f.recipient.ticket.userId,
+      f.recipient.socketId,
+      f.recipient.id,
+      officeEpoch,
+      true,
+    );
+    f.runtime.setProximityOptIn(
+      officeId,
+      workspaceId,
+      f.other.ticket.userId,
+      f.other.socketId,
+      f.other.id,
+      officeEpoch,
+      true,
+    );
+    const invite = f.invite();
+    if (typeof invite === 'string') throw new Error(invite);
+    expect(f.respond(invite.invitationId, 'accept')).toMatchObject({ status: 'arriving' });
+    expect(
+      f.runtime.proximityMediaPermits().some((permit) => permit.identity === f.recipient.id),
+    ).toBe(false);
+    f.runtime.cancelMeetingInvitation(
+      officeId,
+      workspaceId,
+      f.sender.ticket.userId,
+      f.sender.socketId,
+      f.sender.id,
+      officeEpoch,
+      invite.invitationId,
+    );
+    f.runtime.reconcileProximity(officeId);
+    const permits = f.runtime.proximityMediaPermits();
+    const recipientPermit = permits.find((permit) => permit.identity === f.recipient.id)!;
+    expect(recipientPermit).toBeDefined();
+    expect(permits.find((permit) => permit.identity === f.other.id)?.generation).toBe(
+      recipientPermit.generation,
+    );
   });
 });

@@ -80,4 +80,9 @@ export class OfficeRoomEventPublisher {
       }
     }
   }
+
+  async publishWave(workspaceId: string, officeId: string, event: unknown) {
+    const recipients = await this.authorizedRecipients(workspaceId, officeId);
+    for (const socket of recipients) socket.emit('office:wave', event);
+  }
 }

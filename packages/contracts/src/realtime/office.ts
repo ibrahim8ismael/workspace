@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { idSchema } from '../http/auth.js';
+import { displayNameSchema } from '../http/auth.js';
 import { mapVersionSchema, protocolVersionSchema } from '../versions.js';
 import { httpErrorCodeSchema, officeErrorCodeSchema } from '../errors.js';
 import { fitsJsonByteLimit, OFFICE_LIMITS } from '../limits.js';
@@ -157,6 +158,21 @@ export const seatStandEventSchema = officeCommandSchema(z.object({}).strict());
 export const worldResyncEventSchema = officeCommandSchema(
   z.object({ stateVersion: stateVersionSchema }).strict(),
 );
+export const waveEventSchema = officeCommandSchema(
+  z.object({ targetParticipationId: idSchema }).strict(),
+);
+export const officeWaveSchema = z
+  .object({
+    eventId: idSchema,
+    officeEpoch: idSchema,
+    senderParticipationId: idSchema,
+    senderName: displayNameSchema,
+    recipientParticipationId: idSchema,
+    recipientName: displayNameSchema,
+    durationMs: z.literal(2200),
+  })
+  .strict();
+export type OfficeWave = z.infer<typeof officeWaveSchema>;
 
 export const officeCommandAckSchema = z.discriminatedUnion('ok', [
   z.object({ eventId: idSchema, ok: z.literal(true) }).strict(),

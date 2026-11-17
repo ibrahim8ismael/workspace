@@ -82,6 +82,7 @@ type Props = {
   onNearInteractive?: (id: string | null) => void;
   onInteract?: (id: string) => void;
   reactions?: { participantId: string; emoji: string }[];
+  waveParticipantIds?: string[];
   seatTarget?: { seatId: string; nonce: number };
   onAreaClick: (areaId: string) => void;
   /** Wheel zoom: the scene asks for a new zoom level and keeps the point under the cursor in place. */
@@ -376,6 +377,7 @@ function Avatar({
   frame,
   frames,
   reaction,
+  waving,
   onSelect,
 }: {
   person: Participant;
@@ -385,6 +387,7 @@ function Avatar({
   frame: number;
   frames?: Record<string, string>;
   reaction?: string;
+  waving: boolean;
   onSelect: () => void;
 }) {
   const url = avatarFrame(facing, moving, frame, !!person.seatId);
@@ -421,6 +424,11 @@ function Avatar({
         width={AVATAR_SPRITE.canvasSize * AVATAR_SPRITE.renderScale}
         height={AVATAR_SPRITE.canvasSize * AVATAR_SPRITE.renderScale}
       />
+      {waving && (
+        <text className="scene-wave-hand" x="24" y="-37" textAnchor="middle" aria-hidden="true">
+          👋
+        </text>
+      )}
       <g
         className="scene-nameplate"
         transform={`translate(0 ${AVATAR_SPRITE.nameplateY})`}
@@ -779,6 +787,7 @@ export default function VivoScene({
   onNearInteractive,
   onInteract,
   reactions = [],
+  waveParticipantIds = [],
   seatTarget,
   onAreaClick,
 }: Props) {
@@ -1754,6 +1763,7 @@ export default function VivoScene({
                 reaction={
                   reactions.filter((item) => item.participantId === person.id).at(-1)?.emoji
                 }
+                waving={waveParticipantIds.includes(person.id)}
                 onSelect={() =>
                   person.id === selfId && person.seatId ? requestStand() : onSelect(person.id)
                 }

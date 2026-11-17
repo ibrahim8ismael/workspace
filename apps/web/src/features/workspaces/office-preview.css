@@ -578,7 +578,7 @@
 }
 .member-actions-buttons {
   display: grid;
-  grid-template-columns: 80px minmax(0, 1fr);
+  grid-template-columns: 48px minmax(0, 1fr);
   gap: 10px;
   margin-top: 18px;
 }
@@ -593,6 +593,9 @@
   cursor: pointer;
 }
 .member-action-wave {
+  display: grid;
+  place-items: center;
+  padding: 0 !important;
   background: #fff;
   color: #57438e;
 }

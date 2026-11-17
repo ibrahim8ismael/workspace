@@ -31,3 +31,9 @@ Use one selected-member card for Wave and Go to. Keep the existing office map an
 - Base: `origin/main` at `0fb323b3cf9db8b918f685ee882974755ea1ba9d`.
 - Branch: `codex/member-action-card`.
 - Worktree: `/private/tmp/gather-member-actions`.
+
+## Follow-up: wave presentation and repetition
+
+The user requested removal of the hand next to the avatar, an icon-only Wave button, and multiple consecutive greetings. The Vivo and Commons avatar overlays have been removed. The card uses a hand icon with an accessible name and no visible Wave/Sending/Waved text. There is no two-second UI cooldown; each acknowledged click can send another greeting. The server permits eight unique waves per second per sender while retaining replay deduplication and same-office authorization. Each new incoming wave refreshes the recipient notice with a distinct event ID.
+
+Validation: 69 web tests and web/API typechecks passed. The focused Socket.IO integration test passes duplicate handling, consecutive/concurrent sends, burst limiting, recovery after the one-second window, disconnected targets and cross-workspace rejection. The live browser test verifies four consecutive greetings arrive with distinct IDs and that neither scene displays the removed hand overlay.

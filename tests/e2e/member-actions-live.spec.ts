@@ -271,7 +271,17 @@ test('live selected member actions: two-user card, wave, go to and mobile', asyn
     await expect(
       b.page.getByText(`${owner.account.displayName} waved to you.`, { exact: true }),
     ).toBeVisible();
-    await expect(wave).toBeDisabled();
+    await expect(wave).toBeEnabled();
+    await expect(wave).toHaveText('');
+    const notice = b.page.locator('.office-wave-toast');
+    let lastWaveId = await notice.getAttribute('data-wave-id');
+    for (let i = 0; i < 3; i++) {
+      await wave.click();
+      await expect(notice).not.toHaveAttribute('data-wave-id', lastWaveId!);
+      lastWaveId = await notice.getAttribute('data-wave-id');
+    }
+    await expect(a.page.locator('.scene-wave-hand')).toHaveCount(0);
+    await expect(b.page.locator('.scene-wave-hand')).toHaveCount(0);
     await a.page.screenshot({
       path: testInfo.outputPath('member-card-desktop.png'),
       fullPage: true,

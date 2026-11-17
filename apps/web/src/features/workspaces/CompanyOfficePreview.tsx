@@ -11,6 +11,7 @@ import {
 import { createPortal } from 'react-dom';
 import {
   ArrowLeft,
+  Hand,
   Bell,
   CalendarDays,
   X,
@@ -134,8 +135,6 @@ export function CompanyOfficePreview({
   const [officeActionError, setOfficeActionError] = useState('');
   const [officeActionPending, setOfficeActionPending] = useState(false);
   const [wavePending, setWavePending] = useState(false);
-  const [waveCooldown, setWaveCooldown] = useState(false);
-  const waveCooldownTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [memberActionMessage, setMemberActionMessage] = useState('');
   const [navigationTarget, setNavigationTarget] = useState<
@@ -156,12 +155,6 @@ export function CompanyOfficePreview({
     setNavigationTarget(undefined);
     if (restoreFocus) requestAnimationFrame(() => selectionTrigger.current?.focus());
   }, []);
-  useEffect(
-    () => () => {
-      if (waveCooldownTimer.current) clearTimeout(waveCooldownTimer.current);
-    },
-    [],
-  );
 
   useEffect(() => {
     const dismiss = (event: KeyboardEvent) => {
@@ -684,9 +677,9 @@ export function CompanyOfficePreview({
   const noOverrides: Overrides = {};
   const connectionMessage =
     participantCount === 1 ? '1 person in the office' : `${participantCount} people in the office`;
-  const waveNotice = state.waves.find(
-    (wave) => wave.recipientParticipationId === ready.participationId,
-  );
+  const waveNotice = state.waves
+    .filter((wave) => wave.recipientParticipationId === ready.participationId)
+    .at(-1);
 
   return (
     <div className="app-shell office-shell" data-workspace-id={detail.id}>
@@ -694,7 +687,13 @@ export function CompanyOfficePreview({
         Skip to office map
       </a>
       {waveNotice && (
-        <div className="office-wave-toast" role="status" aria-live="polite">
+        <div
+          key={waveNotice.eventId}
+          data-wave-id={waveNotice.eventId}
+          className="office-wave-toast"
+          role="status"
+          aria-live="polite"
+        >
           {waveNotice.senderName} waved to you.
         </div>
       )}
@@ -1050,7 +1049,10 @@ export function CompanyOfficePreview({
                   <button
                     type="button"
                     className="member-action-wave"
-                    disabled={!connected || !selectedMemberIsLive || wavePending || waveCooldown}
+                    aria-label={`Wave to ${selectedMember.displayName}`}
+                    title="Wave"
+                    aria-busy={wavePending}
+                    disabled={!connected || !selectedMemberIsLive || wavePending}
                     onClick={() => {
                       const latest = client.getSnapshot();
                       const target = latest.snapshot?.participants.find(
@@ -1068,14 +1070,6 @@ export function CompanyOfficePreview({
                       setMemberActionMessage('');
                       void client
                         .wave(target.participationId)
-                        .then(() => {
-                          setWaveCooldown(true);
-                          if (waveCooldownTimer.current) clearTimeout(waveCooldownTimer.current);
-                          waveCooldownTimer.current = setTimeout(
-                            () => setWaveCooldown(false),
-                            2000,
-                          );
-                        })
                         .catch((error: unknown) => {
                           setMemberActionMessage(
                             error instanceof Error && error.message === 'conflict'
@@ -1086,7 +1080,7 @@ export function CompanyOfficePreview({
                         .finally(() => setWavePending(false));
                     }}
                   >
-                    {wavePending ? 'Sending…' : waveCooldown ? 'Waved' : 'Wave 👋'}
+                    <Hand size={23} aria-hidden="true" />
                   </button>
                   <button
                     type="button"
@@ -1149,7 +1143,6 @@ export function CompanyOfficePreview({
                 {mapId === 'vivo' ? (
                   <VivoScene
                     participants={sceneParticipants}
-                    waveParticipantIds={state.waves.map((wave) => wave.senderParticipationId)}
                     selfId={connected ? (state.ready?.participationId ?? null) : null}
                     objects={[]}
                     zoom={zoom}
@@ -1210,7 +1203,6 @@ export function CompanyOfficePreview({
                       bootstrap={state.bootstrap}
                       snapshot={state.snapshot}
                       localParticipationId={state.ready.participationId}
-                      waves={state.waves}
                       onMovement={(dx, dy) => client.move(dx, dy)}
                     />
                   </Suspense>

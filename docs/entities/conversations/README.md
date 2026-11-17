@@ -1,6 +1,6 @@
 # Conversations
 
-Status: Issue #12/#3 runtime and UI implemented in the current worktree; automated and real-SFU acceptance pending; not deployed · Updated: 2026-11-16
+Status: Issue #12/#3 runtime and UI are deployed to the pilot; proximity real-audio checks pass, fixed-meeting real-SFU acceptance remains open · Updated: 2026-11-17
 
 ## Responsibility
 

@@ -4,9 +4,9 @@
 **Reported by:** Team / Kassem_0001  
 **Priority levels:** Suggested, subject to team review
 
-## GitHub Issues #12 and #3 implementation status — 2026-11-16
+## GitHub Issues #12 and #3 implementation status — 2026-11-17
 
-The current worktree implements the server-authoritative anchored/growing proximity circle and immediate membership departure for issue #12, plus trusted fixed-room meeting group admission/UI for issue #3. This code has not been deployed. Automated unit, integration, browser and real-SFU audio cutoff results must be recorded before either issue is marked accepted. Protocol version 3 requires coordinated API/contracts and web rollout; see the [implementation/rollback notes](PROXIMITY_GROUP_ROLLOUT.md).
+Commit `7d4d00b` deploys the server-authoritative anchored/growing circle and trusted fixed-room meeting admission/UI to the pilot. API/contracts and web protocol v3 were rolled out together. Deployed proximity tests now verify three-user decoded audio and a two-user decoded-audio cutoff; fixed-room live media and revocation remain unverified. See the [implementation/rollback notes](PROXIMITY_GROUP_ROLLOUT.md) and [acceptance evidence](ACCEPTANCE.md).
 
 ---
 
@@ -185,11 +185,11 @@ Display a visual animation or indicator when a user's avatar is speaking during 
 
 ## GitHub Issue and PR Review — 2026-11-16
 
-The tickets map to the repository's GitHub issues below. Coordinate sync was delivered by PRs #10 and #11. Issue #4's earlier proximity-group pilot code is deployed at [`281ee324`](https://github.com/ibrahim8ismael/workspace/commit/281ee3240ce8bdc419bc2a35c485ed20eac98f97); the issue #12/#3 follow-up in this worktree is not deployed and has no measured real-audio boundary cutoff yet.
+The tickets map to the repository's GitHub issues below. Coordinate sync was delivered by PRs #10 and #11. Issue #4's earlier proximity-group pilot code is deployed at [`281ee324`](https://github.com/ibrahim8ismael/workspace/commit/281ee3240ce8bdc419bc2a35c485ed20eac98f97); issue #12/#3 is deployed at local merge commit `7d4d00b`. The current pilot evidence and the still-open fixed-meeting acceptance are recorded in the acceptance register.
 
 | Ticket | GitHub issue | Work found in this repository | Disposition |
 | --- | --- | --- | --- |
-| TICKET-001 | [#3](https://github.com/ibrahim8ismael/workspace/issues/3) | Trusted versioned map zones, explicit join/leave, server roster, six-person capacity and UI actions are implemented in the current worktree using the existing media guard/token path. | Open pending integration/browser/real-SFU verification and deployment evidence. |
+| TICKET-001 | [#3](https://github.com/ibrahim8ismael/workspace/issues/3) | Trusted versioned map zones, explicit join/leave, server roster, six-person capacity and UI actions are deployed using the existing media guard/token path. Runtime and component checks pass. | Open pending deployed multi-client fixed-room audio and membership/session revocation checks. |
 | TICKET-002 | [#4](https://github.com/ibrahim8ismael/workspace/issues/4) | Proximity groups of 2–6 are deployed at [commit `281ee324`](https://github.com/ibrahim8ismael/workspace/commit/281ee3240ce8bdc419bc2a35c485ed20eac98f97). Local real-SFU tests and the controlled pilot browser canary verify three-way audio, synchronized roster changes, member removal, and survivor continuity. | Closed after posting [pilot deployment evidence](https://github.com/ibrahim8ismael/workspace/issues/4#issuecomment-6914505267); no PR exists for this direct-to-main change. Wider release remains gated on separate-network/TURN tests. |
 | TICKET-003 | [#5](https://github.com/ibrahim8ismael/workspace/issues/5) | Fixed by [PR #10](https://github.com/ibrahim8ismael/workspace/pull/10), merged to `main`. Follow-up test [PR #11](https://github.com/ibrahim8ismael/workspace/pull/11) was merged into the coordinate-sync topic branch after #10 had already merged, so its additional live-test changes are not in current `main`. | Already closed by PR #10. No further close action. |
 | TICKET-004 | [#6](https://github.com/ibrahim8ismael/workspace/issues/6) | The third-user failure was traced to pair-only membership. Local group authorization measured 762 ms; browser-permission latency and an agreed activation target remain unverified. | Open; update diagnosis/target before closure. |

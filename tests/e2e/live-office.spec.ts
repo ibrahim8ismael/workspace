@@ -20,8 +20,6 @@ const password = `Local-Office-E2E-${randomUUID()}!`;
 type MailpitMessage = {
   ID: string;
   Subject: string;
-  Created?: string;
-  Date?: string;
   To: Array<{ Address: string }>;
 };
 
@@ -74,7 +72,7 @@ async function json(response: Awaited<ReturnType<APIRequestContext['get']>>) {
   return (await response.json()) as Record<string, unknown>;
 }
 
-async function mailToken(email: string, subject: string, notBefore: number) {
+async function mailToken(email: string, subject: string) {
   const deadline = Date.now() + 45_000;
   while (Date.now() < deadline) {
     const listResponse = await fetch(`${mailpitOrigin}/api/v1/messages?start=0&limit=50`);
@@ -83,8 +81,7 @@ async function mailToken(email: string, subject: string, notBefore: number) {
       const message = list.messages?.find(
         (candidate) =>
           candidate.Subject.includes(subject) &&
-          candidate.To.some((entry) => entry.Address.toLowerCase() === email.toLowerCase()) &&
-          new Date(candidate.Created ?? candidate.Date ?? 0).getTime() >= notBefore - 1000,
+          candidate.To.some((entry) => entry.Address.toLowerCase() === email.toLowerCase()),
       );
       if (message) {
         const detailResponse = await fetch(
@@ -93,7 +90,7 @@ async function mailToken(email: string, subject: string, notBefore: number) {
         if (detailResponse.ok) {
           const detail = (await detailResponse.json()) as { Text?: string; HTML?: string };
           const code = `${detail.Text ?? ''}\n${detail.HTML ?? ''}`.match(
-            /One-time code:\s*([0-9]{6})/,
+            /One-time code:\s*([0-9]{6}|[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8})/i,
           );
           if (code?.[1]) return code[1];
         }
@@ -117,13 +114,12 @@ async function createAccount(email: string) {
   const csrfResponse = await client.get('/api/auth/csrf');
   const csrfBody = await json(csrfResponse);
   let csrf = String(csrfBody.csrfToken);
-  const registeredAt = Date.now();
   const register = await client.post('/api/auth/register', {
     data: { email, displayName: `E2E ${email.split('@')[0]}`, password },
     headers: { 'X-CSRF-Token': csrf },
   });
   expect(register.status()).toBe(202);
-  const verifyToken = await mailToken(email, 'Verify your email', registeredAt);
+  const verifyToken = await mailToken(email, 'Verify your email');
   const verified = await client.post('/api/auth/verify-email', {
     data: { email, token: verifyToken, password },
     headers: { 'X-CSRF-Token': csrf },
@@ -200,7 +196,6 @@ function getLiveMediaOfficeFixture(): Promise<LiveMediaOfficeFixture> {
     const workspaceBody = (await workspaceResponse.json()) as { workspace: { id: string } };
     const workspaceId = workspaceBody.workspace.id;
 
-    const invitationStartedAt = Date.now();
     const invitation = await postJson(
       owner.client,
       `/api/workspaces/${workspaceId}/invitations`,
@@ -209,7 +204,7 @@ function getLiveMediaOfficeFixture(): Promise<LiveMediaOfficeFixture> {
       true,
     );
     expect(invitation.status()).toBe(201);
-    const invitationToken = await mailToken(memberEmail, 'Join a company', invitationStartedAt);
+    const invitationToken = await mailToken(memberEmail, 'Join a company');
     const accepted = await postJson(
       member.client,
       '/api/invitations/accept',
@@ -744,7 +739,6 @@ test('live two-browser Vivo admission, movement, seats, recovery, and company is
     const workspaceBody = (await workspaceResponse.json()) as { workspace: { id: string } };
     const workspaceId = workspaceBody.workspace.id;
 
-    const invitedAt = Date.now();
     const inviteResponse = await postJson(
       owner.client,
       `/api/workspaces/${workspaceId}/invitations`,
@@ -753,7 +747,7 @@ test('live two-browser Vivo admission, movement, seats, recovery, and company is
       true,
     );
     expect(inviteResponse.status()).toBe(201);
-    const inviteToken = await mailToken(memberEmail, 'Join a company', invitedAt);
+    const inviteToken = await mailToken(memberEmail, 'Join a company');
     const accepted = await postJson(
       member.client,
       '/api/invitations/accept',
@@ -1039,7 +1033,11 @@ test('mounted Vivo office carries and cuts off live nearby audio on conversation
       }
     }
 
-    // The single microphone action opts in and starts capture once the pair is ready.
+    // Proximity opt-in controls membership; the separate microphone action grants capture.
+    await ownerPage.getByRole('button', { name: 'Opt in to nearby voice' }).click();
+    await memberPage.getByRole('button', { name: 'Opt in to nearby voice' }).click();
+    await expect(ownerPage.getByRole('button', { name: 'Opt out of nearby voice' })).toBeVisible();
+    await expect(memberPage.getByRole('button', { name: 'Opt out of nearby voice' })).toBeVisible();
     await ownerPage.getByRole('button', { name: 'Activate proximity microphone' }).click();
     await memberPage.getByRole('button', { name: 'Activate proximity microphone' }).click();
     try {
@@ -1800,7 +1798,6 @@ test('mounted Vivo office cuts off active audio when the member session logs out
   try {
     const currentMembership = await member.client.get(`/api/workspaces/${workspaceId}`);
     if (currentMembership.status() === 403) {
-      const invitedAt = Date.now();
       const invitation = await postJson(
         owner.client,
         `/api/workspaces/${workspaceId}/invitations`,
@@ -1809,7 +1806,7 @@ test('mounted Vivo office cuts off active audio when the member session logs out
         true,
       );
       expect(invitation.status()).toBe(201);
-      const invitationToken = await mailToken(member.email, 'Join a company', invitedAt);
+      const invitationToken = await mailToken(member.email, 'Join a company');
       const accepted = await postJson(
         member.client,
         '/api/invitations/accept',
@@ -2007,7 +2004,6 @@ test('mounted Vivo joins an established pair into a three-person guarded audio g
     const workspaceId = workspaceBody.workspace.id;
 
     for (const member of members) {
-      const invitationStartedAt = Date.now();
       const invitation = await postJson(
         owner.client,
         `/api/workspaces/${workspaceId}/invitations`,
@@ -2016,7 +2012,7 @@ test('mounted Vivo joins an established pair into a three-person guarded audio g
         true,
       );
       expect(invitation.status()).toBe(201);
-      const invitationToken = await mailToken(member.email, 'Join a company', invitationStartedAt);
+      const invitationToken = await mailToken(member.email, 'Join a company');
       const accepted = await postJson(
         member.client,
         '/api/invitations/accept',

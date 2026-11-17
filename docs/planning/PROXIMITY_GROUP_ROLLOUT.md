@@ -1,14 +1,14 @@
 # Proximity group conversations: rollout and rollback
 
-## Issue #12/#3 worktree follow-up — 2026-11-16
+## Issue #12/#3 merged pilot deployment — 2026-11-17
 
-The current un-deployed worktree replaces the moving centroid/3-tile/500 ms proximity rule with an anchored midpoint circle, immediate shared-boundary departure, one-tile growth up to six tiles, safe whole-tile shrink, public ordered geometry snapshots and dotted outlines in both supported renderers. It also implements trusted fixed meeting-zone group admission and roster UI through the existing OfficeRuntime, conversation token route and media policy. Real-SFU cutoff, three-user room audio, and complete regression evidence must pass before this patch is considered accepted. The deployed pilot was not changed by this work.
+Commit `7d4d00bbccb0e377cb8acc51bf2fd43a7711384e` merges Ibrahim's latest `main` (`b166f3d`) with the issue #12/#3 implementation and is deployed at `https://gather.imtelak.com`. It replaces the moving centroid/three-tile/500 ms proximity rule with an anchored midpoint circle, immediate shared-boundary departure, bounded one-tile growth, safe whole-tile shrink, public ordered geometry snapshots and dotted outlines in both supported renderers. It also implements trusted fixed meeting-zone admission and roster UI through the existing OfficeRuntime, token route and media policy.
 
-The office protocol is now version 3. Release the API/contracts and web bundle together; a version 2 tab must reload before it can reconnect. The existing guard permit format remains compatible and microphone-only, but verify the API's meeting permits and generation retirement end to end before rollout. No database schema migration is required: conversations and meeting membership are transient office-runtime state. Rollback drains the API epoch and office sockets, retains media-retirement state/volumes, then restores the prior v2 API/web images; never restore revoked session, ticket or media authorization state.
+The office protocol is version 3. API/contracts and web were released together; version 2 tabs must reload before reconnecting. The media permit format remains compatible and microphone-only. No destructive database migration was run; the explicit index job completed and dropped no indexes. Three-user deployed audio and a two-user five-minute audio/cutoff check passed. Fixed-room live group audio, current-image five-sample cutoff p95, separate-network TURN-only behavior and host/process failure supervision remain open. Rollback references the immediate prior images `gather-lite-api:3d36609-issue12-3-20261116`, `gather-lite-web:3d36609-issue12-3-20261116`, and `gather-lite-worker:6e4620dec60c`; keep Mongo, Redis, LiveKit, and media-retirement volumes and all current auth/revocation state.
 
 ## Protocol v2 pilot deployment (historical)
 
-The earlier pilot release changed the office protocol, API pairing authority, browser roster handling and media guard lifecycle. It was deployed to the Gather Lite pilot on 2026-11-16 and passed a controlled three-user browser canary. This is evidence for that pilot revision and those test accounts; it does not verify the un-deployed protocol v3 issue patch above or constitute broad-release sign-off.
+The earlier pilot release changed the office protocol, API pairing authority, browser roster handling and media guard lifecycle. It was deployed to the Gather Lite pilot on 2026-11-16 and passed a controlled three-user browser canary. That evidence is historical for its image revision and is not broad-release sign-off.
 
 ## Verified pilot baseline
 
@@ -30,7 +30,7 @@ Post-deploy checks returned API health HTTP 200, kept unauthenticated `/rtc/v1/v
 
 ## Compatibility and release sequence
 
-The earlier pilot rollout moved the protocol from version 1 to version 2. The current issue #12/#3 worktree advances it to version 3 for ordered public area snapshots and fixed meeting commands. That candidate requires coordinated API/contracts and web deployment; the current pilot remains on its deployed version until a separately authorized rollout. Existing tabs on protocol versions 1 or 2 must reload before joining a version 3 API. Treat the earlier rollout evidence below as historical evidence for the prior pilot, not verification of this candidate. Caddy's `no-store` HTML entry point and immutable content-hashed assets remain applicable.
+The issue #12/#3 rollout advanced the protocol from version 2 to version 3 for ordered public area snapshots and fixed meeting commands. The pilot runs v3; older protocol tabs must reload. Caddy's `no-store` HTML entry point and immutable content-hashed assets remain applicable. The 2026-11-12 and 2026-11-16 deployment records below remain historical evidence for their image revisions; the current deployment record and handover are in [infra/deploy/README.md](../../infra/deploy/README.md#deployment-verification--2026-11-17).
 
 Before a canary:
 

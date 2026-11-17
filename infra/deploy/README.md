@@ -279,3 +279,65 @@ socket and movement, but the Playwright case timed out during browser cleanup; i
 a passing E2E test. External TURN-only connectivity and A07 host/process failure supervision remain
 unverified. Real SMTP is not configured: registration and invitation messages are captured by
 Mailpit, whose port `8025` is available only on loopback and must not be opened publicly.
+
+## Deployment verification — 2026-11-17
+
+This is the current pilot record and supersedes the older running-image references above. The
+deployed source commit is `7d4d00bbccb0e377cb8acc51bf2fd43a7711384e`, based on Ibrahim's latest
+`origin/main` commit `b166f3d70008a37b0e4ddafcf539f4ae24bf71b5` with the issue #12/#3 implementation
+merged. API, web and worker images use the `7d4d00b-issue12-3-20261117` tag. The media guard remains
+`gather-lite-media-guard:281ee324-r2-media-pilot`; LiveKit remains pinned to `v1.13.11`.
+
+The latest image build used `docker compose --parallel 1 ... build api caddy worker`. Build `indexes`
+separately from the same API image; do not ask Compose to export both `api` and `indexes` in one
+build, because both services use the same image tag. The one-shot index job completed successfully
+and reported that no indexes were dropped. A pre-deploy Mongo archive was gzip-validated at
+`/var/backups/gather-lite/gather-lite-20261117T102818Z.archive.gz`.
+
+Verified against the deployed pilot:
+
+- `https://gather.imtelak.com` returned HTTP `200` with the public certificate validating and HSTS
+  enabled. Plain HTTP returned `308` to HTTPS. The API liveness endpoint returned
+  `{"status":"ok","service":"api"}`.
+- The unauthenticated conversation media-token endpoint returned `401`; the public
+  `/rtc/v1/validate` endpoint returned `403`. MongoDB and queue Redis have no host-published ports.
+  Mailpit remains bound to `127.0.0.1:8025`, not the public interface.
+- The deployed browser smoke covered verification-code registration, login, workspace creation,
+  invitation acceptance, office admission, cross-company isolation, movement/reconnect and SPA
+  routing: 2 passed, 8 media-only cases skipped. Verification/invitation email was captured by the
+  internal Mailpit worker; real SMTP delivery is not configured.
+- A three-browser deployed LiveKit run passed with synthetic audio. All three clients received two
+  remote audio tracks and decoded samples; group admission took `1,585 ms`. Removing one member
+  removed its remote audio element in `154 ms` while the other two retained their tracks and decoded
+  audio.
+- A two-browser deployed audio run sustained decoded audio in both directions for five minutes:
+  active samples `15,038`/`15,058`, longest silent gaps `17`/`24 ms`, maximum callback gaps
+  `42`/`44 ms`, and no RTP packet loss at the checkpoints. On conversation leave, the conservative
+  last-decoded-sample upper bound was `227 ms`; the remote audio element was removed and the map
+  stayed mounted. This is one cutoff measurement on this image. The previous five-sample pilot run
+  on `3d36609-issue12-3-20261116` measured `341, 300, 259, 332, 283 ms` (empirical p95 `341 ms`);
+  repeat five samples after this merged revision before treating that p95 as current.
+- Compose reported the API, Caddy, MongoDB, queue Redis, Mailpit and media guard healthy; the worker
+  and LiveKit were running. The API restart preserved database-backed operations. The fresh archive
+  is protected, but restore testing and an independent off-host copy are still outstanding.
+- The merged source passed formatting, lint, typecheck, contract/world/media-spike/shared/web/API
+  tests and production builds. The API suite passed `109` tests with `1` skipped. API integration
+  required loopback-listen permission for its disposable MongoDB replica set; the sandboxed
+  `pnpm check` invocation itself could not finish that step, so `pnpm test:api` and `pnpm build` were
+  rerun separately and passed.
+
+The fixed-room meeting implementation and UI are deployed. Its runtime, contracts and component
+tests passed, but a live multi-client fixed-room audio session and meeting revocation have not been
+verified. The deployed proximity audio path is verified above; A07 host/process failure supervision,
+external TURN-only/network-blocked reachability, real SMTP onboarding, isolated restore and a
+current five-sample cutoff p95 remain open release gates. The pilot includes synthetic
+`@example.test` accounts/workspaces created by browser tests; these were retained rather than
+deleting database records manually.
+
+To roll back code only, use the immediate prior API/web tags
+`gather-lite-api:3d36609-issue12-3-20261116` and
+`gather-lite-web:3d36609-issue12-3-20261116`, and prior worker tag
+`gather-lite-worker:6e4620dec60c`. Keep MongoDB, Redis, LiveKit, media-retirement volumes and current
+auth/revocation data. Recreate API/Caddy/worker with the existing Compose overlays, then restart the
+media guard to negotiate fresh policy. Do not restore an older database archive over current auth
+state; OTP/invitation records created by the newer code may not be understood by the older app.

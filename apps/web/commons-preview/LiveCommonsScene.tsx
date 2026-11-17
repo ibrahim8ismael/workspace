@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import Phaser from 'phaser';
-import type { OfficeBootstrapResponse, WorldSnapshot } from '@gather/contracts';
+import type { OfficeBootstrapResponse, OfficeWave, WorldSnapshot } from '@gather/contracts';
 import { readPreview } from './data';
 import { createCommonsSceneCleanup } from './scene-lifecycle';
 import './preview.css';
@@ -13,6 +13,12 @@ type Pose = 'standing' | 'sitting';
 type AvatarView = {
   image: Phaser.GameObjects.Image;
   name: Phaser.GameObjects.Text;
+  wave: Phaser.GameObjects.Text;
+  waveTween: Phaser.Tweens.Tween | null;
+};
+type MountedScene = {
+  cleanup: () => void;
+  updateSnapshot: (snapshot: WorldSnapshot, waves: OfficeWave[]) => void;
 };
 
 function avatarFrame(
@@ -44,16 +50,20 @@ function mountScene(
   ready: () => void,
   failed: () => void,
   onMovement: (dx: -1 | 0 | 1, dy: -1 | 0 | 1) => void,
-) {
+  initialWaves: OfficeWave[],
+): MountedScene {
   const assets = readPreview();
   if (assets.manifest.mapVersion !== bootstrap.mapVersion) {
     failed();
-    return { cleanup: () => parent.remove(), updateSnapshot: () => undefined };
+    return {
+      cleanup: () => parent.remove(),
+      updateSnapshot: () => undefined,
+    };
   }
   const { geometry, catalog } = assets;
   const frames: Array<Frame | ObjectFrame> = [...assets.avatarFrames, ...assets.objectFrames];
   let disposed = false;
-  let applySnapshot: (snapshot: WorldSnapshot) => void = () => undefined;
+  let applySnapshot: (snapshot: WorldSnapshot, waves: OfficeWave[]) => void = () => undefined;
   const game = new Phaser.Game({
     type: Phaser.CANVAS,
     parent,
@@ -147,7 +157,8 @@ function mountScene(
 
         const avatars = new Map<string, AvatarView>();
         let followedAvatar: Phaser.GameObjects.Image | null = null;
-        const drawSnapshot = (snapshot: WorldSnapshot) => {
+        const drawSnapshot = (snapshot: WorldSnapshot, waves: OfficeWave[]) => {
+          const waving = new Set(waves.map((wave) => wave.senderParticipationId));
           const ids = new Set(
             snapshot.participants.map((participant) => participant.participationId),
           );
@@ -155,6 +166,8 @@ function mountScene(
             if (!ids.has(id)) {
               view.image.destroy();
               view.name.destroy();
+              view.wave.destroy();
+              view.waveTween?.stop();
               avatars.delete(id);
             }
           }
@@ -184,7 +197,14 @@ function mountScene(
                   },
                 )
                 .setOrigin(0.5, 1);
-              view = { image, name };
+              const wave = this.add
+                .text(participant.position.x + 18, participant.position.y - 38, '👋', {
+                  fontFamily: 'Arial, sans-serif',
+                  fontSize: '20px',
+                })
+                .setOrigin(0.5)
+                .setVisible(false);
+              view = { image, name, wave, waveTween: null };
               avatars.set(participant.participationId, view);
             }
             view.image
@@ -196,6 +216,23 @@ function mountScene(
               .setText(participant.displayName)
               .setPosition(participant.position.x, participant.position.y - 35)
               .setDepth(catalog.drawOrder.indexOf('avatar') * 100_000 + participant.position.y + 1);
+            view.wave
+              .setPosition(participant.position.x + 18, participant.position.y - 38)
+              .setDepth(catalog.drawOrder.indexOf('avatar') * 100_000 + participant.position.y + 2);
+            if (waving.has(participant.participationId) && !view.waveTween) {
+              view.wave.setVisible(true);
+              view.waveTween = this.tweens.add({
+                targets: view.wave,
+                angle: { from: -24, to: 24 },
+                duration: 180,
+                yoyo: true,
+                repeat: -1,
+              });
+            } else if (!waving.has(participant.participationId) && view.waveTween) {
+              view.waveTween.stop();
+              view.waveTween = null;
+              view.wave.setAngle(0).setVisible(false);
+            }
           }
           const local = snapshot.participants.find(
             (participant) => participant.participationId === localParticipationId,
@@ -209,7 +246,7 @@ function mountScene(
             followedAvatar = null;
           }
         };
-        drawSnapshot(initialSnapshot);
+        drawSnapshot(initialSnapshot, initialWaves);
         applySnapshot = drawSnapshot;
         ready();
 
@@ -245,7 +282,8 @@ function mountScene(
     },
   });
   const cleanup = createCommonsSceneCleanup(game, parent);
-  const updateSnapshot = (snapshot: WorldSnapshot) => applySnapshot(snapshot);
+  const updateSnapshot = (snapshot: WorldSnapshot, waves: OfficeWave[]) =>
+    applySnapshot(snapshot, waves);
   return {
     cleanup: () => {
       disposed = true;
@@ -260,22 +298,32 @@ type Props = {
   snapshot: WorldSnapshot;
   localParticipationId: string;
   onMovement: (dx: -1 | 0 | 1, dy: -1 | 0 | 1) => void;
+  waves: OfficeWave[];
 };
 
-export function LiveCommonsScene({ bootstrap, snapshot, localParticipationId, onMovement }: Props) {
+export function LiveCommonsScene({
+  bootstrap,
+  snapshot,
+  localParticipationId,
+  onMovement,
+  waves,
+}: Props) {
   const host = useRef<HTMLDivElement>(null);
-  const renderer = useRef<ReturnType<typeof mountScene> | null>(null);
+  const renderer = useRef<MountedScene | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const firstSnapshot = useRef(snapshot);
   const latestSnapshot = useRef(snapshot);
   const movement = useRef(onMovement);
+  const latestWaves = useRef(waves);
+  const firstWaves = useRef(waves);
   latestSnapshot.current = snapshot;
   movement.current = onMovement;
+  latestWaves.current = waves;
 
   useEffect(() => {
     const parent = document.createElement('div');
     host.current?.appendChild(parent);
-    let mounted: ReturnType<typeof mountScene> | undefined;
+    let mounted: MountedScene | undefined;
     try {
       mounted = mountScene(
         parent,
@@ -284,10 +332,11 @@ export function LiveCommonsScene({ bootstrap, snapshot, localParticipationId, on
         localParticipationId,
         () => {
           setStatus('ready');
-          renderer.current?.updateSnapshot(latestSnapshot.current);
+          renderer.current?.updateSnapshot(latestSnapshot.current, latestWaves.current);
         },
         () => setStatus('error'),
         (dx, dy) => movement.current(dx, dy),
+        firstWaves.current,
       );
       renderer.current = mounted;
     } catch {
@@ -301,8 +350,8 @@ export function LiveCommonsScene({ bootstrap, snapshot, localParticipationId, on
   }, [bootstrap]);
 
   useEffect(() => {
-    renderer.current?.updateSnapshot(snapshot);
-  }, [snapshot]);
+    renderer.current?.updateSnapshot(snapshot, waves);
+  }, [snapshot, waves]);
 
   return (
     <div className="live-commons-scene">

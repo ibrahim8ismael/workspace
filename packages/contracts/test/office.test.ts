@@ -20,6 +20,8 @@ import {
   officeCommandAckSchema,
   officeClientEventNameSchema,
   officeClientEventSchemas,
+  waveEventSchema,
+  officeWaveSchema,
 } from '../dist/index.js';
 
 const id = '11111111-1111-4111-8111-111111111111';
@@ -65,6 +67,33 @@ const snapshot = {
 const command = { eventId: id, officeEpoch: other, payload: { sequence: 1, dx: 1, dy: 0 } };
 
 describe('office v1 contracts (fixtures do not approve a map or grant access)', () => {
+  it('validates a target-only wave command and bounded wave broadcast', () => {
+    expect(
+      waveEventSchema.safeParse({
+        eventId: id,
+        officeEpoch: other,
+        payload: { targetParticipationId: id },
+      }).success,
+    ).toBe(true);
+    expect(
+      waveEventSchema.safeParse({
+        eventId: id,
+        officeEpoch: other,
+        payload: { targetParticipationId: '../different-office' },
+      }).success,
+    ).toBe(false);
+    const notice = {
+      eventId: id,
+      officeEpoch: other,
+      senderParticipationId: id,
+      senderName: 'Test Person',
+      recipientParticipationId: other,
+      recipientName: 'Other Person',
+      durationMs: 2200,
+    };
+    expect(officeWaveSchema.safeParse(notice).success).toBe(true);
+    expect(officeWaveSchema.safeParse({ ...notice, durationMs: 60_000 }).success).toBe(false);
+  });
   it('preserves imported object:index seat IDs without accepting asset paths', () => {
     expect(
       seatSitEventSchema.safeParse({ ...command, payload: { seatId: 'chair_1:0' } }).success,

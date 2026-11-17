@@ -102,6 +102,25 @@ export class OfficeRuntimeService {
   private readonly offices = new Map<string, OfficeRuntime>();
   private readonly takeoverReferences = new Map<string, StoredTakeoverReference>();
 
+  liveParticipation(
+    officeId: string,
+    workspaceId: string,
+    officeEpoch: string,
+    participationId: string,
+  ) {
+    const office = this.offices.get(officeId);
+    if (!office || office.workspaceId !== workspaceId || office.officeEpoch !== officeEpoch)
+      return null;
+    const participant = office.participants.get(participationId);
+    if (!participant) return null;
+    return {
+      socketId: participant.socketId,
+      userId: participant.userId,
+      displayName: participant.publicState.displayName,
+      participationId,
+    };
+  }
+
   issueTakeoverReference(binding: TakeoverReferenceBinding, expiresAt: number) {
     const office = this.offices.get(binding.officeId);
     const activeParticipationId = office?.participationByActor.get(

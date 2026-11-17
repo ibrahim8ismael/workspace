@@ -149,6 +149,7 @@ export function CompanyOfficePreview({
   const navigationNonce = useRef(0);
   const selectionTrigger = useRef<HTMLElement | SVGElement | null>(null);
   const memberCardRef = useRef<HTMLElement | null>(null);
+  const officeMapRef = useRef<HTMLElement | null>(null);
   const closeMemberCard = useCallback((restoreFocus = true) => {
     setSelectedMemberId(null);
     setMemberActionMessage('');
@@ -991,6 +992,7 @@ export function CompanyOfficePreview({
         </aside>
 
         <main
+          ref={officeMapRef}
           id="office-map"
           className={`map-area office-shell-map${section === 'chat' ? ' is-chat-view' : ''}`}
           tabIndex={-1}
@@ -1110,6 +1112,7 @@ export function CompanyOfficePreview({
                         setMemberActionMessage('Go to is unavailable right now.');
                         return;
                       }
+                      officeMapRef.current?.focus({ preventScroll: true });
                       setNavigationTarget({
                         ...target.position,
                         participantId: target.participationId,

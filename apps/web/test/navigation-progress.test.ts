@@ -3,7 +3,7 @@ import {
   directionToWaypoint,
   updateWaypointArrival,
 } from '../src/features/office/navigation-progress';
-import { findReachableAdjacentPath } from '../navigation';
+import { BLOCKED, canStep, findReachableAdjacentPath } from '../navigation';
 
 describe('authoritative route waypoint progress', () => {
   it('routes to a reachable free tile beside a participant without overlapping them', () => {
@@ -16,6 +16,17 @@ describe('authoritative route waypoint progress', () => {
     expect(path).not.toBeNull();
     expect(path?.at(-1)).not.toEqual({ tx: 8, ty: 4 });
     expect(path?.at(-1)).not.toEqual({ tx: 7, ty: 4 });
+  });
+
+  it('walks around a wall instead of treating its opposite side as adjacent', () => {
+    const start = { tx: 29, ty: 33 };
+    const member = { tx: 29, ty: 34 };
+    expect(canStep(start.tx, start.ty, member.tx, member.ty, BLOCKED)).toBe(false);
+    const path = findReachableAdjacentPath(start, member, BLOCKED);
+    expect(path).not.toBeNull();
+    expect(path!.length).toBeGreaterThan(0);
+    const destination = path!.at(-1)!;
+    expect(canStep(member.tx, member.ty, destination.tx, destination.ty, BLOCKED)).toBe(true);
   });
 
   it('reports no adjacent destination when every neighboring tile is occupied', () => {

@@ -126,6 +126,8 @@ export function findReachableAdjacentPath(
   for (const [dx, dy] of NEIGHBOURS) {
     const goal = { tx: target.tx + dx, ty: target.ty + dy };
     if (!canStand(goal, dynamicBlocked)) continue;
+    // A nearby tile across a wall is not a reachable interaction destination.
+    if (!canStep(target.tx, target.ty, goal.tx, goal.ty, blocked)) continue;
     const path = findTilePath(start, goal, dynamicBlocked);
     if (!path.length && !sameTile(start, goal)) continue;
     if (!best || path.length < best.length) best = path;

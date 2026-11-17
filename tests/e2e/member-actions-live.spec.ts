@@ -300,7 +300,21 @@ test('live selected member actions: two-user card, wave, go to and mobile', asyn
     await a.page.keyboard.up('ArrowRight');
     const before = await position(b.page, owner.account.displayName);
     await avatarBonA.click();
-    await card.getByRole('button', { name: /Go to/ }).click();
+    const goTo = card.getByRole('button', { name: /Go to/ });
+    await goTo.focus();
+    await a.page.keyboard.press('Enter');
+    await expect(a.page.locator('#office-map')).toBeFocused();
+    // No extra click/focus: movement keys must take over immediately after Go to.
+    await a.page.keyboard.down('ArrowRight');
+    await a.page.waitForTimeout(250);
+    await a.page.keyboard.up('ArrowRight');
+    await expect(card.getByText('Movement stopped.', { exact: true })).toBeVisible();
+    const stopped = await position(b.page, owner.account.displayName);
+    await a.page.waitForTimeout(300);
+    const afterStop = await position(b.page, owner.account.displayName);
+    expect(Math.hypot(stopped.x - afterStop.x, stopped.y - afterStop.y)).toBeLessThan(12);
+    await goTo.click();
+    await expect(a.page.locator('#office-map')).toBeFocused();
     await expect
       .poll(async () =>
         Math.hypot(

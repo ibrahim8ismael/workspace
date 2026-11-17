@@ -9,6 +9,7 @@ export const OFFICE_LIMITS = Object.freeze({
   maxSeatStateEntries: 512,
   movementInputsPerSecond: 30,
   officeCommandsPerSecond: 30,
+  wavesPerSecond: 8,
   worldResyncsPerSecond: 3,
   movementSpeedPixelsPerSecond: 192,
   movementIntentTimeoutMs: 250,

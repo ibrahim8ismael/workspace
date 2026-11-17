@@ -159,26 +159,6 @@
   animation: reaction-rise 3.2s ease-out forwards;
   pointer-events: none;
 }
-.scene-wave-hand {
-  font-size: 20px;
-  pointer-events: none;
-  transform-box: fill-box;
-  transform-origin: 50% 90%;
-  animation: scene-wave 360ms ease-in-out 4 alternate;
-}
-@keyframes scene-wave {
-  from {
-    transform: rotate(-24deg);
-  }
-  to {
-    transform: rotate(24deg);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .scene-wave-hand {
-    animation: none;
-  }
-}
 @keyframes reaction-rise {
   0% {
     opacity: 0;

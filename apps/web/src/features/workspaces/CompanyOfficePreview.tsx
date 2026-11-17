@@ -1,8 +1,20 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
+import { createPortal } from 'react-dom';
 import {
   ArrowLeft,
+  Hand,
   Bell,
   CalendarDays,
+  X,
   LayoutGrid,
   Map as MapIcon,
   Mic,
@@ -123,14 +135,35 @@ export function CompanyOfficePreview({
   const [officeActionError, setOfficeActionError] = useState('');
   const [officeActionPending, setOfficeActionPending] = useState(false);
   const [wavePending, setWavePending] = useState(false);
-  const [waveCooldown, setWaveCooldown] = useState(false);
-  const waveCooldownTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(
-    () => () => {
-      if (waveCooldownTimer.current) clearTimeout(waveCooldownTimer.current);
-    },
-    [],
-  );
+  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+  const [memberActionMessage, setMemberActionMessage] = useState('');
+  const [navigationTarget, setNavigationTarget] = useState<
+    | {
+        x: number;
+        y: number;
+        nonce: number;
+        participantId: string;
+      }
+    | undefined
+  >();
+  const navigationNonce = useRef(0);
+  const selectionTrigger = useRef<HTMLElement | SVGElement | null>(null);
+  const memberCardRef = useRef<HTMLElement | null>(null);
+  const officeMapRef = useRef<HTMLElement | null>(null);
+  const closeMemberCard = useCallback((restoreFocus = true) => {
+    setSelectedMemberId(null);
+    setMemberActionMessage('');
+    setNavigationTarget(undefined);
+    if (restoreFocus) requestAnimationFrame(() => selectionTrigger.current?.focus());
+  }, []);
+
+  useEffect(() => {
+    const dismiss = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && selectedMemberId) closeMemberCard();
+    };
+    window.addEventListener('keydown', dismiss);
+    return () => window.removeEventListener('keydown', dismiss);
+  }, [selectedMemberId, closeMemberCard]);
   const [proximityOptIn, setProximityOptIn] = useState<{
     participationId: string;
     enabled: true;
@@ -153,8 +186,20 @@ export function CompanyOfficePreview({
   const [zoom, setZoom] = useState(1.35);
   const [localSection, setLocalSection] = useState<OfficeSection>('office');
   const section = routePage && routePage !== 'entry' ? routePage : localSection;
-  const setSection = (next: OfficeSection) =>
-    onNavigatePage ? onNavigatePage(next) : setLocalSection(next);
+  const selectedMember = selectedMemberId
+    ? (state.snapshot?.participants.find(
+        (participant) => participant.participationId === selectedMemberId,
+      ) ?? null)
+    : null;
+  useEffect(() => {
+    if (selectedMemberId)
+      memberCardRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
+  }, [selectedMemberId]);
+  const setSection = (next: OfficeSection) => {
+    if (next !== 'office') closeMemberCard(false);
+    if (onNavigatePage) onNavigatePage(next);
+    else setLocalSection(next);
+  };
   const joiningFromEntry = useRef(false);
   const previousPage = useRef(routePage);
   useEffect(() => {
@@ -618,12 +663,24 @@ export function CompanyOfficePreview({
     ...(participant.seatId ? { seatId: participant.seatId } : {}),
     status: participant.availability,
   }));
+  const selectedMemberIsLive = Boolean(selectedMember && selectedMember.availability !== 'away');
+  const goToDisabledReason = !connected
+    ? 'Join the office to use Go to.'
+    : !selectedMemberIsLive
+      ? 'Go to is available when this member is online.'
+      : mapId !== 'vivo'
+        ? 'Go to is available on Vivo.'
+        : !self || self.availability === 'away'
+          ? 'Change your status to online to use Go to.'
+          : self.seatId
+            ? 'Stand up before using Go to.'
+            : '';
   const noOverrides: Overrides = {};
   const connectionMessage =
     participantCount === 1 ? '1 person in the office' : `${participantCount} people in the office`;
-  const waveNotice = state.waves.find(
-    (wave) => wave.recipientParticipationId === ready.participationId,
-  );
+  const waveNotice = state.waves
+    .filter((wave) => wave.recipientParticipationId === ready.participationId)
+    .at(-1);
 
   return (
     <div className="app-shell office-shell" data-workspace-id={detail.id}>
@@ -631,7 +688,13 @@ export function CompanyOfficePreview({
         Skip to office map
       </a>
       {waveNotice && (
-        <div className="office-wave-toast" role="status" aria-live="polite">
+        <div
+          key={waveNotice.eventId}
+          data-wave-id={waveNotice.eventId}
+          className="office-wave-toast"
+          role="status"
+          aria-live="polite"
+        >
           {waveNotice.senderName} waved to you.
         </div>
       )}
@@ -895,40 +958,20 @@ export function CompanyOfficePreview({
               <ul>
                 {snapshot.participants.map((participant) => (
                   <li key={participant.participationId}>
-                    <span>{participant.displayName}</span>
-                    <small>{participant.availability}</small>
-                    {connected && participant.participationId !== ready.participationId && (
-                      <button
-                        type="button"
-                        className="office-wave-button"
-                        disabled={wavePending || waveCooldown}
-                        aria-label={`Wave to ${participant.displayName}`}
-                        onClick={() => {
-                          setWavePending(true);
-                          void client
-                            .wave(participant.participationId)
-                            .then(() => {
-                              setWaveCooldown(true);
-                              if (waveCooldownTimer.current)
-                                clearTimeout(waveCooldownTimer.current);
-                              waveCooldownTimer.current = setTimeout(
-                                () => setWaveCooldown(false),
-                                2000,
-                              );
-                            })
-                            .catch((error: unknown) => {
-                              setOfficeActionError(
-                                error instanceof Error && error.message === 'conflict'
-                                  ? `${participant.displayName} is no longer online.`
-                                  : 'Could not send the wave. Try again shortly.',
-                              );
-                            })
-                            .finally(() => setWavePending(false));
-                        }}
-                      >
-                        {wavePending ? 'Sending…' : waveCooldown ? 'Waved' : 'Wave 👋'}
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      className="office-person-select"
+                      disabled={participant.participationId === ready.participationId}
+                      aria-pressed={selectedMemberId === participant.participationId}
+                      onClick={(event) => {
+                        selectionTrigger.current = event.currentTarget;
+                        setSelectedMemberId(participant.participationId);
+                        setMemberActionMessage('');
+                      }}
+                    >
+                      <span>{participant.displayName}</span>
+                      <small>{participant.availability}</small>
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -949,6 +992,7 @@ export function CompanyOfficePreview({
         </aside>
 
         <main
+          ref={officeMapRef}
           id="office-map"
           className={`map-area office-shell-map${section === 'chat' ? ' is-chat-view' : ''}`}
           tabIndex={-1}
@@ -969,6 +1013,125 @@ export function CompanyOfficePreview({
             className="office-proximity-audio-output"
             aria-hidden="true"
           />
+          {section === 'office' &&
+            connected &&
+            selectedMember &&
+            typeof document !== 'undefined' &&
+            createPortal(
+              <section
+                ref={memberCardRef}
+                className="member-actions-card"
+                role="dialog"
+                aria-label="Member actions"
+                aria-modal="false"
+                onClick={(event) => event.stopPropagation()}
+                onPointerDown={(event) => event.stopPropagation()}
+              >
+                <div className="member-actions-header">
+                  <span className="member-actions-avatar" aria-hidden="true">
+                    {selectedMember.displayName.trim().charAt(0).toUpperCase() || '?'}
+                  </span>
+                  <div className="member-actions-identity">
+                    <strong>{selectedMember.displayName}</strong>
+                    <span className="member-actions-status">
+                      <i className={selectedMemberIsLive ? 'is-online' : ''} />
+                      {selectedMemberIsLive ? 'Online' : 'Away'}
+                    </span>
+                  </div>
+                  <button
+                    className="member-actions-close"
+                    type="button"
+                    aria-label="Close member actions"
+                    onClick={() => closeMemberCard()}
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+                <div className="member-actions-buttons">
+                  <button
+                    type="button"
+                    className="member-action-wave"
+                    aria-label={`Wave to ${selectedMember.displayName}`}
+                    title="Wave"
+                    aria-busy={wavePending}
+                    disabled={!connected || !selectedMemberIsLive || wavePending}
+                    onClick={() => {
+                      const latest = client.getSnapshot();
+                      const target = latest.snapshot?.participants.find(
+                        (participant) =>
+                          participant.participationId === selectedMember.participationId,
+                      );
+                      if (!connected || !target || target.availability === 'away') {
+                        setMemberActionMessage(
+                          `${selectedMember.displayName} is no longer online.`,
+                        );
+                        closeMemberCard(false);
+                        return;
+                      }
+                      setWavePending(true);
+                      setMemberActionMessage('');
+                      void client
+                        .wave(target.participationId)
+                        .catch((error: unknown) => {
+                          setMemberActionMessage(
+                            error instanceof Error && error.message === 'conflict'
+                              ? `${selectedMember.displayName} is no longer online.`
+                              : 'Could not send the wave. Try again shortly.',
+                          );
+                        })
+                        .finally(() => setWavePending(false));
+                    }}
+                  >
+                    <Hand size={23} aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    className="member-action-go"
+                    disabled={
+                      !connected ||
+                      !selectedMemberIsLive ||
+                      !self ||
+                      Boolean(self.seatId) ||
+                      self.availability === 'away' ||
+                      mapId !== 'vivo'
+                    }
+                    onClick={() => {
+                      const latest = client.getSnapshot().snapshot;
+                      const target = latest?.participants.find(
+                        (participant) =>
+                          participant.participationId === selectedMember.participationId,
+                      );
+                      if (
+                        !connected ||
+                        !target ||
+                        target.availability === 'away' ||
+                        !self ||
+                        self.seatId ||
+                        self.availability === 'away'
+                      ) {
+                        setMemberActionMessage('Go to is unavailable right now.');
+                        return;
+                      }
+                      officeMapRef.current?.focus({ preventScroll: true });
+                      setNavigationTarget({
+                        ...target.position,
+                        participantId: target.participationId,
+                        nonce: ++navigationNonce.current,
+                      });
+                      setMemberActionMessage(`Finding a path to ${target.displayName}…`);
+                    }}
+                  >
+                    Go to
+                  </button>
+                </div>
+                {(memberActionMessage || goToDisabledReason) && (
+                  <p className="member-actions-message" role="status" aria-live="polite">
+                    {memberActionMessage || goToDisabledReason}
+                  </p>
+                )}
+              </section>,
+              document.body,
+            )}
           {section === 'office' ? (
             <>
               <div className="office-map-heading">
@@ -983,7 +1146,6 @@ export function CompanyOfficePreview({
                 {mapId === 'vivo' ? (
                   <VivoScene
                     participants={sceneParticipants}
-                    waveParticipantIds={state.waves.map((wave) => wave.senderParticipationId)}
                     selfId={connected ? (state.ready?.participationId ?? null) : null}
                     objects={[]}
                     zoom={zoom}
@@ -1000,7 +1162,34 @@ export function CompanyOfficePreview({
                     onMove={() => {}}
                     onMovementIntent={(dx, dy) => client.move(dx, dy)}
                     onPlace={() => {}}
-                    onSelect={() => {}}
+                    onSelect={(id, trigger) => {
+                      if (id === ready.participationId) return;
+                      const member = snapshot.participants.find(
+                        (person) => person.participationId === id,
+                      );
+                      if (!member) return;
+                      selectionTrigger.current = trigger ?? null;
+                      setSelectedMemberId(id);
+                      setMemberActionMessage('');
+                    }}
+                    navigationTarget={
+                      selectedMember &&
+                      navigationTarget?.participantId === selectedMember.participationId
+                        ? navigationTarget
+                        : undefined
+                    }
+                    onNavigationResult={(id, result) => {
+                      if (id !== selectedMemberId) return;
+                      setMemberActionMessage(
+                        result === 'moving'
+                          ? `Moving toward ${selectedMember?.displayName ?? 'member'}…`
+                          : result === 'nearby'
+                            ? 'Destination reached.'
+                            : result === 'stopped'
+                              ? 'Movement stopped.'
+                              : 'Go to is unavailable right now.',
+                      );
+                    }}
                     onSelectObject={() => {}}
                     onMoveObject={() => {}}
                     onRemove={() => {}}
@@ -1017,7 +1206,6 @@ export function CompanyOfficePreview({
                       bootstrap={state.bootstrap}
                       snapshot={state.snapshot}
                       localParticipationId={state.ready.participationId}
-                      waves={state.waves}
                       onMovement={(dx, dy) => client.move(dx, dy)}
                     />
                   </Suspense>

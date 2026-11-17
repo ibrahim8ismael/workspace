@@ -378,9 +378,27 @@
 }
 
 .office-people-list li {
+  min-width: 0;
+}
+
+.office-person-select {
   display: flex;
+  width: 100%;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.office-person-select:hover,
+.office-person-select[aria-pressed='true'] {
+  background: #f0ebfb;
 }
 
 .office-people-list small {
@@ -479,6 +497,124 @@
   background: #d7e5dc;
 }
 
+.member-actions-card {
+  position: fixed;
+  z-index: 1000;
+  top: calc(env(safe-area-inset-top) + 14px);
+  right: calc(env(safe-area-inset-right) + 16px);
+  width: min(352px, calc(100vw - 24px));
+  padding: 16px;
+  border: 1px solid #e7e5ed;
+  border-radius: 16px;
+  background: #fff;
+  color: #25232b;
+  box-shadow:
+    0 12px 36px #1b183022,
+    0 2px 8px #1b183018;
+}
+
+.member-actions-header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+}
+
+.member-actions-avatar {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  place-items: center;
+  border-radius: 50%;
+  background: #f2c979;
+  color: #3a3022;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.member-actions-identity {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+.member-actions-identity strong {
+  overflow: hidden;
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.member-actions-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #77737e;
+  font-size: 12px;
+}
+.member-actions-status i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #a5a1aa;
+}
+.member-actions-status i.is-online {
+  background: #35a66b;
+}
+.member-actions-close {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  place-items: center;
+  margin-left: auto;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #615d67;
+  cursor: pointer;
+}
+.member-actions-close:hover {
+  background: #f3f1f6;
+}
+.member-actions-buttons {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 10px;
+  margin-top: 18px;
+}
+.member-actions-buttons button {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid #dedbe5;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.member-action-wave {
+  display: grid;
+  place-items: center;
+  padding: 0 !important;
+  background: #fff;
+  color: #57438e;
+}
+.member-action-go {
+  border-color: #7048cf !important;
+  background: #7048cf;
+  color: #fff;
+}
+.member-actions-buttons button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+.member-actions-message {
+  margin: 11px 1px 0;
+  color: #635a72;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .office-map-heading {
   position: absolute;
   z-index: 3;
@@ -504,6 +640,20 @@
   align-items: stretch;
   justify-content: center;
   padding: 58px 18px 76px;
+}
+
+@media (max-width: 640px) {
+  .member-actions-card {
+    top: calc(env(safe-area-inset-top) + 10px);
+    right: calc(env(safe-area-inset-right) + 12px);
+    width: min(352px, calc(100vw - 24px));
+    padding: 13px;
+  }
+  .member-actions-avatar {
+    width: 42px;
+    height: 42px;
+    flex-basis: 42px;
+  }
 }
 
 .office-map-stage > .office-scene {

@@ -380,4 +380,43 @@ describe('meeting invitation review regressions', () => {
       f.runtime.proximityMediaPermits().filter((permit) => permit.identity === f.recipient.id),
     ).toHaveLength(1);
   });
+  it('retires roster generations without ending the meeting for retained members', () => {
+    const f = fixture(true);
+    const invite = f.invite();
+    if (typeof invite === 'string') throw new Error(invite);
+    f.respond(invite.invitationId, 'accept');
+    f.tick();
+    const notices = f.runtime.drainMeetingNotices();
+    expect(
+      notices
+        .filter((notice) => notice.socketIds.includes(f.sender.socketId))
+        .map((notice) => notice.update.state),
+    ).toEqual(['retiring', 'joining']);
+    const generation = f.runtime
+      .proximityMediaPermits()
+      .find((permit) => permit.identity === f.sender.id)!.generation;
+    const active = f.runtime.activateProximityGeneration(generation)[0]!.update;
+    expect(active.participants).toHaveLength(2);
+    f.runtime.leaveProximityConversation(
+      officeId,
+      workspaceId,
+      f.recipient.ticket.userId,
+      f.recipient.socketId,
+      f.recipient.id,
+      officeEpoch,
+      active.conversationId,
+      active.version,
+    );
+    const departed = f.runtime.drainMeetingNotices();
+    expect(
+      departed
+        .filter((notice) => notice.update.state === 'ended')
+        .flatMap((notice) => notice.socketIds),
+    ).toEqual([f.recipient.socketId]);
+    expect(
+      departed
+        .filter((notice) => notice.socketIds.includes(f.sender.socketId))
+        .map((notice) => notice.update.state),
+    ).toEqual(['retiring', 'joining']);
+  });
 });

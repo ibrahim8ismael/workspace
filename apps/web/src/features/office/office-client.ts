@@ -54,6 +54,7 @@ export type ConversationVersionMarker = {
   readonly officeEpoch: string;
   readonly version: number;
   readonly ended: boolean;
+  readonly generation?: string;
 };
 
 export function acceptsConversationUpdate(
@@ -65,7 +66,10 @@ export function acceptsConversationUpdate(
   return (
     !previous ||
     (previous.officeEpoch === update.officeEpoch &&
-      !previous.ended &&
+      (!previous.ended ||
+        (update.kind === 'meeting' &&
+          previous.generation !== undefined &&
+          update.generation !== previous.generation)) &&
       update.version > previous.version)
   );
 }
@@ -258,6 +262,7 @@ export class OfficeClient {
           officeEpoch: update.officeEpoch,
           version: update.version,
           ended: update.state === 'ended',
+          generation: update.generation,
         });
         this.update({
           conversationUpdates: [

@@ -641,7 +641,7 @@ export class OfficeRuntimeService {
     if (group.members.length >= OFFICE_LIMITS.maxMeetingParticipants) return 'room_full' as const;
     if (group.members.length)
       office.meetingNotices.push(
-        this.meetingNotice(office, group, 'ended', group.generation, group.version + 1),
+        this.meetingNotice(office, group, 'retiring', group.generation, group.version + 1),
       );
     group.members = [
       ...group.members,
@@ -1104,7 +1104,7 @@ export class OfficeRuntimeService {
   private meetingNotice(
     office: OfficeRuntime,
     group: MeetingGroupState,
-    state: 'joining' | 'active' | 'ended',
+    state: 'joining' | 'active' | 'retiring' | 'ended',
     generation = group.generation,
     version = group.version,
     members = group.members,
@@ -1378,7 +1378,7 @@ export class OfficeRuntimeService {
           group.members.some((member) => member.participationId === invite.senderParticipationId)
         ) {
           office.meetingNotices.push(
-            this.meetingNotice(office, group, 'ended', group.generation, group.version + 1),
+            this.meetingNotice(office, group, 'retiring', group.generation, group.version + 1),
           );
           group.members = [
             ...group.members,
@@ -1534,9 +1534,24 @@ export class OfficeRuntimeService {
   private removeMeetingMember(office: OfficeRuntime, participationId: string) {
     for (const [zoneId, group] of office.meetingGroups) {
       if (!group.members.some((member) => member.participationId === participationId)) continue;
-      office.meetingNotices.push(
-        this.meetingNotice(office, group, 'ended', group.generation, group.version + 1),
+      const departing = group.members.filter(
+        (member) => member.participationId === participationId,
       );
+      office.meetingNotices.push(
+        this.meetingNotice(office, group, 'ended', group.generation, group.version + 1, departing),
+      );
+      const retained = group.members.filter((member) => member.participationId !== participationId);
+      if (retained.length)
+        office.meetingNotices.push(
+          this.meetingNotice(
+            office,
+            group,
+            'retiring',
+            group.generation,
+            group.version + 1,
+            retained,
+          ),
+        );
       group.members = group.members.filter((member) => member.participationId !== participationId);
       if (!group.members.length) office.meetingGroups.delete(zoneId);
       else {

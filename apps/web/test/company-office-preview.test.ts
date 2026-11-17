@@ -104,6 +104,30 @@ describe('company office preview selection', () => {
     ).toBeNull();
   });
 
+  it('allows an admitted meeting rejoin in a newer media generation after leaving', () => {
+    const epoch = '668bde07-cc48-4623-a58c-2efbc8ac21d5';
+    const generation = 'a371c42a-aa7d-4082-ad22-74e1816af053';
+    const update: ConversationUpdate = {
+      officeEpoch: epoch,
+      conversationId: 'd65d5a55-c917-448b-a203-1a226bc76319',
+      kind: 'meeting',
+      state: 'joining',
+      version: 8,
+      generation: '77017341-6b80-4051-b7fa-4bdc7709c5ee',
+      mediaReady: false,
+      participants: [
+        { participationId: '8f34d8de-bddb-489d-9cde-f03f1a98b68e', displayName: 'Office Person' },
+      ],
+    };
+    const previous = { officeEpoch: epoch, version: 6, ended: true, generation };
+    expect(acceptsConversationUpdate(previous, update, epoch)).toBe(true);
+    expect(acceptsConversationUpdate(previous, { ...update, generation }, epoch)).toBe(false);
+    expect(acceptsConversationUpdate(previous, { ...update, version: 5 }, epoch)).toBe(false);
+    expect(acceptsConversationUpdate(previous, { ...update, kind: 'proximity' }, epoch)).toBe(
+      false,
+    );
+  });
+
   it('ignores duplicate, stale, ended-call resurrection and old-epoch conversation updates', () => {
     const participationId = '8f34d8de-bddb-489d-9cde-f03f1a98b68e';
     const joining: ConversationUpdate = {

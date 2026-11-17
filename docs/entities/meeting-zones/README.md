@@ -1,6 +1,6 @@
 # Meeting zones
 
-Status: trusted static zone authority and explicit group admission implemented in the current worktree; real-SFU/browser acceptance pending · Updated: 2026-11-16
+Status: trusted static zone authority and explicit group admission deployed in v3; live fixed-meeting audio/revocation acceptance pending · Updated: 2026-11-17
 
 ## Responsibility
 

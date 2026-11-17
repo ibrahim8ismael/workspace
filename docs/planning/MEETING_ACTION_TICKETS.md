@@ -179,7 +179,7 @@ Display a visual animation or indicator when a user's avatar is speaking during 
 ## Decisions to Confirm
 
 - Does the 20-user limit apply to both meeting rooms and proximity conversations?
-- Issue #9's two-tile eligibility is implemented as true Euclidean circle distance; the current worktree anchors the shared circle at the founding pair midpoint.
+- Issue #9's two-tile eligibility uses true Euclidean circle distance; deployed v3 anchors the shared circle at the founding pair midpoint.
 - Does “permission arrives too late” refer to the browser microphone prompt, backend authorization, or actual voice connection?
 - Which specific first page was described as fake?
 
@@ -195,7 +195,7 @@ The tickets map to the repository's GitHub issues below. Coordinate sync was del
 | TICKET-004 | [#6](https://github.com/ibrahim8ismael/workspace/issues/6) | The third-user failure was traced to pair-only membership. Local group authorization measured 762 ms; browser-permission latency and an agreed activation target remain unverified. | Open; update diagnosis/target before closure. |
 | TICKET-005 | [#7](https://github.com/ibrahim8ismael/workspace/issues/7) | No first-page replacement work was made. | Open; no PR. |
 | TICKET-006 | [#8](https://github.com/ibrahim8ismael/workspace/issues/8) | A separate six-person proximity voice cap was added per the incident scope. The requested 20-person conversation cap and its meeting/proximity scope were not implemented. | Open; resolve scope and implement the requested rule. |
-| TICKET-007 | [#9](https://github.com/ibrahim8ismael/workspace/issues/9) | The current worktree uses two-tile Euclidean pair eligibility, an anchored midpoint, two-tile initial radius, bounded one-tile growth to six tiles, safe shrink and dotted geometry in Vivo and Commons. | Open pending automated and browser verification plus rollout. |
+| TICKET-007 | [#9](https://github.com/ibrahim8ismael/workspace/issues/9) | Deployed v3 uses two-tile Euclidean pair eligibility, anchored midpoint, two-tile initial radius, bounded one-tile growth to six tiles, safe shrink and dotted geometry in Vivo and Commons. Automated boundary/runtime tests and renderer checks pass. | Open pending repeat five-sample cutoff p95 on the merged image and live stale-grant/revocation verification. |
 | Issue #12 | [#12](https://github.com/ibrahim8ismael/workspace/issues/12) | Root cause in the prior implementation: centroid recentering plus a three-tile departure radius and 500 ms debounce retained group authorization after the intended area. Current worktree removes membership immediately beyond the canonical published circle and rotates media generation. | Open pending decoded-audio cutoff measurement (≤2 s maximum, p95 ≤1 s target), real-SFU revocation tests and rollout. |
 | TICKET-008 | [#2](https://github.com/ibrahim8ismael/workspace/issues/2) | No avatar speaking animation was added. | Open; no PR. |
 

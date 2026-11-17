@@ -1,10 +1,14 @@
 import { randomUUID } from 'node:crypto';
-import { OFFICE_LIMITS, conversationUpdateSchema } from '@gather/contracts';
-import type { ConversationUpdate } from '@gather/contracts';
+import {
+  OFFICE_LIMITS,
+  conversationAreasSchema,
+  conversationUpdateSchema,
+} from '@gather/contracts';
+import type { ConversationAreas, ConversationUpdate } from '@gather/contracts';
 
 export const PROXIMITY_JOIN_RADIUS_TILES = 2;
-export const PROXIMITY_LEAVE_RADIUS_TILES = 3;
-export const PROXIMITY_EXIT_DEBOUNCE_MS = 500;
+export const PROXIMITY_INITIAL_RADIUS_TILES = 2;
+export const PROXIMITY_MAX_RADIUS_TILES = 6;
 export const PROXIMITY_MAX_PARTICIPANTS = OFFICE_LIMITS.maxProximityParticipants;
 
 export interface ProximityCandidate {
@@ -24,6 +28,7 @@ interface GroupMember {
   readonly participationId: string;
   readonly socketId: string;
   readonly displayName: string;
+  readonly position: { readonly x: number; readonly y: number };
 }
 
 interface VoiceGroup {
@@ -31,7 +36,9 @@ interface VoiceGroup {
   generation: string;
   members: GroupMember[];
   version: number;
-  outsideSince: Map<string, number>;
+  areaVersion: number;
+  readonly center: { readonly x: number; readonly y: number };
+  radiusTiles: number;
   mediaState: 'joining' | 'active';
 }
 
@@ -42,40 +49,57 @@ interface GroupCandidate {
   readonly key: string;
 }
 
-interface GroupJoinCandidate {
-  readonly participationId: string;
-  readonly conversationId: string;
-  readonly distance: number;
-}
-
-/** Deterministic private proximity groups for one office epoch. */
+/** One office's deterministic, server-owned proximity conversations and circles. */
 export class ProximityPairing {
   private readonly optedIn = new Set<string>();
+  private readonly blocked = new Set<string>();
   private readonly groups = new Map<string, VoiceGroup>();
   private readonly groupByParticipant = new Map<string, string>();
   private readonly suppressedPairs = new Set<string>();
+  private areaSequence = 0;
 
   constructor(
     private readonly officeEpoch: string,
     private readonly tileSize: number,
-  ) {}
+  ) {
+    if (!Number.isFinite(tileSize) || tileSize <= 0) throw new Error('invalid_tile_size');
+  }
 
   setOptIn(
     participationId: string,
     enabled: boolean,
     candidates: readonly ProximityCandidate[],
-    now: number,
+    _now?: number,
   ): PrivateConversationNotice[] {
+    void _now;
     if (enabled) this.optedIn.add(participationId);
     else this.optedIn.delete(participationId);
-    return this.reconcile(candidates, now);
+    return this.reconcile(candidates);
   }
 
-  reconcile(candidates: readonly ProximityCandidate[], now: number): PrivateConversationNotice[] {
+  setBlocked(participationId: string, blocked: boolean, candidates: readonly ProximityCandidate[]) {
+    if (blocked) this.blocked.add(participationId);
+    else this.blocked.delete(participationId);
+    return this.reconcile(candidates);
+  }
+
+  setBlockedParticipants(
+    participationIds: readonly string[],
+    candidates: readonly ProximityCandidate[],
+  ) {
+    this.blocked.clear();
+    for (const participationId of participationIds) this.blocked.add(participationId);
+    return this.reconcile(candidates);
+  }
+
+  reconcile(candidates: readonly ProximityCandidate[]): PrivateConversationNotice[] {
     const byId = new Map(candidates.map((candidate) => [candidate.participationId, candidate]));
     const notices: PrivateConversationNotice[] = [];
     for (const participationId of this.optedIn) {
       if (!byId.has(participationId)) this.optedIn.delete(participationId);
+    }
+    for (const participationId of this.blocked) {
+      if (!byId.has(participationId)) this.blocked.delete(participationId);
     }
 
     for (const key of this.suppressedPairs) {
@@ -87,59 +111,46 @@ export class ProximityPairing {
         !right ||
         !this.isEligible(left) ||
         !this.isEligible(right) ||
-        this.distanceTiles(left, right) > PROXIMITY_LEAVE_RADIUS_TILES
-      )
+        this.distanceTiles(left, right) > PROXIMITY_JOIN_RADIUS_TILES
+      ) {
         this.suppressedPairs.delete(key);
+      }
     }
 
+    // The fixed center and current radius are the same geometry used for drawing and admission.
+    // Crossing its edge removes membership in this reconciliation; there is no positional grace.
     for (const group of [...this.groups.values()]) {
-      const eligibleMembers = group.members.filter((member) => {
+      group.members = group.members.map((member) => {
         const candidate = byId.get(member.participationId);
-        return candidate && this.isEligible(candidate);
+        return candidate ? { ...member, position: candidate.position } : member;
       });
-      if (eligibleMembers.length !== group.members.length) {
-        notices.push(...this.reconfigureGroup(group, eligibleMembers));
-        continue;
-      }
-
-      const center = this.groupCenter(group.members, byId);
-      const outside = new Set<string>();
-      for (const member of group.members) {
-        const candidate = byId.get(member.participationId)!;
-        if (this.distanceTilesToPoint(candidate, center) > PROXIMITY_LEAVE_RADIUS_TILES) {
-          outside.add(member.participationId);
-          if (!group.outsideSince.has(member.participationId))
-            group.outsideSince.set(member.participationId, now);
-        } else {
-          group.outsideSince.delete(member.participationId);
-        }
-      }
-
-      const expired = group.members.filter((member) => {
-        const outsideSince = group.outsideSince.get(member.participationId);
+      const retained = group.members.filter((member) => {
+        const candidate = byId.get(member.participationId);
         return (
-          outside.has(member.participationId) &&
-          outsideSince !== undefined &&
-          now - outsideSince >= PROXIMITY_EXIT_DEBOUNCE_MS
+          candidate !== undefined &&
+          this.isEligible(candidate) &&
+          this.distanceToCenter(candidate, group.center) <= this.radiusWorld(group.radiusTiles)
         );
       });
-      if (expired.length > 0) {
-        const removed = new Set(expired.map((member) => member.participationId));
+      if (retained.length !== group.members.length) {
+        const shrinkBy = group.members.length - retained.length;
+        const target = Math.max(PROXIMITY_INITIAL_RADIUS_TILES, group.radiusTiles - shrinkBy);
+        const canShrink = retained.every(
+          (member) =>
+            this.distanceToCenter(byId.get(member.participationId)!, group.center) <=
+            this.radiusWorld(target),
+        );
         notices.push(
-          ...this.reconfigureGroup(
-            group,
-            group.members.filter((member) => !removed.has(member.participationId)),
-          ),
+          ...this.reconfigureGroup(group, retained, canShrink ? target : group.radiusTiles),
         );
       }
     }
 
     const busy = new Set(this.groupByParticipant.keys());
-    notices.push(...this.joinCandidatesIntoGroups(candidates, byId, busy));
-
     const available = candidates
       .filter((candidate) => this.isEligible(candidate) && !busy.has(candidate.participationId))
       .sort((left, right) => left.participationId.localeCompare(right.participationId));
+
     const possible: GroupCandidate[] = [];
     for (let leftIndex = 0; leftIndex < available.length; leftIndex += 1) {
       for (let rightIndex = leftIndex + 1; rightIndex < available.length; rightIndex += 1) {
@@ -155,20 +166,52 @@ export class ProximityPairing {
       (left, right) => left.distance - right.distance || left.key.localeCompare(right.key),
     );
 
-    for (const candidate of possible) {
-      if (busy.has(candidate.left.participationId) || busy.has(candidate.right.participationId))
-        continue;
-      const group = this.startGroup([candidate.left, candidate.right]);
+    for (const pair of possible) {
+      if (busy.has(pair.left.participationId) || busy.has(pair.right.participationId)) continue;
+      const group = this.startGroup(pair.left, pair.right);
       this.groups.set(group.conversationId, group);
-      for (const member of group.members)
+      for (const member of group.members) {
         this.groupByParticipant.set(member.participationId, group.conversationId);
-      busy.add(candidate.left.participationId);
-      busy.add(candidate.right.participationId);
+        busy.add(member.participationId);
+      }
+      this.areaSequence += 1;
       notices.push(this.notice(group, 'joining', group.version));
     }
-    // If several opted-in users become eligible in one world reconciliation, the initial pair
-    // and any remaining candidates must be grouped in this same pass.
-    notices.push(...this.joinCandidatesIntoGroups(candidates, byId, busy));
+
+    // A candidate is assigned to at most one overlapping area. Nearest fixed center wins, then ID.
+    for (const candidate of candidates
+      .filter((person) => this.isEligible(person) && !busy.has(person.participationId))
+      .sort((left, right) => left.participationId.localeCompare(right.participationId))) {
+      const accepting = [...this.groups.values()]
+        .filter(
+          (group) =>
+            group.members.length < PROXIMITY_MAX_PARTICIPANTS &&
+            this.distanceToCenter(candidate, group.center) <= this.radiusWorld(group.radiusTiles) &&
+            group.members.every(
+              (member) =>
+                !this.suppressedPairs.has(
+                  this.key(candidate.participationId, member.participationId),
+                ),
+            ),
+        )
+        .sort(
+          (left, right) =>
+            this.distanceToCenter(candidate, left.center) -
+              this.distanceToCenter(candidate, right.center) ||
+            left.conversationId.localeCompare(right.conversationId),
+        )[0];
+      if (!accepting) continue;
+      const radius = Math.min(PROXIMITY_MAX_RADIUS_TILES, accepting.radiusTiles + 1);
+      notices.push(
+        ...this.reconfigureGroup(
+          accepting,
+          [...accepting.members, this.toGroupMember(candidate)],
+          radius,
+        ),
+      );
+      busy.add(candidate.participationId);
+    }
+
     return notices;
   }
 
@@ -181,18 +224,43 @@ export class ProximityPairing {
     const group = currentConversationId ? this.groups.get(currentConversationId) : undefined;
     if (!group || group.conversationId !== conversationId || group.version !== version)
       return { error: 'stale_version' };
-    const leaving = group.members.find((member) => member.participationId === participationId);
-    if (!leaving) return { error: 'unauthorized' };
+    if (!group.members.some((member) => member.participationId === participationId))
+      return { error: 'unauthorized' };
     for (const member of group.members) {
       if (member.participationId !== participationId)
         this.suppressedPairs.add(this.key(participationId, member.participationId));
     }
+    const retained = group.members.filter((member) => member.participationId !== participationId);
+    const shrinkBy = group.members.length - retained.length;
+    const target = Math.max(PROXIMITY_INITIAL_RADIUS_TILES, group.radiusTiles - shrinkBy);
     return {
       notices: this.reconfigureGroup(
         group,
-        group.members.filter((member) => member.participationId !== participationId),
+        retained,
+        this.canContain(retained, group.center, target) ? target : group.radiusTiles,
       ),
     };
+  }
+
+  currentAreas(): ConversationAreas {
+    return conversationAreasSchema.parse({
+      officeEpoch: this.officeEpoch,
+      sequence: this.areaSequence,
+      areas: [...this.groups.values()]
+        .sort((left, right) => left.conversationId.localeCompare(right.conversationId))
+        .map((group) => ({
+          areaId: group.conversationId,
+          version: group.areaVersion,
+          shape: 'circle' as const,
+          center: group.center,
+          radius: this.radiusWorld(group.radiusTiles),
+          state: 'active' as const,
+        })),
+    });
+  }
+
+  hasParticipant(participationId: string) {
+    return this.groupByParticipant.has(participationId);
   }
 
   mediaPermits() {
@@ -213,7 +281,6 @@ export class ProximityPairing {
     if (
       !group ||
       group.mediaState !== 'active' ||
-      !group.members.some((member) => member.participationId === participationId) ||
       group.conversationId !== conversationId ||
       group.version !== version
     )
@@ -223,6 +290,8 @@ export class ProximityPairing {
       conversationVersion: group.version,
       generation: group.generation,
       room: group.generation,
+      kind: 'proximity' as const,
+      zoneId: undefined,
     };
   }
 
@@ -236,20 +305,30 @@ export class ProximityPairing {
     return [this.notice(group, 'active', group.version)];
   }
 
-  private startGroup(candidates: readonly ProximityCandidate[]): VoiceGroup {
-    const members = candidates.map((candidate) => this.toGroupMember(candidate));
-    members.sort((left, right) => left.participationId.localeCompare(right.participationId));
+  private startGroup(left: ProximityCandidate, right: ProximityCandidate): VoiceGroup {
+    const members = [this.toGroupMember(left), this.toGroupMember(right)].sort((a, b) =>
+      a.participationId.localeCompare(b.participationId),
+    );
     return {
       conversationId: randomUUID(),
       generation: randomUUID(),
       members,
       version: 1,
-      outsideSince: new Map(),
+      areaVersion: 1,
+      center: {
+        x: (left.position.x + right.position.x) / 2,
+        y: (left.position.y + right.position.y) / 2,
+      },
+      radiusTiles: PROXIMITY_INITIAL_RADIUS_TILES,
       mediaState: 'joining',
     };
   }
 
-  private reconfigureGroup(group: VoiceGroup, members: readonly GroupMember[]) {
+  private reconfigureGroup(
+    group: VoiceGroup,
+    members: readonly GroupMember[],
+    radiusTiles: number,
+  ) {
     const orderedMembers = [...members].sort((left, right) =>
       left.participationId.localeCompare(right.participationId),
     );
@@ -265,10 +344,15 @@ export class ProximityPairing {
     group.generation = randomUUID();
     group.members = orderedMembers;
     group.version = version;
-    group.outsideSince = new Map();
+    group.areaVersion += 1;
+    group.radiusTiles = Math.max(
+      PROXIMITY_INITIAL_RADIUS_TILES,
+      Math.min(PROXIMITY_MAX_RADIUS_TILES, radiusTiles),
+    );
     group.mediaState = 'joining';
     for (const member of orderedMembers)
       this.groupByParticipant.set(member.participationId, group.conversationId);
+    this.areaSequence += 1;
 
     const notices: PrivateConversationNotice[] = [this.notice(group, 'joining', version)];
     if (removed.length > 0) {
@@ -287,6 +371,7 @@ export class ProximityPairing {
   private endGroup(group: VoiceGroup) {
     this.groups.delete(group.conversationId);
     for (const member of group.members) this.groupByParticipant.delete(member.participationId);
+    this.areaSequence += 1;
     return [
       this.endNotice(
         group.conversationId,
@@ -337,93 +422,14 @@ export class ProximityPairing {
     };
   }
 
-  private canJoinGroup(
-    candidate: ProximityCandidate,
+  private canContain(
     members: readonly GroupMember[],
-    candidates: ReadonlyMap<string, ProximityCandidate>,
+    center: { x: number; y: number },
+    radiusTiles: number,
   ) {
-    if (members.length === 0) return false;
-    for (const member of members) {
-      if (
-        !candidates.has(member.participationId) ||
-        this.suppressedPairs.has(this.key(candidate.participationId, member.participationId))
-      )
-        return false;
-    }
-    return (
-      this.distanceTilesToPoint(candidate, this.groupCenter(members, candidates)) <=
-      PROXIMITY_JOIN_RADIUS_TILES
+    return members.every(
+      (member) => this.distancePoints(member.position, center) <= this.radiusWorld(radiusTiles),
     );
-  }
-
-  private joinCandidatesIntoGroups(
-    candidates: readonly ProximityCandidate[],
-    byId: ReadonlyMap<string, ProximityCandidate>,
-    busy: Set<string>,
-  ) {
-    const unmatched = candidates
-      .filter((candidate) => this.isEligible(candidate) && !busy.has(candidate.participationId))
-      .sort((left, right) => left.participationId.localeCompare(right.participationId));
-    const proposals: GroupJoinCandidate[] = [];
-    for (const candidate of unmatched) {
-      for (const group of this.groups.values()) {
-        if (group.members.length >= PROXIMITY_MAX_PARTICIPANTS) continue;
-        if (!this.canJoinGroup(candidate, group.members, byId)) continue;
-        proposals.push({
-          participationId: candidate.participationId,
-          conversationId: group.conversationId,
-          distance: this.distanceTilesToPoint(candidate, this.groupCenter(group.members, byId)),
-        });
-      }
-    }
-    proposals.sort(
-      (left, right) =>
-        left.distance - right.distance ||
-        left.conversationId.localeCompare(right.conversationId) ||
-        left.participationId.localeCompare(right.participationId),
-    );
-
-    const proposedMembers = new Map(
-      [...this.groups.values()].map((group) => [group.conversationId, [...group.members]]),
-    );
-    const changedGroups = new Set<string>();
-    for (const proposal of proposals) {
-      if (busy.has(proposal.participationId)) continue;
-      const group = this.groups.get(proposal.conversationId);
-      const members = proposedMembers.get(proposal.conversationId);
-      const candidate = byId.get(proposal.participationId);
-      if (
-        !group ||
-        !members ||
-        !candidate ||
-        members.length >= PROXIMITY_MAX_PARTICIPANTS ||
-        !this.canJoinGroup(candidate, members, byId)
-      )
-        continue;
-      members.push(this.toGroupMember(candidate));
-      members.sort((left, right) => left.participationId.localeCompare(right.participationId));
-      changedGroups.add(group.conversationId);
-      busy.add(candidate.participationId);
-    }
-
-    const notices: PrivateConversationNotice[] = [];
-    for (const conversationId of changedGroups) {
-      const group = this.groups.get(conversationId);
-      const members = proposedMembers.get(conversationId);
-      if (group && members) notices.push(...this.reconfigureGroup(group, members));
-    }
-    return notices;
-  }
-
-  private groupCenter(
-    members: readonly GroupMember[],
-    candidates: ReadonlyMap<string, ProximityCandidate>,
-  ) {
-    const positions = members.map((member) => candidates.get(member.participationId)!.position);
-    return {
-      x: positions.reduce((total, position) => total + position.x, 0) / positions.length,
-      y: positions.reduce((total, position) => total + position.y, 0) / positions.length,
-    };
   }
 
   private toGroupMember(candidate: ProximityCandidate): GroupMember {
@@ -431,11 +437,16 @@ export class ProximityPairing {
       participationId: candidate.participationId,
       socketId: candidate.socketId,
       displayName: candidate.displayName,
+      position: candidate.position,
     };
   }
 
   private isEligible(candidate: ProximityCandidate) {
-    return this.optedIn.has(candidate.participationId) && candidate.availability === 'available';
+    return (
+      this.optedIn.has(candidate.participationId) &&
+      !this.blocked.has(candidate.participationId) &&
+      candidate.availability === 'available'
+    );
   }
 
   private distanceTiles(left: ProximityCandidate, right: ProximityCandidate) {
@@ -445,13 +456,22 @@ export class ProximityPairing {
     );
   }
 
-  private distanceTilesToPoint(
+  private distanceToCenter(
     candidate: ProximityCandidate,
     point: { readonly x: number; readonly y: number },
   ) {
-    return (
-      Math.hypot(candidate.position.x - point.x, candidate.position.y - point.y) / this.tileSize
-    );
+    return this.distancePoints(candidate.position, point);
+  }
+
+  private distancePoints(
+    candidate: { readonly x: number; readonly y: number },
+    point: { readonly x: number; readonly y: number },
+  ) {
+    return Math.hypot(candidate.x - point.x, candidate.y - point.y);
+  }
+
+  private radiusWorld(radiusTiles: number) {
+    return radiusTiles * this.tileSize;
   }
 
   private key(leftId: string, rightId: string) {

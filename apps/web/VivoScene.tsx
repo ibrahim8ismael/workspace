@@ -51,6 +51,7 @@ import {
   directionToWaypoint,
   updateWaypointArrival,
 } from './src/features/office/navigation-progress';
+import type { ConversationAreas } from '@gather/contracts';
 
 type Seat = ReturnType<typeof getOfficeSeats>[number];
 type Props = {
@@ -77,6 +78,7 @@ type Props = {
   onMoveObject: (id: string, x: number, y: number, free?: boolean) => void;
   onRemove: (id: string) => void;
   meetings: Meetings;
+  conversationAreas?: ConversationAreas['areas'];
   areaNames: Record<string, string>;
   interactions?: Record<string, Interaction>;
   onNearInteractive?: (id: string | null) => void;
@@ -769,6 +771,7 @@ export default function VivoScene({
   onSit,
   onStand,
   meetings = {},
+  conversationAreas = [],
   onZoom,
   deskLabels = {},
   focusRooms = {},
@@ -2024,6 +2027,30 @@ export default function VivoScene({
               })}
           </g>
         )}
+        <g className="proximity-conversation-areas" pointerEvents="none" aria-hidden="true">
+          {conversationAreas.map((area) => {
+            const colors = ['#52d5b7', '#a68aff', '#ffbd66', '#69b9ff', '#ff83a4'];
+            const colorIndex =
+              [...area.areaId].reduce((hash, char) => hash + char.charCodeAt(0), 0) % colors.length;
+            const color = colors[colorIndex]!;
+            return (
+              <circle
+                key={area.areaId}
+                cx={area.center.x}
+                cy={area.center.y}
+                r={area.radius}
+                fill={color}
+                fillOpacity=".035"
+                stroke={color}
+                strokeWidth="2"
+                strokeDasharray="2 7"
+                vectorEffect="non-scaling-stroke"
+                data-conversation-area={area.areaId}
+                data-area-version={area.version}
+              />
+            );
+          })}
+        </g>
         {editingMode && (
           <g pointerEvents="none">
             <rect

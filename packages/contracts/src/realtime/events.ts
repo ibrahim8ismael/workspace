@@ -12,7 +12,9 @@ import {
 } from './office.js';
 import {
   conversationLeaveEventSchema,
+  conversationAreasSchema,
   conversationUpdateSchema,
+  meetingZonesSchema,
   meetingJoinEventSchema,
   meetingLeaveEventSchema,
   proximityOptInEventSchema,
@@ -46,4 +48,6 @@ export const officeServerEventSchemas = Object.freeze({
   'world:delta': worldDeltaSchema,
   'office:access-ended': officeAccessEndedSchema,
   'conversation:update': conversationUpdateSchema,
+  'conversation:areas': conversationAreasSchema,
+  'meeting:zones': meetingZonesSchema,
 });

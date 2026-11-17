@@ -20,6 +20,8 @@ import {
   worldDeltaSchema,
   worldSnapshotSchema,
   conversationLeaveEventSchema,
+  meetingJoinEventSchema,
+  meetingLeaveEventSchema,
   proximityOptInEventSchema,
 } from '@gather/contracts';
 import { OfficeAdmissionService } from '../office-admission.service.js';
@@ -102,12 +104,15 @@ export class OfficeGateway
         return;
       }
       socket.emit('office:ready', officeReadySchema.parse(reservation.ready));
+      const areas = this.runtime.conversationAreas(ticket.officeId);
+      const zones = this.runtime.meetingZones(ticket.officeId);
+      if (areas && zones) this.roomEvents.sendOfficeMetadata(socket.id, areas, zones);
       this.namespace
         .to(reservation.roomId)
         .except(socket.id)
         .emit('world:delta', worldDeltaSchema.parse(reservation.joined));
       this.registerCommands(socket);
-      this.startSimulation(ticket.officeId);
+      this.startSimulation(ticket.officeId, ticket.workspaceId);
       this.scheduleAuthorizationCheck(socket, ticket, leaseDeadline);
     } catch {
       this.cleanup(socket);
@@ -173,7 +178,7 @@ export class OfficeGateway
       this.namespace
         .to(released.roomId)
         .emit('world:delta', worldDeltaSchema.parse(released.delta));
-      this.roomEvents.publishConversationNotices(this.runtime.reconcileProximity(ticket.officeId));
+      this.publishConversationState(ticket.workspaceId, ticket.officeId);
       if (!this.runtime.hasOffice(ticket.officeId)) this.stopSimulation(ticket.officeId);
     }
   }
@@ -323,6 +328,9 @@ export class OfficeGateway
         return;
       }
       socket.emit('world:snapshot', worldSnapshotSchema.parse(result.snapshot));
+      const areas = this.runtime.conversationAreas(ticket.officeId);
+      const zones = this.runtime.meetingZones(ticket.officeId);
+      if (areas && zones) this.roomEvents.sendOfficeMetadata(socket.id, areas, zones);
       this.reply(acknowledge, parsed.data.eventId, null);
     });
     socket.on('presence:update', (raw: unknown, acknowledge?: unknown) => {
@@ -352,7 +360,7 @@ export class OfficeGateway
         return;
       }
       if (result) this.namespace.to(result.roomId).emit('world:delta', result.delta);
-      this.roomEvents.publishConversationNotices(this.runtime.reconcileProximity(ticket.officeId));
+      this.publishConversationState(ticket.workspaceId, ticket.officeId);
       this.reply(acknowledge, parsed.data.eventId, null);
     });
     socket.on('proximity:set-opt-in', (raw: unknown, acknowledge?: unknown) => {
@@ -382,6 +390,7 @@ export class OfficeGateway
         return;
       }
       this.roomEvents.publishConversationNotices(notices);
+      this.publishAreas(ticket.workspaceId, ticket.officeId);
       this.reply(acknowledge, parsed.data.eventId, null);
     });
     socket.on('conversation:leave', (raw: unknown, acknowledge?: unknown) => {
@@ -412,6 +421,79 @@ export class OfficeGateway
         return;
       }
       this.roomEvents.publishConversationNotices(result.notices);
+      this.publishAreas(ticket.workspaceId, ticket.officeId);
+      this.reply(acknowledge, parsed.data.eventId, null);
+    });
+    socket.on('meeting:join', async (raw: unknown, acknowledge?: unknown) => {
+      if (!this.allowOfficeCommand(socket)) {
+        this.reply(acknowledge, this.eventId(raw), 'rate_limited');
+        return;
+      }
+      const parsed = meetingJoinEventSchema.safeParse(raw);
+      if (!parsed.success) {
+        this.reply(acknowledge, this.eventId(raw), 'validation_failed');
+        return;
+      }
+      const ticket = socket.data.officeAdmission;
+      const reservation = socket.data.officeReservation;
+      if (!ticket || !reservation) return;
+      try {
+        if (!(await this.admission.isSocketAuthorized(ticket))) {
+          this.reply(acknowledge, parsed.data.eventId, 'unauthorized');
+          this.endAccess(socket, 'authorization_ended');
+          return;
+        }
+      } catch {
+        this.reply(acknowledge, parsed.data.eventId, 'service_unavailable');
+        this.endAccess(socket, 'server_unavailable');
+        return;
+      }
+      const result = this.runtime.joinMeeting(
+        ticket.officeId,
+        ticket.workspaceId,
+        ticket.userId,
+        socket.id,
+        reservation.participationId,
+        parsed.data.officeEpoch,
+        parsed.data.payload.zoneId,
+      );
+      if (typeof result === 'string') {
+        this.reply(acknowledge, parsed.data.eventId, result);
+        return;
+      }
+      this.roomEvents.publishConversationNotices(result.notices);
+      this.publishAreas(ticket.workspaceId, ticket.officeId);
+      this.reply(acknowledge, parsed.data.eventId, null);
+    });
+    socket.on('meeting:leave', (raw: unknown, acknowledge?: unknown) => {
+      if (!this.allowOfficeCommand(socket)) {
+        this.reply(acknowledge, this.eventId(raw), 'rate_limited');
+        return;
+      }
+      const parsed = meetingLeaveEventSchema.safeParse(raw);
+      if (!parsed.success) {
+        this.reply(acknowledge, this.eventId(raw), 'validation_failed');
+        return;
+      }
+      const ticket = socket.data.officeAdmission;
+      const reservation = socket.data.officeReservation;
+      if (!ticket || !reservation) return;
+      const result = this.runtime.leaveMeeting(
+        ticket.officeId,
+        ticket.workspaceId,
+        ticket.userId,
+        socket.id,
+        reservation.participationId,
+        parsed.data.officeEpoch,
+        parsed.data.payload.conversationId,
+        parsed.data.payload.conversationVersion,
+      );
+      if (typeof result === 'string') {
+        this.reply(acknowledge, parsed.data.eventId, result);
+        return;
+      }
+      this.roomEvents.publishConversationNotices(result.notices);
+      this.publishAreas(ticket.workspaceId, ticket.officeId);
       this.reply(acknowledge, parsed.data.eventId, null);
     });
     socket.on('seat:sit', (raw: unknown, acknowledge?: unknown) => {
@@ -481,10 +563,14 @@ export class OfficeGateway
       | 'stale_version'
       | 'rate_limited'
       | 'unauthorized'
+      | 'service_unavailable'
       | 'validation_failed'
       | 'seat_unavailable'
       | 'seat_exit_blocked'
       | 'conflict'
+      | 'participation_conflict'
+      | 'room_full'
+      | 'zone_unavailable'
       | null,
   ) {
     if (typeof acknowledge !== 'function' || !idSchema.safeParse(eventId).success) return;
@@ -527,14 +613,14 @@ export class OfficeGateway
     return true;
   }
 
-  private startSimulation(officeId: string) {
+  private startSimulation(officeId: string, workspaceId: string) {
     if (this.simulationTimers.has(officeId)) return;
     const timer = setInterval(() => {
       const update = this.runtime.tick(officeId);
       if (update) {
         this.namespace.to(update.roomId).emit('world:delta', worldDeltaSchema.parse(update.delta));
       }
-      this.roomEvents.publishConversationNotices(this.runtime.reconcileProximity(officeId));
+      this.publishConversationState(workspaceId, officeId);
       if (!this.runtime.hasOffice(officeId)) this.stopSimulation(officeId);
     }, 1000 / OFFICE_LIMITS.simulationHz);
     this.simulationTimers.set(officeId, timer);
@@ -545,5 +631,15 @@ export class OfficeGateway
     if (!timer) return;
     clearInterval(timer);
     this.simulationTimers.delete(officeId);
+  }
+
+  private publishConversationState(workspaceId: string, officeId: string) {
+    this.roomEvents.publishConversationNotices(this.runtime.reconcileProximity(officeId));
+    this.publishAreas(workspaceId, officeId);
+  }
+
+  private publishAreas(workspaceId: string, officeId: string) {
+    const areas = this.runtime.conversationAreas(officeId);
+    if (areas) this.roomEvents.publishConversationAreas(workspaceId, officeId, areas);
   }
 }

@@ -4,8 +4,14 @@ import { describe, expect, it, vi } from 'vitest';
 import { createCommonsSceneCleanup } from '../commons-preview/scene-lifecycle';
 import type { OfficeWorkspaceDetail } from '../src/lib/api';
 import { canOpenOfficePreview } from '../src/features/workspaces/company-overview-view';
-import { latestProximityConversation } from '../src/features/office/proximity-conversation';
-import { acceptsConversationUpdate } from '../src/features/office/office-client';
+import {
+  latestMeetingConversation,
+  latestProximityConversation,
+} from '../src/features/office/proximity-conversation';
+import {
+  acceptsConversationAreas,
+  acceptsConversationUpdate,
+} from '../src/features/office/office-client';
 import { CompanyOfficePreview } from '../src/features/workspaces/CompanyOfficePreview';
 import { ApiClient } from '../src/lib/api';
 import type { AccountDto, ConversationUpdate } from '@gather/contracts';
@@ -83,7 +89,7 @@ describe('company office preview selection', () => {
     ).toBeNull();
   });
 
-  it('ignores duplicate, stale, ended-call resurrection and old-epoch conversation updates', () => {
+  it('ignores duplicate and stale updates but accepts a newer rejoin after an ended meeting', () => {
     const participationId = '8f34d8de-bddb-489d-9cde-f03f1a98b68e';
     const joining: ConversationUpdate = {
       officeEpoch: '668bde07-cc48-4623-a58c-2efbc8ac21d5',
@@ -117,11 +123,50 @@ describe('company office preview selection', () => {
         { ...active, version: 4 },
         joining.officeEpoch,
       ),
-    ).toBe(false);
+    ).toBe(true);
     expect(acceptsConversationUpdate(undefined, joining, 'old-office-epoch')).toBe(false);
     expect(acceptsConversationUpdate(marker, { ...active, version: 3 }, joining.officeEpoch)).toBe(
       true,
     );
+  });
+
+  it('rejects stale public area snapshots and snapshots from another office epoch', () => {
+    const epoch = '668bde07-cc48-4623-a58c-2efbc8ac21d5';
+    const current = { officeEpoch: epoch, sequence: 7, areas: [] };
+    expect(acceptsConversationAreas(current, { ...current, sequence: 7 }, epoch)).toBe(false);
+    expect(acceptsConversationAreas(current, { ...current, sequence: 6 }, epoch)).toBe(false);
+    expect(
+      acceptsConversationAreas(
+        current,
+        { ...current, officeEpoch: '5fc87e60-62b8-4cf9-8edc-dcaa2a1d8249', sequence: 8 },
+        epoch,
+      ),
+    ).toBe(false);
+    expect(acceptsConversationAreas(current, { ...current, sequence: 8 }, epoch)).toBe(true);
+    expect(
+      acceptsConversationAreas(
+        current,
+        { ...current, officeEpoch: '5fc87e60-62b8-4cf9-8edc-dcaa2a1d8249', sequence: 1 },
+        null,
+      ),
+    ).toBe(true);
+  });
+
+  it('selects only the office-authorized meeting roster for this participation', () => {
+    const participationId = '8f34d8de-bddb-489d-9cde-f03f1a98b68e';
+    const meeting: ConversationUpdate = {
+      officeEpoch: '668bde07-cc48-4623-a58c-2efbc8ac21d5',
+      conversationId: 'd65d5a55-c917-448b-a203-1a226bc76319',
+      kind: 'meeting',
+      zoneId: 'vivo-meeting-room',
+      state: 'active',
+      version: 2,
+      generation: 'a371c42a-aa7d-4082-ad22-74e1816af053',
+      mediaReady: true,
+      participants: [{ participationId, displayName: 'Office Person' }],
+    };
+    expect(latestMeetingConversation([meeting], participationId)).toEqual(meeting);
+    expect(latestMeetingConversation([meeting], '41bbf5d6-37d7-4468-9892-9776ff19e008')).toBeNull();
   });
 
   it('renders the authenticated company in the supplied office shell', () => {

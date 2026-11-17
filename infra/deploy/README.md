@@ -200,6 +200,61 @@ server. Configure the protected `worker.env` with the provider's TLS endpoint, s
 credentials, stop `worker-mailpit`, start the production `mail` profile, and verify real delivery
 before inviting users.
 
+## Deployment verification — 2026-11-16
+
+This section supersedes the earlier running-image references above. The pilot is serving
+`https://gather.imtelak.com` with the same-domain guarded `/rtc` media path. The source base is
+`3d366097e2bae72c6586e2155fa5fc99764fc27a`, matching `origin/main`. The deployed API and web
+images are `gather-lite-api:3d36609-issue12-3-20261116` and
+`gather-lite-web:3d36609-issue12-3-20261116`. These images include the issue implementation from
+the local working tree; those source changes are not committed, so the image tag alone is not a
+substitute for preserving the working-tree diff.
+
+Verified on the deployed pilot:
+
+- The public HTTPS frontend returned `200` with the configured HSTS/security headers; the API
+  liveness route returned `{"status":"ok","service":"api"}`. This route is process liveness,
+  not a database readiness check.
+- Authenticated browser flows registered and verified test accounts through Mailpit, created a
+  workspace, invited members, authenticated, entered the Vivo office, and established realtime
+  group audio. An unauthenticated conversation media-token request returned `401`; an
+  unauthenticated `/rtc/v1/validate` request returned `403`.
+- The deployed three-browser LiveKit test passed with synthetic audio. All three clients received
+  two remote tracks; decoded audio was observed in all three. After the third participant left,
+  the remaining pair retained audio. Group admission completed in about 1.7 seconds.
+- Five real decoded-audio boundary departures were measured against the server-rendered 64-pixel
+  circle. Conservative request-to-first-silent-sample upper bounds were 341, 300, 259, 332, and
+  283 ms (empirical p95: 341 ms). Every re-entry created a new area and left both microphones off
+  until the users explicitly enabled them.
+- Compose reported API, Caddy, MongoDB, queue Redis, Mailpit, and the media guard healthy; the mail
+  worker and LiveKit were running. MongoDB and Redis remained on private Docker networks. Mailpit
+  UI is bound to `127.0.0.1:8025`; access it through the SSH tunnel above. Port `8025` is not public.
+- Host snapshot: Linux x86_64, 8 vCPU, 15 GiB RAM (7.7 GiB available), and 225 GiB disk available.
+  The configured 2 GiB swap was nearly fully allocated at the time of the check. Container use was
+  inspected with `docker stats`; no dedicated metrics/alerting service is installed.
+- `infra/deploy/backup.sh` created and gzip-validated
+  `/var/backups/gather-lite/gather-lite-20261116T141356Z.archive.gz`. A restore into an isolated
+  database has not been tested, and the archive has not yet been copied to an independent host.
+- `pnpm check` passed before deployment, including the API, web, contracts, world, media-spike, and
+  build checks. `pnpm test:api` passed 101 tests with one skipped; focused proximity/meeting runtime
+  tests passed 26. `pnpm test:e2e` passed two tests with seven skipped. Against the deployed URL,
+  the three-person guarded audio and five-cycle departure/re-entry tests passed. The separate local
+  `pnpm test:media-live` profile could not run because its configured Docker context was unavailable.
+
+The fixed-room meeting implementation and its runtime/unit tests are deployed, but a live three-user
+fixed-room audio session has not been verified. Real SMTP, meeting-room live media, isolated-database
+restore, independent off-host backup, external TURN-only reachability, and media host/process failure
+supervision remain open pilot/release gates. Mailpit captures verification and invitation messages;
+it does not deliver them to real users. The live browser tests left five synthetic validation
+workspaces and 13 `@example.test` accounts in the pilot database; they were retained because no safe
+application deletion flow was available.
+
+For a code-only rollback, restore the protected `.env` image references to the previously deployed
+`gather-lite-api:281ee324` and `gather-lite-web:281ee324-r2-media-pilot` tags, then run the same Compose
+file/overlay/profile set with `up -d --no-build api caddy media-guard`. Restarting the guard makes it
+negotiate a fresh policy epoch with the rolled-back API. Keep MongoDB and Redis volumes and current
+authentication/revocation state; do not restore the older backup over the live database.
+
 ## Deployment verification — 2026-11-12
 
 The pilot is serving `https://gather.imtelak.com`. API/frontend source is based on `6e4620dec60c`;

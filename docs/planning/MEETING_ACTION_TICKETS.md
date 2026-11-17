@@ -4,6 +4,10 @@
 **Reported by:** Team / Kassem_0001  
 **Priority levels:** Suggested, subject to team review
 
+## GitHub Issues #12 and #3 implementation status — 2026-11-16
+
+The current worktree implements the server-authoritative anchored/growing proximity circle and immediate membership departure for issue #12, plus trusted fixed-room meeting group admission/UI for issue #3. This code has not been deployed. Automated unit, integration, browser and real-SFU audio cutoff results must be recorded before either issue is marked accepted. Protocol version 3 requires coordinated API/contracts and web rollout; see the [implementation/rollback notes](PROXIMITY_GROUP_ROLLOUT.md).
+
 ---
 
 ### TICKET-001 — Support Group Meetings in the Same Room
@@ -175,23 +179,24 @@ Display a visual animation or indicator when a user's avatar is speaking during 
 ## Decisions to Confirm
 
 - Does the 20-user limit apply to both meeting rooms and proximity conversations?
-- Is the two-block proximity area circular or square?
+- Issue #9's two-tile eligibility is implemented as true Euclidean circle distance; the current worktree anchors the shared circle at the founding pair midpoint.
 - Does “permission arrives too late” refer to the browser microphone prompt, backend authorization, or actual voice connection?
 - Which specific first page was described as fake?
 
 ## GitHub Issue and PR Review — 2026-11-16
 
-The tickets map to the repository's GitHub issues below. Coordinate sync was delivered by PRs #10 and #11. The proximity-group implementation has no associated PR because it landed directly on `main`; it is included in deployed commit [`281ee324`](https://github.com/ibrahim8ismael/workspace/commit/281ee3240ce8bdc419bc2a35c485ed20eac98f97). The pilot three-person path has now been verified; the remaining wider-release network and scale gates are documented in the rollout runbook.
+The tickets map to the repository's GitHub issues below. Coordinate sync was delivered by PRs #10 and #11. Issue #4's earlier proximity-group pilot code is deployed at [`281ee324`](https://github.com/ibrahim8ismael/workspace/commit/281ee3240ce8bdc419bc2a35c485ed20eac98f97); the issue #12/#3 follow-up in this worktree is not deployed and has no measured real-audio boundary cutoff yet.
 
 | Ticket | GitHub issue | Work found in this repository | Disposition |
 | --- | --- | --- | --- |
-| TICKET-001 | [#3](https://github.com/ibrahim8ismael/workspace/issues/3) | Fixed meeting-zone group joining is not implemented by this patch. | Open; no PR. |
+| TICKET-001 | [#3](https://github.com/ibrahim8ismael/workspace/issues/3) | Trusted versioned map zones, explicit join/leave, server roster, six-person capacity and UI actions are implemented in the current worktree using the existing media guard/token path. | Open pending integration/browser/real-SFU verification and deployment evidence. |
 | TICKET-002 | [#4](https://github.com/ibrahim8ismael/workspace/issues/4) | Proximity groups of 2–6 are deployed at [commit `281ee324`](https://github.com/ibrahim8ismael/workspace/commit/281ee3240ce8bdc419bc2a35c485ed20eac98f97). Local real-SFU tests and the controlled pilot browser canary verify three-way audio, synchronized roster changes, member removal, and survivor continuity. | Closed after posting [pilot deployment evidence](https://github.com/ibrahim8ismael/workspace/issues/4#issuecomment-6914505267); no PR exists for this direct-to-main change. Wider release remains gated on separate-network/TURN tests. |
 | TICKET-003 | [#5](https://github.com/ibrahim8ismael/workspace/issues/5) | Fixed by [PR #10](https://github.com/ibrahim8ismael/workspace/pull/10), merged to `main`. Follow-up test [PR #11](https://github.com/ibrahim8ismael/workspace/pull/11) was merged into the coordinate-sync topic branch after #10 had already merged, so its additional live-test changes are not in current `main`. | Already closed by PR #10. No further close action. |
 | TICKET-004 | [#6](https://github.com/ibrahim8ismael/workspace/issues/6) | The third-user failure was traced to pair-only membership. Local group authorization measured 762 ms; browser-permission latency and an agreed activation target remain unverified. | Open; update diagnosis/target before closure. |
 | TICKET-005 | [#7](https://github.com/ibrahim8ismael/workspace/issues/7) | No first-page replacement work was made. | Open; no PR. |
 | TICKET-006 | [#8](https://github.com/ibrahim8ismael/workspace/issues/8) | A separate six-person proximity voice cap was added per the incident scope. The requested 20-person conversation cap and its meeting/proximity scope were not implemented. | Open; resolve scope and implement the requested rule. |
-| TICKET-007 | [#9](https://github.com/ibrahim8ismael/workspace/issues/9) | The backend uses a true circular two-tile join radius from the group centroid, with a three-tile leave radius and 500 ms positional debounce. The circle UI indicator is not implemented. | Open; finish UI criterion and review. |
+| TICKET-007 | [#9](https://github.com/ibrahim8ismael/workspace/issues/9) | The current worktree uses two-tile Euclidean pair eligibility, an anchored midpoint, two-tile initial radius, bounded one-tile growth to six tiles, safe shrink and dotted geometry in Vivo and Commons. | Open pending automated and browser verification plus rollout. |
+| Issue #12 | [#12](https://github.com/ibrahim8ismael/workspace/issues/12) | Root cause in the prior implementation: centroid recentering plus a three-tile departure radius and 500 ms debounce retained group authorization after the intended area. Current worktree removes membership immediately beyond the canonical published circle and rotates media generation. | Open pending decoded-audio cutoff measurement (≤2 s maximum, p95 ≤1 s target), real-SFU revocation tests and rollout. |
 | TICKET-008 | [#2](https://github.com/ibrahim8ismael/workspace/issues/2) | No avatar speaking animation was added. | Open; no PR. |
 
-Parent roadmap: [#1](https://github.com/ibrahim8ismael/workspace/issues/1) remains open until the remaining child issues are complete. Issue #5 is already closed by PR #10. Issue #4 was closed on 2026-11-16 after posting the pilot deployment evidence; issues #3, #6, #7, #8, and #9 remain open because their work is incomplete or requires clarification. Prior status comments with commit/PR links were posted to #1, #4, #6, #8, and #9.
+Parent roadmap: [#1](https://github.com/ibrahim8ismael/workspace/issues/1) remains open until its child issue acceptance is supported by evidence. Issue #5 is already closed by PR #10. Issue #4 was closed on 2026-11-16 after posting earlier pilot evidence. Issues #3 and #12 remain open pending verification/deployment; issue #8's 20-person scope remains an independent decision. No status changes or GitHub comments are made by this repository patch.

@@ -6,8 +6,12 @@ import {
   officeChatMessageEventSchema,
   spaceMessageSchema,
   type SpaceMessage,
+  conversationAreasSchema,
   conversationLeaveEventSchema,
   conversationUpdateSchema,
+  meetingJoinEventSchema,
+  meetingLeaveEventSchema,
+  meetingZonesSchema,
   presenceUpdateEventSchema,
   proximityOptInEventSchema,
   seatSitEventSchema,
@@ -18,6 +22,8 @@ import {
   type OfficeReady,
   type OfficeMessage,
   type ConversationUpdate,
+  type ConversationAreas,
+  type MeetingZones,
   type WorldSnapshot,
 } from '@gather/contracts';
 import { io, type Socket } from 'socket.io-client';
@@ -36,6 +42,8 @@ export type OfficeClientState = {
   chatEvents: OfficeMessage[];
   spaceChatEvents: Record<string, SpaceMessage[]>;
   conversationUpdates: ConversationUpdate[];
+  conversationAreas: ConversationAreas | null;
+  meetingZones: MeetingZones | null;
 };
 
 export type ConversationVersionMarker = {
@@ -51,10 +59,18 @@ export function acceptsConversationUpdate(
 ) {
   if (officeEpoch && update.officeEpoch !== officeEpoch) return false;
   return (
-    !previous ||
-    (previous.officeEpoch === update.officeEpoch &&
-      !previous.ended &&
-      update.version > previous.version)
+    !previous || (previous.officeEpoch === update.officeEpoch && update.version > previous.version)
+  );
+}
+
+export function acceptsConversationAreas(
+  current: ConversationAreas | null,
+  incoming: ConversationAreas,
+  officeEpoch: string | null,
+) {
+  if (officeEpoch && incoming.officeEpoch !== officeEpoch) return false;
+  return (
+    !current || current.officeEpoch !== incoming.officeEpoch || incoming.sequence > current.sequence
   );
 }
 
@@ -67,6 +83,8 @@ const EMPTY_STATE: OfficeClientState = {
   chatEvents: [],
   spaceChatEvents: {},
   conversationUpdates: [],
+  conversationAreas: null,
+  meetingZones: null,
 };
 
 /** Cookie-authenticated HTTP bootstrap followed by a one-use-ticket Socket.IO session. */
@@ -114,6 +132,8 @@ export class OfficeClient {
       chatEvents: [],
       spaceChatEvents: {},
       conversationUpdates: [],
+      conversationAreas: null,
+      meetingZones: null,
     });
     this.conversationVersions.clear();
     try {
@@ -219,6 +239,22 @@ export class OfficeClient {
             update,
           ].slice(-5),
         });
+      });
+      socket.on('conversation:areas', (raw: unknown) => {
+        if (!this.isCurrent(generation) || this.socket !== socket) return;
+        const parsed = conversationAreasSchema.safeParse(raw);
+        const current = this.state.conversationAreas;
+        const epoch = this.state.ready?.snapshot.officeEpoch;
+        if (!parsed.success || !acceptsConversationAreas(current, parsed.data, epoch ?? null))
+          return;
+        this.update({ conversationAreas: parsed.data });
+      });
+      socket.on('meeting:zones', (raw: unknown) => {
+        if (!this.isCurrent(generation) || this.socket !== socket) return;
+        const parsed = meetingZonesSchema.safeParse(raw);
+        const epoch = this.state.ready?.snapshot.officeEpoch;
+        if (!parsed.success || (epoch && parsed.data.officeEpoch !== epoch)) return;
+        this.update({ meetingZones: parsed.data });
       });
       socket.on('world:snapshot', (raw: unknown) => {
         if (!this.isCurrent(generation) || this.socket !== socket) return;
@@ -334,6 +370,17 @@ export class OfficeClient {
 
   leaveConversation(conversationId: string, conversationVersion: number) {
     return this.sendCommand('conversation:leave', conversationLeaveEventSchema, {
+      conversationId,
+      conversationVersion,
+    });
+  }
+
+  joinMeeting(zoneId: string) {
+    return this.sendCommand('meeting:join', meetingJoinEventSchema, { zoneId });
+  }
+
+  leaveMeeting(conversationId: string, conversationVersion: number) {
+    return this.sendCommand('meeting:leave', meetingLeaveEventSchema, {
       conversationId,
       conversationVersion,
     });

@@ -1,328 +1,231 @@
 import { describe, expect, it } from 'vitest';
-import { conversationUpdateSchema, OFFICE_LIMITS } from '@gather/contracts';
 import {
-  PROXIMITY_EXIT_DEBOUNCE_MS,
+  conversationAreasSchema,
+  conversationUpdateSchema,
+  OFFICE_LIMITS,
+} from '@gather/contracts';
+import {
+  PROXIMITY_INITIAL_RADIUS_TILES,
+  PROXIMITY_JOIN_RADIUS_TILES,
   PROXIMITY_MAX_PARTICIPANTS,
+  PROXIMITY_MAX_RADIUS_TILES,
   ProximityPairing,
   type ProximityCandidate,
 } from '../dist/modules/office/runtime/proximity-pairing.js';
 
-const officeEpoch = '98ff100b-f4f2-4896-81ef-11106d315b9e';
-const a = '11111111-1111-4111-8111-111111111111';
-const b = '22222222-2222-4222-8222-222222222222';
-const c = '33333333-3333-4333-8333-333333333333';
-const d = '44444444-4444-4444-8444-444444444444';
-const e = '55555555-5555-4555-8555-555555555555';
-const f = '66666666-6666-4666-8666-666666666666';
-const g = '77777777-7777-4777-8777-777777777777';
+const epoch = '98ff100b-f4f2-4896-81ef-11106d315b9e';
+const ids = [
+  '11111111-1111-4111-8111-111111111111',
+  '22222222-2222-4222-8222-222222222222',
+  '33333333-3333-4333-8333-333333333333',
+  '44444444-4444-4444-8444-444444444444',
+  '55555555-5555-4555-8555-555555555555',
+  '66666666-6666-4666-8666-666666666666',
+  '77777777-7777-4777-8777-777777777777',
+] as const;
 
 function candidate(
-  participationId: string,
-  socketId: string,
+  index: number,
   x: number,
+  y = 64,
   availability: ProximityCandidate['availability'] = 'available',
 ): ProximityCandidate {
+  const participationId = ids[index]!;
   return {
     participationId,
-    socketId,
-    displayName: `Person ${participationId[0]}`,
+    socketId: `socket-${index}`,
+    displayName: `Person ${index}`,
     availability,
-    position: { x, y: 64 },
+    position: { x, y },
   };
 }
 
-function join(pairing: ProximityPairing, people: readonly ProximityCandidate[]) {
-  const notices = people.map((person, index) =>
-    pairing.setOptIn(person.participationId, true, people, index + 10),
-  );
-  return notices.flat();
+function optInAll(pairing: ProximityPairing, people: readonly ProximityCandidate[]) {
+  for (const person of people) pairing.setOptIn(person.participationId, true, people);
 }
 
-describe('proximity voice groups', () => {
-  it('pairs two available people who opted in and keeps the roster private', () => {
-    const pairing = new ProximityPairing(officeEpoch, 32);
-    const people = [candidate(a, 'socket-a', 64), candidate(b, 'socket-b', 96)];
+function latestGroup(pairing: ProximityPairing) {
+  const permit = pairing.mediaPermits()[0];
+  if (!permit) throw new Error('expected_group');
+  return permit.generation;
+}
 
-    expect(pairing.setOptIn(a, true, people, 10)).toEqual([]);
-    const notices = pairing.setOptIn(b, true, people, 11);
-
-    expect(notices).toHaveLength(1);
-    expect(notices[0]?.socketIds).toEqual(['socket-a', 'socket-b']);
-    expect(notices[0]?.update).toMatchObject({
-      officeEpoch,
-      kind: 'proximity',
-      state: 'joining',
-      mediaReady: false,
-      participants: [
-        { participationId: a, displayName: `Person ${a[0]}` },
-        { participationId: b, displayName: `Person ${b[0]}` },
-      ],
-    });
-    expect(conversationUpdateSchema.safeParse(notices[0]?.update).success).toBe(true);
-    expect(JSON.stringify(notices[0]?.update)).not.toContain('socket-');
-  });
-
-  it('keeps deterministic nearest matching when no existing group can accept the third person', () => {
-    const pairing = new ProximityPairing(officeEpoch, 32);
-    const people = [
-      candidate(a, 'socket-a', 0),
-      candidate(b, 'socket-b', 128),
-      candidate(c, 'socket-c', 80),
-    ];
-    pairing.setOptIn(a, true, people, 10);
-    pairing.setOptIn(b, true, people, 11);
-    const notices = pairing.setOptIn(c, true, people, 12);
-
-    expect(notices).toHaveLength(1);
-    expect(notices[0]?.update.participants.map((person) => person.participationId)).toEqual([b, c]);
-  });
-
-  it('moves an eligible third person into the current group on a fresh authorized generation', () => {
-    const pairing = new ProximityPairing(officeEpoch, 32);
-    const people = [
-      candidate(a, 'socket-a', 64),
-      candidate(b, 'socket-b', 96),
-      candidate(c, 'socket-c', 80),
-    ];
-    pairing.setOptIn(a, true, people, 10);
-    const first = pairing.setOptIn(b, true, people, 11)[0]!.update;
-    const firstActive = pairing.activateGeneration(first.generation)[0]!.update;
-    expect(firstActive.state).toBe('active');
-
-    const joined = pairing.setOptIn(c, true, people, 12);
+describe('server-authoritative growing proximity circles', () => {
+  it('joins two opted-in users only within a true two-tile Euclidean distance', () => {
+    const pairing = new ProximityPairing(epoch, 32);
+    const inside = [candidate(0, 64), candidate(1, 128)];
+    pairing.setOptIn(ids[0], true, inside);
+    const joined = pairing.setOptIn(ids[1], true, inside);
     expect(joined).toHaveLength(1);
-    expect(joined[0]?.socketIds).toEqual(['socket-a', 'socket-b', 'socket-c']);
-    expect(joined[0]?.update).toMatchObject({
-      conversationId: first.conversationId,
-      state: 'joining',
-      version: firstActive.version + 1,
-      mediaReady: false,
-      participants: [{ participationId: a }, { participationId: b }, { participationId: c }],
-    });
-    expect(joined[0]?.update.generation).not.toBe(first.generation);
-    expect(pairing.mediaConversation(a, first.conversationId, firstActive.version)).toBeNull();
-    expect(pairing.mediaPermits()).toHaveLength(3);
-    expect(new Set(pairing.mediaPermits().map((permit) => permit.identity))).toEqual(
-      new Set([a, b, c]),
-    );
-    expect(
-      pairing.mediaPermits().every((permit) => permit.generation === joined[0]?.update.generation),
-    ).toBe(true);
+    expect(joined[0]?.update.state).toBe('joining');
 
-    const active = pairing.activateGeneration(joined[0]!.update.generation)[0]?.update;
-    expect(active).toMatchObject({
-      conversationId: first.conversationId,
+    const tooFar = new ProximityPairing(epoch, 32);
+    optInAll(tooFar, [candidate(0, 0), candidate(1, 64.001)]);
+    expect(tooFar.mediaPermits()).toEqual([]);
+
+    const corner = new ProximityPairing(epoch, 32);
+    const diagonal = [candidate(0, 64, 64), candidate(1, 128, 128)];
+    optInAll(corner, diagonal);
+    expect(corner.mediaPermits()).toEqual([]); // sqrt(2² + 2²) is outside the circle.
+    expect(PROXIMITY_JOIN_RADIUS_TILES).toBe(2);
+  });
+
+  it('publishes a deterministic anchored midpoint and two-tile initial radius', () => {
+    const pairing = new ProximityPairing(epoch, 32);
+    const people = [candidate(0, 64, 64), candidate(1, 96, 96)];
+    optInAll(pairing, people);
+    const areas = pairing.currentAreas();
+    expect(conversationAreasSchema.safeParse(areas).success).toBe(true);
+    expect(areas.areas).toHaveLength(1);
+    expect(areas.areas[0]).toMatchObject({
+      version: 1,
+      shape: 'circle',
+      center: { x: 80, y: 80 },
+      radius: PROXIMITY_INITIAL_RADIUS_TILES * 32,
       state: 'active',
-      version: firstActive.version + 2,
-      mediaReady: true,
-    });
-    expect(pairing.mediaConversation(c, first.conversationId, active!.version)).toMatchObject({
-      generation: active?.generation,
-      room: active?.generation,
     });
   });
 
-  it('groups previously opted-in users in the same reconciliation when they move together', () => {
-    const pairing = new ProximityPairing(officeEpoch, 32);
-    const far = [
-      candidate(a, 'socket-a', 0),
-      candidate(b, 'socket-b', 320),
-      candidate(c, 'socket-c', 640),
-    ];
-    for (const person of far) pairing.setOptIn(person.participationId, true, far, 10);
+  it('reproduces distant audio authorization from the old moving centroid and grace boundary', () => {
+    // For the same positions, the previous moving centroid was x=104 and the old three-tile
+    // departure radius still admitted x=144.01. The fixed midpoint is x=80, so this movement
+    // crosses the published two-tile circle and must remove the permit in this reconciliation.
+    const pairing = new ProximityPairing(epoch, 32);
+    const initial = [candidate(0, 64), candidate(1, 96)];
+    optInAll(pairing, initial);
+    expect(pairing.mediaPermits()).toHaveLength(2);
 
-    const close = [
-      candidate(a, 'socket-a', 64),
-      candidate(b, 'socket-b', 96),
-      candidate(c, 'socket-c', 80),
-    ];
-    const notices = pairing.reconcile(close, 20);
-    const completeGroup = notices.at(-1)?.update;
-
-    expect(notices.map((notice) => notice.update.state)).toEqual(['joining', 'joining']);
-    expect(completeGroup?.participants.map((person) => person.participationId)).toEqual([a, b, c]);
-    expect(notices[0]?.update.conversationId).toBe(completeGroup?.conversationId);
-    expect(notices[0]?.update.generation).not.toBe(completeGroup?.generation);
-    expect(pairing.mediaPermits()).toHaveLength(3);
-    expect(
-      pairing.mediaPermits().every((permit) => permit.generation === completeGroup?.generation),
-    ).toBe(true);
+    const beyond = [candidate(0, 64), candidate(1, 144.01)];
+    const historicalCentroid = (beyond[0]!.position.x + beyond[1]!.position.x) / 2;
+    expect(Math.abs(beyond[1]!.position.x - historicalCentroid)).toBeLessThanOrEqual(3 * 32);
+    const notices = pairing.reconcile(beyond);
+    expect(notices.some((notice) => notice.update.state === 'ended')).toBe(true);
+    expect(pairing.mediaPermits()).toEqual([]);
+    expect(pairing.currentAreas().areas).toEqual([]);
   });
 
-  it('enforces a distinct six-person proximity cap and leaves the seventh user unmatched', () => {
+  it('keeps an exact circular boundary point and revokes immediately outside it', () => {
+    const pairing = new ProximityPairing(epoch, 32);
+    optInAll(pairing, [candidate(0, 64), candidate(1, 96)]);
+    const atEdge = [candidate(0, 64), candidate(1, 144)];
+    expect(pairing.reconcile(atEdge)).toEqual([]);
+    expect(pairing.mediaPermits()).toHaveLength(2);
+    const outside = [candidate(0, 64), candidate(1, 144.001)];
+    expect(pairing.reconcile(outside).map((notice) => notice.update.state)).toContain('ended');
+    expect(pairing.mediaPermits()).toEqual([]);
+  });
+
+  it('autojoins a third eligible user and expands by one whole tile per arrival', () => {
+    const pairing = new ProximityPairing(epoch, 32);
+    const people = [candidate(0, 64), candidate(1, 96), candidate(2, 112), candidate(3, 120)];
+    pairing.setOptIn(ids[0], true, people);
+    pairing.setOptIn(ids[1], true, people);
+    const initial = pairing.currentAreas().areas[0]!;
+    pairing.setOptIn(ids[2], true, people);
+    const afterThird = pairing.currentAreas().areas[0]!;
+    expect(afterThird.areaId).toBe(initial.areaId);
+    expect(afterThird.version).toBeGreaterThan(initial.version);
+    expect(afterThird.radius - initial.radius).toBe(32);
+    pairing.setOptIn(ids[3], true, people);
+    expect(pairing.currentAreas().areas[0]?.radius).toBe(4 * 32);
+    expect(pairing.mediaPermits()).toHaveLength(4);
+  });
+
+  it('caps group size at six and circle radius at six tiles', () => {
     expect(PROXIMITY_MAX_PARTICIPANTS).toBe(6);
     expect(OFFICE_LIMITS.maxProximityParticipants).toBe(6);
-    const pairing = new ProximityPairing(officeEpoch, 32);
-    const people = [a, b, c, d, e, f, g].map((id, index) => candidate(id, `socket-${index}`, 64));
-    const notices = join(pairing, people);
-    const rosters = notices.filter((notice) => notice.update.state === 'joining');
-    const latestRoster = rosters.at(-1)?.update.participants;
-
-    expect(latestRoster).toHaveLength(PROXIMITY_MAX_PARTICIPANTS);
-    expect(latestRoster?.map((person) => person.participationId)).not.toContain(g);
-    expect(pairing.mediaPermits()).toHaveLength(PROXIMITY_MAX_PARTICIPANTS);
-    expect(pairing.mediaPermits().map((permit) => permit.identity)).not.toContain(g);
+    const pairing = new ProximityPairing(epoch, 32);
+    const people = ids.map((_, index) => candidate(index, 64));
+    optInAll(pairing, people);
+    expect(pairing.mediaPermits()).toHaveLength(6);
+    expect(pairing.mediaPermits().some((permit) => permit.identity === ids[6])).toBe(false);
+    expect(pairing.currentAreas().areas[0]?.radius).toBe(PROXIMITY_MAX_RADIUS_TILES * 32);
   });
 
-  it('uses a stable participation-id tie-break for candidates arriving in one reconciliation', () => {
-    const pairing = new ProximityPairing(officeEpoch, 32);
-    const initial = [a, b, c, d, e].map((id, index) => candidate(id, `socket-${index}`, 64));
-    join(pairing, initial);
-    const fFar = candidate(f, 'socket-f', 640);
-    const gFar = candidate(g, 'socket-g', 800);
-    pairing.setOptIn(f, true, [...initial, fFar, gFar], 30);
-    pairing.setOptIn(g, true, [...initial, fFar, gFar], 31);
-
-    const close = [...initial, candidate(f, 'socket-f', 64), candidate(g, 'socket-g', 64)];
-    const notices = pairing.reconcile(close, 32);
-    expect(notices).toHaveLength(1);
-    expect(notices[0]?.update.participants.map((person) => person.participationId)).toEqual([
-      a,
-      b,
-      c,
-      d,
-      e,
-      f,
-    ]);
-  });
-
-  it('migrates eligible survivors and privately ends the removed member on leave', () => {
-    const pairing = new ProximityPairing(officeEpoch, 32);
-    const people = [
-      candidate(a, 'socket-a', 64),
-      candidate(b, 'socket-b', 96),
-      candidate(c, 'socket-c', 80),
-    ];
-    const initial = join(pairing, people).find(
-      (notice) => notice.update.participants.length === 2,
-    )?.update;
-    expect(initial).toBeDefined();
-    const active = pairing.activateGeneration(pairing.mediaPermits()[0]!.generation)[0]?.update;
-    expect(active?.state).toBe('active');
-
-    const result = pairing.leave(c, initial!.conversationId, active!.version);
-    expect('notices' in result).toBe(true);
-    if (!('notices' in result)) return;
-    const survivorUpdate = result.notices.find((notice) => notice.update.state === 'joining');
-    const departedUpdate = result.notices.find((notice) => notice.update.state === 'ended');
-    expect(survivorUpdate?.socketIds).toEqual(['socket-a', 'socket-b']);
-    expect(survivorUpdate?.update.participants.map((person) => person.participationId)).toEqual([
-      a,
-      b,
-    ]);
-    expect(departedUpdate?.socketIds).toEqual(['socket-c']);
-    expect(departedUpdate?.update.participants).toEqual([]);
-    expect(survivorUpdate?.update.generation).not.toBe(active?.generation);
-    expect(
-      pairing
-        .mediaPermits()
-        .map((permit) => permit.identity)
-        .sort(),
-    ).toEqual([a, b]);
-    expect(pairing.mediaPermits().some((permit) => permit.generation === active?.generation)).toBe(
-      false,
-    );
-
-    const rejoined = pairing.reconcile(people, 20);
-    expect(rejoined).toEqual([]);
-    const survivorActive = pairing.activateGeneration(survivorUpdate!.update.generation)[0]?.update;
-    expect(survivorActive?.participants).toHaveLength(2);
-  });
-
-  it('immediately migrates a group when a member opts out or becomes unavailable', () => {
-    const pairing = new ProximityPairing(officeEpoch, 32);
-    const people = [
-      candidate(a, 'socket-a', 64),
-      candidate(b, 'socket-b', 96),
-      candidate(c, 'socket-c', 80),
-    ];
-    join(pairing, people);
-    pairing.activateGeneration(pairing.mediaPermits()[0]!.generation);
-
-    const away = [people[0]!, people[1]!, candidate(c, 'socket-c', 80, 'away')];
-    const notices = pairing.reconcile(away, 20);
-    expect(notices.map((notice) => notice.update.state)).toEqual(['joining', 'ended']);
-    expect(
-      notices.find((notice) => notice.update.state === 'joining')?.update.participants,
-    ).toHaveLength(2);
-    expect(
-      pairing
-        .mediaPermits()
-        .map((permit) => permit.identity)
-        .sort(),
-    ).toEqual([a, b]);
-  });
-
-  it('keeps an established pair through leave-radius jitter and resets the exit timer on re-entry', () => {
-    const pairing = new ProximityPairing(officeEpoch, 32);
-    const closePeople = [candidate(a, 'socket-a', 64), candidate(b, 'socket-b', 128)];
-    pairing.setOptIn(a, true, closePeople, 10);
-    pairing.setOptIn(b, true, closePeople, 11);
-
-    const atLeaveBoundary = [candidate(a, 'socket-a', 64), candidate(b, 'socket-b', 256)];
-    expect(pairing.reconcile(atLeaveBoundary, 100)).toEqual([]);
-    expect(
-      pairing.reconcile([candidate(a, 'socket-a', 64), candidate(b, 'socket-b', 255.99)], 200),
-    ).toEqual([]);
-    expect(
-      pairing.reconcile([candidate(a, 'socket-a', 64), candidate(b, 'socket-b', 256.01)], 300),
-    ).toEqual([]);
-    expect(pairing.reconcile(atLeaveBoundary, 300 + PROXIMITY_EXIT_DEBOUNCE_MS - 1)).toEqual([]);
-    expect(pairing.reconcile(atLeaveBoundary, 300 + PROXIMITY_EXIT_DEBOUNCE_MS)).toEqual([]);
-
-    const sustainedOutside = [candidate(a, 'socket-a', 64), candidate(b, 'socket-b', 257)];
-    expect(pairing.reconcile(sustainedOutside, 1000)).toEqual([]);
-    expect(pairing.reconcile(sustainedOutside, 1000 + PROXIMITY_EXIT_DEBOUNCE_MS - 1)).toEqual([]);
-    expect(
-      pairing.reconcile(sustainedOutside, 1000 + PROXIMITY_EXIT_DEBOUNCE_MS)[0]?.update.state,
-    ).toBe('ended');
-  });
-
-  it('debounces boundary exit and preserves a close surviving group on a new generation', () => {
-    const pairing = new ProximityPairing(officeEpoch, 32);
-    const closePeople = [
-      candidate(a, 'socket-a', 64),
-      candidate(b, 'socket-b', 96),
-      candidate(c, 'socket-c', 112),
-    ];
-    join(pairing, closePeople);
-    const oldGeneration = pairing.mediaPermits()[0]!.generation;
-    const outside = [closePeople[0]!, closePeople[1]!, candidate(c, 'socket-c', 64 + 6 * 32)];
-
-    expect(pairing.reconcile(outside, 100)).toEqual([]);
-    expect(pairing.reconcile(outside, 100 + PROXIMITY_EXIT_DEBOUNCE_MS - 1)).toEqual([]);
-    const notices = pairing.reconcile(outside, 100 + PROXIMITY_EXIT_DEBOUNCE_MS);
-    expect(notices.map((notice) => notice.update.state)).toEqual(['joining', 'ended']);
-    const survivors = notices.find((notice) => notice.update.state === 'joining')!.update;
-    expect(survivors.participants.map((person) => person.participationId)).toEqual([a, b]);
-    expect(survivors.generation).not.toBe(oldGeneration);
-    expect(
-      pairing
-        .mediaPermits()
-        .map((permit) => permit.identity)
-        .sort(),
-    ).toEqual([a, b]);
-  });
-
-  it('keeps two existing groups separate even when they move close together', () => {
-    const pairing = new ProximityPairing(officeEpoch, 32);
-    const people = [
-      candidate(a, 'socket-a', 0),
-      candidate(b, 'socket-b', 32),
-      candidate(c, 'socket-c', 320),
-      candidate(d, 'socket-d', 352),
-    ];
-    join(pairing, people);
-    const originalGenerations = new Set(pairing.mediaPermits().map((permit) => permit.generation));
-    expect(originalGenerations.size).toBe(2);
-
-    const closeGroups = [
+  it('shrinks only when all retained users fit and keeps the anchor fixed', () => {
+    const pairing = new ProximityPairing(epoch, 32);
+    const people = [candidate(0, 80), candidate(1, 80), candidate(2, 80), candidate(3, 80)];
+    optInAll(pairing, people);
+    const before = pairing.currentAreas().areas[0]!;
+    expect(before.radius).toBe(4 * 32);
+    const update = pairing.reconcile([
       people[0]!,
       people[1]!,
-      candidate(c, 'socket-c', 32),
-      candidate(d, 'socket-d', 64),
-    ];
-    expect(pairing.reconcile(closeGroups, 20)).toEqual([]);
-    expect(new Set(pairing.mediaPermits().map((permit) => permit.generation)).size).toBe(2);
+      people[2]!,
+      candidate(3, 80 + 4 * 32 + 1),
+    ]);
+    const after = pairing.currentAreas().areas[0]!;
+    expect(update.some((notice) => notice.update.state === 'joining')).toBe(true);
+    expect(after.center).toEqual(before.center);
+    expect(after.radius).toBe(3 * 32);
+  });
+
+  it('does not merge overlapping circles and assigns one candidate to one nearest group', () => {
+    const pairing = new ProximityPairing(epoch, 32);
+    const founders = [candidate(0, 0), candidate(1, 32), candidate(2, 128), candidate(3, 160)];
+    optInAll(pairing, founders);
+    expect(pairing.currentAreas().areas).toHaveLength(2);
+    const prior = pairing.currentAreas().areas;
+    const newcomer = candidate(4, 80);
+    pairing.setOptIn(newcomer.participationId, true, [...founders, newcomer]);
+    expect(pairing.currentAreas().areas).toHaveLength(2);
+    const rosters = pairing.mediaPermits().reduce((counts, permit) => {
+      counts.set(permit.generation, (counts.get(permit.generation) ?? 0) + 1);
+      return counts;
+    }, new Map<string, number>());
+    expect([...rosters.values()].reduce((sum, count) => sum + count, 0)).toBe(5);
+    expect(pairing.currentAreas().areas.map((area) => area.areaId)).toEqual(
+      prior.map((area) => area.areaId),
+    );
+  });
+
+  it('rotates generation and removes an out-of-area member while survivors retain media', () => {
+    const pairing = new ProximityPairing(epoch, 32);
+    const people = [candidate(0, 64), candidate(1, 96), candidate(2, 100)];
+    optInAll(pairing, people);
+    const firstGeneration = latestGroup(pairing);
+    const outside = [people[0]!, people[1]!, candidate(2, 80 + 3 * 32 + 0.1)];
+    const notices = pairing.reconcile(outside);
+    expect(notices.map((notice) => notice.update.state)).toContain('ended');
+    expect(pairing.mediaPermits()).toHaveLength(2);
+    expect(pairing.mediaPermits().some((permit) => permit.generation === firstGeneration)).toBe(
+      false,
+    );
+    expect(
+      pairing
+        .mediaPermits()
+        .map((permit) => permit.identity)
+        .sort(),
+    ).toEqual([ids[0], ids[1]]);
+    expect(
+      notices.every((notice) => conversationUpdateSchema.safeParse(notice.update).success),
+    ).toBe(true);
+  });
+
+  it('keeps explicit leave idempotent, suppresses immediate rejoin, then allows a fresh re-entry', () => {
+    const pairing = new ProximityPairing(epoch, 32);
+    const people = [candidate(0, 64), candidate(1, 96)];
+    optInAll(pairing, people);
+    const active = pairing.activateGeneration(latestGroup(pairing))[0]!.update;
+    const firstLeave = pairing.leave(ids[1], active.conversationId, active.version);
+    expect('notices' in firstLeave).toBe(true);
+    if (!('notices' in firstLeave)) return;
+    expect(pairing.reconcile(people)).toEqual([]);
+    const separated = [people[0]!, candidate(1, 160)];
+    pairing.reconcile(separated);
+    pairing.reconcile(people);
+    expect(pairing.mediaPermits()).toHaveLength(2);
+  });
+
+  it('blocks meeting members from proximity groups and releases the block after meeting leave', () => {
+    const pairing = new ProximityPairing(epoch, 32);
+    const people = [candidate(0, 64), candidate(1, 96)];
+    optInAll(pairing, people);
+    expect(pairing.mediaPermits()).toHaveLength(2);
+    const notices = pairing.setBlockedParticipants([ids[0]], people);
+    expect(notices.some((notice) => notice.update.state === 'ended')).toBe(true);
+    expect(pairing.mediaPermits()).toEqual([]);
+    pairing.setBlockedParticipants([], people);
+    expect(pairing.mediaPermits()).toHaveLength(2);
   });
 });

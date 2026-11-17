@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   conversationUpdateSchema,
+  conversationAreasSchema,
+  meetingJoinEventSchema,
   proximityOptInEventSchema,
   updateProfileSchema,
   OFFICE_LIMITS,
@@ -107,6 +109,55 @@ describe('future profile and private conversation shapes', () => {
           participationId: id,
           displayName: `Person ${index}`,
         })),
+      }).success,
+    ).toBe(false);
+  });
+
+  it('requires a trusted-zone identity for private meeting rosters and validates public geometry', () => {
+    const meeting = {
+      ...conversation,
+      kind: 'meeting' as const,
+      zoneId: 'vivo-meeting-room',
+      participants: [{ participationId: a, displayName: 'Person A' }],
+    };
+    expect(conversationUpdateSchema.safeParse(meeting).success).toBe(true);
+    expect(conversationUpdateSchema.safeParse({ ...meeting, zoneId: undefined }).success).toBe(
+      false,
+    );
+    expect(
+      conversationUpdateSchema.safeParse({
+        ...meeting,
+        participants: members.slice(0, OFFICE_LIMITS.maxMeetingParticipants).map((id, index) => ({
+          participationId: id,
+          displayName: `Person ${index}`,
+        })),
+      }).success,
+    ).toBe(true);
+
+    const areas = {
+      officeEpoch: a,
+      sequence: 2,
+      areas: [
+        {
+          areaId: b,
+          version: 3,
+          shape: 'circle' as const,
+          center: { x: 64, y: 96 },
+          radius: 192,
+          state: 'active' as const,
+        },
+      ],
+    };
+    expect(conversationAreasSchema.safeParse(areas).success).toBe(true);
+    expect(
+      conversationAreasSchema.safeParse({ ...areas, areas: [areas.areas[0], areas.areas[0]] })
+        .success,
+    ).toBe(false);
+    expect(
+      meetingJoinEventSchema.safeParse({
+        eventId: a,
+        officeEpoch: b,
+        payload: { zoneId: 'vivo-meeting-room', radius: 200 },
       }).success,
     ).toBe(false);
   });

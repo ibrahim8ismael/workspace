@@ -1,6 +1,6 @@
 # Acceptance and evidence register
 
-Status: initial backend subset locally verified; deployment/media/pilot gates remain pending · Updated: 2026-11-11
+Status: initial backend subset locally verified; deployment/media/pilot gates remain pending · Updated: 2026-11-16
 
 Documentation review is not implementation verification. Add an evidence record with environment/build, exact scenario, observed result, measurements, date, responsible person and artifact/code link. A failed gate remains open until corrected and rerun.
 
@@ -18,6 +18,8 @@ Documentation review is not implementation verification. Add an evidence record 
 | A09 | M1/M5 delivery | Enqueue boundary crash, duplicate worker, ambiguous email acknowledgement, encrypted secret purge, expired delivery, cache pressure isolated from queue | Pending |
 | A10 | M5 operations | Fresh epochs on restart, no unguarded fallback, alerting, declared 20-user workload, measured join targets, safe restore with old credentials/access blocked | Pending |
 | A11 | M1–M5 B2B SaaS | Cross-company API/socket/invite/media/job isolation; independent multi-company roles; clear current-company context; specified tenant suspension/offboarding; noisy-neighbor limits and shared-media shutdown blast radius | CP08.7 verifies media-room roster and track isolation for two companies on the same local SFU, including one company ending while the other remains live. Overall A11 remains pending cross-company API/socket/invite/job and lifecycle coverage, multi-instance/deployment evidence, capacity/noisy-neighbor limits and the documented shared-node shutdown impact. |
+| A13 | Issue #12 growing proximity groups | Authoritative Euclidean join/leave boundary; fixed founding-pair anchor; bounded whole-tile growth/shrink; isolated overlapping groups; ordered geometry snapshots; mute preservation; survivor continuity and actual decoded-audio cutoff ≤2 s (p95 ≤1 s target) | Worktree implements canonical anchored circles, immediate membership removal, generation rotation and public geometry snapshots; focused unit/runtime tests cover boundaries, growth, shrink, overlap, capacity, stale versions and retirement. Renderer/browser checks cover SVG/Phaser boundary state. **Open:** no real-SFU test ran for this patch, so decoded-audio cutoff, old-grant rejection and survivor audio are not measured for the new behavior. |
+| A14 | Issue #3 fixed room meetings | Trusted versioned zone geometry; explicit admission/leave; tenant and physical-presence checks; capacity; private authoritative roster; group audio; leave/revocation cleanup; mute state | Worktree implements trusted-zone runtime admission, private roster/generation rotation, six-person capacity and UI actions. Unit/runtime and mocked-browser checks cover basic admission, roster, leave and capacity. **Open:** real multi-client LiveKit group audio, tenant/member revocation, capacity/reconnect integration and deployed acceptance have not been verified. |
 
 CP08.6 webhook integration locally verifies signed raw-body acceptance/rejection, deduplication,
 late and same-second event ordering, and strict content type. The signed observation journal is not

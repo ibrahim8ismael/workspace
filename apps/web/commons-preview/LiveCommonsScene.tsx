@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import Phaser from 'phaser';
-import type { OfficeBootstrapResponse, WorldSnapshot } from '@gather/contracts';
+import type { ConversationAreas, OfficeBootstrapResponse, WorldSnapshot } from '@gather/contracts';
 import { readPreview } from './data';
 import { createCommonsSceneCleanup } from './scene-lifecycle';
 import './preview.css';
@@ -44,16 +44,22 @@ function mountScene(
   ready: () => void,
   failed: () => void,
   onMovement: (dx: -1 | 0 | 1, dy: -1 | 0 | 1) => void,
+  initialAreas: ConversationAreas['areas'],
 ) {
   const assets = readPreview();
   if (assets.manifest.mapVersion !== bootstrap.mapVersion) {
     failed();
-    return { cleanup: () => parent.remove(), updateSnapshot: () => undefined };
+    return {
+      cleanup: () => parent.remove(),
+      updateSnapshot: () => undefined,
+      updateAreas: () => undefined,
+    };
   }
   const { geometry, catalog } = assets;
   const frames: Array<Frame | ObjectFrame> = [...assets.avatarFrames, ...assets.objectFrames];
   let disposed = false;
   let applySnapshot: (snapshot: WorldSnapshot) => void = () => undefined;
+  let applyAreas: (areas: ConversationAreas['areas']) => void = () => undefined;
   const game = new Phaser.Game({
     type: Phaser.CANVAS,
     parent,
@@ -106,6 +112,37 @@ function mountScene(
             .setOrigin(0.5, 0)
             .setDepth(-80);
         }
+
+        const proximityAreas = this.add.graphics().setDepth(-85);
+        const drawAreas = (areas: ConversationAreas['areas']) => {
+          proximityAreas.clear();
+          const colors = [0x52d5b7, 0xa68aff, 0xffbd66, 0x69b9ff, 0xff83a4];
+          for (const area of areas) {
+            const color =
+              colors[
+                [...area.areaId].reduce((hash, char) => hash + char.charCodeAt(0), 0) %
+                  colors.length
+              ]!;
+            proximityAreas
+              .fillStyle(color, 0.035)
+              .fillCircle(area.center.x, area.center.y, area.radius);
+            proximityAreas.fillStyle(color, 0.95);
+            const dotCount = Math.min(
+              128,
+              Math.max(36, Math.ceil((2 * Math.PI * area.radius) / 12)),
+            );
+            for (let index = 0; index < dotCount; index += 1) {
+              const angle = (index / dotCount) * 2 * Math.PI;
+              proximityAreas.fillCircle(
+                area.center.x + Math.cos(angle) * area.radius,
+                area.center.y + Math.sin(angle) * area.radius,
+                1.5,
+              );
+            }
+          }
+        };
+        drawAreas(initialAreas);
+        applyAreas = drawAreas;
 
         const walls = this.add.graphics().setDepth(-20);
         walls.lineStyle(4, 0x36584b, 1);
@@ -252,6 +289,7 @@ function mountScene(
       cleanup();
     },
     updateSnapshot,
+    updateAreas: (areas: ConversationAreas['areas']) => applyAreas(areas),
   };
 }
 
@@ -260,9 +298,16 @@ type Props = {
   snapshot: WorldSnapshot;
   localParticipationId: string;
   onMovement: (dx: -1 | 0 | 1, dy: -1 | 0 | 1) => void;
+  conversationAreas: ConversationAreas['areas'];
 };
 
-export function LiveCommonsScene({ bootstrap, snapshot, localParticipationId, onMovement }: Props) {
+export function LiveCommonsScene({
+  bootstrap,
+  snapshot,
+  localParticipationId,
+  onMovement,
+  conversationAreas,
+}: Props) {
   const host = useRef<HTMLDivElement>(null);
   const renderer = useRef<ReturnType<typeof mountScene> | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -285,9 +330,11 @@ export function LiveCommonsScene({ bootstrap, snapshot, localParticipationId, on
         () => {
           setStatus('ready');
           renderer.current?.updateSnapshot(latestSnapshot.current);
+          renderer.current?.updateAreas(conversationAreas);
         },
         () => setStatus('error'),
         (dx, dy) => movement.current(dx, dy),
+        conversationAreas,
       );
       renderer.current = mounted;
     } catch {
@@ -303,6 +350,10 @@ export function LiveCommonsScene({ bootstrap, snapshot, localParticipationId, on
   useEffect(() => {
     renderer.current?.updateSnapshot(snapshot);
   }, [snapshot]);
+
+  useEffect(() => {
+    renderer.current?.updateAreas(conversationAreas);
+  }, [conversationAreas]);
 
   return (
     <div className="live-commons-scene">

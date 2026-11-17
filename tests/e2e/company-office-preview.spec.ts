@@ -1,6 +1,6 @@
 import type { SpaceMessage } from '@gather/contracts';
 import { expect, test } from '@playwright/test';
-import { OFFICE_PROTOCOL_VERSION } from '../../packages/contracts/dist/versions.js';
+import { OFFICE_PROTOCOL_VERSION } from '../../packages/contracts/src/versions.ts';
 
 const account = {
   id: '0d6c9f3e-4a2f-46cc-a66a-5f10d61c72ea',
@@ -20,6 +20,9 @@ const participationId = '8f34d8de-bddb-489d-9cde-f03f1a98b68e';
 const teammateParticipationId = '41bbf5d6-37d7-4468-9892-9776ff19e008';
 const proximityConversationId = 'd65d5a55-c917-448b-a203-1a226bc76319';
 const proximityGeneration = 'a371c42a-aa7d-4082-ad22-74e1816af053';
+const meetingConversationId = 'c720f217-923e-43c6-9a44-95d34d8055c9';
+const meetingGeneration = '10e9c483-bd4a-45af-a1d4-4bf419e86055';
+const meetingZoneId = 'vivo-e2e-meeting-room';
 const officeEpoch = '668bde07-cc48-4623-a58c-2efbc8ac21d5';
 const mapVersion = 'vivo-v1-0208da25a5cdc4cbb4036ae04a5bb8796962752a3d84de24961ebc15d8038e7b';
 const officeManifest = {
@@ -91,6 +94,10 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   const movementInputs: Array<{ dx: number; dy: number }> = [];
   const sentOfficeMessages: Array<{ clientMessageId: string; text: string }> = [];
   const mediaTokenRequests: Array<{ participationId: string; conversationVersion: number }> = [];
+  const meetingMediaTokenRequests: Array<{
+    participationId: string;
+    conversationVersion: number;
+  }> = [];
   let liveKitSocketAttempts = 0;
   let holdPair = true;
   let failNextOfficeMessage = true;
@@ -242,12 +249,19 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
       scopedHistory[path] = [...(scopedHistory[path] ?? []), message];
       return json({ message }, 201);
     }
-    if (method === 'POST' && path === `/api/conversations/${proximityConversationId}/media-token`) {
+    if (
+      method === 'POST' &&
+      [proximityConversationId, meetingConversationId].some(
+        (conversationId) => path === `/api/conversations/${conversationId}/media-token`,
+      )
+    ) {
+      const isMeeting = path.endsWith(`/api/conversations/${meetingConversationId}/media-token`);
       const body = request.postDataJSON() as {
         participationId: string;
         conversationVersion: number;
       };
-      mediaTokenRequests.push(body);
+      if (isMeeting) meetingMediaTokenRequests.push(body);
+      else mediaTokenRequests.push(body);
       const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString(
         'base64url',
       );
@@ -258,7 +272,7 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
           name: account.displayName,
           exp: Math.floor(Date.now() / 1000) + 60,
           video: {
-            room: proximityGeneration,
+            room: isMeeting ? meetingGeneration : proximityGeneration,
             roomJoin: true,
             canPublish: true,
             canPublishSources: ['microphone'],
@@ -272,7 +286,7 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
         token: `${header}.${payload}.e2e-test-signature`,
         expiresAt: new Date(Date.now() + 60_000).toISOString(),
         conversationVersion: body.conversationVersion,
-        generation: proximityGeneration,
+        generation: isMeeting ? meetingGeneration : proximityGeneration,
       });
     }
     if (method === 'GET' && path === `/api/workspaces/${workspace.id}/offices/${officeId}`) {
@@ -311,6 +325,9 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
       '0{"sid":"e2e-engine","upgrades":[],"pingInterval":25000,"pingTimeout":20000,"maxPayload":100000}',
     );
     let stateVersion = 0;
+    let areaSequence = 0;
+    let proximityVersion = 0;
+    let proximityConversationActive = false;
     let availability = 'available';
     let sittingAt: string | null = null;
     let position = { x: 656, y: 1264 };
@@ -375,6 +392,28 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
             },
           })}]`,
         );
+        socket.send(
+          `42/office,["conversation:areas",${JSON.stringify({
+            officeEpoch,
+            sequence: areaSequence,
+            areas: [],
+          })}]`,
+        );
+        socket.send(
+          `42/office,["meeting:zones",${JSON.stringify({
+            officeEpoch,
+            mapVersion,
+            zones: [
+              {
+                zoneId: meetingZoneId,
+                label: 'E2E meeting room',
+                bounds: { tx: 20, ty: 39, width: 4, height: 2 },
+                tileSize: 32,
+                capacity: 6,
+              },
+            ],
+          })}]`,
+        );
         return;
       }
       if (message.startsWith('42/office,')) {
@@ -391,6 +430,9 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
                 dx?: number;
                 dy?: number;
                 enabled?: boolean;
+                zoneId?: string;
+                conversationId?: string;
+                conversationVersion?: number;
               };
             },
           ];
@@ -421,6 +463,27 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
             packet[1].payload?.enabled &&
             !holdPair
           ) {
+            proximityConversationActive = true;
+            const joiningVersion = proximityVersion + 1;
+            const activeVersion = joiningVersion + 1;
+            proximityVersion = activeVersion;
+            areaSequence += 1;
+            socket.send(
+              `42/office,["conversation:areas",${JSON.stringify({
+                officeEpoch,
+                sequence: areaSequence,
+                areas: [
+                  {
+                    areaId: proximityConversationId,
+                    version: areaSequence,
+                    shape: 'circle',
+                    center: { x: 656, y: 1264 },
+                    radius: 64,
+                    state: 'active',
+                  },
+                ],
+              })}]`,
+            );
             const participants = [
               { participationId, displayName: account.displayName },
               { participationId: teammateParticipationId, displayName: 'Office Teammate' },
@@ -431,7 +494,7 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
                 conversationId: proximityConversationId,
                 kind: 'proximity',
                 state: 'joining',
-                version: 1,
+                version: joiningVersion,
                 generation: proximityGeneration,
                 mediaReady: false,
                 participants,
@@ -443,7 +506,7 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
                 conversationId: proximityConversationId,
                 kind: 'proximity',
                 state: 'active',
-                version: 2,
+                version: activeVersion,
                 generation: proximityGeneration,
                 mediaReady: true,
                 participants,
@@ -452,29 +515,84 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
           } else if (
             packet[0] === 'proximity:set-opt-in' &&
             !packet[1].payload?.enabled &&
+            proximityConversationActive &&
             !holdPair
           ) {
+            proximityConversationActive = false;
+            const endedVersion = ++proximityVersion;
+            areaSequence += 1;
+            socket.send(
+              `42/office,["conversation:areas",${JSON.stringify({
+                officeEpoch,
+                sequence: areaSequence,
+                areas: [],
+              })}]`,
+            );
             socket.send(
               `42/office,["conversation:update",${JSON.stringify({
                 officeEpoch,
                 conversationId: proximityConversationId,
                 kind: 'proximity',
                 state: 'ended',
-                version: 3,
+                version: endedVersion,
                 generation: proximityGeneration,
                 mediaReady: false,
                 participants: [],
               })}]`,
             );
           } else if (packet[0] === 'conversation:leave') {
+            proximityConversationActive = false;
+            const endedVersion = ++proximityVersion;
+            areaSequence += 1;
+            socket.send(
+              `42/office,["conversation:areas",${JSON.stringify({
+                officeEpoch,
+                sequence: areaSequence,
+                areas: [],
+              })}]`,
+            );
             socket.send(
               `42/office,["conversation:update",${JSON.stringify({
                 officeEpoch,
                 conversationId: proximityConversationId,
                 kind: 'proximity',
                 state: 'ended',
-                version: 3,
+                version: endedVersion,
                 generation: proximityGeneration,
+                mediaReady: false,
+                participants: [],
+              })}]`,
+            );
+          } else if (packet[0] === 'meeting:join' && packet[1].payload?.zoneId) {
+            const participants = [{ participationId, displayName: account.displayName }];
+            for (const [state, version, mediaReady] of [
+              ['joining', 1, false],
+              ['active', 2, true],
+            ] as const) {
+              socket.send(
+                `42/office,["conversation:update",${JSON.stringify({
+                  officeEpoch,
+                  conversationId: meetingConversationId,
+                  kind: 'meeting',
+                  zoneId: meetingZoneId,
+                  state,
+                  version,
+                  generation: meetingGeneration,
+                  mediaReady,
+                  participants,
+                })}]`,
+              );
+            }
+          } else if (packet[0] === 'meeting:leave') {
+            socket.send(
+              `42/office,["conversation:update",${JSON.stringify({
+                officeEpoch,
+                conversationId: meetingConversationId,
+                kind: 'meeting',
+                zoneId: meetingZoneId,
+                state: 'ended',
+                version: (packet[1].payload?.conversationVersion ?? 2) + 1,
+                generation: meetingGeneration,
                 mediaReady: false,
                 participants: [],
               })}]`,
@@ -588,11 +706,9 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await expect(page.locator('#office-map')).toBeFocused();
   await expect(page.getByRole('group', { name: 'Office controls' })).toBeVisible();
   await expect(page.getByRole('group', { name: 'Your availability' })).toBeVisible();
-  const microphoneButton = page.getByRole('button', { name: 'Activate proximity microphone' });
-  await expect(microphoneButton).toBeEnabled();
-  await expect(page.getByRole('button', { name: 'Enable nearby voice', exact: true })).toHaveCount(
-    0,
-  );
+  const optInButton = page.getByRole('button', { name: 'Opt in to nearby voice' });
+  const microphoneButton = page.locator('button[aria-describedby="office-microphone-help"]');
+  await expect(optInButton).toBeEnabled();
   await expect.poll(() => liveKitSocketAttempts).toBe(0);
   // A microphone click requests browser access even while pairing is held and no token exists.
   const captureRequestsBeforePermission = await page.evaluate(() => {
@@ -657,11 +773,8 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   );
   expect(mediaTokenRequests).toHaveLength(0);
   expect(liveKitSocketAttempts).toBe(0);
-  // After consent, the probe is stopped while waiting for a coworker; a second click cancels voice.
+  // Permission is granted from the explicit click; the probe stream is stopped while waiting.
   await microphoneButton.click();
-  const enabledMicrophone = page.getByRole('button', { name: 'Mute proximity microphone' });
-  await expect(enabledMicrophone).toHaveAttribute('aria-pressed', 'true');
-  await expect(enabledMicrophone.locator('svg')).toHaveClass(/lucide-mic/);
   await expect(page.locator('#office-microphone-help')).toContainText(
     'no microphone audio is being captured',
   );
@@ -673,17 +786,22 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
     ),
   ).toBe(true);
   expect(mediaTokenRequests).toHaveLength(0);
-  await enabledMicrophone.click();
-  await expect(microphoneButton).toHaveAttribute('aria-pressed', 'false');
-  expect(mediaTokenRequests).toHaveLength(0);
-  holdPair = false;
-  // The same icon now enables voice and starts signaling once a ready pair arrives.
+  await expect(page.getByRole('button', { name: 'Opt out of nearby voice' })).toBeVisible();
+  // Cancel the pending publish intent. This turns proximity opt-in off while there is no group.
   await microphoneButton.click();
+  expect(mediaTokenRequests).toHaveLength(0);
+  await expect(page.getByRole('button', { name: 'Opt in to nearby voice' })).toBeVisible();
+  holdPair = false;
+  await page.getByRole('button', { name: 'Opt in to nearby voice' }).click();
+  // The office creates a group on opt-in; its authorized member connects as a muted listener.
   await expect
     .poll(() => mediaTokenRequests)
     .toEqual([{ participationId, conversationVersion: 2 }]);
+  const proximityBoundary = page.locator(`[data-conversation-area="${proximityConversationId}"]`);
+  await expect(proximityBoundary).toHaveAttribute('r', '64');
+  await expect(proximityBoundary).toHaveAttribute('stroke-dasharray', '2 7');
   await expect.poll(() => liveKitSocketAttempts).toBeGreaterThan(0);
-  await expect(page.getByRole('alert')).toContainText('Proximity audio disconnected');
+  await expect(page.getByRole('alert')).toContainText('Could not connect proximity audio');
   const mapAfterMediaError = page.locator('.office-scene svg.office-map');
   await expect(mapAfterMediaError).toHaveCount(1);
   const movementCountAfterMediaError = movementInputs.length;
@@ -695,6 +813,7 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await page.getByRole('button', { name: 'Leave conversation' }).click();
   await expect.poll(() => officeEvents.includes('conversation:leave')).toBe(true);
   await expect(page.getByRole('button', { name: 'Leave conversation' })).toHaveCount(0);
+  await expect(proximityBoundary).toHaveCount(0);
   await expect(microphoneButton).toBeEnabled();
   await expect(page.getByRole('alert')).toHaveCount(0);
   await expect(mapAfterMediaError).toHaveCount(1);
@@ -705,6 +824,17 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
     .poll(() => movementInputs.length)
     .toBeGreaterThan(movementCountAfterConversationLeave);
   await page.keyboard.up('ArrowRight');
+  const meetingGroup = page.getByRole('group', { name: 'Meeting room' });
+  await expect(meetingGroup).toContainText('You are inside E2E meeting room');
+  await page.getByRole('button', { name: 'Join meeting' }).click();
+  await expect(meetingGroup).toContainText('1/6 participants');
+  await expect(meetingGroup).toContainText('E2E Person (you)');
+  await expect
+    .poll(() => meetingMediaTokenRequests)
+    .toEqual([{ participationId, conversationVersion: 2 }]);
+  await page.getByRole('button', { name: 'Leave meeting' }).click();
+  await expect.poll(() => officeEvents.includes('meeting:leave')).toBe(true);
+  await expect(page.getByRole('button', { name: 'Join meeting' })).toBeVisible();
   await page.getByRole('button', { name: 'Opt out of nearby voice' }).click();
   await expect(
     page.getByText('Nearby voice is off. Your microphone will stay off until you turn it on.'),
@@ -847,9 +977,14 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
       'In a 2-person conversation with Office Teammate. Turn on your microphone when ready.',
     ),
   ).toBeVisible();
-  await page.getByRole('button', { name: 'Activate proximity microphone' }).click();
-  await expect.poll(() => mediaTokenRequests).toHaveLength(2);
-  await expect.poll(() => liveKitSocketAttempts).toBe(2);
+  await page.locator('button[aria-describedby="office-microphone-help"]').click();
+  await expect
+    .poll(() => mediaTokenRequests)
+    .toEqual([
+      { participationId, conversationVersion: 2 },
+      { participationId, conversationVersion: 2 },
+    ]);
+  await expect.poll(() => liveKitSocketAttempts).toBe(3);
   await expect.poll(() => heldLiveKitSocketClosed).toBe(false);
   await expect(
     page.getByRole('button', { name: 'Cancel microphone setup', exact: true }),

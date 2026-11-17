@@ -1,6 +1,6 @@
 # Conversations
 
-Status: CP08.1–CP08.6 proximity pairing, guarded token issuance, UI control, real-SFU local tests and signed webhook observation implemented; release acceptance pending · Updated: 2026-11-11 · Target: M3–M4
+Status: Issue #12/#3 runtime and UI implemented in the current worktree; automated and real-SFU acceptance pending; not deployed · Updated: 2026-11-16
 
 ## Responsibility
 
@@ -8,7 +8,7 @@ Own the current authorized set for proximity pairs and fixed-zone group calls.
 
 - Owning module: Conversations / OfficeRuntime.
 - State location: Office-owner memory; current permits are exported to the media policy service, then installed in guard-local expiring state.
-- The office runtime owns ephemeral proximity-pair state. The API issues short-lived grants only after an exact guard installation ACK; no durable conversation records are stored. The policy bridge is process-local and production replication/fencing is not implemented. Apply the [baseline](../../README.md#source-precedence) and [cross-cutting rules](../../architecture/README.md#shared-invariants).
+- The office runtime owns ephemeral proximity and fixed-meeting state. The API issues short-lived grants only after an exact guard installation ACK; both conversation types use the same token and media-policy path. No durable conversation records are stored. The policy bridge is process-local and production replication/fencing is not implemented. Apply the [baseline](../../README.md#source-precedence) and [cross-cutting rules](../../architecture/README.md#shared-invariants).
 
 ## Proposed data
 
@@ -33,17 +33,18 @@ Own the current authorized set for proximity pairs and fixed-zone group calls.
 
 ## Invariants and lifecycle
 
-- One conversation per participant; deterministic one-to-one open-floor pairing after explicit opt-in.
-- Busy/away prevents automatic pairing; microphone and camera start off.
-- Implemented thresholds: join at 2 tiles, leave at 3 tiles, 500 ms exit debounce; availability loss/opt-out/disconnect is immediate and never debounced.
-- Proximity notices cover `joining`, `active`, and `ended`. `mediaReady` becomes true only after an exact, unexpired, single-use policy installation ACK for the still-current generation.
-- Pair end removes its members from subsequent policy snapshots. The process-level integration test confirms the guard rejects the prior token after installing the empty snapshot and after a fresh-epoch guard restart. CP08.5 measures real local LiveKit audio cutoff for leave and membership revocation. CP08.6 records signed SFU observations with event-ID dedupe and a monotonic per-room cursor; webhooks never authorize admission or alter permits.
-- Each conversation receives a random generation and a new pair receives a new generation. Membership/session changes reconcile through current runtime permits; persistent room-retirement records and restart recovery remain open.
+- One conversation per participant. Proximity pairing is deterministic; meetings require explicit room admission.
+- Proximity eligibility is Euclidean ≤2 tiles. The server fixes the center at the founding pair midpoint, starts radius at 2 tiles, grows one tile per accepted member to 6 tiles, and leaves immediately outside that same circle. Shrink one tile per departed member only when all retained members fit. Different circles never merge.
+- Busy/away blocks proximity and meeting admission. A meeting membership blocks proximity membership. Microphone capture/publication starts off; authorized members may connect as listeners while muted.
+- Fixed zones come from the trusted office map version. A meeting requires a live office participation physically inside the zone. Capacity is six. Leaving the zone, losing availability, disconnect or tenant authorization revocation removes membership; membership changes rotate the generation.
+- `conversation:update` is private to members. `conversation:areas` carries only versioned public geometry to authorized office clients. New and resynchronized clients receive current area state.
+- `mediaReady` becomes true only after exact, unexpired, single-use policy installation acknowledgement for the still-current generation. Both call types use microphone-only permits. Real-SFU boundary-departure cutoff for the new circle is pending.
+- Signed SFU webhooks remain observation-only. Process-local policy state, persistent room-retirement records and restart recovery remain release gates.
 
 ## Interface outline
 
-- `proximity:set-opt-in`, private `conversation:update`, and versioned `conversation:leave` are implemented for proximity state.
-- `POST /api/conversations/:conversationId/media-token` is implemented for current session/company/pair permits and microphone-only grants. Meeting admission remains unimplemented.
+- `proximity:set-opt-in`, `conversation:leave`, `meeting:join`, `meeting:leave`, private `conversation:update`, and public `conversation:areas` are implemented in the current worktree.
+- `POST /api/conversations/:conversationId/media-token` resolves either current proximity or meeting membership and issues only microphone-only grants.
 
 ## Planning question
 

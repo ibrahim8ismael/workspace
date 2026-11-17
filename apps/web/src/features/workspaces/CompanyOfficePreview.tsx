@@ -1,4 +1,13 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import {
   ArrowLeft,
   Bell,
@@ -26,7 +35,10 @@ import { MicrophonePermission } from '../office/microphone-permission';
 import { AppLink } from '../../routing/AppLink';
 import { officePath, type OfficePage } from '../../routing/routes';
 import { OfficeClient } from '../office/office-client';
-import { latestProximityConversation } from '../office/proximity-conversation';
+import {
+  latestMeetingConversation,
+  latestProximityConversation,
+} from '../office/proximity-conversation';
 import {
   ProximityAudioSession,
   type ProximityAudioStatus,
@@ -117,8 +129,16 @@ export function CompanyOfficePreview({
     latestConversation?.state === 'active' && latestConversation.mediaReady
       ? latestConversation
       : null;
-  const activeVoiceContextKey = activeProximityConversation
-    ? `${activeProximityConversation.conversationId}:${activeProximityConversation.version}:${activeProximityConversation.generation}:${participationId}`
+  const latestMeeting = latestMeetingConversation(state.conversationUpdates, participationId);
+  const activeMeetingConversation =
+    latestMeeting?.state === 'active' && latestMeeting.mediaReady ? latestMeeting : null;
+  const voiceMembership = latestMeeting ?? latestConversation;
+  const voiceMembershipKey = voiceMembership
+    ? `${voiceMembership.kind}:${voiceMembership.conversationId}:${participationId}`
+    : null;
+  const activeVoiceConversation = activeMeetingConversation ?? activeProximityConversation;
+  const activeVoiceContextKey = activeVoiceConversation
+    ? `${activeVoiceConversation.kind}:${activeVoiceConversation.conversationId}:${activeVoiceConversation.version}:${activeVoiceConversation.generation}:${participationId}`
     : null;
   const [officeActionError, setOfficeActionError] = useState('');
   const [officeActionPending, setOfficeActionPending] = useState(false);
@@ -132,10 +152,11 @@ export function CompanyOfficePreview({
   const [audioPlaybackBlocked, setAudioPlaybackBlocked] = useState(false);
   const [audioPlayback] = useState(() => new RemoteAudioPlayback(setAudioPlaybackBlocked));
   const [microphoneIntent, setMicrophoneIntent] = useState<string | null>(null);
-  const [microphoneAttempt, setMicrophoneAttempt] = useState(0);
   const remoteAudioContainer = useRef<HTMLDivElement>(null);
   const mediaContextKey = useRef<string | null>(null);
   const [speakingIds, setSpeakingIds] = useState<string[]>([]);
+  const microphoneMembershipKey = useRef(voiceMembershipKey);
+  const audioParticipation = useRef(participationId);
   const proximityAudio = useRef<ProximityAudioSession | null>(null);
   const [proximityAudioStage, setProximityAudioStage] = useState('authorizing');
   const proximityOptedIn = Boolean(
@@ -195,6 +216,7 @@ export function CompanyOfficePreview({
         setProximityAudioStatus(status);
         setProximityAudioError(error ?? '');
         if (status === 'error') microphonePermission.cancel();
+        if (status === 'muted' && error) setMicrophoneIntent(null);
       },
       (track, identity) => audioPlayback.attach(track, identity, remoteAudioContainer.current),
       undefined,
@@ -212,16 +234,29 @@ export function CompanyOfficePreview({
     };
   }, [audioPlayback, microphonePermission]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     mediaContextKey.current = activeVoiceContextKey;
     return () => {
       mediaContextKey.current = null;
-      void proximityAudio.current?.stop();
+      // Cut reception synchronously; the membership effect below decides whether microphone
+      // intent belongs to the new conversation.
+      void proximityAudio.current?.stop(true);
     };
-  }, [activeVoiceContextKey]);
+  }, [activeVoiceContextKey, voiceMembershipKey]);
 
   useEffect(() => {
-    if (!participationId) microphonePermission.cancel();
+    if (!participationId) {
+      microphonePermission.cancel();
+      return;
+    }
+    if (audioParticipation.current !== participationId) {
+      audioParticipation.current = participationId;
+      setMicrophoneIntent(null);
+      microphoneMembershipKey.current = null;
+      microphonePermission.cancel();
+      proximityAudio.current?.clearMicrophoneIntent();
+      void proximityAudio.current?.stop();
+    }
   }, [participationId, microphonePermission]);
 
   useEffect(() => {
@@ -234,17 +269,24 @@ export function CompanyOfficePreview({
   }, [permissionState.status, proximityAudioStatus, proximityAudioStage]);
 
   useEffect(() => {
-    if (
-      !participationId ||
-      microphoneIntent !== participationId ||
-      !proximityOptedIn ||
-      !activeProximityConversation ||
-      !activeVoiceContextKey ||
-      permissionState.status !== 'granted'
-    )
-      return;
+    const previousKey = microphoneMembershipKey.current;
+    if (previousKey === voiceMembershipKey) return;
+    microphoneMembershipKey.current = voiceMembershipKey;
+    // Keep a user-authorized microphone intent made before the first group forms. A later
+    // conversation replacement or forced leave must clear it; generation rotations keep the key.
+    if (previousKey) {
+      setMicrophoneIntent(null);
+      proximityAudio.current?.clearMicrophoneIntent();
+    }
+  }, [voiceMembershipKey]);
+
+  useEffect(() => {
+    const conversation = activeVoiceConversation;
+    if (!participationId || !conversation || !activeVoiceContextKey) return;
+    if (conversation.kind === 'proximity' && !proximityOptedIn) return;
     const contextKey = activeVoiceContextKey;
-    const conversation = activeProximityConversation;
+    if (microphoneIntent === participationId && permissionState.status === 'granted')
+      void proximityAudio.current?.setMicrophoneEnabled(true);
     void proximityAudio.current?.start(
       (signal) =>
         api.proximityMediaToken(
@@ -263,9 +305,8 @@ export function CompanyOfficePreview({
     api,
     participationId,
     microphoneIntent,
-    microphoneAttempt,
     proximityOptedIn,
-    activeProximityConversation,
+    activeVoiceConversation,
     activeVoiceContextKey,
     permissionState.status,
   ]);
@@ -325,8 +366,12 @@ export function CompanyOfficePreview({
     try {
       await client.setProximityOptIn(enabled);
       setProximityOptIn(enabled ? { participationId, enabled: true } : null);
-    } catch {
-      setProximityAudioError('Could not update nearby voice. Check your connection and retry.');
+    } catch (error) {
+      setProximityAudioError(
+        error instanceof Error && error.message === 'participation_conflict'
+          ? 'Leave the meeting before changing nearby voice.'
+          : 'Could not update nearby voice. Check your connection and retry.',
+      );
     } finally {
       setProximityPending(false);
     }
@@ -345,7 +390,40 @@ export function CompanyOfficePreview({
     );
   }
 
-  function toggleProximityMicrophone() {
+  async function leaveMeetingConversation() {
+    setMicrophoneIntent(null);
+    if (!activeMeetingConversation) return;
+    await proximityAudio.current?.stop();
+    await runOfficeAction(() =>
+      client.leaveMeeting(
+        activeMeetingConversation.conversationId,
+        activeMeetingConversation.version,
+      ),
+    );
+  }
+
+  async function joinMeeting(zoneId: string) {
+    setOfficeActionError('');
+    setOfficeActionPending(true);
+    try {
+      await client.joinMeeting(zoneId);
+    } catch (error) {
+      const code = error instanceof Error ? error.message : '';
+      setOfficeActionError(
+        code === 'room_full'
+          ? 'This meeting room is full.'
+          : code === 'zone_unavailable'
+            ? 'Move fully inside the meeting room and try again.'
+            : code === 'participation_conflict'
+              ? 'Leave your current voice conversation before joining this meeting.'
+              : 'Could not join the meeting. Check your connection and try again.',
+      );
+    } finally {
+      setOfficeActionPending(false);
+    }
+  }
+
+  function toggleConversationMicrophone() {
     const session = proximityAudio.current;
     if (!session || !participationId) return;
     if (permissionState.status === 'requesting') {
@@ -357,32 +435,36 @@ export function CompanyOfficePreview({
     }
     if (proximityAudioStatus === 'live') {
       setMicrophoneIntent(null);
-      void session.toggleMicrophone();
-    } else if (proximityAudioStatus === 'muted') {
-      setMicrophoneIntent(participationId);
-      void session.toggleMicrophone();
-    } else if (microphoneIntent === participationId && proximityAudioStatus !== 'error') {
-      microphonePermission.cancel();
-      setMicrophoneIntent(null);
-      void session.stop();
-      if (!activeProximityConversation && proximityOptedIn) void changeProximityOptIn();
-    } else {
-      setPermissionWaitLong(false);
-      setProximityAudioError('');
-      void microphonePermission.request().then((granted) => {
-        const current = client.getSnapshot();
-        if (
-          !granted ||
-          current.status !== 'connected' ||
-          current.ready?.participationId !== participationId
-        )
-          return;
-        setPermissionWaitLong(false);
-        setMicrophoneIntent(participationId);
-        setMicrophoneAttempt((attempt) => attempt + 1);
-        if (!proximityOptedIn) void changeProximityOptIn();
-      });
+      void session.setMicrophoneEnabled(false);
+      return;
     }
+    if (proximityAudioStatus === 'muted' && permissionState.status === 'granted') {
+      setMicrophoneIntent(participationId);
+      void session.setMicrophoneEnabled(true);
+      return;
+    }
+    if (microphoneIntent === participationId && proximityAudioStatus !== 'error') {
+      microphonePermission.cancel();
+      setPermissionWaitLong(false);
+      setMicrophoneIntent(null);
+      void session.setMicrophoneEnabled(false);
+      if (!activeVoiceConversation && proximityOptedIn) void changeProximityOptIn();
+      return;
+    }
+    setPermissionWaitLong(false);
+    setProximityAudioError('');
+    void microphonePermission.request().then((granted) => {
+      const current = client.getSnapshot();
+      if (
+        !granted ||
+        current.status !== 'connected' ||
+        current.ready?.participationId !== participationId
+      )
+        return;
+      setPermissionWaitLong(false);
+      setMicrophoneIntent(participationId);
+      if (!proximityOptedIn && !activeMeetingConversation) void changeProximityOptIn();
+    });
   }
 
   if (!connected) {
@@ -554,11 +636,8 @@ export function CompanyOfficePreview({
           : 'Nearby voice is off. Your microphone will stay off until you turn it on.';
   const microphoneEnabled =
     proximityVoiceEnabled &&
-    (proximityAudioStatus === 'live' ||
-      (microphoneIntent === participationId &&
-        proximityOptedIn &&
-        proximityAudioStatus !== 'error' &&
-        proximityAudioStatus !== 'muted'));
+    microphoneIntent === participationId &&
+    proximityAudioStatus === 'live';
   const microphoneHelp = !proximityVoiceEnabled
     ? 'Nearby voice is unavailable in this deployment.'
     : permissionState.status === 'requesting'
@@ -588,7 +667,9 @@ export function CompanyOfficePreview({
                 : proximityAudioStatus === 'live'
                   ? 'Your microphone is on.'
                   : proximityAudioStatus === 'muted'
-                    ? 'Your microphone is muted. Click to unmute.'
+                    ? activeVoiceConversation
+                      ? 'Connected and listening. Your microphone is off; click to unmute.'
+                      : 'Your microphone is muted. Click to unmute.'
                     : activeProximityConversation
                       ? 'Ready to talk. Click the microphone and allow browser access.'
                       : proximityOptedIn
@@ -596,6 +677,24 @@ export function CompanyOfficePreview({
                         : 'Turn on your microphone to enable nearby voice. Coworkers must enable voice and move nearby.';
   const self = snapshot.participants.find(
     (participant) => participant.participationId === ready.participationId,
+  );
+  const currentMeetingZone = self
+    ? (state.meetingZones?.zones.find((zone) => {
+        const tx = Math.floor(self.position.x / zone.tileSize);
+        const ty = Math.floor(self.position.y / zone.tileSize);
+        return (
+          tx >= zone.bounds.tx &&
+          tx < zone.bounds.tx + zone.bounds.width &&
+          ty >= zone.bounds.ty &&
+          ty < zone.bounds.ty + zone.bounds.height
+        );
+      }) ?? null)
+    : null;
+  const meetingMembers = activeMeetingConversation?.participants ?? [];
+  const meetingMemberNames = meetingMembers.map((participant) =>
+    participant.participationId === ready.participationId
+      ? `${participant.displayName} (you)`
+      : participant.displayName,
   );
   const sceneParticipants: Participant[] = snapshot.participants.map((participant) => ({
     id: participant.participationId,
@@ -791,7 +890,7 @@ export function CompanyOfficePreview({
                       className="dashboard-secondary"
                       type="button"
                       aria-pressed={proximityOptedIn}
-                      disabled={proximityPending}
+                      disabled={proximityPending || !!activeMeetingConversation}
                       onClick={() => void changeProximityOptIn()}
                     >
                       {proximityPending
@@ -800,6 +899,11 @@ export function CompanyOfficePreview({
                           ? 'Opt out of nearby voice'
                           : 'Opt in to nearby voice'}
                     </button>
+                  )}
+                  {activeMeetingConversation && (
+                    <span className="office-voice-help" role="status">
+                      Leave the meeting before opting into nearby voice.
+                    </span>
                   )}
                   {activeProximityConversation && (
                     <button
@@ -823,6 +927,64 @@ export function CompanyOfficePreview({
                 {proximityAudioError && (
                   <p className="office-action-error" role="alert">
                     {proximityAudioError}
+                  </p>
+                )}
+              </div>
+              <div role="group" aria-labelledby="office-meeting-title">
+                <h3 id="office-meeting-title">Meeting room</h3>
+                {activeMeetingConversation ? (
+                  <>
+                    <p className="office-voice-help">
+                      In {currentMeetingZone?.label ?? 'a meeting room'} · {meetingMembers.length}/
+                      {state.meetingZones?.zones.find(
+                        (zone) => zone.zoneId === activeMeetingConversation.zoneId,
+                      )?.capacity ?? 6}{' '}
+                      participants
+                    </p>
+                    <p className="office-voice-members" aria-label="Meeting participants">
+                      {meetingMemberNames.join(', ')}
+                    </p>
+                    <button
+                      className="dashboard-secondary"
+                      type="button"
+                      disabled={officeActionPending}
+                      onClick={() => void leaveMeetingConversation()}
+                    >
+                      Leave meeting
+                    </button>
+                  </>
+                ) : latestMeeting?.state === 'joining' ? (
+                  <p className="office-voice-help" role="status">
+                    Preparing secured meeting audio…
+                  </p>
+                ) : currentMeetingZone ? (
+                  <>
+                    <p className="office-voice-help">
+                      You are inside {currentMeetingZone.label}. Joining is explicit; your
+                      microphone stays off until you turn it on.
+                    </p>
+                    <button
+                      className="dashboard-secondary"
+                      type="button"
+                      disabled={officeActionPending || !!activeProximityConversation}
+                      onClick={() => void joinMeeting(currentMeetingZone.zoneId)}
+                    >
+                      {officeActionPending ? 'Joining…' : 'Join meeting'}
+                    </button>
+                  </>
+                ) : (
+                  <p className="office-voice-help">
+                    Move inside a meeting room to join its group call.
+                  </p>
+                )}
+                {activeProximityConversation && !activeMeetingConversation && (
+                  <p className="office-voice-help" role="status">
+                    Leave your nearby conversation before joining a meeting.
+                  </p>
+                )}
+                {officeActionError && (
+                  <p className="office-action-error" role="alert">
+                    {officeActionError}
                   </p>
                 )}
               </div>
@@ -957,6 +1119,7 @@ export function CompanyOfficePreview({
                     onSit={(seatId) => void runOfficeAction(() => client.sit(seatId))}
                     onStand={() => void runOfficeAction(() => client.stand())}
                     meetings={{}}
+                    conversationAreas={state.conversationAreas?.areas ?? []}
                     areaNames={{}}
                     onZoom={setZoom}
                     onAreaClick={() => {}}
@@ -968,6 +1131,7 @@ export function CompanyOfficePreview({
                       snapshot={state.snapshot}
                       localParticipationId={state.ready.participationId}
                       onMovement={(dx, dy) => client.move(dx, dy)}
+                      conversationAreas={state.conversationAreas?.areas ?? []}
                     />
                   </Suspense>
                 ) : (
@@ -1032,8 +1196,12 @@ export function CompanyOfficePreview({
                       title={microphoneHelp}
                       aria-describedby="office-microphone-help"
                       aria-pressed={microphoneEnabled}
-                      disabled={!proximityVoiceEnabled || proximityPending}
-                      onClick={toggleProximityMicrophone}
+                      disabled={
+                        !proximityVoiceEnabled ||
+                        proximityPending ||
+                        (!activeVoiceConversation && !proximityOptedIn)
+                      }
+                      onClick={toggleConversationMicrophone}
                     >
                       {microphoneEnabled ? <Mic size={19} /> : <MicOff size={19} />}
                     </button>

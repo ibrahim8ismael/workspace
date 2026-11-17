@@ -1,6 +1,14 @@
 # Proximity group conversations: rollout and rollback
 
-This release changes the office protocol, API pairing authority, browser roster handling, and media guard lifecycle together. It was deployed to the Gather Lite pilot on 2026-11-16 and passed a controlled three-user browser canary. This is evidence for the pilot host and test accounts; it is not a broad-release sign-off.
+## Issue #12/#3 worktree follow-up — 2026-11-16
+
+The current un-deployed worktree replaces the moving centroid/3-tile/500 ms proximity rule with an anchored midpoint circle, immediate shared-boundary departure, one-tile growth up to six tiles, safe whole-tile shrink, public ordered geometry snapshots and dotted outlines in both supported renderers. It also implements trusted fixed meeting-zone group admission and roster UI through the existing OfficeRuntime, conversation token route and media policy. Real-SFU cutoff, three-user room audio, and complete regression evidence must pass before this patch is considered accepted. The deployed pilot was not changed by this work.
+
+The office protocol is now version 3. Release the API/contracts and web bundle together; a version 2 tab must reload before it can reconnect. The existing guard permit format remains compatible and microphone-only, but verify the API's meeting permits and generation retirement end to end before rollout. No database schema migration is required: conversations and meeting membership are transient office-runtime state. Rollback drains the API epoch and office sockets, retains media-retirement state/volumes, then restores the prior v2 API/web images; never restore revoked session, ticket or media authorization state.
+
+## Protocol v2 pilot deployment (historical)
+
+The earlier pilot release changed the office protocol, API pairing authority, browser roster handling and media guard lifecycle. It was deployed to the Gather Lite pilot on 2026-11-16 and passed a controlled three-user browser canary. This is evidence for that pilot revision and those test accounts; it does not verify the un-deployed protocol v3 issue patch above or constitute broad-release sign-off.
 
 ## Verified pilot baseline
 
@@ -22,7 +30,7 @@ Post-deploy checks returned API health HTTP 200, kept unauthenticated `/rtc/v1/v
 
 ## Compatibility and release sequence
 
-The shared office protocol moves to version 2 because version 1 clients strictly reject proximity rosters larger than two. The API, shared contracts, web bundle, and media guard must be released as a coordinated set. A single API restart disconnects old office sockets; the new API rejects version 1 admission, so an old open tab must reload before it can rejoin. Caddy now sends `no-store` for the HTML entry point and long-lived immutable caching only for content-hashed `/assets/*` files.
+The earlier pilot rollout moved the protocol from version 1 to version 2. The current issue #12/#3 worktree advances it to version 3 for ordered public area snapshots and fixed meeting commands. That candidate requires coordinated API/contracts and web deployment; the current pilot remains on its deployed version until a separately authorized rollout. Existing tabs on protocol versions 1 or 2 must reload before joining a version 3 API. Treat the earlier rollout evidence below as historical evidence for the prior pilot, not verification of this candidate. Caddy's `no-store` HTML entry point and immutable content-hashed assets remain applicable.
 
 Before a canary:
 

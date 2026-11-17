@@ -1308,6 +1308,18 @@ leave cut off the measured stream within 81 ms. Initial Chrome↔Firefox tests f
 successful HTTPS grants, WebSocket signaling and TURN relay allocation. The loopback test-profile
 preference did not resolve that failure and has been removed.
 
+## Issue #12 / #3 worktree implementation — 2026-11-16
+
+This is an uncommitted follow-up on the existing `main` checkout, base revision `3d366097e2bae72c6586e2155fa5fc99764fc27a`. It has not been pushed or deployed. The office protocol advances to v3, so any future rollout must update API/contracts and web together. No persistent schema or migration changed.
+
+The prior proximity runtime recomputed the group's centroid as members moved, accepted membership through a three-tile leave radius, and held an out-of-range participant for a 500 ms debounce. A deterministic regression uses the same two positions: the moving centroid plus the old radius still admitted the distant participant, while the new anchored published circle removes membership on the first reconciliation. This confirms the server-side authorization boundary defect in code; it is not a measurement of the old deployment's received audio. The fix uses the founding-pair midpoint, a two-tile circle, one-tile bounded growth per added participant, safe whole-tile shrink, immediate departure, and generation rotation. Public ordered geometry snapshots carry no participant roster or media credentials.
+
+The same runtime now owns explicit, trusted-map meeting groups with six-person capacity, physical-zone and availability checks, private rosters, generation rotation and conflict isolation. The active Vivo SVG and Commons Phaser renderers draw dotted circles. Joining as a listener no longer implicitly enables microphone publishing; the client starts muted, preserves explicit mute during a generation rotation, and detaches remote tracks before disconnect cleanup.
+
+Validation on the local worktree: `pnpm check` passed (format, lint, typecheck, contract/world/media-spike suites, web tests, API suite with 101 passed and 1 skipped, and production builds). The focused office-runtime/proximity/meeting API tests passed 26/26. Full Playwright passed 2 tests and skipped 7 live/deployment tests; the mocked UI scenario covers meeting join/roster/leave and circle appearance/cleanup. The API and frontend local unit/integration checks do not verify actual SFU audio for this patch.
+
+The real-SFU test fixture could not run safely in this environment: it selects the unavailable `orbstack` Docker context, while the only available Docker host contains the running pilot. No test media containers were started on that host. Therefore the issue #12 decoded-audio cutoff is **unmeasured** against the ≤2 s maximum / p95 ≤1 s target, and fixed-room multi-client audio, old-grant denial, and meeting revocation remain open. No deployed acceptance is claimed. See [ACCEPTANCE.md](ACCEPTANCE.md), [MEDIA_ENFORCEMENT_EVIDENCE.md](MEDIA_ENFORCEMENT_EVIDENCE.md), and the [coordinated rollout/rollback note](PROXIMITY_GROUP_ROLLOUT.md).
+
 ### Firefox local media network correction (2026-11-11)
 
 The owner explicitly authorized moving media listeners beyond localhost while retaining local

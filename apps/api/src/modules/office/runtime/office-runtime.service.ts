@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import {
   OFFICE_LIMITS,
+  meetingZonesSchema,
   officeReadySchema,
   worldDeltaSchema,
   worldSnapshotSchema,
@@ -15,6 +16,7 @@ import { trustedOfficeMap } from '../office-map-registry.js';
 import type { TrustedOfficeMap } from '../office-map-registry.js';
 import { ProximityPairing } from './proximity-pairing.js';
 import type { PrivateConversationNotice, ProximityCandidate } from './proximity-pairing.js';
+import { MeetingConversations } from './meeting-conversations.js';
 
 export interface ConsumedOfficeTicket {
   userId: string;
@@ -53,6 +55,7 @@ interface OfficeRuntime {
   readonly participationByActor: Map<string, string>;
   readonly seats: Map<string, string | null>;
   readonly proximity: ProximityPairing;
+  readonly meetings: MeetingConversations;
   lastSimulationAt: number;
   lastBroadcastAt: number;
   readonly dirtyParticipants: Set<string>;
@@ -202,6 +205,11 @@ export class OfficeRuntimeService {
             participationByActor: new Map(),
             seats: this.emptySeats(map),
             proximity: new ProximityPairing(ticket.officeEpoch, map.geometry.tileSize),
+            meetings: new MeetingConversations(
+              ticket.officeEpoch,
+              map.geometry.zones.filter((zone) => zone.kind === 'meeting'),
+              map.geometry.tileSize,
+            ),
             lastSimulationAt: performance.now(),
             lastBroadcastAt: performance.now(),
             dirtyParticipants: new Set(),
@@ -431,13 +439,14 @@ export class OfficeRuntimeService {
     officeEpoch: string,
     enabled: boolean,
     now = performance.now(),
-  ): PrivateConversationNotice[] | 'stale_epoch' | 'unauthorized' {
+  ): PrivateConversationNotice[] | 'stale_epoch' | 'unauthorized' | 'participation_conflict' {
     const office = this.offices.get(officeId);
     const participant = office?.participants.get(participationId);
     if (!office || office.workspaceId !== workspaceId || office.officeEpoch !== officeEpoch)
       return 'stale_epoch';
     if (!participant || participant.userId !== userId || participant.socketId !== socketId)
       return 'unauthorized';
+    if (enabled && office.meetings.hasParticipant(participationId)) return 'participation_conflict';
     return office.proximity.setOptIn(
       participationId,
       enabled,
@@ -466,28 +475,62 @@ export class OfficeRuntimeService {
     return 'error' in result ? result.error : result;
   }
 
-  reconcileProximity(officeId: string, now = performance.now()): PrivateConversationNotice[] {
+  reconcileProximity(officeId: string): PrivateConversationNotice[] {
     const office = this.offices.get(officeId);
     if (!office) return [];
-    return office.proximity.reconcile(this.proximityCandidates(office), now);
+    const candidates = this.proximityCandidates(office);
+    const notices = office.meetings.reconcile(candidates);
+    notices.push(
+      ...office.proximity.setBlockedParticipants(office.meetings.participantIds(), candidates),
+    );
+    return notices;
   }
 
-  proximityMediaPermits() {
-    return [...this.offices.values()].flatMap((office) => office.proximity.mediaPermits());
+  conversationAreas(officeId: string) {
+    return this.offices.get(officeId)?.proximity.currentAreas() ?? null;
   }
 
-  proximityMediaParticipation(
+  meetingZones(officeId: string) {
+    const office = this.offices.get(officeId);
+    if (!office) return null;
+    return meetingZonesSchema.parse({
+      officeEpoch: office.officeEpoch,
+      mapVersion: office.mapVersion,
+      zones: office.map.geometry.zones
+        .filter((zone) => zone.kind === 'meeting')
+        .map((zone) => ({
+          zoneId: zone.zoneId,
+          label: zone.label,
+          bounds: zone.bounds,
+          tileSize: office.map.geometry.tileSize,
+          capacity: OFFICE_LIMITS.maxMeetingParticipants,
+        })),
+    });
+  }
+
+  conversationMediaPermits() {
+    return [...this.offices.values()].flatMap((office) => [
+      ...office.proximity.mediaPermits(),
+      ...office.meetings.mediaPermits(),
+    ]);
+  }
+
+  conversationMediaParticipation(
     participationId: string,
     conversationId: string,
     conversationVersion: number,
   ) {
     for (const office of this.offices.values()) {
       const participant = office.participants.get(participationId);
-      const conversation = office.proximity.mediaConversation(
-        participationId,
-        conversationId,
-        conversationVersion,
-      );
+      const candidates = this.proximityCandidates(office);
+      const conversation =
+        office.proximity.mediaConversation(participationId, conversationId, conversationVersion) ??
+        office.meetings.mediaConversation(
+          participationId,
+          conversationId,
+          conversationVersion,
+          candidates,
+        );
       if (!participant || !conversation) continue;
       return {
         participationId,
@@ -507,10 +550,79 @@ export class OfficeRuntimeService {
 
   activateProximityGeneration(generation: string): PrivateConversationNotice[] {
     for (const office of this.offices.values()) {
-      const notices = office.proximity.activateGeneration(generation);
+      const notices = [
+        ...office.proximity.activateGeneration(generation),
+        ...office.meetings.activateGeneration(generation),
+      ];
       if (notices.length > 0) return notices;
     }
     return [];
+  }
+
+  joinMeeting(
+    officeId: string,
+    workspaceId: string,
+    userId: string,
+    socketId: string,
+    participationId: string,
+    officeEpoch: string,
+    zoneId: string,
+  ):
+    | { notices: PrivateConversationNotice[] }
+    | 'stale_epoch'
+    | 'unauthorized'
+    | 'zone_unavailable'
+    | 'room_full'
+    | 'participation_conflict' {
+    const office = this.offices.get(officeId);
+    const participant = office?.participants.get(participationId);
+    if (!office || office.workspaceId !== workspaceId || office.officeEpoch !== officeEpoch)
+      return 'stale_epoch';
+    if (!participant || participant.userId !== userId || participant.socketId !== socketId)
+      return 'unauthorized';
+    if (office.proximity.hasParticipant(participationId)) return 'participation_conflict';
+    const candidate = this.proximityCandidates(office).find(
+      (item) => item.participationId === participationId,
+    );
+    if (!candidate) return 'unauthorized';
+    const result = office.meetings.join(candidate, zoneId);
+    if (typeof result === 'string') return result;
+    const notices = [...result.notices];
+    notices.push(
+      ...office.proximity.setBlockedParticipants(
+        office.meetings.participantIds(),
+        this.proximityCandidates(office),
+      ),
+    );
+    return { notices };
+  }
+
+  leaveMeeting(
+    officeId: string,
+    workspaceId: string,
+    userId: string,
+    socketId: string,
+    participationId: string,
+    officeEpoch: string,
+    conversationId: string,
+    conversationVersion: number,
+  ): { notices: PrivateConversationNotice[] } | 'stale_epoch' | 'stale_version' | 'unauthorized' {
+    const office = this.offices.get(officeId);
+    const participant = office?.participants.get(participationId);
+    if (!office || office.workspaceId !== workspaceId || office.officeEpoch !== officeEpoch)
+      return 'stale_epoch';
+    if (!participant || participant.userId !== userId || participant.socketId !== socketId)
+      return 'unauthorized';
+    const result = office.meetings.leave(participationId, conversationId, conversationVersion);
+    if (typeof result === 'string') return result;
+    const notices = [...result.notices];
+    notices.push(
+      ...office.proximity.setBlockedParticipants(
+        office.meetings.participantIds(),
+        this.proximityCandidates(office),
+      ),
+    );
+    return { notices };
   }
 
   resync(

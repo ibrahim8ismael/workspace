@@ -112,14 +112,17 @@ describe('session-bound proximity audio client', () => {
     await session.start(fetchGrant, () => true, 2, grant.generation);
     expect(fetchGrant).toHaveBeenCalledTimes(1);
     expect(fake.room.connect).toHaveBeenCalledWith(grant.serverUrl, grant.token);
-    expect(fake.room.setMicrophoneEnabled).toHaveBeenNthCalledWith(1, true);
-    expect(statuses.at(-1)).toBe('live');
+    expect(fake.room.prepareMicrophone).toBeUndefined();
+    expect(fake.room.setMicrophoneEnabled).toHaveBeenNthCalledWith(1, false);
+    expect(statuses.at(-1)).toBe('muted');
 
-    await session.toggleMicrophone();
-    expect(fake.room.setMicrophoneEnabled).toHaveBeenNthCalledWith(2, false);
+    await session.setMicrophoneEnabled(true);
+    expect(fake.room.setMicrophoneEnabled).toHaveBeenNthCalledWith(2, true);
+    expect(statuses.at(-1)).toBe('live');
+    await session.setMicrophoneEnabled(false);
+    expect(fake.room.setMicrophoneEnabled).toHaveBeenNthCalledWith(3, false);
     expect(statuses.at(-1)).toBe('muted');
     await session.stop();
-    expect(fake.room.setMicrophoneEnabled).toHaveBeenLastCalledWith(false);
     expect(fake.room.disconnect).toHaveBeenCalledTimes(1);
     expect(statuses.at(-1)).toBe('off');
   });
@@ -138,6 +141,7 @@ describe('session-bound proximity audio client', () => {
       (stage, elapsedMs) => diagnostics.push([stage, elapsedMs]),
     );
 
+    await session.setMicrophoneEnabled(true);
     await session.start(
       async () => grant,
       () => true,
@@ -160,7 +164,7 @@ describe('session-bound proximity audio client', () => {
     await session.stop();
   });
 
-  it('requests microphone consent before connecting and does not connect after denial', async () => {
+  it('keeps the authorized listener connected when a later microphone enable is denied', async () => {
     const fake = createRoom();
     const order: string[] = [];
     fake.room.prepareMicrophone = vi.fn(async () => {
@@ -181,48 +185,69 @@ describe('session-bound proximity audio client', () => {
       2,
       grant.generation,
     );
-    expect(order).toEqual(['capture', 'connect']);
-    await session.stop();
-    vi.mocked(fake.room.connect).mockClear();
-    fake.room.prepareMicrophone = vi.fn(async () => {
-      throw new DOMException('Denied', 'NotAllowedError');
+    expect(order).toEqual(['connect']);
+    vi.mocked(fake.room.setMicrophoneEnabled).mockImplementationOnce(async (enabled) => {
+      if (enabled) throw new DOMException('Denied', 'NotAllowedError');
     });
+    await session.setMicrophoneEnabled(true);
+    expect(fake.room.disconnect).not.toHaveBeenCalled();
+    expect(statuses.at(-1)).toEqual({
+      status: 'muted',
+      error: 'Microphone access was denied. Allow microphone access in your browser and try again.',
+    });
+    await session.stop();
+  });
+
+  it('preserves an explicit mute across a conversation generation replacement', async () => {
+    const fake = createRoom();
+    const session = new ProximityAudioSession(
+      () => undefined,
+      () => vi.fn(),
+      async () => fake.room,
+    );
+    await session.setMicrophoneEnabled(true);
     await session.start(
       async () => grant,
       () => true,
       2,
       grant.generation,
     );
-    expect(fake.room.connect).not.toHaveBeenCalled();
-    expect(statuses.at(-1)).toEqual({
-      status: 'error',
-      error: 'Microphone access was denied. Allow microphone access in your browser and try again.',
-    });
+    expect(fake.room.setMicrophoneEnabled).toHaveBeenLastCalledWith(true);
+    await session.setMicrophoneEnabled(false);
+    await session.stop(true);
+    await session.start(
+      async () => ({ ...grant, conversationVersion: 3 }),
+      () => true,
+      3,
+      grant.generation,
+    );
+    expect(fake.room.setMicrophoneEnabled).toHaveBeenLastCalledWith(false);
+    await session.stop();
   });
 
-  it('cancels a pending capture request without connecting after it resolves', async () => {
+  it('cancels a pending token request when the office conversation ends', async () => {
     const fake = createRoom();
-    let resolveCapture!: () => void;
-    fake.room.prepareMicrophone = vi.fn(
-      () =>
-        new Promise<void>((resolve) => {
-          resolveCapture = resolve;
-        }),
-    );
     const session = new ProximityAudioSession(
       () => undefined,
       () => vi.fn(),
       async () => fake.room,
     );
+    let resolveGrant!: (value: typeof grant) => void;
+    let observedSignal: AbortSignal | undefined;
     const start = session.start(
-      async () => grant,
+      (signal) => {
+        observedSignal = signal;
+        return new Promise((resolve) => {
+          resolveGrant = resolve;
+        });
+      },
       () => true,
       2,
       grant.generation,
     );
-    await vi.waitFor(() => expect(fake.room.prepareMicrophone).toHaveBeenCalled());
     await session.stop();
-    resolveCapture();
+    expect(observedSignal?.aborted).toBe(true);
+    resolveGrant(grant);
     await start;
     expect(fake.room.connect).not.toHaveBeenCalled();
   });

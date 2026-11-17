@@ -148,6 +148,7 @@ export class ProximityAudioSession {
   private request: AbortController | null = null;
   private generation = 0;
   private microphoneEnabled = false;
+  private microphoneDesired = false;
   private listeners: Array<() => void> = [];
   private remoteTracks = new Map<ProximityRemoteAudioTrack, () => void>();
   private status: ProximityAudioStatus = 'off';
@@ -198,12 +199,19 @@ export class ProximityAudioSession {
       }
       this.room = nextRoom;
       this.bindRoom(nextRoom, attempt);
-      this.onStage('capturing');
-      this.diagnose('capture-requested', performance.now() - startedAt);
-      // Request capture before ICE: Firefox can withhold local candidates without device consent.
-      // Publication still waits for the authorized guarded room connection.
-      await nextRoom.prepareMicrophone?.();
-      this.diagnose('capture-resolved', performance.now() - startedAt);
+      let microphoneError: string | undefined;
+      if (this.microphoneDesired) {
+        this.onStage('capturing');
+        this.diagnose('capture-requested', performance.now() - startedAt);
+        // Capture is requested only after an explicit microphone action.
+        try {
+          await nextRoom.prepareMicrophone?.();
+          this.diagnose('capture-resolved', performance.now() - startedAt);
+        } catch (error) {
+          this.microphoneDesired = false;
+          microphoneError = mediaError(error);
+        }
+      }
       if (!this.isCurrent(attempt, isCurrent)) {
         await this.releaseRoom(nextRoom);
         return;
@@ -215,15 +223,27 @@ export class ProximityAudioSession {
         await this.releaseRoom(nextRoom);
         return;
       }
-      this.onStage('publishing');
-      await nextRoom.setMicrophoneEnabled(true);
-      this.diagnose('microphone-published', performance.now() - startedAt);
+      if (this.microphoneDesired) this.onStage('publishing');
+      try {
+        await nextRoom.setMicrophoneEnabled(this.microphoneDesired);
+        if (this.microphoneDesired)
+          this.diagnose('microphone-published', performance.now() - startedAt);
+      } catch (error) {
+        if (!this.isCurrent(attempt, isCurrent)) {
+          await this.releaseRoom(nextRoom);
+          return;
+        }
+        // A denied microphone must not prevent listening to the authorized room.
+        this.microphoneDesired = false;
+        this.microphoneEnabled = false;
+        microphoneError = mediaError(error);
+      }
       if (!this.isCurrent(attempt, isCurrent)) {
         await this.releaseRoom(nextRoom);
         return;
       }
-      this.microphoneEnabled = true;
-      this.setState('live');
+      this.microphoneEnabled = this.microphoneDesired;
+      this.setState(this.microphoneEnabled ? 'live' : 'muted', microphoneError);
     } catch (error) {
       if (attempt !== this.generation) return;
       if (nextRoom) await this.releaseRoom(nextRoom);
@@ -234,9 +254,18 @@ export class ProximityAudioSession {
   }
 
   async toggleMicrophone() {
+    await this.setMicrophoneEnabled(!this.microphoneDesired);
+  }
+
+  clearMicrophoneIntent() {
+    this.microphoneDesired = false;
+    this.microphoneEnabled = false;
+  }
+
+  async setMicrophoneEnabled(enabled: boolean) {
+    this.microphoneDesired = enabled;
     const room = this.room;
-    if (!room || !['live', 'muted'].includes(this.status)) return;
-    const enabled = !this.microphoneEnabled;
+    if (!room || this.status === 'connecting') return;
     const attempt = this.generation;
     try {
       await room.setMicrophoneEnabled(enabled);
@@ -245,15 +274,22 @@ export class ProximityAudioSession {
       this.setState(enabled ? 'live' : 'muted');
     } catch (error) {
       if (attempt !== this.generation || this.room !== room) return;
-      await this.releaseRoom(room);
-      this.setState('error', mediaError(error));
+      if (enabled) {
+        this.microphoneDesired = false;
+        this.microphoneEnabled = false;
+        this.setState('muted', mediaError(error));
+      } else {
+        await this.releaseRoom(room);
+        this.setState('error', mediaError(error));
+      }
     }
   }
 
-  async stop() {
+  async stop(preserveMicrophoneIntent = false) {
     this.generation += 1;
     this.request?.abort();
     this.request = null;
+    if (!preserveMicrophoneIntent) this.microphoneDesired = false;
     const room = this.room;
     if (room) await this.releaseRoom(room);
     this.setState('off');
@@ -307,12 +343,10 @@ export class ProximityAudioSession {
     for (const unsubscribe of this.listeners.splice(0)) unsubscribe();
     for (const track of this.remoteTracks.keys()) this.detachRemoteTrack(track);
     this.microphoneEnabled = false;
-    try {
-      await room.setMicrophoneEnabled(false);
-    } catch {
-      // Disconnect still stops local tracks if LiveKit cannot send the mute update.
-    }
-    await room.disconnect().catch(() => undefined);
+    // Disconnect now: never wait for a mute RPC before cutting remote reception.
+    const disconnected = room.disconnect().catch(() => undefined);
+    void room.setMicrophoneEnabled(false).catch(() => undefined);
+    await disconnected;
   }
 
   private detachRemoteTrack(track: ProximityRemoteAudioTrack) {

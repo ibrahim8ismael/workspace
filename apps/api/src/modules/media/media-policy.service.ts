@@ -55,7 +55,7 @@ export class MediaPolicyService {
     }
     invariant(now - this.lastPullAt >= 100, 429, 'rate_limited');
 
-    const permits = this.runtime.proximityMediaPermits();
+    const permits = this.runtime.conversationMediaPermits();
     invariant(permits.length <= 256, 503, 'media_unavailable');
     const snapshot = mediaPolicySnapshotSchema.parse({
       ...challenge,

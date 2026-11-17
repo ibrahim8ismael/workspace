@@ -301,6 +301,19 @@ async function officePairPositions(page: Page, firstName: string, secondName: st
   );
 }
 
+async function officeConversationArea(page: Page) {
+  return page.locator('.office-scene svg.office-map').evaluate((element) => {
+    const circle = element.querySelector<SVGCircleElement>('circle[data-conversation-area]');
+    if (!circle) return null;
+    return {
+      id: circle.getAttribute('data-conversation-area'),
+      version: Number(circle.getAttribute('data-area-version')),
+      center: { x: Number(circle.getAttribute('cx')), y: Number(circle.getAttribute('cy')) },
+      radius: Number(circle.getAttribute('r')),
+    };
+  });
+}
+
 async function startPositionRenderProbe(page: Page, displayName: string) {
   return page.evaluate((name) => {
     const svg = document.querySelector<SVGSVGElement>('.office-scene svg.office-map');
@@ -1276,14 +1289,16 @@ test('mounted Vivo nearby audio ends outside and resumes after proximity re-entr
     const memberMap = memberPage.locator('.office-scene svg.office-map');
     await ownerPage.getByRole('button', { name: 'Opt in to nearby voice' }).click();
     await memberPage.getByRole('button', { name: 'Opt in to nearby voice' }).click();
-    await expect(
-      ownerPage.getByText(`Paired with ${memberName}. Turn on your microphone when ready.`),
-    ).toBeVisible({ timeout: 15_000 });
-    await expect(
-      memberPage.getByText(`Paired with ${ownerName}. Turn on your microphone when ready.`),
-    ).toBeVisible({ timeout: 15_000 });
-    await ownerPage.getByRole('button', { name: 'Activate proximity microphone' }).click();
-    await memberPage.getByRole('button', { name: 'Activate proximity microphone' }).click();
+    await expect(ownerPage.locator('.office-voice-status')).toContainText(
+      'In a 2-person conversation',
+      { timeout: 15_000 },
+    );
+    await expect(memberPage.locator('.office-voice-status')).toContainText(
+      'In a 2-person conversation',
+      { timeout: 15_000 },
+    );
+    await ownerPage.locator('button[aria-describedby="office-microphone-help"]').click();
+    await memberPage.locator('button[aria-describedby="office-microphone-help"]').click();
     await expect(ownerPage.locator('#office-microphone-help')).toHaveText(
       'Your microphone is on.',
       {
@@ -1341,125 +1356,169 @@ test('mounted Vivo nearby audio ends outside and resumes after proximity re-entr
       return currentPair();
     };
 
-    let withinExitRadius = initialPair;
-    for (let step = 0; step < 5; step += 1) {
-      withinExitRadius = await moveRightStep();
-      const distance = Math.hypot(
-        withinExitRadius.first.x - withinExitRadius.second.x,
-        withinExitRadius.first.y - withinExitRadius.second.y,
-      );
-      if (distance > 64) break;
-    }
-    const withinRadiusPx = Math.hypot(
-      withinExitRadius.first.x - withinExitRadius.second.x,
-      withinExitRadius.first.y - withinExitRadius.second.y,
-    );
-    expect(withinRadiusPx).toBeGreaterThan(64);
-    expect(withinRadiusPx).toBeLessThanOrEqual(96);
-    await expect(ownerPage.getByRole('button', { name: 'Leave conversation' })).toBeVisible();
-    await expect(memberPage.getByRole('button', { name: 'Leave conversation' })).toBeVisible();
-    const activeAtBoundary = await Promise.all([
-      readRemoteAudioProbe(ownerPage),
-      readRemoteAudioProbe(memberPage),
-    ]);
-    expect(activeAtBoundary.every((probe) => probe.lastActiveAt > Date.now() - 1000)).toBe(true);
+    const cutoffUpperBoundsMs: number[] = [];
+    let area = await officeConversationArea(ownerPage);
+    expect(area).not.toBeNull();
+    expect(area?.radius).toBe(64);
 
-    let outsideRadius = withinExitRadius;
-    for (let step = 0; step < 8; step += 1) {
-      outsideRadius = await moveRightStep();
-      const distance = Math.hypot(
-        outsideRadius.first.x - outsideRadius.second.x,
-        outsideRadius.first.y - outsideRadius.second.y,
+    for (let cycle = 0; cycle < 5; cycle += 1) {
+      area = await officeConversationArea(ownerPage);
+      expect(area).not.toBeNull();
+      const activeArea = area!;
+      let outsideRadius = await currentPair();
+      let leaveRequestedAt = 0;
+      for (let step = 0; step < 9; step += 1) {
+        const before = await currentPair();
+        const memberDistance = Math.hypot(
+          before.second.x - activeArea.center.x,
+          before.second.y - activeArea.center.y,
+        );
+        if (memberDistance > activeArea.radius) {
+          outsideRadius = before;
+          break;
+        }
+        // Mark both actual decoded streams immediately before the step that crosses the
+        // server-published circle. This is a conservative upper bound on cutoff latency.
+        const requestedAt = await markRemoteAudioStopRequested(memberPage);
+        await markRemoteAudioStopRequested(ownerPage);
+        const after = await moveRightStep();
+        const afterDistance = Math.hypot(
+          after.second.x - activeArea.center.x,
+          after.second.y - activeArea.center.y,
+        );
+        outsideRadius = after;
+        if (afterDistance > activeArea.radius) {
+          leaveRequestedAt = requestedAt;
+          break;
+        }
+      }
+      const outsideDistance = Math.hypot(
+        outsideRadius.second.x - activeArea.center.x,
+        outsideRadius.second.y - activeArea.center.y,
       );
-      if (distance > 96) break;
-    }
-    const outsideDistance = Math.hypot(
-      outsideRadius.first.x - outsideRadius.second.x,
-      outsideRadius.first.y - outsideRadius.second.y,
-    );
-    expect(outsideDistance).toBeGreaterThan(96);
-    await expect(ownerPage.getByRole('button', { name: 'Leave conversation' })).toHaveCount(0, {
-      timeout: 10_000,
-    });
-    await expect(memberPage.getByRole('button', { name: 'Leave conversation' })).toHaveCount(0, {
-      timeout: 10_000,
-    });
-    await expect(ownerRemoteAudio).toHaveCount(0, { timeout: 10_000 });
-    await expect(memberRemoteAudio).toHaveCount(0, { timeout: 10_000 });
-    await expect(
-      ownerPage.getByText('Looking for a nearby coworker. Your microphone is off.'),
-    ).toBeVisible();
-
-    await stopRemoteAudioProbe(ownerPage);
-    await stopRemoteAudioProbe(memberPage);
-    console.info(
-      `CP08.5 live nearby audio separation: ${JSON.stringify({
-        initialRadiusPx: Math.hypot(
-          initialPair.first.x - initialPair.second.x,
-          initialPair.first.y - initialPair.second.y,
-        ),
-        withinExitRadiusPx: withinRadiusPx,
-        outsideExitRadiusPx: outsideDistance,
-        ownerPosition: outsideRadius.first,
-        memberPosition: outsideRadius.second,
-      })}`,
-    );
-    let nearAgain = outsideRadius;
-    await memberMap.focus();
-    await memberPage.keyboard.down('ArrowLeft');
-    await expect
-      .poll(
-        async () => {
-          nearAgain = await currentPair();
+      expect(outsideDistance).toBeGreaterThan(activeArea.radius);
+      expect(leaveRequestedAt).toBeGreaterThan(0);
+      await expect(ownerPage.getByRole('button', { name: 'Leave conversation' })).toHaveCount(0, {
+        timeout: 10_000,
+      });
+      await expect(memberPage.getByRole('button', { name: 'Leave conversation' })).toHaveCount(0, {
+        timeout: 10_000,
+      });
+      await expect(ownerRemoteAudio).toHaveCount(0, { timeout: 10_000 });
+      await expect(memberRemoteAudio).toHaveCount(0, { timeout: 10_000 });
+      await expect(ownerPage.locator('circle[data-conversation-area]')).toHaveCount(0, {
+        timeout: 10_000,
+      });
+      await expect(memberPage.locator('circle[data-conversation-area]')).toHaveCount(0, {
+        timeout: 10_000,
+      });
+      await expect
+        .poll(async () => {
+          const [ownerProbe, memberProbe] = await Promise.all([
+            readRemoteAudioProbe(ownerPage),
+            readRemoteAudioProbe(memberPage),
+          ]);
           return (
-            nearAgain.epoch === outsideRadius.epoch &&
-            Math.hypot(
-              nearAgain.first.x - nearAgain.second.x,
-              nearAgain.first.y - nearAgain.second.y,
-            ) <= 64
+            ownerProbe.firstSilentAfterStopAt > 0 &&
+            ownerProbe.currentSilentMs >= 500 &&
+            memberProbe.firstSilentAfterStopAt > 0 &&
+            memberProbe.currentSilentMs >= 500
           );
-        },
-        { timeout: 15_000 },
-      )
-      .toBe(true);
-    await memberPage.keyboard.up('ArrowLeft');
-    await memberPage.waitForTimeout(200);
-    nearAgain = await currentPair();
-    const reentryDistance = Math.hypot(
-      nearAgain.first.x - nearAgain.second.x,
-      nearAgain.first.y - nearAgain.second.y,
-    );
-    expect(reentryDistance).toBeLessThanOrEqual(64);
-    await expect(ownerPage.getByRole('button', { name: 'Leave conversation' })).toBeVisible({
-      timeout: 10_000,
-    });
-    await expect(memberPage.getByRole('button', { name: 'Leave conversation' })).toBeVisible({
-      timeout: 10_000,
-    });
-    if (await ownerPage.getByRole('button', { name: 'Activate proximity microphone' }).isVisible())
-      await ownerPage.getByRole('button', { name: 'Activate proximity microphone' }).click();
-    if (await memberPage.getByRole('button', { name: 'Activate proximity microphone' }).isVisible())
-      await memberPage.getByRole('button', { name: 'Activate proximity microphone' }).click();
-    await expect(ownerRemoteAudio).toHaveCount(1, { timeout: 15_000 });
-    await expect(memberRemoteAudio).toHaveCount(1, { timeout: 15_000 });
-    await startRemoteAudioProbe(ownerPage);
-    await startRemoteAudioProbe(memberPage);
-    await expect
-      .poll(async () => {
-        const [ownerProbe, memberProbe] = await Promise.all([
-          readRemoteAudioProbe(ownerPage),
-          readRemoteAudioProbe(memberPage),
-        ]);
-        return Math.min(ownerProbe.activeSamples, memberProbe.activeSamples);
-      })
-      .toBeGreaterThan(10);
+        })
+        .toBe(true);
+      const stoppedAudio = await Promise.all([
+        readRemoteAudioProbe(ownerPage),
+        readRemoteAudioProbe(memberPage),
+      ]);
+      const cutoffUpperBoundMs = Math.max(
+        ...stoppedAudio.map((probe) => probe.firstSilentAfterStopAt - leaveRequestedAt),
+      );
+      cutoffUpperBoundsMs.push(cutoffUpperBoundMs);
+      console.info(
+        `Issue #12 audio departure ${cycle + 1}: ${JSON.stringify({
+          cutoffUpperBoundMs,
+          outsideDistance,
+          radius: activeArea.radius,
+        })}`,
+      );
+      expect(
+        cutoffUpperBoundMs,
+        `Audio cutoff upper bound: ${cutoffUpperBoundMs}ms`,
+      ).toBeLessThanOrEqual(2000);
+      await stopRemoteAudioProbe(ownerPage);
+      await stopRemoteAudioProbe(memberPage);
+
+      if (cycle < 4) {
+        await memberMap.focus();
+        await memberPage.keyboard.down('ArrowLeft');
+        await expect
+          .poll(
+            async () => {
+              const pair = await currentPair();
+              return (
+                pair.epoch === outsideRadius.epoch &&
+                Math.hypot(pair.first.x - pair.second.x, pair.first.y - pair.second.y) <= 64
+              );
+            },
+            { timeout: 15_000 },
+          )
+          .toBe(true);
+        await memberPage.keyboard.up('ArrowLeft');
+        await expect(ownerPage.getByRole('button', { name: 'Leave conversation' })).toBeVisible({
+          timeout: 10_000,
+        });
+        await expect(memberPage.getByRole('button', { name: 'Leave conversation' })).toBeVisible({
+          timeout: 10_000,
+        });
+        const reenteredArea = await officeConversationArea(ownerPage);
+        expect(reenteredArea).not.toBeNull();
+        expect(reenteredArea?.id).not.toBe(activeArea.id);
+        await expect(
+          ownerPage.locator('button[aria-describedby="office-microphone-help"]'),
+        ).toHaveAttribute('aria-pressed', 'false');
+        await expect(
+          memberPage.locator('button[aria-describedby="office-microphone-help"]'),
+        ).toHaveAttribute('aria-pressed', 'false');
+        await ownerPage.locator('button[aria-describedby="office-microphone-help"]').click();
+        await memberPage.locator('button[aria-describedby="office-microphone-help"]').click();
+        await expect(ownerPage.locator('#office-microphone-help')).toHaveText(
+          'Your microphone is on.',
+          {
+            timeout: 20_000,
+          },
+        );
+        await expect(memberPage.locator('#office-microphone-help')).toHaveText(
+          'Your microphone is on.',
+          {
+            timeout: 20_000,
+          },
+        );
+        await expect(ownerRemoteAudio).toHaveCount(1, { timeout: 15_000 });
+        await expect(memberRemoteAudio).toHaveCount(1, { timeout: 15_000 });
+        await startRemoteAudioProbe(ownerPage);
+        await startRemoteAudioProbe(memberPage);
+        await expect
+          .poll(async () => {
+            const [ownerProbe, memberProbe] = await Promise.all([
+              readRemoteAudioProbe(ownerPage),
+              readRemoteAudioProbe(memberPage),
+            ]);
+            return Math.min(ownerProbe.activeSamples, memberProbe.activeSamples);
+          })
+          .toBeGreaterThan(10);
+      }
+    }
+
     console.info(
-      `CP08.5 live nearby audio boundary: ${JSON.stringify({
-        withinExitRadiusPx: withinRadiusPx,
-        outsideExitRadiusPx: outsideDistance,
-        reentryRadiusPx: reentryDistance,
-        pairEndedOutsideRadius: true,
-        newPairAndDecodedAudioOnReentry: true,
+      `Issue #12 live audio boundary: ${JSON.stringify({
+        cutoffUpperBoundsMs,
+        sampleCount: cutoffUpperBoundsMs.length,
+        empiricalP95Ms: [...cutoffUpperBoundsMs].sort((a, b) => a - b)[
+          Math.ceil(cutoffUpperBoundsMs.length * 0.95) - 1
+        ],
+        radius: 64,
+        circleRadiusPixels: area?.radius,
+        reentryKeptMicrophoneMutedUntilExplicitAction: true,
       })}`,
     );
 
@@ -1981,8 +2040,15 @@ test('mounted Vivo joins an established pair into a three-person guarded audio g
     for (const page of pages)
       await expect(page.getByText('3 people in the office')).toBeVisible({ timeout: 20_000 });
 
-    await pages[0]!.getByRole('button', { name: 'Activate proximity microphone' }).click();
-    await pages[1]!.getByRole('button', { name: 'Activate proximity microphone' }).click();
+    await pages[0]!.getByRole('button', { name: 'Opt in to nearby voice' }).click();
+    await pages[1]!.getByRole('button', { name: 'Opt in to nearby voice' }).click();
+    for (const index of [0, 1]) {
+      await expect(pages[index]!.locator('.office-voice-status')).toContainText(
+        '2-person conversation',
+        { timeout: 30_000 },
+      );
+      await pages[index]!.locator('button[aria-describedby="office-microphone-help"]').click();
+    }
     for (const index of [0, 1]) {
       await expect(pages[index]!.locator('#office-microphone-help')).toHaveText(
         'Your microphone is on.',
@@ -2005,16 +2071,32 @@ test('mounted Vivo joins an established pair into a three-person guarded audio g
     audioProbePages.length = 0;
 
     const thirdJoinStartedAt = Date.now();
-    await pages[2]!.getByRole('button', { name: 'Activate proximity microphone' }).click();
-    for (const page of pages) {
+    await pages[2]!.getByRole('button', { name: 'Opt in to nearby voice' }).click();
+    for (let index = 0; index < pages.length; index += 1) {
+      const page = pages[index]!;
       await expect(page.locator('.office-voice-status')).toContainText('3-person conversation', {
         timeout: 30_000,
       });
-      await expect(page.locator('#office-microphone-help')).toHaveText('Your microphone is on.');
+      await expect(page.locator('.office-proximity-audio-output audio')).toHaveCount(
+        index === 2 ? 2 : 1,
+        {
+          timeout: 20_000,
+        },
+      );
+      await expect(page.locator('.office-voice-members')).toContainText('3 participants');
+    }
+    await expect(pages[2]!.locator('#office-microphone-help')).toContainText(
+      'Your microphone is off',
+    );
+    await pages[2]!.locator('button[aria-describedby="office-microphone-help"]').click();
+    await expect(pages[2]!.locator('#office-microphone-help')).toHaveText(
+      'Your microphone is on.',
+      { timeout: 30_000 },
+    );
+    for (const page of pages) {
       await expect(page.locator('.office-proximity-audio-output audio')).toHaveCount(2, {
         timeout: 20_000,
       });
-      await expect(page.locator('.office-voice-members')).toContainText('3 participants');
     }
     const groupJoinLatencyMs = Date.now() - thirdJoinStartedAt;
 

@@ -1,24 +1,21 @@
 # Meeting zones
 
-Status: draft plan · Updated: 2026-11-05 · Target: M2 geometry; M4 interaction
+Status: trusted static zone authority and explicit group admission implemented in the current worktree; real-SFU/browser acceptance pending · Updated: 2026-11-16
 
 ## Responsibility
 
-Represent fixed meeting areas with explicit admission and group media isolation.
+Represent fixed meeting areas with explicit server-authorized group admission and media isolation.
 
 - Owning module: Maps / Conversations.
-- State location: Static map definitions; office policy if configurable; live membership in memory.
-- These are proposed contracts and fields, not implemented models. Apply the [baseline](../../README.md#source-precedence) and [cross-cutting rules](../../architecture/README.md#shared-invariants).
+- State location: Versioned trusted static map geometry; live meeting membership and generations in the single office runtime.
+- The browser receives the trusted zone projection for display but cannot establish zone membership. Apply the [baseline](../../README.md#source-precedence) and [cross-cutting rules](../../architecture/README.md#shared-invariants).
 
 ## Proposed data
 
-- `zoneId`
-- `mapVersionId`
-- `bounds`
-- `capacity`
-- `accessPolicy`
-- `officeId`
-- `activeConversationId (transient)`
+- `zoneId`, `mapVersion`, tile rectangle and tile size
+- `workspaceId`, `officeId`, office epoch
+- transient conversation ID/version, member set, generation and lifecycle
+- fixed capacity of six; office occupancy remains independently capped at twenty
 
 ## Relationships
 
@@ -29,20 +26,20 @@ Represent fixed meeting areas with explicit admission and group media isolation.
 
 ## Invariants and lifecycle
 
-- Resolve zone→office→workspace relationships server-side.
-- Provisional maximum six media participants per zone; serialized admission enforces capacity.
-- Zone geometry alone never authorizes media membership.
-- Private-zone conversation has isolated room generation; capacity edits cannot bypass admission.
-- No custom zone editor in initial MVP.
+- The API uses the trusted map version installed for the office; it derives zone bounds and does not trust client coordinates or zone claims.
+- An explicit `meeting:join` requires an active live office participation, current availability, no conflicting conversation, physical presence inside the half-open zone rectangle and capacity below six.
+- Walking into a room does not join or enable the microphone. Walking out or losing eligibility immediately removes the member.
+- Each membership change rotates the LiveKit generation. The roster is delivered privately through `conversation:update`; the token and policy permit remain microphone-only.
+- The web UI shows the current room, explicit Join/Leave actions, authoritative roster, capacity and mic controls. Camera and screen sharing are not part of this contract.
 
 ## Interface outline
 
-- meeting:join and meeting:leave.
-- Server emits authoritative zone/conversation membership changes.
+- `meeting:join { zoneId }` and `meeting:leave { conversationId, conversationVersion }`.
+- The server emits private authoritative roster and media readiness updates. Meeting geometry is read-only display state.
 
 ## Planning question
 
-Define private-zone access UX and whether crossing a boundary prompts or joins; avoid implicit microphone activation.
+Room admission remains explicit. Confirm whether capacities should ever increase beyond six; issue #8's 20-person limit does not silently alter this meeting limit.
 
 ## Next work
 

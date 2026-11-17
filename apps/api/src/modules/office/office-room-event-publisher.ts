@@ -1,6 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Namespace, Socket } from 'socket.io';
-import type { OfficeMessage, SpaceMessage } from '@gather/contracts';
+import type {
+  ConversationAreas,
+  MeetingZones,
+  OfficeMessage,
+  SpaceMessage,
+} from '@gather/contracts';
 import { OfficeAdmissionService } from './office-admission.service.js';
 import type { ConsumedOfficeTicket } from './runtime/office-runtime.service.js';
 import type { PrivateConversationNotice } from './runtime/proximity-pairing.js';
@@ -8,6 +13,7 @@ import type { PrivateConversationNotice } from './runtime/proximity-pairing.js';
 @Injectable()
 export class OfficeRoomEventPublisher {
   private namespace: Namespace | null = null;
+  private readonly areaSequences = new Map<string, number>();
 
   constructor(@Inject(OfficeAdmissionService) private readonly admission: OfficeAdmissionService) {}
 
@@ -70,6 +76,21 @@ export class OfficeRoomEventPublisher {
       }),
     );
     return checked.filter((socket): socket is Socket => socket !== null);
+  }
+
+  publishConversationAreas(workspaceId: string, officeId: string, areas: ConversationAreas) {
+    const key = `${workspaceId}:${officeId}:${areas.officeEpoch}`;
+    const previous = this.areaSequences.get(key) ?? -1;
+    if (areas.sequence <= previous) return;
+    this.areaSequences.set(key, areas.sequence);
+    this.namespace?.to(`office:${workspaceId}:${officeId}`).emit('conversation:areas', areas);
+  }
+
+  sendOfficeMetadata(socketId: string, areas: ConversationAreas, zones: MeetingZones) {
+    const recipient = this.namespace?.sockets.get(socketId);
+    if (!recipient?.connected) return;
+    recipient.emit('conversation:areas', areas);
+    recipient.emit('meeting:zones', zones);
   }
 
   publishConversationNotices(notices: readonly PrivateConversationNotice[]) {

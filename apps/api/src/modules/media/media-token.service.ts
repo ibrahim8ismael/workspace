@@ -32,7 +32,7 @@ export class MediaTokenService {
     conversationId: string,
     input: MediaTokenRequest,
   ): Promise<MediaTokenResponse> {
-    const conversation = this.runtime.proximityMediaParticipation(
+    const conversation = this.runtime.conversationMediaParticipation(
       input.participationId,
       conversationId,
       input.conversationVersion,
@@ -67,7 +67,7 @@ export class MediaTokenService {
       'membership_required',
     );
 
-    const current = this.runtime.proximityMediaParticipation(
+    const current = this.runtime.conversationMediaParticipation(
       input.participationId,
       conversationId,
       input.conversationVersion,
@@ -125,7 +125,7 @@ export class MediaTokenService {
     } catch {
       invariant(false, 503, 'media_unavailable');
     }
-    const stillCurrent = this.runtime.proximityMediaParticipation(
+    const stillCurrent = this.runtime.conversationMediaParticipation(
       input.participationId,
       conversationId,
       input.conversationVersion,

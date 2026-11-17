@@ -1368,3 +1368,26 @@ Verification completed with normal Firefox ICE policy and synthetic input:
   office UI regression passed. The network helper rejects wildcard binds and its check mode confirms
   current Docker addresses and all TCP/UDP host port bindings. The running web/API/guard/SFU stack is
   retained for physical microphone testing at `https://localhost:8443`.
+
+
+## Ibrahim's member action card and Go to merge — deployed 2026-11-17
+
+Merged GitHub main 4ddabc92b1b7de341bddbf62c81607b252b67541 (#35) into the issue #12/#3 and
+Wave deployment branch as 37888d02e851e3ad6e2771fb0b746f7a92fadeae. The prior deployment branch
+and upstream commit are the two parents. API, web and mail-capture worker use the same
+37888d0-issue12-3-actions-20261117 image tag; the existing guarded same-origin media path remains
+enabled. GitHub main was checked after rollout and had not advanced beyond 4ddabc9.
+
+The full pnpm check passed: 110 API tests passed and 1 was skipped, 73 web tests passed, and
+contract/world/media-spike/shared checks plus production builds completed. Against the deployed
+origin, the selected-member action test passed 1/1; the live smoke passed 2 with 8 media-only checks
+skipped. The post-restart three-client guarded-audio check decoded synthetic audio at all three
+clients (two remote tracks each, 1,622 ms group admission); on member leave, the remote audio
+element disappeared in 162 ms and the two survivors kept decoded audio. This did not sample the
+removed participant's final decoded audio frame.
+
+The latest changes add the member action card, repeated Wave UI and Go to route for the Vivo
+renderer. The legacy Commons renderer still does not support the Go to action. Release gates remain
+open for a deployed fixed-room group-media/revocation test, measured decoded-audio cutoff p95 and
+maximum, real SMTP, TURN-only external network reachability, media host/process failure
+supervision, and isolated restore/off-host backup.

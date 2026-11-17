@@ -37,3 +37,14 @@ Use one selected-member card for Wave and Go to. Keep the existing office map an
 The user requested removal of the hand next to the avatar, an icon-only Wave button, and multiple consecutive greetings. The Vivo and Commons avatar overlays have been removed. The card uses a hand icon with an accessible name and no visible Wave/Sending/Waved text. There is no two-second UI cooldown; each acknowledged click can send another greeting. The server permits eight unique waves per second per sender while retaining replay deduplication and same-office authorization. Each new incoming wave refreshes the recipient notice with a distinct event ID.
 
 Validation: 69 web tests and web/API typechecks passed. The focused Socket.IO integration test passes duplicate handling, consecutive/concurrent sends, burst limiting, recovery after the one-second window, disconnected targets and cross-workspace rejection. The live browser test verifies four consecutive greetings arrive with distinct IDs and that neither scene displays the removed hand overlay.
+
+
+## Deployed verification — 2026-11-17
+
+Ibrahim's #35 member-action and navigation commit 4ddabc92b1b7de341bddbf62c81607b252b67541 is
+merged into deployed source 37888d02e851e3ad6e2771fb0b746f7a92fadeae. The live selected-member
+browser test passed against https://gather.imtelak.com (1/1), covering the action card, repeated
+Wave, recipient feedback, authoritative Go to movement and narrow/mobile layout. The regular
+two-browser office smoke also passed movement, reconnection, company isolation and route
+authorization. The legacy Commons renderer still has no Go to route. Blocked-tile/occupied-adjacent
+behavior and Commons support remain follow-up gaps.

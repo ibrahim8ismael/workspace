@@ -37,3 +37,11 @@ two-browser deployed smoke sent a wave from the invited member to the owner and 
 recipient notice while movement, reconnect, office isolation and SPA routing checks passed. A prior
 full browser smoke had a locator ambiguity because several independent status regions use
 `role=status`; the assertion now targets the unique notice text and passes.
+
+
+## Current UI after Ibrahim's #35 merge — 2026-11-17
+
+The repeated Wave action is now in the selected-member card alongside Go to. The deployed source
+merge is 37888d02e851e3ad6e2771fb0b746f7a92fadeae, with Ibrahim's
+4ddabc92b1b7de341bddbf62c81607b252b67541 as its upstream parent. The live selected-member test
+passed against the deployed URL; the deployed office smoke also observed the recipient notice.

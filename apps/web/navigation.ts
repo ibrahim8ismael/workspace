@@ -110,6 +110,29 @@ export function findTilePath(
   return [];
 }
 
+/** Find the shortest reachable unoccupied tile next to a live participant. */
+export function findReachableAdjacentPath(
+  start: Tile,
+  target: Tile,
+  blocked: Blocked = BLOCKED,
+  occupied: ReadonlySet<string> = new Set(),
+): Tile[] | null {
+  const dynamicBlocked: Blocked = new Set(blocked);
+  for (const key of occupied) dynamicBlocked.add(key);
+  const startKey = `${start.tx}/${start.ty}`;
+  if (!blocked.has(startKey)) dynamicBlocked.delete(startKey);
+  if (!sameTile(start, target)) dynamicBlocked.add(`${target.tx}/${target.ty}`);
+  let best: Tile[] | null = null;
+  for (const [dx, dy] of NEIGHBOURS) {
+    const goal = { tx: target.tx + dx, ty: target.ty + dy };
+    if (!canStand(goal, dynamicBlocked)) continue;
+    const path = findTilePath(start, goal, dynamicBlocked);
+    if (!path.length && !sameTile(start, goal)) continue;
+    if (!best || path.length < best.length) best = path;
+  }
+  return best;
+}
+
 /** Nearest free tile to a requested one, searched in growing rings, for clicks on furniture. */
 export function nearestFreeTile(
   goal: Tile,

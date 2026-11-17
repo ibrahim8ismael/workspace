@@ -3,8 +3,45 @@ import {
   directionToWaypoint,
   updateWaypointArrival,
 } from '../src/features/office/navigation-progress';
+import { findReachableAdjacentPath } from '../navigation';
 
 describe('authoritative route waypoint progress', () => {
+  it('routes to a reachable free tile beside a participant without overlapping them', () => {
+    const path = findReachableAdjacentPath(
+      { tx: 4, ty: 4 },
+      { tx: 8, ty: 4 },
+      new Set(),
+      new Set(['8/4', '7/4']),
+    );
+    expect(path).not.toBeNull();
+    expect(path?.at(-1)).not.toEqual({ tx: 8, ty: 4 });
+    expect(path?.at(-1)).not.toEqual({ tx: 7, ty: 4 });
+  });
+
+  it('reports no adjacent destination when every neighboring tile is occupied', () => {
+    const occupied = new Set(
+      [
+        [0, -1],
+        [1, 0],
+        [0, 1],
+        [-1, 0],
+        [1, -1],
+        [1, 1],
+        [-1, 1],
+        [-1, -1],
+      ].map(([dx, dy]) => `${8 + dx}/${4 + dy}`),
+    );
+    expect(
+      findReachableAdjacentPath({ tx: 4, ty: 4 }, { tx: 8, ty: 4 }, new Set(), occupied),
+    ).toBeNull();
+  });
+
+  it('can step away when the two participants currently share a tile', () => {
+    expect(
+      findReachableAdjacentPath({ tx: 8, ty: 4 }, { tx: 8, ty: 4 }, new Set(), new Set(['8/4'])),
+    ).not.toBeNull();
+  });
+
   it('does not turn diagonally for a small fractional orthogonal residual', () => {
     const current = { x: 656.25, y: 1267.375 };
     const target = { x: 688, y: 1264 };

@@ -29,6 +29,7 @@ import {
   blockedWith,
   canStep,
   findTilePath,
+  findReachableAdjacentPath,
   LOCAL_STEP_MS,
   nearestFreeTile,
   RUN_STEP_MS,
@@ -63,7 +64,11 @@ type Props = {
   selectedObject: string | null;
   editorOpen: boolean;
   overrides: Overrides;
-  navigationTarget?: Point & { nonce: number };
+  navigationTarget?: Point & { nonce: number; participantId?: string };
+  onNavigationResult?: (
+    participantId: string,
+    result: 'moving' | 'nearby' | 'unavailable' | 'stopped',
+  ) => void;
   resetViewKey?: number;
   onMove: (x: number, y: number) => void;
   /** Render this participant from accepted office snapshots rather than a local simulation. */
@@ -72,7 +77,7 @@ type Props = {
   /** Server-authoritative movement intent, emitted for each local navigation step. */
   onMovementIntent?: (dx: -1 | 0 | 1, dy: -1 | 0 | 1) => void;
   onPlace: (x: number, y: number, free?: boolean) => void;
-  onSelect: (id: string) => void;
+  onSelect: (id: string, trigger?: SVGElement) => void;
   onSelectObject: (id: string | null) => void;
   onMoveObject: (id: string, x: number, y: number, free?: boolean) => void;
   onRemove: (id: string) => void;
@@ -388,7 +393,7 @@ function Avatar({
   frames?: Record<string, string>;
   reaction?: string;
   waving: boolean;
-  onSelect: () => void;
+  onSelect: (trigger: SVGElement) => void;
 }) {
   const url = avatarFrame(facing, moving, frame, !!person.seatId);
   const name = person.name.length > 22 ? `${person.name.slice(0, 21)}…` : person.name;
@@ -403,12 +408,12 @@ function Avatar({
       onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => {
         e.stopPropagation();
-        onSelect();
+        onSelect(e.currentTarget);
       }}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          onSelect();
+          onSelect(e.currentTarget);
         }
       }}
     >
@@ -765,6 +770,7 @@ export default function VivoScene({
   editorOpen,
   overrides,
   navigationTarget,
+  onNavigationResult,
   resetViewKey,
   onMove,
   authoritativeMovement = false,
@@ -924,6 +930,11 @@ export default function VivoScene({
   const tile = useRef<Tile>({ tx: 20, ty: 39 });
   const step = useRef<{ from: Point; to: Point; startedAt: number; duration: number } | null>(null);
   const route = useRef<Tile[]>([]);
+  const activeGoTo = useRef<string | null>(null);
+  const navigationResultCallback = useRef(onNavigationResult);
+  useEffect(() => {
+    navigationResultCallback.current = onNavigationResult;
+  }, [onNavigationResult]);
   const routeAxisReached = useRef<[boolean, boolean]>([false, false]);
   const previousRoutePosition = useRef<Point | null>(null);
   const routeProgress = useRef<{ position: Point; at: number } | null>(null);
@@ -1062,6 +1073,10 @@ export default function VivoScene({
     }
   };
   const cancelRoute = () => {
+    if (activeGoTo.current) {
+      navigationResultCallback.current?.(activeGoTo.current, 'stopped');
+      activeGoTo.current = null;
+    }
     route.current = [];
     routeAxisReached.current = [false, false];
     pendingSeat.current = null;
@@ -1126,7 +1141,63 @@ export default function VivoScene({
     }
   }, [selfId, self?.seatId, authoritativeMovement]);
   useEffect(() => {
-    if (navigationTarget) navigateTo(tileOf(navigationTarget));
+    if (!navigationTarget && activeGoTo.current) cancelRoute();
+  }, [navigationTarget?.nonce]);
+  useEffect(() => {
+    if (!navigationTarget) return;
+    const target = navigationTarget.participantId
+      ? currentParticipants.current.find(
+          (person) => person.id === navigationTarget.participantId && person.status !== 'away',
+        )
+      : null;
+    if (navigationTarget.participantId) {
+      if (
+        !target ||
+        !currentSelf.current ||
+        currentSelf.current.status === 'away' ||
+        currentSelf.current.seatId
+      ) {
+        navigationResultCallback.current?.(navigationTarget.participantId, 'unavailable');
+        return;
+      }
+      const occupied = new Set(
+        currentParticipants.current
+          .filter((person) => person.id !== selfId && person.status !== 'away')
+          .map((person) => {
+            const tile = tileOf(person);
+            return `${tile.tx}/${tile.ty}`;
+          }),
+      );
+      const path = findReachableAdjacentPath(
+        tile.current,
+        tileOf(target),
+        currentBlocked.current,
+        occupied,
+      );
+      if (!path) {
+        navigationResultCallback.current?.(navigationTarget.participantId, 'unavailable');
+        return;
+      }
+      keys.current.clear();
+      activeGoTo.current = path.length ? navigationTarget.participantId : null;
+      route.current = path;
+      routeAxisReached.current = [false, false];
+      previousRoutePosition.current = currentSelf.current
+        ? { x: currentSelf.current.x, y: currentSelf.current.y }
+        : null;
+      routeProgress.current = previousRoutePosition.current
+        ? { position: previousRoutePosition.current, at: performance.now() }
+        : null;
+      pendingSeat.current = null;
+      setDestination(path.length ? path.at(-1)! : null);
+      following.current = true;
+      navigationResultCallback.current?.(
+        navigationTarget.participantId,
+        path.length ? 'moving' : 'nearby',
+      );
+      return;
+    }
+    navigateTo(tileOf(navigationTarget));
   }, [navigationTarget?.nonce]);
   useEffect(() => {
     const seat =
@@ -1331,6 +1402,10 @@ export default function VivoScene({
           }
           if (!route.current.length && dx === 0 && dy === 0) {
             setDestination(null);
+            if (activeGoTo.current) {
+              navigationResultCallback.current?.(activeGoTo.current, 'nearby');
+              activeGoTo.current = null;
+            }
             const seatId = pendingSeat.current;
             pendingSeat.current = null;
             if (seatId) seatActions.current.onSit(seatId);
@@ -1494,6 +1569,10 @@ export default function VivoScene({
             wasMoving = false;
             if (!route.current.length) {
               setDestination(null);
+              if (activeGoTo.current) {
+                navigationResultCallback.current?.(activeGoTo.current, 'nearby');
+                activeGoTo.current = null;
+              }
               const seatId = pendingSeat.current;
               pendingSeat.current = null;
               if (seatId) seatActions.current.onSit(seatId);
@@ -1764,8 +1843,10 @@ export default function VivoScene({
                   reactions.filter((item) => item.participantId === person.id).at(-1)?.emoji
                 }
                 waving={waveParticipantIds.includes(person.id)}
-                onSelect={() =>
-                  person.id === selfId && person.seatId ? requestStand() : onSelect(person.id)
+                onSelect={(trigger) =>
+                  person.id === selfId && person.seatId
+                    ? requestStand()
+                    : onSelect(person.id, trigger)
                 }
               />
             </g>

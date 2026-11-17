@@ -282,7 +282,8 @@ Mailpit, whose port `8025` is available only on loopback and must not be opened 
 
 ## Deployment verification — 2026-11-17
 
-This is the current pilot record and supersedes the older running-image references above. The
+This records the 2026-11-17 deployment before Ibrahim's office-wave merge; the redeployment record
+below supersedes its running-image references. The
 deployed source commit is `7d4d00bbccb0e377cb8acc51bf2fd43a7711384e`, based on Ibrahim's latest
 `origin/main` commit `b166f3d70008a37b0e4ddafcf539f4ae24bf71b5` with the issue #12/#3 implementation
 merged. API, web and worker images use the `7d4d00b-issue12-3-20261117` tag. The media guard remains
@@ -341,3 +342,56 @@ To roll back code only, use the immediate prior API/web tags
 auth/revocation data. Recreate API/Caddy/worker with the existing Compose overlays, then restart the
 media guard to negotiate fresh policy. Do not restore an older database archive over current auth
 state; OTP/invitation records created by the newer code may not be understood by the older app.
+
+## Redeployment after Ibrahim's latest main commit — 2026-11-17
+
+The current source is merge commit `d14bea5275ddfc847f256ad6f919c6914135f407`, with parents
+`d67500dafdee2cf4396faab56956745aba412497` (issue #12/#3 deployment and evidence) and
+`0fb323b3cf9db8b918f685ee882974755ea1ba9d` (Ibrahim's latest `origin/main`, scoped office wave).
+The office protocol is version 3. The API, web and worker images use tag
+`d14bea5-issue12-3-wave-20261117`; the guarded same-origin LiveKit route remains
+`https://gather.imtelak.com/rtc` with the existing media guard and LiveKit images. No database schema
+or index change was included in this merge.
+
+Before rollout, `infra/deploy/backup.sh` created and gzip-validated
+`/var/backups/gather-lite/gather-lite-20261117T123240Z.archive.gz`. Existing MongoDB and Redis
+volumes were preserved. The protected `infra/deploy/.env` image references were updated with mode
+`0600`; API, Caddy, media guard and Mailpit worker were recreated after the API passed health checks.
+The media guard reconnected to the new API policy authority. MongoDB, Redis, Mailpit, LiveKit and all
+application services were running after rollout; API, Caddy, media guard, MongoDB, Redis and Mailpit
+reported healthy.
+
+Verified after redeployment:
+
+- Public HTTPS returned `200` with the certificate validating and HSTS enabled; HTTP returned `308`
+  to HTTPS. `/api/health/live` returned `{"status":"ok","service":"api"}`. Unauthenticated
+  media-token and `/rtc/v1/validate` requests returned `401` and `403`.
+- The deployed two-browser office test passed registration, invitation, office entry, realtime
+  movement, recovery/reconnect and company isolation. It also sent a live Wave action and observed
+  the correct recipient notice. The SPA routing test passed. Result: 2 passed, 8 media-only cases
+  skipped.
+- A deployed three-client guarded LiveKit run decoded audio for all clients, with two remote tracks
+  per participant and `1,706 ms` group admission. On member removal the remote audio element was
+  removed in `205 ms`, and both survivors kept their remote track and decoded audio. This run did
+  not sample the departed client's last decoded audio frame or use a TURN-only candidate; keep the
+  p95 cutoff and external TURN gates open.
+- Local validation passed formatting, lint, typecheck, contracts, world, media-spike, renderer,
+  shared and web tests; `pnpm test:api` passed 110 tests with 1 skipped; `pnpm build` completed for
+  the API, web, worker and shared packages. A first combined check run exposed an API wave-test
+  timeout while its independent cross-office fixture was created at the end of a long integration
+  case. Moving that setup to the start fixed it; the complete API suite then passed.
+
+The immediate previous application images are retained locally as
+`gather-lite-api:7d4d00b-issue12-3-20261117`,
+`gather-lite-web:7d4d00b-issue12-3-20261117`, and
+`gather-lite-worker:7d4d00b-issue12-3-20261117`. For a code-only rollback, set the three image
+references in the protected `.env` to those tags and run the same Compose overlays with
+`up -d --no-build api caddy worker-mailpit media-guard`. Keep all database, queue, media-retirement
+and lease volumes and the current auth/revocation state. Do not restore the pre-deploy archive over
+the live database.
+
+Mailpit remains an internal capture service; its UI binds only to `127.0.0.1:8025` and is reachable
+through the documented SSH tunnel. Port `8025` was not opened publicly. Real SMTP onboarding,
+fixed-room live multi-client audio, live media revocation, independent off-host backup/restore,
+external TURN-only reachability, media host/process failure supervision and a current five-sample
+audio-cutoff p95 remain open pilot/release gates.

@@ -1308,7 +1308,7 @@ leave cut off the measured stream within 81 ms. Initial Chrome↔Firefox tests f
 successful HTTPS grants, WebSocket signaling and TURN relay allocation. The loopback test-profile
 preference did not resolve that failure and has been removed.
 
-## Issue #12 / #3 merge and pilot deployment — 2026-11-17
+## Issue #12 / #3 initial merge and pilot deployment — 2026-11-17
 
 Merged Ibrahim's latest `origin/main` (`b166f3d70008a37b0e4ddafcf539f4ae24bf71b5`) with the local issue #12/#3 implementation as commit `7d4d00bbccb0e377cb8acc51bf2fd43a7711384e`. The office protocol is v3; API/contracts and web were deployed together. No destructive database change was made. The explicit index job completed against the existing replica set and reported that no indexes were dropped. A fresh pre-deploy Mongo archive is recorded in [the deployment handover](../../infra/deploy/README.md).
 
@@ -1317,6 +1317,26 @@ The confirmed distant-listener defect was the moving group centroid combined wit
 The merged source passed format, lint, typecheck, contract/world/media-spike/shared/web/API tests and production builds. The API suite passed `109` tests with `1` skipped; the deployed browser smoke passed `2` tests and skipped `8` media-only tests. In the deployed synthetic-audio run, three participants received two remote tracks each, group admission took `1,585 ms`, and removing one participant removed their audio element in `154 ms` while the survivors continued. A separate two-browser run decoded audio in both directions for five minutes with longest silent gaps of `17/24 ms` and measured one `227 ms` last-sample upper bound after conversation leave.
 
 Still open: repeat five cutoff samples on this exact merged image to establish its p95, verify live fixed-room group audio and meeting revocation, exercise TURN-only connectivity from a separate network, and validate media host/process failure supervision. Real SMTP, isolated restore and independent off-host backup are also release gates. See [ACCEPTANCE.md](ACCEPTANCE.md), [MEDIA_ENFORCEMENT_EVIDENCE.md](MEDIA_ENFORCEMENT_EVIDENCE.md), and the [coordinated rollout/rollback note](PROXIMITY_GROUP_ROLLOUT.md).
+
+## Ibrahim's latest office-wave merge and redeployment — 2026-11-17
+
+Merged upstream `origin/main` commit `0fb323b3cf9db8b918f685ee882974755ea1ba9d` into the deployed
+issue #12/#3 branch as `d14bea5275ddfc847f256ad6f919c6914135f407`. This brings scoped office Wave
+commands into the existing office runtime and advances the office protocol to version 3. API and
+web were rolled out together; worker image was refreshed. The existing same-origin guarded media
+path, database and queue volumes were preserved. A fresh pre-deploy archive is recorded in the
+[deployment handover](../../infra/deploy/README.md).
+
+Local verification passed contracts, typecheck, lint, world/media-spike/shared/web checks and the
+complete API suite (110 passed, 1 skipped); `pnpm build` and `pnpm format:check` passed. The deployed
+two-browser smoke passed 2 tests with 8 media-only cases skipped and included a real Wave action
+from the invited member to the owner, who received the scoped notice. The deployed three-client
+guarded audio test passed after the media services restarted: all clients decoded audio with two
+remote tracks each, group admission took `1,706 ms`, and the removed member's audio element cleared
+in `205 ms` while the remaining pair continued. This did not measure the last decoded sample for
+the removed member or establish a new cutoff p95. Real SMTP, fixed-room live meeting audio, live
+media revocation, external TURN-only reachability, isolated restore/off-host backup and media
+host/process failure supervision remain open.
 
 ### Firefox local media network correction (2026-11-11)
 

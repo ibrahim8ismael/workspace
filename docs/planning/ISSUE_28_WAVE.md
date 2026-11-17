@@ -23,7 +23,17 @@ Allow a connected office member to greet another live participant with a short, 
 ## Base and scope
 
 - Issue: [#28](https://github.com/ibrahim8ismael/workspace/issues/28)
-- Base: `origin/main` at `b166f3d70008a37b0e4ddafcf539f4ae24bf71b5` (verified remote default branch).
-- Feature branch: `codex/issue-28-wave`.
-- Worktree: `/private/tmp/gather-space-issue-28`.
+- Upstream implementation: Ibrahim's `origin/main` commit `0fb323b3cf9db8b918f685ee882974755ea1ba9d`.
+- Deployment merge: `d14bea5275ddfc847f256ad6f919c6914135f407` (includes issue #12/#3 implementation).
+- Deployed protocol: office protocol version 3.
 - Related behavior: avatar speaking animation (#2) remains intact and visually independent from wave state.
+
+## Implementation and deployment evidence — 2026-11-17
+
+The scoped command/event, server authorization, replay/cooldown handling, client lifecycle, roster
+action, sender animation and recipient notice are deployed at `https://gather.imtelak.com`. The
+complete API suite passed 110 tests with 1 skipped; the web suite passed 69 tests. The live
+two-browser deployed smoke sent a wave from the invited member to the owner and observed the
+recipient notice while movement, reconnect, office isolation and SPA routing checks passed. A prior
+full browser smoke had a locator ambiguity because several independent status regions use
+`role=status`; the assertion now targets the unique notice text and passes.

@@ -23,6 +23,8 @@ import {
   meetingJoinEventSchema,
   meetingLeaveEventSchema,
   proximityOptInEventSchema,
+  waveEventSchema,
+  officeWaveSchema,
 } from '@gather/contracts';
 import { OfficeAdmissionService } from '../office-admission.service.js';
 import type { ConsumedOfficeTicket, OfficeReservation } from '../runtime/office-runtime.service.js';
@@ -61,6 +63,10 @@ export class OfficeGateway
     OnGatewayDisconnect<OfficeSocket>
 {
   private readonly simulationTimers = new Map<string, ReturnType<typeof setInterval>>();
+  private readonly waveStates = new Map<
+    string,
+    { lastWaveAt: number; eventIds: Map<string, number> }
+  >();
 
   @WebSocketServer()
   private namespace!: Namespace;
@@ -269,6 +275,20 @@ export class OfficeGateway
   }
 
   private registerCommands(socket: OfficeSocket) {
+    socket.on('office:wave', (raw: unknown, acknowledge?: unknown) => {
+      if (!this.allowOfficeCommand(socket)) {
+        this.reply(acknowledge, this.eventId(raw), 'rate_limited');
+        return;
+      }
+      const parsed = waveEventSchema.safeParse(raw);
+      if (!parsed.success) {
+        this.reply(acknowledge, this.eventId(raw), 'validation_failed');
+        return;
+      }
+      void this.handleWave(socket, parsed.data, acknowledge).catch(() => {
+        this.reply(acknowledge, parsed.data.eventId, 'unauthorized');
+      });
+    });
     socket.on('world:input', (raw: unknown, acknowledge?: unknown) => {
       const now = performance.now();
       const attempts = (socket.data.officeMovementAttemptTimestamps ?? []).filter(
@@ -553,6 +573,151 @@ export class OfficeGateway
       this.namespace.to(result.roomId).emit('world:delta', result.delta);
       this.reply(acknowledge, parsed.data.eventId, null);
     });
+  }
+
+  private async handleWave(
+    socket: OfficeSocket,
+    command: ReturnType<typeof waveEventSchema.parse>,
+    acknowledge: unknown,
+  ) {
+    const ticket = socket.data.officeAdmission;
+    const reservation = socket.data.officeReservation;
+    if (!ticket || !reservation) return;
+    const sender = this.runtime.liveParticipation(
+      ticket.officeId,
+      ticket.workspaceId,
+      ticket.officeEpoch,
+      reservation.participationId,
+    );
+    const recipient = this.runtime.liveParticipation(
+      ticket.officeId,
+      ticket.workspaceId,
+      ticket.officeEpoch,
+      command.payload.targetParticipationId,
+    );
+    const senderRoom = `office:${ticket.workspaceId}:${ticket.officeId}`;
+    const senderSocket = this.namespace.sockets.get(sender?.socketId ?? '');
+    const recipientSocket = this.namespace.sockets.get(recipient?.socketId ?? '');
+    if (
+      !sender ||
+      sender.userId !== ticket.userId ||
+      !senderSocket?.connected ||
+      senderSocket !== socket ||
+      !senderSocket.rooms.has(senderRoom) ||
+      !recipient ||
+      recipient.participationId === sender.participationId ||
+      !recipientSocket?.connected ||
+      !recipientSocket.rooms.has(senderRoom) ||
+      recipientSocket.data['officeAdmission']?.officeEpoch !== ticket.officeEpoch ||
+      recipientSocket.data['officeAdmission']?.workspaceId !== ticket.workspaceId ||
+      recipientSocket.data['officeAdmission']?.officeId !== ticket.officeId ||
+      recipientSocket.data['officeReservation']?.participationId !== recipient.participationId ||
+      command.officeEpoch !== ticket.officeEpoch
+    ) {
+      this.reply(acknowledge, command.eventId, 'conflict');
+      return;
+    }
+    const key = `${ticket.workspaceId}:${ticket.userId}:${ticket.officeEpoch}`;
+    const previousState = this.waveStates.get(key);
+    const beforeAuthorization = performance.now();
+    if (previousState) {
+      for (const [id, at] of previousState.eventIds) {
+        if (beforeAuthorization - at > OFFICE_LIMITS.replayWindowMs)
+          previousState.eventIds.delete(id);
+      }
+    }
+    if (previousState?.eventIds.has(command.eventId)) {
+      this.reply(acknowledge, command.eventId, null);
+      return;
+    }
+    try {
+      if (!(await this.admission.isSocketAuthorized(ticket))) {
+        this.reply(acknowledge, command.eventId, 'unauthorized');
+        return;
+      }
+      if (
+        !(await this.admission.isSocketAuthorized(
+          recipientSocket.data['officeAdmission'] as ConsumedOfficeTicket,
+        ))
+      ) {
+        this.reply(acknowledge, command.eventId, 'conflict');
+        return;
+      }
+    } catch {
+      this.reply(acknowledge, command.eventId, 'unauthorized');
+      return;
+    }
+    // Socket access may have ended while policy checks were in flight.
+    if (
+      !socket.connected ||
+      !recipientSocket.connected ||
+      !socket.rooms.has(senderRoom) ||
+      !recipientSocket.rooms.has(senderRoom)
+    ) {
+      this.reply(acknowledge, command.eventId, 'conflict');
+      return;
+    }
+    const authorizedAt = performance.now();
+    this.pruneWaveStates(authorizedAt);
+    let state = this.waveStates.get(key);
+    if (!state) {
+      state = { lastWaveAt: 0, eventIds: new Map() };
+      this.waveStates.set(key, state);
+    }
+    for (const [id, at] of state.eventIds) {
+      if (authorizedAt - at > OFFICE_LIMITS.replayWindowMs) state.eventIds.delete(id);
+    }
+    if (state.eventIds.has(command.eventId)) {
+      this.reply(acknowledge, command.eventId, null);
+      return;
+    }
+    if (state.lastWaveAt && authorizedAt - state.lastWaveAt < 2000) {
+      this.reply(acknowledge, command.eventId, 'rate_limited');
+      return;
+    }
+    if (
+      this.runtime.liveParticipation(
+        ticket.officeId,
+        ticket.workspaceId,
+        ticket.officeEpoch,
+        sender.participationId,
+      )?.socketId !== socket.id ||
+      this.runtime.liveParticipation(
+        ticket.officeId,
+        ticket.workspaceId,
+        ticket.officeEpoch,
+        recipient.participationId,
+      )?.socketId !== recipientSocket.id
+    ) {
+      this.reply(acknowledge, command.eventId, 'conflict');
+      return;
+    }
+    state.lastWaveAt = authorizedAt;
+    state.eventIds.set(command.eventId, authorizedAt);
+    if (state.eventIds.size > OFFICE_LIMITS.replayCacheEntries)
+      state.eventIds.delete(state.eventIds.keys().next().value!);
+    const event = officeWaveSchema.parse({
+      eventId: command.eventId,
+      officeEpoch: ticket.officeEpoch,
+      senderParticipationId: sender.participationId,
+      senderName: sender.displayName,
+      recipientParticipationId: recipient.participationId,
+      recipientName: recipient.displayName,
+      durationMs: 2200,
+    });
+    await this.roomEvents.publishWave(ticket.workspaceId, ticket.officeId, event);
+    this.reply(acknowledge, command.eventId, null);
+  }
+
+  private pruneWaveStates(now: number) {
+    for (const [key, state] of this.waveStates) {
+      for (const [id, at] of state.eventIds)
+        if (now - at > OFFICE_LIMITS.replayWindowMs) state.eventIds.delete(id);
+      if (now - state.lastWaveAt > OFFICE_LIMITS.replayWindowMs && state.eventIds.size === 0)
+        this.waveStates.delete(key);
+    }
+    while (this.waveStates.size > 10000)
+      this.waveStates.delete(this.waveStates.keys().next().value!);
   }
 
   private reply(

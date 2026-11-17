@@ -142,6 +142,15 @@ export function CompanyOfficePreview({
     : null;
   const [officeActionError, setOfficeActionError] = useState('');
   const [officeActionPending, setOfficeActionPending] = useState(false);
+  const [wavePending, setWavePending] = useState(false);
+  const [waveCooldown, setWaveCooldown] = useState(false);
+  const waveCooldownTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (waveCooldownTimer.current) clearTimeout(waveCooldownTimer.current);
+    },
+    [],
+  );
   const [proximityOptIn, setProximityOptIn] = useState<{
     participationId: string;
     enabled: true;
@@ -711,12 +720,20 @@ export function CompanyOfficePreview({
   const noOverrides: Overrides = {};
   const connectionMessage =
     participantCount === 1 ? '1 person in the office' : `${participantCount} people in the office`;
+  const waveNotice = state.waves.find(
+    (wave) => wave.recipientParticipationId === ready.participationId,
+  );
 
   return (
     <div className="app-shell office-shell" data-workspace-id={detail.id}>
       <a className="skip-link" href="#office-map">
         Skip to office map
       </a>
+      {waveNotice && (
+        <div className="office-wave-toast" role="status" aria-live="polite">
+          {waveNotice.senderName} waved to you.
+        </div>
+      )}
       <nav className="rail" aria-label="Office navigation">
         <div className="brand" aria-hidden="true">
           <span />
@@ -1042,6 +1059,38 @@ export function CompanyOfficePreview({
                   <li key={participant.participationId}>
                     <span>{participant.displayName}</span>
                     <small>{participant.availability}</small>
+                    {connected && participant.participationId !== ready.participationId && (
+                      <button
+                        type="button"
+                        className="office-wave-button"
+                        disabled={wavePending || waveCooldown}
+                        aria-label={`Wave to ${participant.displayName}`}
+                        onClick={() => {
+                          setWavePending(true);
+                          void client
+                            .wave(participant.participationId)
+                            .then(() => {
+                              setWaveCooldown(true);
+                              if (waveCooldownTimer.current)
+                                clearTimeout(waveCooldownTimer.current);
+                              waveCooldownTimer.current = setTimeout(
+                                () => setWaveCooldown(false),
+                                2000,
+                              );
+                            })
+                            .catch((error: unknown) => {
+                              setOfficeActionError(
+                                error instanceof Error && error.message === 'conflict'
+                                  ? `${participant.displayName} is no longer online.`
+                                  : 'Could not send the wave. Try again shortly.',
+                              );
+                            })
+                            .finally(() => setWavePending(false));
+                        }}
+                      >
+                        {wavePending ? 'Sending…' : waveCooldown ? 'Waved' : 'Wave 👋'}
+                      </button>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -1096,6 +1145,7 @@ export function CompanyOfficePreview({
                 {mapId === 'vivo' ? (
                   <VivoScene
                     participants={sceneParticipants}
+                    waveParticipantIds={state.waves.map((wave) => wave.senderParticipationId)}
                     selfId={connected ? (state.ready?.participationId ?? null) : null}
                     objects={[]}
                     zoom={zoom}
@@ -1130,6 +1180,7 @@ export function CompanyOfficePreview({
                       bootstrap={state.bootstrap}
                       snapshot={state.snapshot}
                       localParticipationId={state.ready.participationId}
+                      waves={state.waves}
                       onMovement={(dx, dy) => client.move(dx, dy)}
                       conversationAreas={state.conversationAreas?.areas ?? []}
                     />

@@ -10,6 +10,7 @@ import request from 'supertest';
 import type { Response as HttpResponse } from 'supertest';
 import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { execFile as execFileCallback, spawn, type ChildProcessByStdio } from 'node:child_process';
+import { performance } from 'node:perf_hooks';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -37,6 +38,7 @@ import {
   joinTicketResponseSchema,
   officeReadySchema,
   officeCommandAckSchema,
+  officeWaveSchema,
   worldDeltaSchema,
   worldSnapshotSchema,
   takeoverReferenceResponseSchema,
@@ -2705,6 +2707,167 @@ describe('office socket admission', () => {
       });
     } finally {
       client.disconnect();
+    }
+  });
+
+  it('routes live waves within the current office and deduplicates repeats before cooldown', async () => {
+    const owner = await account();
+    const member = await account();
+    const observer = await account();
+    const otherOwner = await account();
+    const workspaceId = await workspace(owner);
+    const otherWorkspaceId = await workspace(otherOwner);
+    await join(owner, workspaceId, member);
+    await join(owner, workspaceId, observer);
+    const [{ ticket: ownerTicket }, { ticket: memberTicket }, { ticket: observerTicket }] =
+      await Promise.all([
+        issueTicket(owner, workspaceId),
+        issueTicket(member, workspaceId),
+        issueTicket(observer, workspaceId),
+      ]);
+    const { ticket: otherTicket } = await issueTicket(otherOwner, otherWorkspaceId);
+    const ownerSocket = officeSocket({
+      ticket: ownerTicket,
+      protocolVersion: OFFICE_PROTOCOL_VERSION,
+    });
+    const memberSocket = officeSocket({
+      ticket: memberTicket,
+      protocolVersion: OFFICE_PROTOCOL_VERSION,
+    });
+    const observerSocket = officeSocket({
+      ticket: observerTicket,
+      protocolVersion: OFFICE_PROTOCOL_VERSION,
+    });
+    const otherSocket = officeSocket({
+      ticket: otherTicket,
+      protocolVersion: OFFICE_PROTOCOL_VERSION,
+    });
+    const received: unknown[] = [];
+    ownerSocket.on('office:wave', (event) => received.push(event));
+    memberSocket.on('office:wave', (event) => received.push(event));
+    observerSocket.on('office:wave', (event) => received.push(event));
+    try {
+      // Keep the monotonic clock past the replay window while sockets connect and wave commands race.
+      const lateClock = vi.spyOn(performance, 'now').mockReturnValue(90_000);
+      const ownerReadyEvent = nextSocketEvent<unknown>(ownerSocket, 'office:ready');
+      await connectSocket(ownerSocket);
+      const ownerReady = officeReadySchema.parse(await ownerReadyEvent);
+      const memberReadyEvent = nextSocketEvent<unknown>(memberSocket, 'office:ready');
+      await connectSocket(memberSocket);
+      const memberReady = officeReadySchema.parse(await memberReadyEvent);
+      const observerReadyEvent = nextSocketEvent<unknown>(observerSocket, 'office:ready');
+      await connectSocket(observerSocket);
+      const observerReady = officeReadySchema.parse(await observerReadyEvent);
+      const otherReadyEvent = nextSocketEvent<unknown>(otherSocket, 'office:ready');
+      await connectSocket(otherSocket);
+      const otherReady = officeReadySchema.parse(await otherReadyEvent);
+
+      const command = {
+        eventId: randomUUID(),
+        officeEpoch: ownerReady.snapshot.officeEpoch,
+        payload: { targetParticipationId: memberReady.participationId },
+      };
+      const waveEvent = nextSocketEvent<unknown>(memberSocket, 'office:wave');
+      const firstAck = new Promise<unknown>((resolve) =>
+        ownerSocket.emit('office:wave', command, resolve),
+      );
+      const replayAck = new Promise<unknown>((resolve) =>
+        ownerSocket.emit('office:wave', command, resolve),
+      );
+      const notice = officeWaveSchema.parse(await waveEvent);
+      expect(notice).toMatchObject({
+        eventId: command.eventId,
+        senderParticipationId: ownerReady.participationId,
+        senderName: 'Test Person',
+        recipientParticipationId: memberReady.participationId,
+      });
+      expect(officeCommandAckSchema.parse(await firstAck)).toMatchObject({
+        eventId: command.eventId,
+        ok: true,
+      });
+      expect(officeCommandAckSchema.parse(await replayAck)).toMatchObject({
+        eventId: command.eventId,
+        ok: true,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      expect(received).toHaveLength(3);
+
+      const spam = {
+        eventId: randomUUID(),
+        officeEpoch: ownerReady.snapshot.officeEpoch,
+        payload: { targetParticipationId: memberReady.participationId },
+      };
+      const spamAck = await new Promise<unknown>((resolve) =>
+        ownerSocket.emit('office:wave', spam, resolve),
+      );
+      expect(officeCommandAckSchema.parse(spamAck)).toMatchObject({
+        eventId: spam.eventId,
+        ok: false,
+        error: { code: 'rate_limited' },
+      });
+
+      // A new sender starting after the cache lifetime must still share one atomic cooldown.
+      const ownerWave = nextSocketEvent<unknown>(ownerSocket, 'office:wave');
+      const burst = [randomUUID(), randomUUID()].map((eventId) => ({
+        eventId,
+        officeEpoch: ownerReady.snapshot.officeEpoch,
+        payload: { targetParticipationId: ownerReady.participationId },
+      }));
+      const burstAcks = await Promise.all(
+        burst.map(
+          (event) =>
+            new Promise<unknown>((resolve) => observerSocket.emit('office:wave', event, resolve)),
+        ),
+      );
+      const parsedAcks = burstAcks.map((ack) => officeCommandAckSchema.parse(ack));
+      expect(
+        parsedAcks.filter((ack) => ack.ok),
+        JSON.stringify(parsedAcks),
+      ).toHaveLength(1);
+      expect(parsedAcks.filter((ack) => !ack.ok && ack.error.code === 'rate_limited')).toHaveLength(
+        1,
+      );
+      expect(officeWaveSchema.parse(await ownerWave)).toMatchObject({
+        senderParticipationId: observerReady.participationId,
+        recipientParticipationId: ownerReady.participationId,
+      });
+      lateClock.mockRestore();
+
+      const offlineId = memberReady.participationId;
+      const memberRemoved = nextSocketEvent<unknown>(ownerSocket, 'world:delta');
+      memberSocket.disconnect();
+      await memberRemoved;
+      const offline = {
+        eventId: randomUUID(),
+        officeEpoch: ownerReady.snapshot.officeEpoch,
+        payload: { targetParticipationId: offlineId },
+      };
+      const offlineAck = await new Promise<unknown>((resolve) =>
+        ownerSocket.emit('office:wave', offline, resolve),
+      );
+      expect(officeCommandAckSchema.parse(offlineAck)).toMatchObject({
+        eventId: offline.eventId,
+        ok: false,
+        error: { code: 'conflict' },
+      });
+      const crossOffice = {
+        eventId: randomUUID(),
+        officeEpoch: ownerReady.snapshot.officeEpoch,
+        payload: { targetParticipationId: otherReady.participationId },
+      };
+      const crossOfficeAck = await new Promise<unknown>((resolve) =>
+        ownerSocket.emit('office:wave', crossOffice, resolve),
+      );
+      expect(officeCommandAckSchema.parse(crossOfficeAck)).toMatchObject({
+        eventId: crossOffice.eventId,
+        ok: false,
+        error: { code: 'conflict' },
+      });
+    } finally {
+      ownerSocket.disconnect();
+      memberSocket.disconnect();
+      observerSocket.disconnect();
+      otherSocket.disconnect();
     }
   });
 

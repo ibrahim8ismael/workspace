@@ -8,6 +8,8 @@ import {
   type SpaceMessage,
   conversationAreasSchema,
   conversationLeaveEventSchema,
+  officeWaveSchema,
+  waveEventSchema,
   conversationUpdateSchema,
   meetingJoinEventSchema,
   meetingLeaveEventSchema,
@@ -21,6 +23,7 @@ import {
   type OfficeBootstrapResponse,
   type OfficeReady,
   type OfficeMessage,
+  type OfficeWave,
   type ConversationUpdate,
   type ConversationAreas,
   type MeetingZones,
@@ -44,6 +47,7 @@ export type OfficeClientState = {
   conversationUpdates: ConversationUpdate[];
   conversationAreas: ConversationAreas | null;
   meetingZones: MeetingZones | null;
+  waves: OfficeWave[];
 };
 
 export type ConversationVersionMarker = {
@@ -85,6 +89,7 @@ const EMPTY_STATE: OfficeClientState = {
   conversationUpdates: [],
   conversationAreas: null,
   meetingZones: null,
+  waves: [],
 };
 
 /** Cookie-authenticated HTTP bootstrap followed by a one-use-ticket Socket.IO session. */
@@ -97,6 +102,8 @@ export class OfficeClient {
   private resyncPending = false;
   private inputSequence = 0;
   private closed = false;
+  private readonly waveTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly seenWaves = new Set<string>();
 
   constructor(
     private readonly api: ApiClient,
@@ -134,7 +141,9 @@ export class OfficeClient {
       conversationUpdates: [],
       conversationAreas: null,
       meetingZones: null,
+      waves: [],
     });
+    this.clearWaves();
     this.conversationVersions.clear();
     try {
       const bootstrap = await this.api.officeBootstrap(this.workspaceId, this.officeId);
@@ -186,7 +195,36 @@ export class OfficeClient {
           this.requestResync();
           return;
         }
-        this.update({ snapshot: result.snapshot });
+        this.update({
+          snapshot: result.snapshot,
+          waves: this.wavesForSnapshot(result.snapshot),
+        });
+      });
+      socket.on('office:wave', (raw: unknown) => {
+        if (!this.isCurrent(generation) || this.socket !== socket) return;
+        const parsed = officeWaveSchema.safeParse(raw);
+        const current = this.state.snapshot;
+        if (!parsed.success || !current || parsed.data.officeEpoch !== current.officeEpoch) return;
+        if (this.seenWaves.has(parsed.data.eventId)) return;
+        if (
+          !current.participants.some(
+            (person) => person.participationId === parsed.data.senderParticipationId,
+          ) ||
+          !current.participants.some(
+            (person) => person.participationId === parsed.data.recipientParticipationId,
+          )
+        )
+          return;
+        this.seenWaves.add(parsed.data.eventId);
+        if (this.seenWaves.size > 256) this.seenWaves.delete(this.seenWaves.values().next().value!);
+        this.update({ waves: [...this.state.waves, parsed.data] });
+        const timer = setTimeout(() => {
+          this.waveTimers.delete(parsed.data.eventId);
+          this.update({
+            waves: this.state.waves.filter((wave) => wave.eventId !== parsed.data.eventId),
+          });
+        }, parsed.data.durationMs);
+        this.waveTimers.set(parsed.data.eventId, timer);
       });
       socket.on('chat:message', (raw: unknown) => {
         const parsed = officeChatMessageEventSchema.safeParse(raw);
@@ -265,12 +303,14 @@ export class OfficeClient {
           return;
         }
         this.resyncPending = false;
-        this.update({ snapshot: parsed.data });
+        this.update({ snapshot: parsed.data, waves: this.wavesForSnapshot(parsed.data) });
       });
       socket.on('office:access-ended', (raw: unknown) => {
+        if (!this.isCurrent(generation) || this.socket !== socket) return;
         const ended = officeAccessEndedSchema.safeParse(raw);
         if (!ended.success) return;
         this.closed = true;
+        this.clearWaves();
         socket.disconnect();
         this.update({
           status: 'ended',
@@ -286,6 +326,8 @@ export class OfficeClient {
         this.update({ status: 'error', snapshot: null, message: safeSocketMessage(error.message) });
       });
       socket.on('disconnect', () => {
+        if (!this.isCurrent(generation) || this.socket !== socket) return;
+        this.clearWaves();
         if (!this.closed && this.isCurrent(generation))
           this.update({
             status: 'disconnected',
@@ -305,6 +347,7 @@ export class OfficeClient {
     this.resyncPending = false;
     this.inputSequence = 0;
     this.conversationVersions.clear();
+    this.clearWaves();
     this.socket?.disconnect();
     this.socket = null;
     this.state = EMPTY_STATE;
@@ -392,6 +435,37 @@ export class OfficeClient {
 
   stand() {
     return this.sendCommand('seat:stand', seatStandEventSchema, {});
+  }
+
+  wave(targetParticipationId: string) {
+    return this.sendCommand('office:wave', waveEventSchema, { targetParticipationId });
+  }
+
+  private clearWaves() {
+    for (const timer of this.waveTimers.values()) clearTimeout(timer);
+    this.waveTimers.clear();
+    this.seenWaves.clear();
+    if (this.state.waves.length) this.update({ waves: [] });
+  }
+
+  private wavesForSnapshot(snapshot: WorldSnapshot) {
+    const waves = this.state.waves.filter(
+      (wave) =>
+        wave.officeEpoch === snapshot.officeEpoch &&
+        snapshot.participants.some(
+          (person) => person.participationId === wave.senderParticipationId,
+        ) &&
+        snapshot.participants.some(
+          (person) => person.participationId === wave.recipientParticipationId,
+        ),
+    );
+    const retained = new Set(waves.map((wave) => wave.eventId));
+    for (const [eventId, timer] of this.waveTimers) {
+      if (retained.has(eventId)) continue;
+      clearTimeout(timer);
+      this.waveTimers.delete(eventId);
+    }
+    return waves;
   }
 
   private sendCommand<T extends { eventId: string; officeEpoch: string }>(

@@ -1391,3 +1391,34 @@ renderer. The legacy Commons renderer still does not support the Go to action. R
 open for a deployed fixed-room group-media/revocation test, measured decoded-audio cutoff p95 and
 maximum, real SMTP, TURN-only external network reachability, media host/process failure
 supervision, and isolated restore/off-host backup.
+
+
+## Ibrahim's CSP and meeting-invitation merge — merged, deployed and verified 2026-11-18
+
+Merged GitHub `main` `5da6403b0d803613621fa9912ecd58b3a7934fc3` (#36 CSP and #37 meeting invitations/run-to-join)
+with the issue #12/#3 work at `184b3c9312e871cf78ae97ee5c5efb646cc49555` as
+`ae5f88ea0ca815740de06a05b271cea682e4f532`, then pushed that merge to `main`. API, Caddy frontend
+and Mailpit worker images were rebuilt and rolled out. The database, queue, media-retirement and
+LiveKit lease volumes were preserved; no schema change or index job was part of this merge. Backup
+and deployment evidence are recorded in [the deployment handover](../../infra/deploy/README.md).
+
+`pnpm check` passed: API 126 passed/1 skipped, web 73 passed, contracts/world/media-spike/shared
+checks, lint, typechecks, formatting and production builds passed. The focused invitation UI E2E
+passed locally. On the deployed URL, `pnpm test:e2e:live` passed its two enabled browser checks and
+skipped eight media-profile cases: two-browser office movement/seat/reconnect/company-isolation and
+SPA authorization passed.
+
+After the API process restarted, the existing media guard retained its prior sequence while the
+API reset its process-local policy sequence. A deployed group test stayed in guarded preparation.
+Matching API/guard policy and LiveKit keys ruled out a credential mismatch; restarting only the
+guard created a fresh epoch and policy acknowledgements resumed. This recovery is now documented
+for API rollouts. The current deployed three-client synthetic-audio run passed with two remote
+tracks per client, decoded samples at all three clients, 1,449 ms group admission, and survivor audio
+after one participant left. Five server-circle boundary departures measured 311/272/312/178/243 ms
+to first silent decoded sample (empirical p95/max 312 ms; n=5). Re-entry preserved explicit
+microphone activation.
+
+The pilot is operational, not production-signed-off. Real SMTP, deployed fixed-room group audio and
+revocation, stale-grant replay rejection, TURN-only external reachability, weak-network and physical
+microphone coverage, media host/process supervision, isolated restore and independent off-host
+backup remain open. The live browser runs retain synthetic `@example.test` validation data.

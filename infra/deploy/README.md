@@ -446,13 +446,17 @@ Verified on the deployed revision:
 Routine operations from the repository root, using the same Compose overlays:
 
     docker compose --env-file infra/deploy/.env -f infra/deploy/compose.yaml -f infra/deploy/compose.media-pilot.yaml -f infra/deploy/compose.mailpit.yaml --profile media-pilot --profile mailpit ps
-    docker compose --env-file infra/deploy/.env -f infra/deploy/compose.yaml -f infra/deploy/compose.media-pilot.yaml -f infra/deploy/compose.mailpit.yaml --profile media-pilot --profile mailpit restart api caddy worker-mailpit
+    docker compose --env-file infra/deploy/.env -f infra/deploy/compose.yaml -f infra/deploy/compose.media-pilot.yaml -f infra/deploy/compose.mailpit.yaml --profile media-pilot --profile mailpit restart caddy worker-mailpit
     infra/deploy/backup.sh
 
 Tail logs with those Compose arguments followed by logs --tail=100 api caddy worker-mailpit media-guard media-livekit.
 Use /api/health/live plus authenticated database and realtime operations for readiness; process
 liveness alone does not establish full readiness. Use the existing SSH tunnel instructions above
 for the Mailpit UI.
+
+After any API restart or image replacement, wait for API health and restart `media-guard` before
+testing media. The API's installation sequence is process-local; the guard must start a fresh
+policy epoch after an API restart so its in-memory sequence cannot reject the API's reset sequence.
 
 The immediate code rollback tags are gather-lite-api:d14bea5-issue12-3-wave-20261117,
 gather-lite-web:d14bea5-issue12-3-wave-20261117, and
@@ -464,7 +468,73 @@ archive over the live database. The backup path above is a recovery artifact, no
 mechanism.
 
 The pilot is operational, not a production signoff. Real SMTP is not configured; Mailpit captures
-verification/invitation mail. Fixed-room multi-client media and revocation, five current-image
-decoded-audio cutoff samples (target p95 at or below 1 second, maximum 2 seconds), old-generation
-replay rejection against the deployed guard, external TURN-only reachability, guard/SFU host failure
+verification/invitation mail. Fixed-room multi-client media and revocation, old-generation replay
+rejection against the deployed guard, external TURN-only reachability, guard/SFU host failure
 supervision, isolated restore and off-host backup remain open acceptance gates.
+
+## Current deployment after Ibrahim's CSP and meeting invitation merge — 2026-11-18
+
+Merged GitHub `main` commit `5da6403b0d803613621fa9912ecd58b3a7934fc3` (#36 CSP headers and #37
+meeting invitations/run-to-join) with the local issue #12/#3 branch at `184b3c9312e871cf78ae97ee5c5efb646cc49555` as
+`ae5f88ea0ca815740de06a05b271cea682e4f532`. The merge commit was pushed to GitHub `main`. The API,
+web and Mailpit worker were built from that commit and deployed together with the existing office
+protocol version. Proximity audio remains enabled through the guarded same-origin `/rtc` route.
+Meeting invitations now have accept/decline/cancel UI; meeting capacity follows the merged 20-person
+meeting limit while proximity remains capped at six. No schema migration, index job or destructive
+database operation was run.
+
+Before rollout, `infra/deploy/backup.sh` created and gzip-validated
+`/var/backups/gather-lite/gather-lite-20261118T083923Z.archive.gz`. MongoDB, Redis, media-retirement,
+LiveKit lease and Mailpit volumes were preserved. The protected image-reference `.env` remained mode
+`0600`; its API, web and worker tags now use
+`ae5f88ea0ca815740de06a05b271cea682e4f532-merge-20261118`.
+
+The API, Caddy frontend and Mailpit worker use the new images. MongoDB, queue Redis, Mailpit, and the
+existing media guard are running; API, Caddy, MongoDB, Redis, Mailpit and the guard report healthy.
+LiveKit runs its existing pinned `v1.13.11` image and lease wrapper. Compose refreshed that container
+from the merged profile; its lease volume was preserved. API/Caddy/worker images are reproducible
+from the pushed commit. There is no Compose health check for LiveKit or the mail worker.
+
+Verified after rollout:
+
+- `https://gather.imtelak.com` returned HTTP 200 with a certificate accepted by curl, HSTS, the
+  merged Content-Security-Policy and other security headers. `/api/health/live` returned the API
+  liveness payload. Anonymous `/api/auth/me` returned 401. The live Playwright smoke passed its
+  two enabled checks (two-browser office admission, movement, seat/reconnect recovery, company
+  isolation and nested SPA authorization); eight media-only cases were skipped by that smoke profile.
+- The first audio attempt remained in “Preparing guarded voice.” The API had restarted and reset its
+  process-local media-policy sequence while the long-running guard retained its previous sequence.
+  API/guard policy and LiveKit keys were present and matched. Restarting only `media-guard` established
+  a fresh policy epoch; subsequent snapshots received exact install acknowledgements. This recovery
+  is now part of the API rollout procedure above. The API, media retirement and LiveKit lease volumes
+  were not reset.
+- The deployed three-client synthetic-audio test passed: all clients had two remote tracks and
+  decoded audio; group admission took 1,449 ms. After the third participant left, their remote audio
+  element was removed in 202 ms and the remaining pair continued decoding audio. Selected candidate
+  types included host and server-reflexive paths; this is not TURN-only evidence.
+- The deployed five-cycle boundary/re-entry test measured conservative upper bounds from the
+  movement request that crossed the server-published 64-pixel circle to the first silent decoded
+  sample: 311, 272, 312, 178 and 243 ms. Empirical p95 and maximum were both 312 ms (n=5), below the
+  1-second p95 target and 2-second maximum for this synthetic, stable-network run. Each re-entry
+  created a new area, and microphones stayed off until explicitly enabled. These samples do not
+  establish behavior on physical microphones, weak networks or TURN-only routes.
+- `pnpm check` passed before deployment: 126 API tests passed and one was skipped; 73 web tests
+  passed; contract/world/media-spike/shared checks, lint, typechecks, formatting and production
+  builds passed. The web build retains its existing large-chunk advisory. The focused invitation
+  UI E2E passed locally. No production database indexes were created by this rollout.
+
+The Mailpit UI remains bound to `127.0.0.1:8025`; MongoDB and Redis have no public host binding.
+Mail delivery still goes to Mailpit, not an external SMTP provider. Deployed E2E runs created
+synthetic `@example.test` validation accounts/workspaces and Mailpit messages; they remain in the
+pilot database because no cleanup flow was used. Fixed-room live group audio/revocation, stale-grant
+replay rejection on the current guard, TURN-only external reachability, host/process failure
+supervision, isolated restore, independent off-host backup and real SMTP remain open release gates.
+
+The immediately previous application images are retained locally as
+`gather-lite-api:37888d0-issue12-3-actions-20261117`,
+`gather-lite-web:37888d0-issue12-3-actions-20261117`, and
+`gather-lite-worker:37888d0-issue12-3-actions-20261117`. For a code-only rollback, restore only those
+three protected `.env` image references, recreate API and Caddy/worker with the same Compose
+overlays, then restart `media-guard` after API health so it negotiates a fresh policy epoch. Keep
+MongoDB, Redis, media-retirement and lease volumes and current authentication/revocation state. Do
+not restore the pre-deploy archive over the live database.

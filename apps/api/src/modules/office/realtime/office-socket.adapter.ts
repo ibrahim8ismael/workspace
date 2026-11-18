@@ -2,6 +2,7 @@ import type { INestApplication } from '@nestjs/common';
 import { IoAdapter } from '@nestjs/platform-socket.io';
 import type { ServerOptions } from 'socket.io';
 import { OFFICE_LIMITS } from '@gather/contracts';
+import { clientIp } from '../../../platform/http/client-ip.js';
 
 export class OfficeSocketAdapter extends IoAdapter {
   private readonly connectionAttempts = new Map<string, { windowStart: number; count: number }>();
@@ -10,6 +11,7 @@ export class OfficeSocketAdapter extends IoAdapter {
   constructor(
     app: INestApplication,
     private readonly appOrigin: string,
+    private readonly trustedProxyIps: string = '',
   ) {
     super(app);
   }
@@ -24,7 +26,11 @@ export class OfficeSocketAdapter extends IoAdapter {
       connectTimeout: OFFICE_LIMITS.socketHandshakeTimeoutMs,
       allowRequest: (request, callback) => {
         const allowedOrigin = request.headers.origin === this.appOrigin;
-        const remoteAddress = request.socket.remoteAddress;
+        const remoteAddress = clientIp(
+          request.socket.remoteAddress,
+          request.headers['x-forwarded-for'],
+          this.trustedProxyIps,
+        );
         const now = Date.now();
         for (const [address, bucket] of this.connectionAttempts) {
           if (now - bucket.windowStart >= 60_000) this.connectionAttempts.delete(address);

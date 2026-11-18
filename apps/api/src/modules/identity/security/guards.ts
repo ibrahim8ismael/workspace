@@ -9,6 +9,7 @@ import { AbuseService } from './abuse.service.js';
 import { csrfToken, safeEqual } from './secrets.js';
 import { invariant } from '../../../platform/http/errors.js';
 import type { ApiEnvironment } from '../../../platform/config/environment.js';
+import { clientIp } from '../../../platform/http/client-ip.js';
 
 export const PUBLIC_ROUTE = 'gather:public';
 export const MACHINE_AUTH_ROUTE = 'gather:machine-auth';
@@ -69,14 +70,21 @@ export class CsrfGuard implements CanActivate {
 
 @Injectable()
 export class RequestBudgetGuard implements CanActivate {
-  constructor(@Inject(AbuseService) private readonly abuse: AbuseService) {}
+  constructor(
+    @Inject(AbuseService) private readonly abuse: AbuseService,
+    @Inject(ConfigService) private readonly config: ConfigService<ApiEnvironment, true>,
+  ) {}
   async canActivate(context: ExecutionContext) {
     const request = context.switchToHttp().getRequest<AuthRequest>();
     if (request.method === 'GET' && request.path === '/api/health/live') return true;
     await this.abuse.consume('http-global', 'global', 5000, 60_000);
     await this.abuse.consume(
       'http-ip',
-      request.ip ?? request.socket.remoteAddress ?? 'unknown',
+      clientIp(
+        request.socket.remoteAddress,
+        request.get('x-forwarded-for'),
+        this.config.get('TRUSTED_PROXY_IPS', { infer: true }),
+      ),
       300,
       60_000,
     );

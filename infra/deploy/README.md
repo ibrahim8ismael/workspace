@@ -35,6 +35,12 @@ uses its own internal CA on the loopback upstream; install only Caddy's public r
 `/etc/nginx/ssl/gather-lite-caddy-root.pem` so Nginx can validate that connection. The private
 internal certificate key stays inside Caddy's persistent data volume.
 
+The API trusts forwarded client IPs only from the exact Caddy peer. The pilot edge network reserves
+`172.26.0.4` for Caddy and sets `TRUSTED_PROXY_IPS` to that address in the protected Compose `.env`.
+Before reusing this Compose configuration on another host, confirm `172.26.0.0/16` does not overlap
+an existing Docker or LAN route. If it does, change `GATHER_EDGE_SUBNET`, `CADDY_EDGE_IP`, and
+`TRUSTED_PROXY_IPS` together; the last value must be the exact Caddy address, never a CIDR.
+
 Generate a single 32-byte outbox key and use the same canonical base64 value in both private env
 files. Keep the key stable while queued messages exist. `DB_AUTO_INDEX=false` is mandatory; the
 explicit one-shot `indexes` job provisions declared indexes after replica-set initialization.

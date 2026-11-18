@@ -82,6 +82,7 @@ import { configureHttp } from '../dist/platform/http/configure.js';
 import { backfillOfficeMap } from '../dist/modules/office/backfill-office-map.js';
 import { migrateLegacyOfficeMapsToVivo } from '../dist/modules/office/migrate-legacy-office-maps.js';
 import { OfficeSocketAdapter } from '../dist/modules/office/realtime/office-socket.adapter.js';
+import { clientIp, validProxyIpList } from '../dist/platform/http/client-ip.js';
 import { io } from 'socket.io-client';
 import type { Socket } from 'socket.io-client';
 import type { AddressInfo } from 'node:net';
@@ -674,12 +675,13 @@ class Client {
     return response;
   }
   async bootstrap() {
-    const response = await request(app.getHttpServer())
+    const agent = request(app.getHttpServer())
       .get('/api/auth/csrf')
       .set('Origin', origin)
       .set('Sec-Fetch-Site', 'same-origin')
       .set('X-Requested-With', 'XMLHttpRequest')
       .set('Cookie', this.cookie);
+    const response = await agent;
     status(response, 200);
     this.capture(response);
     return response;
@@ -689,15 +691,17 @@ class Client {
     path: string,
     body: Record<string, unknown> = {},
     key = randomUUID(),
+    forwardedFor?: string,
   ) {
     const agent = request(app.getHttpServer());
-    const response = await agent[method](path)
+    const call = agent[method](path)
       .set('Origin', origin)
       .set('X-CSRF-Token', this.csrf)
       .set('Cookie', this.cookie)
       .set('Content-Type', 'application/json')
-      .set('Idempotency-Key', key)
-      .send(body);
+      .set('Idempotency-Key', key);
+    if (forwardedFor) call.set('X-Forwarded-For', forwardedFor);
+    const response = await call.send(body);
     return this.capture(response);
   }
   get(path: string) {
@@ -775,6 +779,7 @@ async function join(
 beforeAll(async () => {
   process.env['NODE_ENV'] = 'test';
   process.env['APP_ORIGIN'] = origin;
+  process.env['TRUSTED_PROXY_IPS'] = '127.0.0.1,::1';
   process.env['DB_AUTO_INDEX'] = 'true';
   process.env['OUTBOX_ENCRYPTION_KEY'] = encryption.toString('base64');
   process.env['MEDIA_MACHINE_KEY'] = mediaMachineKey.toString('base64');
@@ -803,7 +808,7 @@ beforeAll(async () => {
   app.useBodyParser('raw', { type: 'application/webhook+json', limit: '64kb' });
   app.useBodyParser('json', { limit: '4kb' });
   configureHttp(app);
-  app.useWebSocketAdapter(new OfficeSocketAdapter(app, origin));
+  app.useWebSocketAdapter(new OfficeSocketAdapter(app, origin, process.env['TRUSTED_PROXY_IPS']));
   await app.listen(0, '127.0.0.1');
   identities = app.get(IdentityModels);
   tenancy = app.get(TenancyModels);
@@ -815,6 +820,18 @@ afterAll(async () => {
 });
 beforeEach(async () => {
   await identities.rateLimits.deleteMany({});
+});
+
+describe('trusted proxy client IP resolution', () => {
+  it('uses forwarded IP only from an exact trusted proxy and rejects ambiguous chains', () => {
+    expect(clientIp('172.26.0.4', '198.51.100.24', '172.26.0.4')).toBe('198.51.100.24');
+    expect(clientIp('172.26.0.5', '198.51.100.24', '172.26.0.4')).toBe('172.26.0.5');
+    expect(clientIp('172.26.0.4', '198.51.100.24, 203.0.113.8', '172.26.0.4')).toBe('172.26.0.4');
+    expect(clientIp('::ffff:172.26.0.4', '2001:db8::8', '172.26.0.4')).toBe('2001:db8::8');
+    expect(validProxyIpList('172.26.0.4,2001:db8::4')).toBe(true);
+    expect(validProxyIpList('172.26.0.0/16')).toBe(false);
+    expect(validProxyIpList('172.26.0.4,')).toBe(false);
+  });
 });
 
 describe('LiveKit webhook observations', () => {
@@ -1238,6 +1255,111 @@ describe('backend account authentication', () => {
     await expect(abuse.consume('bounded-test', key, 2, windowMs)).rejects.toMatchObject({
       status: 429,
     });
+  });
+  it('does not let anonymous login failures from other addresses lock a victim account', async () => {
+    const user = await account();
+    for (const forwardedFor of [
+      '198.51.100.10',
+      '198.51.100.11',
+      '198.51.100.12',
+      '198.51.100.13',
+      '198.51.100.14',
+    ]) {
+      const attacker = new Client();
+      await attacker.bootstrap();
+      status(
+        await attacker.send(
+          'post',
+          '/api/auth/login',
+          { email: user.email.toUpperCase(), password: 'incorrect password' },
+          randomUUID(),
+          forwardedFor,
+        ),
+        401,
+      );
+    }
+
+    const repeatedAttacker = new Client();
+    await repeatedAttacker.bootstrap();
+    for (let attempt = 0; attempt < 5; attempt += 1)
+      status(
+        await repeatedAttacker.send(
+          'post',
+          '/api/auth/login',
+          { email: user.email, password: 'incorrect password' },
+          randomUUID(),
+          '198.51.100.20',
+        ),
+        401,
+      );
+    status(
+      await repeatedAttacker.send(
+        'post',
+        '/api/auth/login',
+        { email: user.email, password: 'incorrect password' },
+        randomUUID(),
+        '198.51.100.20',
+      ),
+      429,
+    );
+
+    const legitimate = new Client();
+    await legitimate.bootstrap();
+    status(
+      await legitimate.send(
+        'post',
+        '/api/auth/login',
+        { email: user.email, password },
+        randomUUID(),
+        '203.0.113.30',
+      ),
+      200,
+    );
+  });
+  it('limits reauthentication password guesses across sessions and recovers after the window', async () => {
+    const user = await account();
+    const secondSession = new Client();
+    await secondSession.bootstrap();
+    status(
+      await secondSession.send('post', '/api/auth/login', { email: user.email, password }),
+      200,
+    );
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const client = attempt < 3 ? user.client : secondSession;
+      status(
+        await client.send('post', '/api/auth/reauthenticate', { password: 'incorrect password' }),
+        401,
+      );
+    }
+    status(await secondSession.send('post', '/api/auth/reauthenticate', { password }), 429);
+
+    const now = Date.now();
+    const dateNow = vi.spyOn(Date, 'now').mockReturnValue(now + 16 * 60_000);
+    try {
+      status(await secondSession.send('post', '/api/auth/reauthenticate', { password }), 200);
+    } finally {
+      dateNow.mockRestore();
+    }
+  });
+  it('limits current-password guesses on change-password', async () => {
+    const user = await account();
+    status(await user.client.send('post', '/api/auth/reauthenticate', { password }), 200);
+    for (let attempt = 0; attempt < 5; attempt += 1)
+      status(
+        await user.client.send('post', '/api/auth/change-password', {
+          currentPassword: 'incorrect password',
+          newPassword,
+        }),
+        401,
+      );
+    status(
+      await user.client.send('post', '/api/auth/change-password', {
+        currentPassword: password,
+        newPassword,
+      }),
+      429,
+    );
   });
 });
 

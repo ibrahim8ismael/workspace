@@ -23,6 +23,7 @@ https://{$APP_DOMAIN}:8443 {
 		reverse_proxy api:3000 {
 			header_up -Forwarded
 			header_up -X-Forwarded-For
+			header_up X-Forwarded-For {http.request.header.X-Real-IP}
 			header_up -X-Forwarded-Host
 			header_up -X-Forwarded-Port
 			header_up -X-Forwarded-Proto
@@ -35,6 +36,7 @@ https://{$APP_DOMAIN}:8443 {
 		reverse_proxy api:3000 {
 			header_up -Forwarded
 			header_up -X-Forwarded-For
+			header_up X-Forwarded-For {http.request.header.X-Real-IP}
 			header_up -X-Forwarded-Host
 			header_up -X-Forwarded-Port
 			header_up -X-Forwarded-Proto

@@ -48,6 +48,8 @@ import {
   type ProximityAudioStatus,
 } from '../office/proximity-audio-session';
 import { RemoteAudioPlayback } from '../office/remote-audio-playback';
+import { effectsVolume } from '../../../footsteps';
+import { notifyReceivedWaves, WaveNotificationSound } from '../office/wave-notification';
 import { CompanyInvitationManager } from './CompanyInvitationManager';
 import './office-preview.css';
 
@@ -101,6 +103,8 @@ export function CompanyOfficePreview({
     [api, detail.id, detail.officeId],
   );
   const state = useSyncExternalStore(client.subscribe, client.getSnapshot, client.getSnapshot);
+  const [waveSound] = useState(() => new WaveNotificationSound());
+  const seenWaveNotifications = useRef(new Set<string>());
   const connected = state.status === 'connected';
   const [entryMicrophone] = useState(() => new EntryMicrophone());
   const [microphonePermission] = useState(() => new MicrophonePermission());
@@ -125,6 +129,13 @@ export function CompanyOfficePreview({
   );
 
   const participationId = connected ? (state.ready?.participationId ?? null) : null;
+  useEffect(() => {
+    if (!participationId) waveSound.stop();
+    notifyReceivedWaves(state.waves, participationId, seenWaveNotifications.current, () => {
+      waveSound.play(effectsVolume(), effectsVolume);
+    });
+  }, [state.waves, participationId, waveSound]);
+  useEffect(() => () => waveSound.stop(), [waveSound]);
   const latestConversation = latestProximityConversation(
     state.conversationUpdates,
     participationId,

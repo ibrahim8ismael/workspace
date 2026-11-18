@@ -14,6 +14,12 @@ function withoutRefreshedToken(observation) {
   return safe;
 }
 
+function safeDiagnostic(value) {
+  return String(value)
+    .replace(/([?&]access_token=)[^&\s]*/gi, '$1[redacted]')
+    .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, '[redacted-jwt]');
+}
+
 export async function startApplicationMediaClient({
   fixtureUrl,
   grants,
@@ -96,19 +102,72 @@ export async function startApplicationMediaClient({
         ),
       ),
     );
+    try {
+      await Promise.all(
+        pages.map((page) =>
+          page.waitForFunction(
+            () => ['muted', 'error'].includes(window.__mediaFixture.status),
+            null,
+            { timeout: 25000 },
+          ),
+        ),
+      );
+    } catch (error) {
+      const observations = await Promise.all(pages.map(readObservations));
+      throw new Error(
+        `application media clients did not reach live/error: ${JSON.stringify({
+          observations: observations.map(withoutRefreshedToken),
+          browserErrors: browserErrors.map(safeDiagnostic),
+        })}`,
+        { cause: error },
+      );
+    }
+    const beforeMicrophoneIntent = await Promise.all(pages.map(readObservations));
+    if (beforeMicrophoneIntent.some(({ status }) => status !== 'muted'))
+      throw new Error(
+        `application grant did not establish a muted listener before microphone intent: ${JSON.stringify(
+          {
+            observations: beforeMicrophoneIntent.map(withoutRefreshedToken),
+            browserErrors: browserErrors.map(safeDiagnostic),
+          },
+        )}`,
+      );
+    // The test clients simulate an explicit user microphone action after admission.
     await Promise.all(
       pages.map((page) =>
-        page.waitForFunction(() => ['live', 'error'].includes(window.__mediaFixture.status), null, {
-          timeout: 25000,
-        }),
+        page.evaluate(() => window.postMessage({ kind: 'toggle-microphone' }, location.origin)),
       ),
     );
+    try {
+      await Promise.all(
+        pages.map((page, index) =>
+          page.waitForFunction(
+            ({ denied }) =>
+              denied
+                ? window.__mediaFixture.status === 'muted' &&
+                  window.__mediaFixture.error.includes('Microphone access was denied')
+                : window.__mediaFixture.status === 'live',
+            { denied: index === denyMicrophoneIndex },
+            { timeout: 25000 },
+          ),
+        ),
+      );
+    } catch (error) {
+      const observations = await Promise.all(pages.map(readObservations));
+      throw new Error(
+        `application microphone intent did not resolve: ${JSON.stringify({
+          observations: observations.map(withoutRefreshedToken),
+          browserErrors: browserErrors.map(safeDiagnostic),
+        })}`,
+        { cause: error },
+      );
+    }
     const initial = await Promise.all(pages.map(readObservations));
     if (denyMicrophoneIndex !== undefined) {
       const denied = initial[denyMicrophoneIndex];
       const allowed = initial[denyMicrophoneIndex === 0 ? 1 : 0];
       if (
-        denied?.status !== 'error' ||
+        denied?.status !== 'muted' ||
         !denied.error.includes('Microphone access was denied') ||
         allowed?.status !== 'live'
       )
@@ -184,6 +243,7 @@ export async function startApplicationMediaClient({
       observations,
       pages,
       grants,
+      browserErrors: () => browserErrors.map(safeDiagnostic),
       exerciseWeakNetwork: async () => {
         const before = await Promise.all(pages.map(readObservations));
         await Promise.all(
@@ -358,8 +418,13 @@ export async function startApplicationMediaClient({
           statuses: observations.map(({ status }) => status),
         };
       },
-      exerciseServerCutoff: async () => {
-        const requestedAt = Date.now();
+      exerciseServerCutoff: async (requestedAt = Date.now()) => {
+        if (
+          !Number.isFinite(requestedAt) ||
+          requestedAt > Date.now() ||
+          Date.now() - requestedAt > 60000
+        )
+          throw new Error('invalid authoritative media-revocation start time');
         try {
           await Promise.all(
             pages.map((page) =>
@@ -412,6 +477,7 @@ export async function startApplicationMediaClient({
         );
         return {
           cutoffMs: Math.max(0, lastDecodedAudioAt - requestedAt),
+          observations: after.map(withoutRefreshedToken),
           remoteTracks: after.map(({ remoteTrackIdentities }) => remoteTrackIdentities.length),
           remoteAudioDecodedSamples: after.map(({ decodedAudioSamples }) => decodedAudioSamples),
           settledDecodedAudioSamples: settled.map(({ decodedAudioSamples }) => decodedAudioSamples),
@@ -501,7 +567,7 @@ export async function runApplicationMediaCutoffCli() {
         continue;
       }
       if (command.kind === 'expect-server-cutoff') {
-        const result = await client.exerciseServerCutoff();
+        const result = await client.exerciseServerCutoff(command.startedAt);
         process.stdout.write(JSON.stringify({ kind: 'server-cutoff', ...result }) + '\n');
         continue;
       }
@@ -552,6 +618,7 @@ export async function runApplicationMediaCutoffCli() {
           .filter((_, peerIndex) => peerIndex !== 1)
           .map(({ identity }) => identity);
         const before = await readObservations(receiver);
+        const peerBefore = await readObservations(client.pages[0]);
         await receiver.evaluate(() => window.postMessage({ kind: 'stop' }, location.origin));
         await receiver.waitForFunction(() => window.__mediaFixture.status === 'off', null, {
           timeout: 5000,
@@ -560,31 +627,81 @@ export async function runApplicationMediaCutoffCli() {
           (grant) => window.postMessage({ kind: 'start', grant }, location.origin),
           { ...client.grants[1], token: command.token },
         );
-        await receiver.waitForFunction(
-          () => ['live', 'error'].includes(window.__mediaFixture.status),
-          null,
-          { timeout: 10000 },
+        try {
+          await receiver.waitForFunction(
+            () => ['live', 'muted', 'error'].includes(window.__mediaFixture.status),
+            null,
+            { timeout: 10000 },
+          );
+        } catch (error) {
+          const observation = withoutRefreshedToken(await readObservations(receiver));
+          throw new Error(
+            `refreshed LiveKit grant did not reach a terminal connection state: ${JSON.stringify({
+              observation,
+              expectedPeerIdentities: peerIdentities,
+              browserErrors: client.browserErrors(),
+              cause: error instanceof Error ? error.message : 'unknown',
+            })}`,
+            { cause: error },
+          );
+        }
+        const admittedMuted = withoutRefreshedToken(await readObservations(receiver));
+        if (admittedMuted.status !== 'muted')
+          throw new Error(
+            `a fresh media session did not require explicit microphone intent: ${JSON.stringify({
+              observation: admittedMuted,
+              browserErrors: client.browserErrors(),
+            })}`,
+          );
+        try {
+          await receiver.waitForFunction(
+            ({ identities, samples }) =>
+              window.__mediaFixture.status === 'muted' &&
+              identities.length === window.__mediaFixture.remoteIdentities.length &&
+              identities.length === window.__mediaFixture.remoteTrackIdentities.length &&
+              identities.every(
+                (identity) =>
+                  window.__mediaFixture.remoteIdentities.includes(identity) &&
+                  window.__mediaFixture.remoteTrackIdentities.includes(identity),
+              ) &&
+              window.__mediaFixture.activeAudioSamples > samples + 5,
+            { identities: peerIdentities, samples: before.activeAudioSamples },
+            { timeout: 10000 },
+          );
+        } catch (error) {
+          const observation = withoutRefreshedToken(await readObservations(receiver));
+          throw new Error(
+            `refreshed LiveKit grant did not restore muted-listener audio: ${JSON.stringify({
+              observation,
+              expectedPeerIdentities: peerIdentities,
+              browserErrors: client.browserErrors(),
+              cause: error instanceof Error ? error.message : 'unknown',
+            })}`,
+            { cause: error },
+          );
+        }
+        const listening = await readObservations(receiver);
+        await receiver.evaluate(() =>
+          window.postMessage({ kind: 'toggle-microphone' }, location.origin),
         );
-        await receiver.waitForFunction(
-          ({ identities, samples }) =>
-            window.__mediaFixture.status === 'live' &&
-            identities.length === window.__mediaFixture.remoteIdentities.length &&
-            identities.length === window.__mediaFixture.remoteTrackIdentities.length &&
-            identities.every(
-              (identity) =>
-                window.__mediaFixture.remoteIdentities.includes(identity) &&
-                window.__mediaFixture.remoteTrackIdentities.includes(identity),
-            ) &&
-            window.__mediaFixture.activeAudioSamples > samples + 5,
-          { identities: peerIdentities, samples: before.activeAudioSamples },
+        await receiver.waitForFunction(() => window.__mediaFixture.status === 'live', null, {
+          timeout: 10000,
+        });
+        await client.pages[0].waitForFunction(
+          (samples) => window.__mediaFixture.activeAudioSamples > samples + 5,
+          peerBefore.activeAudioSamples,
           { timeout: 10000 },
         );
         const observation = await readObservations(receiver);
+        const resumedPeer = await readObservations(client.pages[0]);
         process.stdout.write(
           JSON.stringify({
             kind: 'token-reconnect',
             live: observation.status === 'live',
             resumedSamples: observation.activeAudioSamples - before.activeAudioSamples,
+            mutedBeforeExplicitIntent: admittedMuted.status === 'muted',
+            decodedWhileMuted: listening.activeAudioSamples > before.activeAudioSamples,
+            peerResumedSamples: resumedPeer.activeAudioSamples - peerBefore.activeAudioSamples,
             remoteIdentityPresent: peerIdentities.every(
               (identity) =>
                 observation.remoteIdentities.includes(identity) &&

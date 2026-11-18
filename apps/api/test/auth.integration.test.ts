@@ -3567,7 +3567,7 @@ describe('office socket admission', () => {
               { timeout: 5000, interval: 50 },
             );
             expect(observations[0]?.status).toBe('live');
-            expect(observations[1]?.status).toBe('error');
+            expect(observations[1]?.status).toBe('muted');
             expect(observations[1]?.error).toContain('Microphone access was denied');
             expect(observations[0]?.remoteIdentities).not.toContain(secondReady.participationId);
             console.info(
@@ -3941,6 +3941,7 @@ describe('office socket admission', () => {
         );
         const firstEndedEvent = nextSocketEvent<unknown>(firstSocket, 'conversation:update');
         const secondEndedEvent = nextSocketEvent<unknown>(secondSocket, 'conversation:update');
+        const mediaRevocationStartedAt = Date.now();
         if (mediaEndScenario === 'opt-out') {
           const optOut = {
             eventId: randomUUID(),
@@ -4041,10 +4042,13 @@ describe('office socket admission', () => {
           );
         }
         if (applicationMediaClient) {
-          applicationMediaClient.send({ kind: 'stop' });
+          applicationMediaClient.send({
+            kind: 'expect-server-cutoff',
+            startedAt: mediaRevocationStartedAt,
+          });
           const measured = await waitForApplicationMediaMessage(
             applicationMediaClient,
-            (message) => message['kind'] === 'cutoff',
+            (message) => message['kind'] === 'server-cutoff',
             'the measured real audio cutoff after conversation leave',
           );
           expect(measured['stable']).toBe(true);
@@ -4066,13 +4070,25 @@ describe('office socket admission', () => {
             );
           } else {
             expect(measured['cutoffMs']).toEqual(expect.any(Number));
-            expect(measured['cutoffMs'] as number).toBeLessThanOrEqual(8000);
+            expect(measured['cutoffMs'] as number).toBeLessThanOrEqual(2000);
+            const roomService = new RoomServiceClient(
+              `http://127.0.0.1:${liveKitFixture!.signalingPort}`,
+              livekitApiKey,
+              livekitApiSecret,
+            );
+            const retiredParticipants = await roomService
+              .listParticipants(active.generation)
+              .catch(() => []);
+            expect(retiredParticipants).toHaveLength(0);
             console.info(
               `CP08.4 media cutoff: ${JSON.stringify({
+                trigger: mediaEndScenario,
                 cutoffMs: measured['cutoffMs'],
                 activeSamples: (
                   measured['observations'] as Array<{ activeAudioSamples: number }>
                 ).map(({ activeAudioSamples }) => activeAudioSamples),
+                remoteTracks: measured['remoteTracks'],
+                serverParticipantsAfterRevocation: retiredParticipants.length,
                 stable: measured['stable'],
               })}`,
             );

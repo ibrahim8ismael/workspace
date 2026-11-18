@@ -51,8 +51,13 @@ if (sfuLease && !policyLoss) throw new Error('--sfu-lease requires --policy-loss
 const sfuEpoch = randomBytes(32).toString('hex');
 if (companies && !policyLoss) throw new Error('--company-isolation requires --policy-loss');
 if (policyLoss && !isolated) throw new Error('--policy-loss requires --isolated');
-const policyKey = randomBytes(32).toString('hex');
+const policyKey = randomBytes(32).toString('base64');
 const secret = randomBytes(32).toString('hex');
+const redactFixtureLog = (value) =>
+  String(value)
+    .replaceAll(secret, '[redacted]')
+    .replaceAll(policyKey, '[redacted]')
+    .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, '[redacted-jwt]');
 const config = `port: 7880\nbind_addresses: [${isolated ? '127.0.0.1' : '0.0.0.0'}]\nrtc:\n  tcp_port: 17881\n  node_ip: 127.0.0.1\n  use_external_ip: false\nkeys:\n  fixture: ${secret}\n`;
 let id, browser, watchdog, guard, guardId, progressTimer, policyId, progressLogs;
 const retirementDirectory = await mkdtemp(join(tmpdir(), 'cp07-guard-'));
@@ -207,7 +212,12 @@ try {
           await new Promise((r) => setTimeout(r, 100));
         }
       }
-      throw new Error('isolated guard did not start');
+      const logs = guardId
+        ? await exec('docker', ['--context', context, 'logs', guardId], { timeout: 3000 })
+            .then(({ stdout, stderr }) => redactFixtureLog(`${stdout}${stderr}`).trim())
+            .catch(() => '')
+        : '';
+      throw new Error(`isolated guard did not start${logs ? `: ${logs}` : ''}`);
     }
     retirement = new RetirementStore(retirementDirectory);
     const verifier = new TokenVerifier('fixture', secret);

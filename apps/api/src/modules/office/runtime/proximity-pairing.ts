@@ -17,6 +17,8 @@ export interface ProximityCandidate {
   readonly displayName: string;
   readonly availability: 'available' | 'busy' | 'away';
   readonly position: { readonly x: number; readonly y: number };
+  /** Meeting room boundary containing the participant, or null in shared office space. */
+  readonly roomId?: string | null;
 }
 
 export interface PrivateConversationNotice {
@@ -40,6 +42,8 @@ interface VoiceGroup {
   readonly center: { readonly x: number; readonly y: number };
   radiusTiles: number;
   mediaState: 'joining' | 'active';
+  /** The boundary domain in which this conversation was formed. */
+  readonly roomId: string | null;
 }
 
 interface GroupCandidate {
@@ -129,6 +133,7 @@ export class ProximityPairing {
         return (
           candidate !== undefined &&
           this.isEligible(candidate) &&
+          (candidate.roomId ?? null) === group.roomId &&
           this.distanceToCenter(candidate, group.center) <= this.radiusWorld(group.radiusTiles)
         );
       });
@@ -157,6 +162,7 @@ export class ProximityPairing {
         const left = available[leftIndex]!;
         const right = available[rightIndex]!;
         const distance = this.distanceTiles(left, right);
+        if ((left.roomId ?? null) !== (right.roomId ?? null)) continue;
         const key = this.key(left.participationId, right.participationId);
         if (distance <= PROXIMITY_JOIN_RADIUS_TILES && !this.suppressedPairs.has(key))
           possible.push({ left, right, distance, key });
@@ -185,6 +191,7 @@ export class ProximityPairing {
       const accepting = [...this.groups.values()]
         .filter(
           (group) =>
+            group.roomId === (candidate.roomId ?? null) &&
             group.members.length < PROXIMITY_MAX_PARTICIPANTS &&
             this.distanceToCenter(candidate, group.center) <= this.radiusWorld(group.radiusTiles) &&
             group.members.every(
@@ -321,6 +328,7 @@ export class ProximityPairing {
       },
       radiusTiles: PROXIMITY_INITIAL_RADIUS_TILES,
       mediaState: 'joining',
+      roomId: left.roomId ?? null,
     };
   }
 

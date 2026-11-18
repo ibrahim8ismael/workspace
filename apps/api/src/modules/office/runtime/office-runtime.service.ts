@@ -92,6 +92,66 @@ interface OfficeRuntime {
   readonly meetingInvitationNotices: MeetingInvitationNotice[];
 }
 
+type MeetingRoomDefinition = {
+  readonly zone: TrustedOfficeMap['geometry']['zones'][number];
+  readonly entrances: readonly { side: 'north' | 'south' | 'east' | 'west'; at: number }[];
+};
+const meetingRoomDefinitions = new WeakMap<TrustedOfficeMap, readonly MeetingRoomDefinition[]>();
+
+function meetingRoomsFor(map: TrustedOfficeMap): readonly MeetingRoomDefinition[] {
+  const cached = meetingRoomDefinitions.get(map);
+  if (cached) return cached;
+  const definitions = map.geometry.zones
+    .filter((zone) => zone.kind === 'meeting')
+    .map((zone) => {
+      const { tx, ty, width, height } = zone.bounds;
+      const entrances: { side: 'north' | 'south' | 'east' | 'west'; at: number }[] = [];
+      for (let x = tx; x < tx + width; x += 1) {
+        if (
+          canStep(
+            { tx: x, ty: ty - 1 },
+            { tx: x, ty },
+            map.validated.bounds,
+            map.validated.collision,
+          )
+        )
+          entrances.push({ side: 'north', at: x });
+        if (
+          canStep(
+            { tx: x, ty: ty + height },
+            { tx: x, ty: ty + height - 1 },
+            map.validated.bounds,
+            map.validated.collision,
+          )
+        )
+          entrances.push({ side: 'south', at: x });
+      }
+      for (let y = ty; y < ty + height; y += 1) {
+        if (
+          canStep(
+            { tx: tx - 1, ty: y },
+            { tx, ty: y },
+            map.validated.bounds,
+            map.validated.collision,
+          )
+        )
+          entrances.push({ side: 'west', at: y });
+        if (
+          canStep(
+            { tx: tx + width, ty: y },
+            { tx: tx + width - 1, ty: y },
+            map.validated.bounds,
+            map.validated.collision,
+          )
+        )
+          entrances.push({ side: 'east', at: y });
+      }
+      return { zone, entrances };
+    });
+  meetingRoomDefinitions.set(map, definitions);
+  return definitions;
+}
+
 export interface OfficeReservation {
   readonly roomId: string;
   readonly participationId: string;
@@ -984,35 +1044,63 @@ export class OfficeRuntimeService {
   }
 
   proximityMediaPermits() {
-    return [...this.offices.values()].flatMap((office) => [
-      ...office.proximity.mediaPermits(),
-      ...[...office.meetingGroups.values()].flatMap((group) =>
-        group.members.map((member) => ({
-          generation: group.generation,
-          identity: member.participationId,
-          room: group.generation,
-          version: 1,
-          sources: ['microphone'] as const,
-        })),
-      ),
-    ]);
+    return [...this.offices.values()].flatMap((office) => {
+      this.reconcileMediaAccess(office);
+      return [
+        ...office.proximity.mediaPermits(),
+        ...[...office.meetingGroups.values()].flatMap((group) =>
+          group.members.map((member) => ({
+            generation: group.generation,
+            identity: member.participationId,
+            room: group.generation,
+            version: 1,
+            sources: ['microphone'] as const,
+          })),
+        ),
+      ];
+    });
   }
 
   meetingZones(officeId: string) {
     const office = this.offices.get(officeId);
     if (!office) return null;
     return meetingZonesSchema.parse({
+      workspaceId: office.workspaceId,
+      officeId: office.officeId,
       officeEpoch: office.officeEpoch,
       mapVersion: office.mapVersion,
-      zones: office.map.geometry.zones
-        .filter((zone) => zone.kind === 'meeting')
-        .map((zone) => ({
-          zoneId: zone.zoneId,
-          label: zone.label,
-          bounds: zone.bounds,
-          tileSize: office.map.geometry.tileSize,
-          capacity: OFFICE_LIMITS.maxMeetingParticipants,
+      zones: meetingRoomsFor(office.map).map(({ zone, entrances }) => ({
+        zoneId: zone.zoneId,
+        label: zone.label,
+        bounds: zone.bounds,
+        tileSize: office.map.geometry.tileSize,
+        capacity: OFFICE_LIMITS.maxMeetingParticipants,
+        accessPolicy: 'explicit-admission' as const,
+        occupancy: [...office.participants.entries()]
+          .filter(([, participant]) => this.isInMeetingZone(office, zone.zoneId, participant))
+          .map(([id]) => id)
+          .sort(),
+        admittedMembers: [...(office.meetingGroups.get(zone.zoneId)?.members ?? [])]
+          .map((member) => member.participationId)
+          .sort(),
+        meeting: office.meetingGroups.get(zone.zoneId)
+          ? {
+              conversationId: office.meetingGroups.get(zone.zoneId)!.conversationId,
+              version: office.meetingGroups.get(zone.zoneId)!.version,
+              state: office.meetingGroups.get(zone.zoneId)!.active
+                ? ('active' as const)
+                : ('joining' as const),
+            }
+          : null,
+        entrances: entrances.map((entrance) => ({
+          ...entrance,
+          state: [...office.participants.values()].some((participant) =>
+            this.isInMeetingZone(office, zone.zoneId, participant),
+          )
+            ? ('occupied' as const)
+            : ('open' as const),
         })),
+      })),
     });
   }
 
@@ -1026,6 +1114,7 @@ export class OfficeRuntimeService {
     conversationVersion: number,
   ) {
     for (const office of this.offices.values()) {
+      this.reconcileMediaAccess(office);
       const participant = office.participants.get(participationId);
       const conversation = office.proximity.mediaConversation(
         participationId,
@@ -1057,6 +1146,11 @@ export class OfficeRuntimeService {
       };
     }
     return null;
+  }
+
+  private reconcileMediaAccess(office: OfficeRuntime) {
+    this.reconcileMeetingState(office, performance.now());
+    office.meetingNotices.push(...office.proximity.reconcile(this.proximityCandidates(office)));
   }
 
   activateProximityGeneration(generation: string): PrivateConversationNotice[] {
@@ -1681,6 +1775,11 @@ export class OfficeRuntimeService {
       participationId,
       socketId: participant.socketId,
       displayName: participant.publicState.displayName,
+      roomId:
+        office.map.geometry.zones.find(
+          (zone) =>
+            zone.kind === 'meeting' && this.isInMeetingZone(office, zone.zoneId, participant),
+        )?.zoneId ?? null,
       availability:
         participant.meetingInvitationId ||
         [...office.meetingGroups.values()].some((group) =>

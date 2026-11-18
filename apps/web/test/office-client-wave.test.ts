@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const socketMocks = vi.hoisted(() => ({ io: vi.fn() }));
 vi.mock('socket.io-client', () => ({ io: socketMocks.io }));
 
-import { officeCommandAckSchema } from '@gather/contracts';
+import { OFFICE_PROTOCOL_VERSION, officeCommandAckSchema } from '@gather/contracts';
 import { OfficeClient } from '../src/features/office/office-client';
 import type { ApiClient } from '../src/lib/api';
 
@@ -99,7 +99,7 @@ describe('OfficeClient wave lifecycle', () => {
         workspaceId,
         officeId,
         mapVersion,
-        protocolVersion: 3,
+        protocolVersion: OFFICE_PROTOCOL_VERSION,
         manifest: { mapVersion },
       }),
       officeJoinTicket: vi.fn().mockResolvedValue({ ticket: 'x'.repeat(43) }),
@@ -111,7 +111,7 @@ describe('OfficeClient wave lifecycle', () => {
       workspaceId,
       officeId,
       mapVersion,
-      protocolVersion: 3,
+      protocolVersion: OFFICE_PROTOCOL_VERSION,
       snapshot: snapshot(),
     });
     socket.receive('office:wave', wave());
@@ -139,7 +139,7 @@ describe('OfficeClient wave lifecycle', () => {
         workspaceId,
         officeId,
         mapVersion,
-        protocolVersion: 3,
+        protocolVersion: OFFICE_PROTOCOL_VERSION,
         manifest: { mapVersion },
       }),
       officeJoinTicket: vi.fn().mockResolvedValue({ ticket: 'x'.repeat(43) }),
@@ -151,7 +151,7 @@ describe('OfficeClient wave lifecycle', () => {
       workspaceId,
       officeId,
       mapVersion,
-      protocolVersion: 3,
+      protocolVersion: OFFICE_PROTOCOL_VERSION,
       snapshot: snapshot(),
     });
     socket.receive('office:wave', wave());

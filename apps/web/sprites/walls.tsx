@@ -153,13 +153,23 @@ export function DoorwayPiece({
         {badge}
       </g>
     );
+  if (orientation === 'Vertical' && closed) {
+    return (
+      <g>
+        <rect x="-4" y="0" width="8" height="64" fill="#c98a56" />
+        <rect x="-3" y="1" width="6" height="62" fill="#e8a876" />
+        <rect x="-2" y="3" width="2" height="58" fill="#f5c89a" />
+        <rect x="1" y="30" width="3" height="6" fill="#8fa3b8" />
+        {badge}
+      </g>
+    );
+  }
   if (orientation === 'Vertical') {
     return (
       <g>
-        <rect x="-3" y="0" width="6" height="64" fill="#8e5a30" />
-        <rect x="-2" y="0" width="1" height="64" fill="#a9714b" />
-        <g transform={`translate(${-4} ${0})`}>
-          <DoorPost x={0} height={30} />
+        <DoorPost x={-4} height={30} />
+        <g transform="translate(0 64)">
+          <DoorPost x={-4} height={22} />
         </g>
         {badge}
       </g>

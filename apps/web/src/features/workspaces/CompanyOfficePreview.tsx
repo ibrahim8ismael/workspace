@@ -739,18 +739,21 @@ export function CompanyOfficePreview({
   const self = snapshot.participants.find(
     (participant) => participant.participationId === ready.participationId,
   );
-  const currentMeetingZone = self
-    ? (state.meetingZones?.zones.find((zone) => {
-        const tx = Math.floor(self.position.x / zone.tileSize);
-        const ty = Math.floor(self.position.y / zone.tileSize);
-        return (
-          tx >= zone.bounds.tx &&
-          tx < zone.bounds.tx + zone.bounds.width &&
-          ty >= zone.bounds.ty &&
-          ty < zone.bounds.ty + zone.bounds.height
-        );
-      }) ?? null)
-    : null;
+  const currentMeetingZone =
+    state.meetingZones?.zones.find((zone) => zone.occupancy.includes(ready.participationId)) ??
+    null;
+  const sceneMeetings = Object.fromEntries(
+    (state.meetingZones?.zones ?? [])
+      .filter((zone) => zone.zoneId.startsWith('vivo-'))
+      .map((zone) => [
+        zone.zoneId.slice('vivo-'.length),
+        {
+          active: zone.occupancy.length > 0,
+          locked: false,
+          participants: zone.admittedMembers.length,
+        },
+      ]),
+  );
   const meetingMembers = activeMeetingConversation?.participants ?? [];
   const meetingMemberNames = meetingMembers.map((participant) =>
     participant.participationId === ready.participationId
@@ -1471,7 +1474,8 @@ export function CompanyOfficePreview({
                     onRemove={() => {}}
                     onSit={(seatId) => void runOfficeAction(() => client.sit(seatId))}
                     onStand={() => void runOfficeAction(() => client.stand())}
-                    meetings={{}}
+                    meetings={sceneMeetings}
+                    currentMeetingZone={currentMeetingZone}
                     conversationAreas={state.conversationAreas?.areas ?? []}
                     areaNames={{}}
                     onZoom={setZoom}
@@ -1485,6 +1489,8 @@ export function CompanyOfficePreview({
                       localParticipationId={state.ready.participationId}
                       onMovement={(dx, dy) => client.move(dx, dy)}
                       conversationAreas={state.conversationAreas?.areas ?? []}
+                      meetingZones={state.meetingZones?.zones ?? []}
+                      currentMeetingZone={currentMeetingZone}
                     />
                   </Suspense>
                 ) : (

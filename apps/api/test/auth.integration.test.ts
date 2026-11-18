@@ -40,6 +40,7 @@ import {
   officeCommandAckSchema,
   officeWaveSchema,
   meetingInvitationSchema,
+  meetingZonesSchema,
   worldDeltaSchema,
   worldSnapshotSchema,
   takeoverReferenceResponseSchema,
@@ -5804,6 +5805,115 @@ describe('database authorization constraints', () => {
   });
 });
 
+describe('authoritative room door lifecycle', () => {
+  it('synchronizes first entry, room changes, disconnect and reconnect across sockets', async () => {
+    const owner = await account();
+    const member = await account();
+    const observer = await account();
+    const workspaceId = await workspace(owner);
+    await join(owner, workspaceId, member);
+    await join(owner, workspaceId, observer);
+    const sockets: Socket[] = [];
+    const connect = async (user: typeof owner) => {
+      const { ticket } = await issueTicket(user, workspaceId);
+      const socket = officeSocket({ ticket, protocolVersion: OFFICE_PROTOCOL_VERSION });
+      sockets.push(socket);
+      const ready = nextSocketEvent<unknown>(socket, 'office:ready');
+      let rooms: ReturnType<typeof meetingZonesSchema.parse> | undefined;
+      socket.on('meeting:zones', (raw: unknown) => {
+        rooms = meetingZonesSchema.parse(raw);
+      });
+      await connectSocket(socket);
+      return { socket, ready: officeReadySchema.parse(await ready), rooms: () => rooms };
+    };
+    try {
+      const a = await connect(owner);
+      const b = await connect(member);
+      const runtime = app.get(OfficeRuntimeService);
+      const office = (
+        runtime as unknown as {
+          offices: Map<
+            string,
+            { participants: Map<string, { publicState: WorldSnapshot['participants'][number] }> }
+          >;
+        }
+      ).offices.get(a.ready.officeId)!;
+      const [first, second] = VIVO_GEOMETRY.zones.filter((zone) => zone.kind === 'meeting');
+      if (!first || !second) throw new Error('Expected two meeting rooms');
+      const place = (id: string, position: { x: number; y: number }) => {
+        office.participants.get(id)!.publicState.position = position;
+      };
+      const inside = (room: NonNullable<typeof first>) => ({
+        x: (room.bounds.tx + 0.5) * 32,
+        y: (room.bounds.ty + 0.5) * 32,
+      });
+      const expectRooms = async (client: typeof a, firstIds: string[], secondIds: string[]) => {
+        await vi.waitFor(() => {
+          for (const [room, ids] of [
+            [first, firstIds],
+            [second, secondIds],
+          ] as const) {
+            const zone = client.rooms()?.zones.find((entry) => entry.zoneId === room.zoneId);
+            expect(zone?.occupancy).toEqual([...ids].sort());
+            expect(zone?.entrances.length).toBeGreaterThan(0);
+            expect(zone?.entrances.map((entry) => entry.state)).toEqual(
+              Array(zone!.entrances.length).fill(ids.length ? 'occupied' : 'open'),
+            );
+          }
+        });
+      };
+      const idA = a.ready.participationId;
+      const idB = b.ready.participationId;
+      await expectRooms(a, [], []);
+      await expectRooms(b, [], []);
+      place(idA, inside(first!));
+      await Promise.all([expectRooms(a, [idA], []), expectRooms(b, [idA], [])]);
+      // Walk in through a visually closed entrance using the normal movement command.
+      const entrance = a.rooms()!.zones.find((zone) => zone.zoneId === first.zoneId)!.entrances[0]!;
+      const { tx, ty, width, height } = first.bounds;
+      const axis = (entrance.at + 0.5) * 32;
+      const crossings = {
+        north: { position: { x: axis, y: ty * 32 - 1 }, dx: 0, dy: 1 },
+        south: { position: { x: axis, y: (ty + height) * 32 + 1 }, dx: 0, dy: -1 },
+        west: { position: { x: tx * 32 - 1, y: axis }, dx: 1, dy: 0 },
+        east: { position: { x: (tx + width) * 32 + 1, y: axis }, dx: -1, dy: 0 },
+      };
+      const crossing = crossings[entrance.side];
+      place(idB, crossing.position);
+      const move = async (sequence: number, dx: number, dy: number) => {
+        const ack = await new Promise<unknown>((resolve) => {
+          b.socket.emit(
+            'world:input',
+            {
+              eventId: randomUUID(),
+              officeEpoch: b.ready.snapshot.officeEpoch,
+              payload: { sequence, dx, dy },
+            },
+            resolve,
+          );
+        });
+        expect(officeCommandAckSchema.parse(ack)).toMatchObject({ ok: true });
+      };
+      await move(1, crossing.dx, crossing.dy);
+      await Promise.all([expectRooms(a, [idA, idB], []), expectRooms(b, [idA, idB], [])]);
+      await move(2, 0, 0);
+      // Both positions change before the next projection. Only final occupancy is broadcast.
+      place(idA, inside(second!));
+      place(idB, VIVO_GEOMETRY.spawn);
+      await Promise.all([expectRooms(a, [], [idA]), expectRooms(b, [], [idA])]);
+      const c = await connect(observer);
+      await expectRooms(c, [], [idA]);
+      a.socket.disconnect();
+      await Promise.all([expectRooms(b, [], []), expectRooms(c, [], [])]);
+      const fresh = await connect(owner);
+      expect(fresh.ready.participationId).not.toBe(idA);
+      await expectRooms(fresh, [], []);
+    } finally {
+      for (const socket of sockets) socket.disconnect();
+    }
+  });
+});
+
 describe('meeting invitation socket flow', () => {
   it('keeps invitations private, declines without movement, then admits after shared authoritative travel', async () => {
     const owner = await account();
@@ -5989,4 +6099,351 @@ describe('meeting invitation socket flow', () => {
       for (const socket of sockets) socket.disconnect();
     }
   });
+});
+
+describe('authoritative room audio isolation', () => {
+  it.skipIf(!runLiveMediaFixture)(
+    'isolates adjacent room meetings from doorway and wall outsiders and cuts off exited or revoked receivers',
+    async () => {
+      const users: Awaited<ReturnType<typeof account>>[] = [];
+      for (let index = 0; index < 6; index += 1) users.push(await account());
+      const workspaceId = await workspace(users[0]!);
+      for (const member of users.slice(1)) await join(users[0]!, workspaceId, member);
+      const tickets = await Promise.all(users.map((user) => issueTicket(user, workspaceId)));
+      const sockets = tickets.map(({ ticket }) =>
+        officeSocket({ ticket, protocolVersion: OFFICE_PROTOCOL_VERSION }),
+      );
+      let livekit: Awaited<ReturnType<typeof startLiveKitFixture>> | undefined;
+      let fixture: Awaited<ReturnType<typeof startViteMediaFixture>> | undefined;
+      let guard: ApplicationGuard | undefined;
+      let retirementDirectory: string | undefined;
+      const mediaClients: ApplicationMediaClient[] = [];
+      try {
+        const ready: ReturnType<typeof officeReadySchema.parse>[] = [];
+        for (const socket of sockets) {
+          const notice = nextSocketEvent<unknown>(socket, 'office:ready');
+          await connectSocket(socket);
+          ready.push(officeReadySchema.parse(await notice));
+        }
+        const officeId = ready[0]!.officeId;
+        const officeEpoch = ready[0]!.snapshot.officeEpoch;
+        const runtime = app.get(OfficeRuntimeService);
+        const map = trustedOfficeMap(vivoManifest.mapVersion)!;
+        const rooms = VIVO_GEOMETRY.zones.filter((zone) => zone.kind === 'meeting');
+        // Pick two genuinely adjacent rooms from the installed map, rather than synthetic rooms.
+        const adjacent = rooms.flatMap((a) =>
+          rooms
+            .filter(
+              (b) =>
+                a.zoneId !== b.zoneId &&
+                a.bounds.tx === b.bounds.tx &&
+                a.bounds.width === b.bounds.width &&
+                a.bounds.ty + a.bounds.height === b.bounds.ty,
+            )
+            .map((b) => [a, b] as const),
+        )[0];
+        if (!adjacent) throw new Error('Expected adjacent trusted meeting rooms');
+        const [roomA, roomB] = adjacent;
+        const inside = (zone: typeof roomA, tile: { tx: number; ty: number }) =>
+          tile.tx >= zone.bounds.tx &&
+          tile.tx < zone.bounds.tx + zone.bounds.width &&
+          tile.ty >= zone.bounds.ty &&
+          tile.ty < zone.bounds.ty + zone.bounds.height;
+        const free = (tile: { tx: number; ty: number }) =>
+          map.validated.isReachable(tile) &&
+          !map.seats.some((seat) => seat.tile.tx === tile.tx && seat.tile.ty === tile.ty);
+        const tilesIn = (zone: typeof roomA) =>
+          Array.from({ length: zone.bounds.width * zone.bounds.height }, (_, index) => ({
+            tx: zone.bounds.tx + (index % zone.bounds.width),
+            ty: zone.bounds.ty + Math.floor(index / zone.bounds.width),
+          })).filter(free);
+        const boundary = tilesIn(roomA).flatMap((tile) =>
+          [
+            { tx: tile.tx - 1, ty: tile.ty },
+            { tx: tile.tx + 1, ty: tile.ty },
+            { tx: tile.tx, ty: tile.ty - 1 },
+            { tx: tile.tx, ty: tile.ty + 1 },
+          ]
+            .filter((outside) => free(outside) && !rooms.some((zone) => inside(zone, outside)))
+            .map((outside) => ({ tile, outside })),
+        );
+        const doorway = boundary.find(({ tile, outside }) =>
+          canStep(tile, outside, map.validated.bounds, map.validated.collision),
+        );
+        if (!doorway) throw new Error('Expected a reachable doorway');
+        const wall = boundary.find(
+          ({ tile, outside }) =>
+            !canStep(tile, outside, map.validated.bounds, map.validated.collision) &&
+            Math.hypot(outside.tx - doorway.outside.tx, outside.ty - doorway.outside.ty) <= 2,
+        );
+        if (!wall) throw new Error('Expected a reachable exterior wall beside the doorway');
+        const office = (
+          runtime as unknown as {
+            offices: Map<
+              string,
+              {
+                participants: Map<
+                  string,
+                  {
+                    publicState: { position: { x: number; y: number } };
+                  }
+                >;
+              }
+            >;
+          }
+        ).offices.get(officeId)!;
+        const place = (index: number, tile: { tx: number; ty: number }) => {
+          // Arrange authoritative positions; navigation itself has separate movement tests.
+          office.participants.get(ready[index]!.participationId)!.publicState.position = {
+            x: tile.tx * 32 + 16,
+            y: tile.ty * 32 + 16,
+          };
+        };
+        place(0, doorway.tile);
+        place(
+          1,
+          tilesIn(roomA).find(
+            (tile) => tile.tx !== doorway.tile.tx || tile.ty !== doorway.tile.ty,
+          )!,
+        );
+        place(2, tilesIn(roomB)[0]!);
+        place(3, tilesIn(roomB)[1]!);
+        place(4, doorway.outside);
+        place(5, doorway.outside);
+        const nextUpdate = sockets.map((socket) => socketEventQueue(socket, 'conversation:update'));
+        const command = async (index: number, event: string, payload: Record<string, unknown>) => {
+          const acknowledgement = officeCommandAckSchema.parse(
+            await new Promise((resolve) =>
+              sockets[index]!.emit(event, { eventId: randomUUID(), officeEpoch, payload }, resolve),
+            ),
+          );
+          expect(acknowledgement).toMatchObject({ ok: true });
+        };
+        for (const index of [0, 1]) await command(index, 'meeting:join', { zoneId: roomA.zoneId });
+        for (const index of [2, 3]) await command(index, 'meeting:join', { zoneId: roomB.zoneId });
+        for (const index of [4, 5]) await command(index, 'proximity:set-opt-in', { enabled: true });
+        livekit = await startLiveKitFixture();
+        fixture = await startViteMediaFixture();
+        retirementDirectory = await mkdtemp(resolve(tmpdir(), 'gather-room-audio-'));
+        const apiAddress = app.getHttpServer().address() as AddressInfo;
+        guard = startApplicationGuard({
+          apiBaseUrl: `http://127.0.0.1:${apiAddress.port}`,
+          epoch: 'b'.repeat(64),
+          host: '127.0.0.1',
+          port: liveMediaGuardPort!,
+          retirementDirectory,
+          sfuUpstream: `http://127.0.0.1:${livekit.signalingPort}`,
+          origin: fixture.origin,
+        });
+        await waitForGuardMessage(
+          guard,
+          (message) => message.kind === 'ack',
+          'room policy installation',
+        );
+        const active = await Promise.all(
+          [0, 2, 4].map(async (index) =>
+            conversationUpdateSchema.parse(
+              await nextUpdate[index]!((raw) => {
+                const parsed = conversationUpdateSchema.safeParse(raw);
+                return (
+                  parsed.success &&
+                  parsed.data.state === 'active' &&
+                  parsed.data.participants.length === 2
+                );
+              }),
+            ),
+          ),
+        );
+        expect(new Set(active.map((conversation) => conversation.generation)).size).toBe(3);
+        const grantFor = async (index: number, conversation: (typeof active)[number]) => {
+          const response = await users[index]!.client.send(
+            'post',
+            `/api/conversations/${conversation.conversationId}/media-token`,
+            {
+              participationId: ready[index]!.participationId,
+              conversationVersion: conversation.version,
+            },
+          );
+          status(response, 200);
+          return {
+            ...mediaTokenResponseSchema.parse(response.body),
+            identity: ready[index]!.participationId,
+          };
+        };
+        const grants = await Promise.all(
+          active.map((conversation, pair) =>
+            Promise.all([pair * 2, pair * 2 + 1].map((index) => grantFor(index, conversation))),
+          ),
+        );
+        for (const pairGrants of grants) {
+          const client = startApplicationMediaClient({
+            fixtureUrl: fixture.url,
+            grants: pairGrants,
+          });
+          mediaClients.push(client);
+          const connected = await waitForApplicationMediaMessage(
+            client,
+            (message) => message['kind'] === 'connected',
+            'isolated pair decoded audio',
+          );
+          const observations = connected['observations'] as Array<{
+            remoteIdentities: string[];
+            remoteTrackIdentities: string[];
+            activeAudioSamples: number;
+            decodedAudioSamples: number;
+          }>;
+          observations.forEach((observation, index) => {
+            const expected = [pairGrants[index === 0 ? 1 : 0]!.identity];
+            expect(observation.remoteIdentities).toEqual(expected);
+            expect(observation.remoteTrackIdentities).toEqual(expected);
+            expect(observation.activeAudioSamples).toBeGreaterThanOrEqual(10);
+            expect(observation.decodedAudioSamples).toBeGreaterThan(0);
+          });
+        }
+        const assertAdvancing = async (client: ApplicationMediaClient) => {
+          const baseline = client.messages.length;
+          client.send({ kind: 'expect-audio-advancing' });
+          await vi.waitFor(
+            () => {
+              const report = client.messages
+                .slice(baseline)
+                .find((message) => message['kind'] === 'audio-advancing');
+              expect(report).toBeDefined();
+              expect(
+                (report!['decodedAudioSampleDeltas'] as number[]).every((delta) => delta > 0),
+              ).toBe(true);
+            },
+            { timeout: 5000, interval: 50 },
+          );
+        };
+        const denyOutsiders = async () => {
+          for (const index of [4, 5]) {
+            for (const conversation of active.slice(0, 2)) {
+              status(
+                await users[index]!.client.send(
+                  'post',
+                  `/api/conversations/${conversation.conversationId}/media-token`,
+                  {
+                    participationId: ready[index]!.participationId,
+                    conversationVersion: conversation.version,
+                  },
+                ),
+                409,
+              );
+            }
+          }
+          // All three pairs remain active at the same time, with exactly their own peer tracks.
+          await Promise.all(mediaClients.map(assertAdvancing));
+        };
+        await denyOutsiders();
+        place(4, wall.outside);
+        place(5, wall.outside);
+        runtime.reconcileProximity(officeId);
+        await denyOutsiders();
+
+        // Do not stop either browser: the media guard must cut off already connected receivers.
+        mediaClients[0]!.send({ kind: 'expect-server-cutoff' });
+        place(1, doorway.outside);
+        runtime.reconcileProximity(officeId);
+        const cutoffA = await waitForApplicationMediaMessage(
+          mediaClients[0]!,
+          (message) => message['kind'] === 'server-cutoff',
+          'real room exit cutoff',
+        );
+        expect(cutoffA['stable']).toBe(true);
+        expect(cutoffA['cutoffMs']).toBeLessThanOrEqual(8000);
+        status(
+          await users[1]!.client.send(
+            'post',
+            `/api/conversations/${active[0]!.conversationId}/media-token`,
+            {
+              participationId: ready[1]!.participationId,
+              conversationVersion: active[0]!.version,
+            },
+          ),
+          409,
+        );
+        const replay = async (token: string) => {
+          const url = new URL(`http://127.0.0.1:${liveMediaGuardPort}/rtc/v1/validate`);
+          url.searchParams.set('access_token', token);
+          url.searchParams.set(
+            'join_request',
+            Buffer.from(JSON.stringify({ protocol: 12 })).toString('base64url'),
+          );
+          return fetch(url, { headers: { Origin: fixture!.origin } });
+        };
+        expect((await replay(grants[0]![1]!.token)).status).toBe(403);
+        await assertAdvancing(mediaClients[1]!);
+
+        mediaClients[1]!.send({ kind: 'expect-server-cutoff' });
+        const admissionEnded = nextSocketEvent<Record<string, unknown>>(
+          sockets[3]!,
+          'office:access-ended',
+        );
+        status(
+          await users[0]!.client.send(
+            'delete',
+            `/api/workspaces/${workspaceId}/members/${users[3]!.id}`,
+          ),
+          200,
+        );
+        await expect(admissionEnded).resolves.toMatchObject({ reason: 'authorization_ended' });
+        const cutoffB = await waitForApplicationMediaMessage(
+          mediaClients[1]!,
+          (message) => message['kind'] === 'server-cutoff',
+          'real room admission revocation cutoff',
+        );
+        expect(cutoffB['stable']).toBe(true);
+        expect(cutoffB['cutoffMs']).toBeLessThanOrEqual(8000);
+        expect((await replay(grants[1]![1]!.token)).status).toBe(403);
+        await assertAdvancing(mediaClients[2]!);
+
+        sockets[1]!.disconnect();
+        await vi.waitFor(() =>
+          expect(office.participants.has(ready[1]!.participationId)).toBe(false),
+        );
+        const freshTicket = await issueTicket(users[1]!, workspaceId);
+        const freshSocket = officeSocket({
+          ticket: freshTicket.ticket,
+          protocolVersion: OFFICE_PROTOCOL_VERSION,
+        });
+        sockets.push(freshSocket);
+        const freshReadyNotice = nextSocketEvent<unknown>(freshSocket, 'office:ready');
+        await connectSocket(freshSocket);
+        const fresh = officeReadySchema.parse(await freshReadyNotice);
+        expect(fresh.participationId).not.toBe(ready[1]!.participationId);
+        status(
+          await users[1]!.client.send(
+            'post',
+            `/api/conversations/${active[0]!.conversationId}/media-token`,
+            {
+              participationId: fresh.participationId,
+              conversationVersion: active[0]!.version,
+            },
+          ),
+          409,
+        );
+        console.info(
+          'Issue #31 room media evidence:',
+          JSON.stringify({
+            simultaneousPairs: 3,
+            adjacentRooms: [roomA.zoneId, roomB.zoneId],
+            outsiderLocations: ['doorway', 'wall'],
+            exitCutoffMs: cutoffA['cutoffMs'],
+            revocationCutoffMs: cutoffB['cutoffMs'],
+            retiredTokensRejected: true,
+            reconnectAdmissionRetained: false,
+          }),
+        );
+      } finally {
+        for (const client of mediaClients) await stopApplicationMediaClient(client);
+        if (guard) await stopApplicationGuard(guard);
+        if (fixture) await fixture.stop();
+        if (livekit) await livekit.stop();
+        if (retirementDirectory) await rm(retirementDirectory, { recursive: true, force: true });
+        for (const socket of sockets) socket.disconnect();
+      }
+    },
+    180000,
+  );
 });

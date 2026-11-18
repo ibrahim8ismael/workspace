@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import Phaser from 'phaser';
-import type { ConversationAreas, OfficeBootstrapResponse, WorldSnapshot } from '@gather/contracts';
+import type {
+  ConversationAreas,
+  MeetingZones,
+  OfficeBootstrapResponse,
+  WorldSnapshot,
+} from '@gather/contracts';
 import { readPreview } from './data';
 import { createCommonsSceneCleanup } from './scene-lifecycle';
 import './preview.css';
@@ -18,6 +23,8 @@ type MountedScene = {
   cleanup: () => void;
   updateSnapshot: (snapshot: WorldSnapshot) => void;
   updateAreas: (areas: ConversationAreas['areas']) => void;
+  updateMeetingZones: (zones: MeetingZones['zones']) => void;
+  updateCurrentMeetingZone: (zone: MeetingZones['zones'][number] | null) => void;
 };
 
 function avatarFrame(
@@ -50,6 +57,8 @@ function mountScene(
   failed: () => void,
   onMovement: (dx: -1 | 0 | 1, dy: -1 | 0 | 1) => void,
   initialAreas: ConversationAreas['areas'],
+  initialMeetingZones: MeetingZones['zones'],
+  initialCurrentMeetingZone: MeetingZones['zones'][number] | null,
 ): MountedScene {
   const assets = readPreview();
   if (assets.manifest.mapVersion !== bootstrap.mapVersion) {
@@ -58,6 +67,8 @@ function mountScene(
       cleanup: () => parent.remove(),
       updateSnapshot: () => undefined,
       updateAreas: () => undefined,
+      updateMeetingZones: () => undefined,
+      updateCurrentMeetingZone: () => undefined,
     };
   }
   const { geometry, catalog } = assets;
@@ -65,6 +76,9 @@ function mountScene(
   let disposed = false;
   let applySnapshot: (snapshot: WorldSnapshot) => void = () => undefined;
   let applyAreas: (areas: ConversationAreas['areas']) => void = () => undefined;
+  let applyMeetingZones: (zones: MeetingZones['zones']) => void = () => undefined;
+  let applyCurrentMeetingZone: (zone: MeetingZones['zones'][number] | null) => void = () =>
+    undefined;
   const game = new Phaser.Game({
     type: Phaser.CANVAS,
     parent,
@@ -92,6 +106,76 @@ function mountScene(
         const tileSize = geometry.tileSize;
         const mapWidth = geometry.widthTiles * tileSize;
         const mapHeight = geometry.heightTiles * tileSize;
+        const doors = this.add.graphics().setDepth(0);
+        const drawDoors = (zones: MeetingZones['zones']) => {
+          doors.clear();
+          const labels: string[] = [];
+          for (const zone of zones) {
+            const closed = zone.occupancy.length > 0;
+            labels.push(`${zone.label} door ${closed ? 'closed' : 'open'}`);
+            for (const entrance of zone.entrances) {
+              const tile = zone.tileSize;
+              const { tx, ty, width, height } = zone.bounds;
+              const horizontal = entrance.side === 'north' || entrance.side === 'south';
+              const x = horizontal
+                ? entrance.at * tile
+                : (entrance.side === 'west' ? tx : tx + width) * tile -
+                  (entrance.side === 'east' ? 8 : 0);
+              const y = horizontal
+                ? (entrance.side === 'north' ? ty : ty + height) * tile -
+                  (entrance.side === 'south' ? 8 : 0)
+                : entrance.at * tile;
+              doors.fillStyle(0x8e5a30, 1);
+              if (closed) {
+                doors.fillRect(x, y, horizontal ? tile : 8, horizontal ? 8 : tile);
+                doors.fillStyle(0xe8a876, 1);
+                doors.fillRect(x + 2, y + 2, horizontal ? tile - 4 : 4, horizontal ? 4 : tile - 4);
+                doors.fillStyle(0x8fa3b8, 1);
+                doors.fillRect(
+                  horizontal ? x + tile - 8 : x + 2,
+                  horizontal ? y + 2 : y + tile / 2 - 2,
+                  3,
+                  4,
+                );
+              } else if (horizontal) {
+                doors.fillRect(x, y, 7, 8);
+                doors.fillRect(x + tile - 7, y, 7, 8);
+              } else {
+                doors.fillRect(x, y, 8, 7);
+                doors.fillRect(x, y + tile - 7, 8, 7);
+              }
+            }
+          }
+          this.game.canvas?.setAttribute('role', 'img');
+          this.game.canvas?.setAttribute(
+            'aria-label',
+            `Live Commons office map. ${labels.join('. ')}`,
+          );
+        };
+        drawDoors(initialMeetingZones);
+        applyMeetingZones = drawDoors;
+
+        const lighting = this.add.graphics().setDepth(10_000_000);
+        const drawLighting = (zone: MeetingZones['zones'][number] | null) => {
+          lighting.clear();
+          if (!zone) return;
+          const { tx, ty, width, height } = zone.bounds;
+          const x = Math.max(0, tx * zone.tileSize - 24);
+          const y = Math.max(0, ty * zone.tileSize - 42);
+          const right = Math.min(mapWidth, (tx + width) * zone.tileSize + 24);
+          const bottom = Math.min(mapHeight, (ty + height) * zone.tileSize + 12);
+          const roomHeight = bottom - y;
+          const dim = (left: number, top: number, w: number, h: number) => {
+            if (w > 0 && h > 0) lighting.fillStyle(0x101820, 0.28).fillRect(left, top, w, h);
+          };
+          dim(0, 0, mapWidth, y);
+          dim(0, y, x, roomHeight);
+          dim(right, y, mapWidth - right, roomHeight);
+          dim(0, bottom, mapWidth, mapHeight - bottom);
+        };
+        drawLighting(initialCurrentMeetingZone);
+        applyCurrentMeetingZone = drawLighting;
+
         const ground = this.add.graphics().setDepth(-100);
         ground.fillStyle(0xe5e7d8).fillRect(0, 0, mapWidth, mapHeight);
         ground.lineStyle(1, 0xd5d8cb, 0.55);
@@ -295,6 +379,8 @@ function mountScene(
     },
     updateSnapshot,
     updateAreas: (areas: ConversationAreas['areas']) => applyAreas(areas),
+    updateMeetingZones: (zones: MeetingZones['zones']) => applyMeetingZones(zones),
+    updateCurrentMeetingZone: (zone) => applyCurrentMeetingZone(zone),
   };
 }
 
@@ -304,6 +390,8 @@ type Props = {
   localParticipationId: string;
   onMovement: (dx: -1 | 0 | 1, dy: -1 | 0 | 1) => void;
   conversationAreas: ConversationAreas['areas'];
+  meetingZones: MeetingZones['zones'];
+  currentMeetingZone: MeetingZones['zones'][number] | null;
 };
 
 export function LiveCommonsScene({
@@ -312,6 +400,8 @@ export function LiveCommonsScene({
   localParticipationId,
   onMovement,
   conversationAreas,
+  meetingZones,
+  currentMeetingZone,
 }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const renderer = useRef<ReturnType<typeof mountScene> | null>(null);
@@ -321,9 +411,15 @@ export function LiveCommonsScene({
   const movement = useRef(onMovement);
   const latestAreas = useRef(conversationAreas);
   const firstAreas = useRef(conversationAreas);
+  const latestMeetingZones = useRef(meetingZones);
+  const firstMeetingZones = useRef(meetingZones);
+  const latestCurrentMeetingZone = useRef(currentMeetingZone);
+  const firstCurrentMeetingZone = useRef(currentMeetingZone);
   latestSnapshot.current = snapshot;
   movement.current = onMovement;
   latestAreas.current = conversationAreas;
+  latestMeetingZones.current = meetingZones;
+  latestCurrentMeetingZone.current = currentMeetingZone;
 
   useEffect(() => {
     const parent = document.createElement('div');
@@ -339,10 +435,14 @@ export function LiveCommonsScene({
           setStatus('ready');
           renderer.current?.updateSnapshot(latestSnapshot.current);
           renderer.current?.updateAreas(latestAreas.current);
+          renderer.current?.updateMeetingZones(latestMeetingZones.current);
+          renderer.current?.updateCurrentMeetingZone(latestCurrentMeetingZone.current);
         },
         () => setStatus('error'),
         (dx, dy) => movement.current(dx, dy),
         firstAreas.current,
+        firstMeetingZones.current,
+        firstCurrentMeetingZone.current,
       );
       renderer.current = mounted;
     } catch {
@@ -362,6 +462,14 @@ export function LiveCommonsScene({
   useEffect(() => {
     renderer.current?.updateAreas(conversationAreas);
   }, [conversationAreas]);
+
+  useEffect(() => {
+    renderer.current?.updateMeetingZones(meetingZones);
+  }, [meetingZones]);
+
+  useEffect(() => {
+    renderer.current?.updateCurrentMeetingZone(currentMeetingZone);
+  }, [currentMeetingZone]);
 
   return (
     <div className="live-commons-scene">

@@ -52,7 +52,7 @@ import {
   directionToWaypoint,
   updateWaypointArrival,
 } from './src/features/office/navigation-progress';
-import type { ConversationAreas } from '@gather/contracts';
+import type { ConversationAreas, MeetingZones } from '@gather/contracts';
 
 type Seat = ReturnType<typeof getOfficeSeats>[number];
 type Props = {
@@ -84,6 +84,7 @@ type Props = {
   onRemove: (id: string) => void;
   meetings: Meetings;
   conversationAreas?: ConversationAreas['areas'];
+  currentMeetingZone?: MeetingZones['zones'][number] | null;
   areaNames: Record<string, string>;
   interactions?: Record<string, Interaction>;
   onNearInteractive?: (id: string | null) => void;
@@ -420,8 +421,11 @@ function Avatar({
         {person.name} · {STATUS_LABEL[person.status]}
       </title>
       {person.speaking && <SpeakingIndicator />}
+      {/* The sprite canvas includes transparent padding that must not intercept map clicks. */}
+      <rect x={-14} y={-48} width={28} height={49} fill="transparent" />
       <image
         className="pixel-resource character-resource"
+        pointerEvents="none"
         href={frames?.[url] ?? url}
         x={-AVATAR_SPRITE.foot.x * AVATAR_SPRITE.renderScale}
         y={-AVATAR_SPRITE.foot.y * AVATAR_SPRITE.renderScale}
@@ -778,6 +782,7 @@ export default function VivoScene({
   onStand,
   meetings = {},
   conversationAreas = [],
+  currentMeetingZone = null,
   onZoom,
   deskLabels = {},
   focusRooms = {},
@@ -1850,7 +1855,7 @@ export default function VivoScene({
     inside: focusRoomOf(person)?.id ?? null,
     ...tileOf(person.id === selfId ? local : (remoteRender[person.id] ?? person)),
   }));
-  // Door artwork follows the reference: wooden doors only on the large meeting room, a light marker on huddle doorways, bare gaps elsewhere.
+  // Meeting doors follow physical occupancy; focus doors retain their separate focus-room behavior.
   const doorLayers: Layer[] = DOORWAYS.flatMap((door) => {
     const area = AREAS.find((candidate) => candidate.id === door.area);
     // Focus offices always show their door; it is shut while someone focuses inside, and swings open for whoever stands in the doorway.
@@ -1867,16 +1872,9 @@ export default function VivoScene({
       );
     const focusDoor =
       isFocus && !!focusRooms[door.area]?.occupied && !focusRooms[door.area]?.open && !atDoor;
-    const style: 'doors' | 'marker' | null = isFocus
-      ? 'doors'
-      : area?.type === 'MeetingRoom'
-        ? (area.capacity ?? 0) >= 6
-          ? 'doors'
-          : door.orientation === 'Vertical'
-            ? 'marker'
-            : null
-        : null;
-    if (!style) return [];
+    const isMeeting = area?.type === 'MeetingRoom';
+    if (!isFocus && !isMeeting) return [];
+    const closed = isFocus ? focusDoor : !!meetings[door.area]?.active;
     return [
       {
         key: `door-${door.area}-${door.tx}-${door.ty}`,
@@ -1889,13 +1887,16 @@ export default function VivoScene({
         order: 1,
         node: (
           <g
+            role="img"
+            aria-label={`${area?.name ?? door.area} door ${closed ? 'closed' : 'open'}`}
+            data-room-id={isMeeting ? `vivo-${door.area}` : undefined}
+            data-room-state={isMeeting ? (closed ? 'closed' : 'open') : undefined}
             transform={`translate(${door.side === 'e' ? (door.tx + 1) * TILE : door.tx * TILE} ${door.side === 's' ? (door.ty + 1) * TILE : door.ty * TILE})`}
           >
             <DoorwayPiece
               orientation={door.orientation}
               side={door.side}
-              style={style}
-              closed={focusDoor || !!meetings[door.area]?.active}
+              closed={closed}
               locked={focusDoor || !!meetings[door.area]?.locked}
             />
           </g>
@@ -2004,6 +2005,29 @@ export default function VivoScene({
   ].sort((a, b) => a.y - b.y || a.order - b.order || a.key.localeCompare(b.key));
 
   const minimapScale = 108 / WORLD.width;
+  // Match the extended scenery when the camera pans or zooms beyond the map edges.
+  const lightingLeft = Math.min(0, viewX);
+  const lightingTop = Math.min(0, viewY);
+  const lightingRight = Math.max(WORLD.width, viewX + viewWidth);
+  const lightingBottom = Math.max(WORLD.height, viewY + viewHeight);
+  const room = currentMeetingZone
+    ? {
+        x: Math.max(0, currentMeetingZone.bounds.tx * currentMeetingZone.tileSize - 24),
+        y: Math.max(0, currentMeetingZone.bounds.ty * currentMeetingZone.tileSize - 42),
+        right: Math.min(
+          WORLD.width,
+          (currentMeetingZone.bounds.tx + currentMeetingZone.bounds.width) *
+            currentMeetingZone.tileSize +
+            24,
+        ),
+        bottom: Math.min(
+          WORLD.height,
+          (currentMeetingZone.bounds.ty + currentMeetingZone.bounds.height) *
+            currentMeetingZone.tileSize +
+            12,
+        ),
+      }
+    : null;
   return (
     <div
       className={`office-scene${simpleView ? ' simplified' : ''}${dragging ? ' is-dragging' : ''}${editingMode ? ' is-editing' : ''}${dragTile ? ' is-moving' : ''}`}
@@ -2169,6 +2193,47 @@ export default function VivoScene({
             <g key={layer.key}>{layer.node}</g>
           ))}
         </g>
+        {room && (
+          <g
+            className="room-lighting"
+            pointerEvents="none"
+            aria-hidden="true"
+            data-room-lighting="dimmed"
+          >
+            <rect
+              x={lightingLeft}
+              y={lightingTop}
+              width={lightingRight - lightingLeft}
+              height={room.y - lightingTop}
+              fill="#101820"
+              fillOpacity=".28"
+            />
+            <rect
+              x={lightingLeft}
+              y={room.y}
+              width={room.x - lightingLeft}
+              height={room.bottom - room.y}
+              fill="#101820"
+              fillOpacity=".28"
+            />
+            <rect
+              x={room.right}
+              y={room.y}
+              width={lightingRight - room.right}
+              height={room.bottom - room.y}
+              fill="#101820"
+              fillOpacity=".28"
+            />
+            <rect
+              x={lightingLeft}
+              y={room.bottom}
+              width={lightingRight - lightingLeft}
+              height={lightingBottom - room.bottom}
+              fill="#101820"
+              fillOpacity=".28"
+            />
+          </g>
+        )}
         {simpleView && <SimpleAreaIcons scale={scale} />}
         {nearInteractive && (
           <g pointerEvents="none" className="scene-interactive">

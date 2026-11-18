@@ -94,6 +94,8 @@ export const conversationAreasSchema = z
 
 export const meetingZonesSchema = z
   .object({
+    workspaceId: idSchema,
+    officeId: idSchema,
     officeEpoch: idSchema,
     mapVersion: mapVersionSchema,
     zones: z
@@ -112,6 +114,28 @@ export const meetingZonesSchema = z
               .strict(),
             tileSize: z.number().int().positive().max(256),
             capacity: z.number().int().min(1).max(OFFICE_LIMITS.maxMeetingParticipants),
+            accessPolicy: z.literal('explicit-admission'),
+            occupancy: z.array(idSchema).max(OFFICE_LIMITS.maxParticipants),
+            admittedMembers: z.array(idSchema).max(OFFICE_LIMITS.maxMeetingParticipants),
+            meeting: z
+              .object({
+                conversationId: idSchema,
+                version: stateVersionSchema,
+                state: z.enum(['joining', 'active']),
+              })
+              .strict()
+              .nullable(),
+            entrances: z
+              .array(
+                z
+                  .object({
+                    side: z.enum(['north', 'south', 'east', 'west']),
+                    at: z.number().int().nonnegative().max(OFFICE_LIMITS.maxWorldDimension),
+                    state: z.enum(['open', 'occupied']),
+                  })
+                  .strict(),
+              )
+              .max(32),
           })
           .strict(),
       )
@@ -121,6 +145,29 @@ export const meetingZonesSchema = z
   .superRefine((value, ctx) => {
     if (new Set(value.zones.map((zone) => zone.zoneId)).size !== value.zones.length)
       ctx.addIssue({ code: 'custom', path: ['zones'], message: 'Duplicate meeting zone' });
+    for (const [index, zone] of value.zones.entries()) {
+      if (new Set(zone.occupancy).size !== zone.occupancy.length)
+        ctx.addIssue({
+          code: 'custom',
+          path: ['zones', index, 'occupancy'],
+          message: 'Duplicate room occupant',
+        });
+      if (new Set(zone.admittedMembers).size !== zone.admittedMembers.length)
+        ctx.addIssue({
+          code: 'custom',
+          path: ['zones', index, 'admittedMembers'],
+          message: 'Duplicate admitted member',
+        });
+      if (
+        new Set(zone.entrances.map(({ side, at }) => `${side}:${at}`)).size !==
+        zone.entrances.length
+      )
+        ctx.addIssue({
+          code: 'custom',
+          path: ['zones', index, 'entrances'],
+          message: 'Duplicate entrance',
+        });
+    }
   });
 
 export const proximityOptInEventSchema = officeCommandSchema(

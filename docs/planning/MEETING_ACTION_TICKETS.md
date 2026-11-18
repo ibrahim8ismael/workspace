@@ -6,7 +6,7 @@
 
 ## GitHub Issues #12 and #3 implementation status — 2026-11-17
 
-Commit `7d4d00b` deploys the server-authoritative anchored/growing circle and trusted fixed-room meeting admission/UI to the pilot. API/contracts and web protocol v3 were rolled out together. Deployed proximity tests now verify three-user decoded audio and a two-user decoded-audio cutoff; fixed-room live media and revocation remain unverified. See the [implementation/rollback notes](PROXIMITY_GROUP_ROLLOUT.md) and [acceptance evidence](ACCEPTANCE.md).
+Commit `7d4d00b` deploys the server-authoritative anchored/growing circle and trusted fixed-room meeting admission/UI to the pilot. Issue #31 adds room occupancy and admission snapshots in office protocol v4. Deployed proximity tests verify three-user decoded audio and a two-user decoded-audio cutoff; fixed-room live media and revocation remain unverified until the room-specific fixture passes. See the [implementation/rollback notes](PROXIMITY_GROUP_ROLLOUT.md) and [acceptance evidence](ACCEPTANCE.md).
 
 ---
 

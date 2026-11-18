@@ -14,6 +14,7 @@ import type { PrivateConversationNotice } from './runtime/proximity-pairing.js';
 export class OfficeRoomEventPublisher {
   private namespace: Namespace | null = null;
   private readonly areaSequences = new Map<string, number>();
+  private readonly meetingSnapshots = new Map<string, string>();
 
   constructor(@Inject(OfficeAdmissionService) private readonly admission: OfficeAdmissionService) {}
 
@@ -80,6 +81,9 @@ export class OfficeRoomEventPublisher {
 
   publishConversationAreas(workspaceId: string, officeId: string, areas: ConversationAreas) {
     const key = `${workspaceId}:${officeId}:${areas.officeEpoch}`;
+    const prefix = `${workspaceId}:${officeId}:`;
+    for (const existing of this.areaSequences.keys())
+      if (existing.startsWith(prefix) && existing !== key) this.areaSequences.delete(existing);
     const previous = this.areaSequences.get(key) ?? -1;
     if (areas.sequence <= previous) return;
     this.areaSequences.set(key, areas.sequence);
@@ -91,6 +95,25 @@ export class OfficeRoomEventPublisher {
     if (!recipient?.connected) return;
     recipient.emit('conversation:areas', areas);
     recipient.emit('meeting:zones', zones);
+  }
+
+  publishMeetingZones(workspaceId: string, officeId: string, zones: MeetingZones) {
+    const key = `${workspaceId}:${officeId}:${zones.officeEpoch}`;
+    const prefix = `${workspaceId}:${officeId}:`;
+    for (const existing of this.meetingSnapshots.keys())
+      if (existing.startsWith(prefix) && existing !== key) this.meetingSnapshots.delete(existing);
+    const serialized = JSON.stringify(zones);
+    if (this.meetingSnapshots.get(key) === serialized) return;
+    this.meetingSnapshots.set(key, serialized);
+    this.namespace?.to(`office:${workspaceId}:${officeId}`).emit('meeting:zones', zones);
+  }
+
+  forgetOffice(workspaceId: string, officeId: string) {
+    const prefix = `${workspaceId}:${officeId}:`;
+    for (const key of this.meetingSnapshots.keys())
+      if (key.startsWith(prefix)) this.meetingSnapshots.delete(key);
+    for (const key of this.areaSequences.keys())
+      if (key.startsWith(prefix)) this.areaSequences.delete(key);
   }
 
   publishConversationNotices(notices: readonly PrivateConversationNotice[]) {

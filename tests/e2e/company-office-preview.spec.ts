@@ -1106,6 +1106,95 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await expect(page.getByRole('textbox', { name: 'Message General' })).toBeVisible();
   await expect(page).toHaveURL(`/companies/${workspace.id}/offices/${officeId}/chat`);
   await page.getByRole('link', { name: 'Office', exact: true }).click();
+  // Observe real oscillator starts in the mounted UI; the socket transport remains mocked.
+  await page.evaluate(() => {
+    const probe = { notes: [] as number[], blocked: false };
+    Object.assign(window, { __waveSoundProbe: probe });
+    const state = Object.getOwnPropertyDescriptor(BaseAudioContext.prototype, 'state')!;
+    Object.defineProperty(AudioContext.prototype, 'state', {
+      configurable: true,
+      get() {
+        return probe.blocked ? 'suspended' : state.get!.call(this);
+      },
+    });
+    const resume = AudioContext.prototype.resume;
+    AudioContext.prototype.resume = function () {
+      return probe.blocked
+        ? Promise.reject(new DOMException('Blocked', 'NotAllowedError'))
+        : resume.call(this);
+    };
+    const start = OscillatorNode.prototype.start;
+    OscillatorNode.prototype.start = function (when) {
+      if ([880, 1174.6600341796875].includes(this.frequency.value)) {
+        probe.notes.push(this.frequency.value);
+      }
+      return start.call(this, when);
+    };
+  });
+  officeServerSocket?.send(
+    `42/office,["world:snapshot",${JSON.stringify({
+      officeEpoch,
+      stateVersion: 1000000,
+      serverTime: Date.now(),
+      participants: [participationId, teammateParticipationId].map((id) => ({
+        participationId: id,
+        displayName: id === participationId ? account.displayName : 'Office Teammate',
+        appearance: { bodyId: 'commons-worker', paletteId: 'teal' },
+        position: officeManifest.spawn,
+        facing: 'south',
+        availability: 'available',
+        seatId: null,
+        lastProcessedInputSequence: 0,
+      })),
+      seats: [],
+    })}]`,
+  );
+  await expect(page.getByText('2 people in the office')).toBeVisible();
+  const waveId = 'f3e6c7c8-49f2-49ef-92b6-609ddca1c111';
+  const sendWave = (eventId: string, recipientId = participationId) =>
+    officeServerSocket?.send(
+      `42/office,["office:wave",${JSON.stringify({
+        eventId,
+        officeEpoch,
+        senderParticipationId: teammateParticipationId,
+        senderName: 'Office Teammate',
+        recipientParticipationId: recipientId,
+        recipientName: account.displayName,
+        durationMs: 2200,
+      })}]`,
+    );
+  const noteCount = () =>
+    page.evaluate(
+      () =>
+        (window as Window & { __waveSoundProbe: { notes: number[] } }).__waveSoundProbe.notes
+          .length,
+    );
+  sendWave(waveId);
+  await expect(page.getByText('Office Teammate waved to you.', { exact: true })).toBeVisible();
+  await expect.poll(noteCount).toBe(2);
+  // A duplicate and a wave for another member must not schedule more notes.
+  sendWave(waveId);
+  sendWave('f3e6c7c8-49f2-49ef-92b6-609ddca1c112', teammateParticipationId);
+  await page.waitForTimeout(300);
+  expect(await noteCount()).toBe(2);
+  await page.evaluate(() => localStorage.setItem('office-effects-volume', '0'));
+  sendWave('f3e6c7c8-49f2-49ef-92b6-609ddca1c113');
+  await expect(page.locator('[data-wave-id="f3e6c7c8-49f2-49ef-92b6-609ddca1c113"]')).toBeVisible();
+  expect(await noteCount()).toBe(2);
+  await page.evaluate(() => {
+    localStorage.setItem('office-effects-volume', '0.7');
+    (window as Window & { __waveSoundProbe: { blocked: boolean } }).__waveSoundProbe.blocked = true;
+  });
+  sendWave('f3e6c7c8-49f2-49ef-92b6-609ddca1c114');
+  await expect(page.locator('[data-wave-id="f3e6c7c8-49f2-49ef-92b6-609ddca1c114"]')).toBeVisible();
+  expect(await noteCount()).toBe(2);
+  await page.evaluate(() => {
+    (window as Window & { __waveSoundProbe: { blocked: boolean } }).__waveSoundProbe.blocked =
+      false;
+  });
+  await page.locator('#office-map').click({ position: { x: 10, y: 10 } });
+  sendWave('f3e6c7c8-49f2-49ef-92b6-609ddca1c115');
+  await expect.poll(noteCount).toBe(4);
   await page.getByRole('button', { name: 'Leave office', exact: true }).click();
   // Leaving the entry screen also releases a microphone that was explicitly opened there.
   await page.getByRole('button', { name: 'Turn microphone on', exact: true }).click();

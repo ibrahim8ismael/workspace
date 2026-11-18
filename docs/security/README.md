@@ -44,4 +44,28 @@ Customer-company permissions remain independent for users in several companies. 
 - Separate cache/queue failure policies; queue payload IDs only, encrypted expiring mail secrets, restricted keys.
 - Independent audit evidence and suspended restored access prevent backup rollback from reviving old credentials or memberships.
 
+## Authentication attempt limits and proxy identity
+
+Login failures are bounded by both source address and normalized account address pair: five attempts
+per account/source pair in a 15-minute fixed window, plus the existing per-source and global budgets.
+Failures from many addresses therefore do not lock the victim account; repeated guessing from one
+address remains bounded. Reauthentication and current-password checks for password changes each
+have five attempts per account per 15 minutes, shared across that account's sessions, alongside the
+per-source budget. These are expiring rate-limit records, not account lock flags.
+
+The API resolves a forwarded client address only when the immediate socket peer exactly matches an
+entry in `TRUSTED_PROXY_IPS`. It accepts one valid IP from that proxy and falls back to the peer for
+untrusted, absent, invalid, or multi-hop values. Express `trust proxy` remains disabled. The pilot
+Compose network pins Caddy at `172.26.0.4`, and the deployment env example trusts only that IP.
+Nginx overwrites `X-Real-IP` with the actual peer for both HTTP and Socket.IO, removes client-supplied
+`X-Forwarded-For`, and Caddy replaces the API-facing `X-Forwarded-For` with that canonical value.
+HTTP and Socket.IO retain separate budgets, each keyed by the resolved client address. When changing
+the edge subnet, reserve Caddy's address and update both `TRUSTED_PROXY_IPS` and the Caddy Compose
+address; never trust a broad subnet or arbitrary forwarding headers.
+
+These controls are implemented in the repository branch but are not yet part of the deployed pilot.
+The targeted API tests cover trusted/untrusted peer resolution, account/IP login limits, and shared
+password-proof limits. The server-side proxy configuration still requires a coordinated rollout to
+take effect in the running environment.
+
 See [acceptance evidence](../planning/ACCEPTANCE.md), [media permit plan](../entities/media-permits/PLAN.md) and [operations](../operations/README.md). Local portions of account/session/CSRF/tenant/crypto checks are recorded in [auth implementation evidence](../planning/AUTH_IMPLEMENTATION_EVIDENCE.md). Deployed browser policy, broader compromised-password screening, live socket/media authorization, secret redaction at ingress and independent recovery remain pending; no full release gate is passed by this summary.

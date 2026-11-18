@@ -22,12 +22,15 @@ export class AbuseService {
   async authRequest(kind: string, ip: string, email?: string) {
     await this.consume('auth-global', 'global', 1000, 60_000);
     await this.consume(`auth-ip:${kind}`, ip, 30, 15 * 60_000);
-    if (email)
+    if (email) {
+      const login = kind === 'login';
+      const passwordProof = kind === 'reauthenticate' || kind === 'change-password';
       await this.consume(
-        `auth-account:${kind}`,
-        email,
-        kind === 'login' ? 5 : kind === 'verify' || kind === 'reset' ? 10 : 3,
-        kind === 'login' || kind === 'verify' || kind === 'reset' ? 15 * 60_000 : 60 * 60_000,
+        login ? 'auth-account-ip:login' : `auth-account:${kind}`,
+        login ? `${email.trim().toLowerCase()}:${ip}` : email,
+        login || passwordProof ? 5 : kind === 'verify' || kind === 'reset' ? 10 : 3,
+        login || passwordProof || kind === 'verify' || kind === 'reset' ? 15 * 60_000 : 60 * 60_000,
       );
+    }
   }
 }

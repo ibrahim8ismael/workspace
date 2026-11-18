@@ -38,13 +38,14 @@ import type { AuthRequest } from './security/guards.js';
 import { csrfToken } from './security/secrets.js';
 import { AbuseService } from './security/abuse.service.js';
 import type { ApiEnvironment } from '../../platform/config/environment.js';
+import { clientIp } from '../../platform/http/client-ip.js';
 
 function browser(request: AuthRequest): BrowserContext {
   invariant(request.authContext, 403, 'csrf_rejected');
   return request.authContext;
 }
-function ip(request: AuthRequest): string {
-  return request.ip ?? request.socket.remoteAddress ?? 'unknown';
+function ip(request: AuthRequest, trustedProxyIps: string): string {
+  return clientIp(request.socket.remoteAddress, request.get('x-forwarded-for'), trustedProxyIps);
 }
 @Controller('auth')
 export class AuthController {
@@ -65,7 +66,10 @@ export class AuthController {
       403,
       'origin_rejected',
     );
-    await this.abuse.authRequest('csrf', ip(request));
+    await this.abuse.authRequest(
+      'csrf',
+      ip(request, this.config.get('TRUSTED_PROXY_IPS', { infer: true })),
+    );
     const current = request.authContext;
     if (current) return { csrfToken: csrfToken(current.session.csrfSecret, current.session._id) };
     const draft = await this.sessions.anonymous();
@@ -83,7 +87,11 @@ export class AuthController {
     body: { email: string; password: string; displayName: string },
     @Req() request: AuthRequest,
   ) {
-    await this.abuse.authRequest('register', ip(request), body.email);
+    await this.abuse.authRequest(
+      'register',
+      ip(request, this.config.get('TRUSTED_PROXY_IPS', { infer: true })),
+      body.email,
+    );
     return this.auth.register(body, browser(request));
   }
   @Public()
@@ -94,7 +102,11 @@ export class AuthController {
     body: { email: string; token: string; password: string },
     @Req() request: AuthRequest,
   ) {
-    await this.abuse.authRequest('verify', ip(request), body.email);
+    await this.abuse.authRequest(
+      'verify',
+      ip(request, this.config.get('TRUSTED_PROXY_IPS', { infer: true })),
+      body.email,
+    );
     return this.auth.verifyEmail(body, browser(request));
   }
   @Public()
@@ -104,7 +116,11 @@ export class AuthController {
     @Body(new ValidationPipe(emailRequestSchema)) body: { email: string },
     @Req() request: AuthRequest,
   ) {
-    await this.abuse.authRequest('resend', ip(request), body.email);
+    await this.abuse.authRequest(
+      'resend',
+      ip(request, this.config.get('TRUSTED_PROXY_IPS', { infer: true })),
+      body.email,
+    );
     return this.auth.issueRequested(body.email, 'verify-email', browser(request));
   }
   @Public()
@@ -114,7 +130,11 @@ export class AuthController {
     @Body(new ValidationPipe(emailRequestSchema)) body: { email: string },
     @Req() request: AuthRequest,
   ) {
-    await this.abuse.authRequest('recovery', ip(request), body.email);
+    await this.abuse.authRequest(
+      'recovery',
+      ip(request, this.config.get('TRUSTED_PROXY_IPS', { infer: true })),
+      body.email,
+    );
     return this.auth.issueRequested(body.email, 'reset-password', browser(request));
   }
   @Public()
@@ -125,7 +145,11 @@ export class AuthController {
     body: { email: string; token: string; newPassword: string },
     @Req() request: AuthRequest,
   ) {
-    await this.abuse.authRequest('reset', ip(request), body.email);
+    await this.abuse.authRequest(
+      'reset',
+      ip(request, this.config.get('TRUSTED_PROXY_IPS', { infer: true })),
+      body.email,
+    );
     return this.auth.resetPassword(body, browser(request));
   }
   @Public()
@@ -136,7 +160,11 @@ export class AuthController {
     @Req() request: AuthRequest,
     @Res({ passthrough: true }) response: Response,
   ) {
-    await this.abuse.authRequest('login', ip(request), body.email);
+    await this.abuse.authRequest(
+      'login',
+      ip(request, this.config.get('TRUSTED_PROXY_IPS', { infer: true })),
+      body.email,
+    );
     const draft = await this.auth.login(body, browser(request));
     response.cookie(SESSION_COOKIE, draft.raw, {
       ...cookieOptions,
@@ -191,7 +219,13 @@ export class AuthController {
     @Req() request: AuthRequest,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const result = await this.auth.changePassword(actor(request.authContext), body);
+    const context = actor(request.authContext);
+    await this.abuse.authRequest(
+      'change-password',
+      ip(request, this.config.get('TRUSTED_PROXY_IPS', { infer: true })),
+      context.user._id,
+    );
+    const result = await this.auth.changePassword(context, body);
     response.clearCookie(SESSION_COOKIE, cookieOptions);
     return result;
   }
@@ -202,7 +236,13 @@ export class AuthController {
     @Req() request: AuthRequest,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const draft = await this.auth.reauthenticate(actor(request.authContext), body.password);
+    const context = actor(request.authContext);
+    await this.abuse.authRequest(
+      'reauthenticate',
+      ip(request, this.config.get('TRUSTED_PROXY_IPS', { infer: true })),
+      context.user._id,
+    );
+    const draft = await this.auth.reauthenticate(context, body.password);
     response.cookie(SESSION_COOKIE, draft.raw, {
       ...cookieOptions,
       expires: draft.record.absoluteExpiresAt,

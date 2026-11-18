@@ -15,6 +15,12 @@ app.useBodyParser('raw', { type: 'application/webhook+json', limit: '64kb' });
 app.useBodyParser('json', { limit: '4kb' });
 const config = app.get(ConfigService<ApiEnvironment, true>);
 configureHttp(app);
-app.useWebSocketAdapter(new OfficeSocketAdapter(app, config.get('APP_ORIGIN', { infer: true })));
+app.useWebSocketAdapter(
+  new OfficeSocketAdapter(
+    app,
+    config.get('APP_ORIGIN', { infer: true }),
+    config.get('TRUSTED_PROXY_IPS', { infer: true }),
+  ),
+);
 app.enableShutdownHooks();
 await app.listen(config.get('API_PORT', { infer: true }), config.get('API_HOST', { infer: true }));

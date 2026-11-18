@@ -192,6 +192,9 @@ window.addEventListener('message', (event: MessageEvent<FixtureMessage>) => {
   if (message?.kind === 'start') {
     contextCurrent = true;
     window.__mediaFixture.startedAt = Date.now();
+    // The fixture's start command explicitly opts into publishing its synthetic microphone.
+    // Production sessions remain muted until a member chooses to enable their microphone.
+    void session.setMicrophoneEnabled(true);
     void session.start(
       async () => message.grant,
       () => contextCurrent,

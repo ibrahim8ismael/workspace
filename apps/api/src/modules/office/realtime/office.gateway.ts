@@ -188,7 +188,10 @@ export class OfficeGateway
         .to(released.roomId)
         .emit('world:delta', worldDeltaSchema.parse(released.delta));
       this.publishConversationState(ticket.workspaceId, ticket.officeId);
-      if (!this.runtime.hasOffice(ticket.officeId)) this.stopSimulation(ticket.officeId);
+      if (!this.runtime.hasOffice(ticket.officeId)) {
+        this.stopSimulation(ticket.officeId);
+        this.roomEvents.forgetOffice(ticket.workspaceId, ticket.officeId);
+      }
     }
   }
 
@@ -998,7 +1001,10 @@ export class OfficeGateway
       }
       this.publishConversationState(workspaceId, officeId);
       this.publishMeetingInvitationNotices();
-      if (!this.runtime.hasOffice(officeId)) this.stopSimulation(officeId);
+      if (!this.runtime.hasOffice(officeId)) {
+        this.stopSimulation(officeId);
+        this.roomEvents.forgetOffice(workspaceId, officeId);
+      }
     }, 1000 / OFFICE_LIMITS.simulationHz);
     this.simulationTimers.set(officeId, timer);
   }
@@ -1026,5 +1032,7 @@ export class OfficeGateway
   private publishAreas(workspaceId: string, officeId: string) {
     const areas = this.runtime.conversationAreas(officeId);
     if (areas) this.roomEvents.publishConversationAreas(workspaceId, officeId, areas);
+    const zones = this.runtime.meetingZones(officeId);
+    if (zones) this.roomEvents.publishMeetingZones(workspaceId, officeId, zones);
   }
 }

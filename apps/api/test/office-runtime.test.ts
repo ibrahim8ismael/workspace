@@ -23,6 +23,108 @@ function ticket(userNumber: number, mapVersion = commonsManifest.mapVersion): Co
 }
 
 describe('office runtime reservations', () => {
+  it('projects stable meeting rooms with authoritative occupancy, admission, and entrances', () => {
+    const runtime = new OfficeRuntimeService();
+    const active = ticket(1);
+    const reservation = runtime.reserve(active, 'socket-1');
+    const office = (
+      runtime as unknown as {
+        offices: Map<
+          string,
+          { participants: Map<string, { publicState: { position: { x: number; y: number } } }> }
+        >;
+      }
+    ).offices.get(active.officeId)!;
+    office.participants.get(reservation.participationId)!.publicState.position = {
+      x: 2 * COMMONS_GEOMETRY.tileSize + 16,
+      y: 4 * COMMONS_GEOMETRY.tileSize + 16,
+    };
+    const rooms = runtime.meetingZones(active.officeId);
+    expect(rooms?.zones.map((zone) => zone.zoneId)).toEqual([
+      'commons-northwest-meeting',
+      'commons-southeast-meeting',
+    ]);
+    expect(rooms?.zones[0]).toMatchObject({
+      occupancy: [reservation.participationId],
+      admittedMembers: [],
+      accessPolicy: 'explicit-admission',
+      meeting: null,
+      entrances: [{ side: 'south', at: 4, state: 'occupied' }],
+    });
+    expect(
+      runtime.joinMeetingZone(
+        active.officeId,
+        active.workspaceId,
+        active.userId,
+        'socket-1',
+        reservation.participationId,
+        active.officeEpoch,
+        'commons-northwest-meeting',
+      ),
+    ).toMatchObject({ notices: [] });
+    expect(runtime.meetingZones(active.officeId)?.zones[0]?.admittedMembers).toEqual([
+      reservation.participationId,
+    ]);
+    office.participants.get(reservation.participationId)!.publicState.position = {
+      ...COMMONS_GEOMETRY.spawn,
+    };
+    runtime.reconcileProximity(active.officeId);
+    expect(runtime.meetingZones(active.officeId)?.zones[0]?.admittedMembers).toEqual([]);
+    expect(runtime.proximityMediaPermits()).toEqual([]);
+  });
+
+  it('retires media authorization as soon as authoritative position leaves an admitted room', () => {
+    const runtime = new OfficeRuntimeService();
+    const active = ticket(1);
+    const reservation = runtime.reserve(active, 'socket-1');
+    const office = (
+      runtime as unknown as {
+        offices: Map<
+          string,
+          { participants: Map<string, { publicState: { position: { x: number; y: number } } }> }
+        >;
+      }
+    ).offices.get(active.officeId)!;
+    const participant = office.participants.get(reservation.participationId)!;
+    participant.publicState.position = {
+      x: 2 * COMMONS_GEOMETRY.tileSize + 16,
+      y: 4 * COMMONS_GEOMETRY.tileSize + 16,
+    };
+    expect(runtime.proximityMediaPermits()).toEqual([]);
+    const joined = runtime.joinMeetingZone(
+      active.officeId,
+      active.workspaceId,
+      active.userId,
+      'socket-1',
+      reservation.participationId,
+      active.officeEpoch,
+      'commons-northwest-meeting',
+    );
+    if (typeof joined === 'string') throw new Error(joined);
+    // First member has no prior proximity group; meeting state is queued separately.
+    const meetingRuntime = (
+      runtime as unknown as {
+        offices: Map<string, { meetingGroups: Map<string, { generation: string }> }>;
+      }
+    ).offices.get(active.officeId)!;
+    const generation = meetingRuntime.meetingGroups.get('commons-northwest-meeting')!.generation;
+    expect(runtime.activateProximityGeneration(generation)[0]?.update.state).toBe('active');
+    const meeting = runtime.meetingZones(active.officeId)!.zones[0]!.meeting!;
+    expect(runtime.proximityMediaPermits()).toMatchObject([
+      { identity: reservation.participationId, generation },
+    ]);
+    participant.publicState.position = { ...COMMONS_GEOMETRY.spawn };
+    expect(
+      runtime.conversationMediaParticipation(
+        reservation.participationId,
+        meeting.conversationId,
+        meeting.version,
+      ),
+    ).toBeNull();
+    expect(runtime.proximityMediaPermits()).toEqual([]);
+    expect(runtime.meetingZones(active.officeId)?.zones[0]?.admittedMembers).toEqual([]);
+  });
+
   it('runs Vivo offices against the registered 52 by 50 map and its seat layout', () => {
     const runtime = new OfficeRuntimeService();
     const active = ticket(1, vivoManifest.mapVersion);

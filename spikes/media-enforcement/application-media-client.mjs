@@ -96,13 +96,27 @@ export async function startApplicationMediaClient({
         ),
       ),
     );
-    await Promise.all(
-      pages.map((page) =>
-        page.waitForFunction(() => ['live', 'error'].includes(window.__mediaFixture.status), null, {
-          timeout: 25000,
-        }),
-      ),
-    );
+    try {
+      await Promise.all(
+        pages.map((page) =>
+          page.waitForFunction(
+            () => ['live', 'error'].includes(window.__mediaFixture.status),
+            null,
+            {
+              timeout: 25000,
+            },
+          ),
+        ),
+      );
+    } catch (error) {
+      const observations = (await Promise.all(pages.map(readObservations))).map(
+        withoutRefreshedToken,
+      );
+      throw new Error(
+        `application media startup timed out: ${JSON.stringify({ observations, browserErrors })}`,
+        { cause: error },
+      );
+    }
     const initial = await Promise.all(pages.map(readObservations));
     if (denyMicrophoneIndex !== undefined) {
       const denied = initial[denyMicrophoneIndex];

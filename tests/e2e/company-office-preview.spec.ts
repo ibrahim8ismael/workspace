@@ -1,6 +1,7 @@
 import type { SpaceMessage } from '@gather/contracts';
 import { expect, test } from '@playwright/test';
 import { OFFICE_PROTOCOL_VERSION } from '../../packages/contracts/dist/versions.js';
+import { VIVO_GEOMETRY } from '../../packages/world/dist/index.js';
 
 const account = {
   id: '0d6c9f3e-4a2f-46cc-a66a-5f10d61c72ea',
@@ -331,7 +332,36 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
     let availability = 'available';
     let sittingAt: string | null = null;
     let position = { x: 656, y: 1264 };
+    let meetingActive = false;
     const seatIds = ['24c48737:0', '52e00cff:0', 'd8fe8680:0', '88544309:0'];
+    const emitMeetingZones = () => {
+      const inside =
+        position.x >= 640 && position.x < 768 && position.y >= 1248 && position.y < 1312;
+      socket.send(
+        `42/office,["meeting:zones",${JSON.stringify({
+          workspaceId: workspace.id,
+          officeId,
+          officeEpoch,
+          mapVersion,
+          zones: [
+            {
+              zoneId: meetingZoneId,
+              label: 'E2E meeting room',
+              bounds: { tx: 20, ty: 39, width: 4, height: 2 },
+              tileSize: 32,
+              capacity: 6,
+              accessPolicy: 'explicit-admission',
+              occupancy: inside ? [participationId] : [],
+              admittedMembers: meetingActive ? [participationId] : [],
+              meeting: meetingActive
+                ? { conversationId: meetingConversationId, version: 2, state: 'active' }
+                : null,
+              entrances: [{ side: 'north', at: 21, state: inside ? 'occupied' : 'open' }],
+            },
+          ],
+        })}]`,
+      );
+    };
     const emitWorldDelta = () => {
       const firstSeat = sittingAt === seatIds[0];
       socket.send(
@@ -359,6 +389,7 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
           })),
         })}]`,
       );
+      emitMeetingZones();
     };
     socket.onMessage((message) => {
       if (typeof message !== 'string') return;
@@ -399,21 +430,7 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
             areas: [],
           })}]`,
         );
-        socket.send(
-          `42/office,["meeting:zones",${JSON.stringify({
-            officeEpoch,
-            mapVersion,
-            zones: [
-              {
-                zoneId: meetingZoneId,
-                label: 'E2E meeting room',
-                bounds: { tx: 20, ty: 39, width: 4, height: 2 },
-                tileSize: 32,
-                capacity: 6,
-              },
-            ],
-          })}]`,
-        );
+        emitMeetingZones();
         return;
       }
       if (message.startsWith('42/office,')) {
@@ -566,6 +583,8 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
               })}]`,
             );
           } else if (packet[0] === 'meeting:join' && packet[1].payload?.zoneId) {
+            meetingActive = true;
+            emitMeetingZones();
             const participants = [{ participationId, displayName: account.displayName }];
             for (const [state, version, mediaReady] of [
               ['joining', 1, false],
@@ -586,6 +605,8 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
               );
             }
           } else if (packet[0] === 'meeting:leave') {
+            meetingActive = false;
+            emitMeetingZones();
             socket.send(
               `42/office,["conversation:update",${JSON.stringify({
                 officeEpoch,
@@ -704,6 +725,87 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await expect(page).toHaveURL(`/companies/${workspace.id}/offices/${officeId}`);
   await expect(page.getByText('Live Vivo office', { exact: true })).toBeVisible();
   await expect(page.locator('.office-scene .office-map')).toHaveCount(1);
+  const rooms = VIVO_GEOMETRY.zones.filter((zone) => zone.kind === 'meeting');
+  const roomDoors = page.locator('[data-room-id][data-room-state]');
+  await expect(roomDoors).toHaveCount(6);
+  const sendRoomOccupancy = (occupants: string[], roomIndex = 0) => {
+    officeServerSocket?.send(
+      `42/office,["meeting:zones",${JSON.stringify({
+        workspaceId: workspace.id,
+        officeId,
+        officeEpoch,
+        mapVersion,
+        zones: rooms.map((room, index) => ({
+          ...room,
+          kind: undefined,
+          tileSize: 32,
+          capacity: 6,
+          accessPolicy: 'explicit-admission',
+          occupancy: index === roomIndex ? occupants : [],
+          admittedMembers: [],
+          meeting: null,
+          entrances: [],
+        })),
+      })}]`,
+    );
+  };
+  for (const room of rooms) {
+    await expect(page.getByRole('img', { name: `${room.label} door open` }).first()).toBeAttached();
+  }
+  const mediaRoomDoors = page.locator(`[data-room-id="${rooms[0]!.zoneId}"]`);
+  const lighting = page.locator('.office-scene [data-room-lighting="dimmed"]');
+  const roomCenterDimmed = (index: number) => {
+    const { tx, ty, width, height } = rooms[index]!.bounds;
+    return lighting.locator('rect').evaluateAll(
+      (rectangles, { x, y }) =>
+        rectangles.some((rectangle) => {
+          const bounds = (rectangle as SVGRectElement).getBBox();
+          return (
+            x >= bounds.x &&
+            x < bounds.x + bounds.width &&
+            y >= bounds.y &&
+            y < bounds.y + bounds.height
+          );
+        }),
+      {
+        x: (tx + width / 2) * VIVO_GEOMETRY.tileSize,
+        y: (ty + height / 2) * VIVO_GEOMETRY.tileSize,
+      },
+    );
+  };
+  // The initial fixture room surrounds spawn. A new shared-area projection clears it.
+  await expect(lighting).toHaveCount(1);
+  sendRoomOccupancy([]);
+  await expect(lighting).toHaveCount(0);
+  await expect(mediaRoomDoors).toHaveCount(2);
+  const openArt = await mediaRoomDoors.evaluateAll((doors) => doors.map((door) => door.innerHTML));
+  sendRoomOccupancy([teammateParticipationId]);
+  await expect(
+    mediaRoomDoors.filter({ visible: true }).and(page.locator('[data-room-state="closed"]')),
+  ).toHaveCount(2);
+  await expect(lighting).toHaveCount(0);
+  const closedArt = await mediaRoomDoors.evaluateAll((doors) =>
+    doors.map((door) => door.innerHTML),
+  );
+  expect(closedArt.every((art, index) => art !== openArt[index])).toBe(true);
+  sendRoomOccupancy([teammateParticipationId, participationId]);
+  await expect(lighting).toHaveCount(1);
+  await expect(lighting).toHaveAttribute('pointer-events', 'none');
+  expect(await roomCenterDimmed(0)).toBe(false);
+  expect(await roomCenterDimmed(1)).toBe(true);
+  sendRoomOccupancy([participationId], 1);
+  await expect.poll(() => roomCenterDimmed(0)).toBe(true);
+  expect(await roomCenterDimmed(1)).toBe(false);
+  const movementCountWhileDimmed = movementInputs.length;
+  await page.locator('.office-map').focus();
+  await page.keyboard.down('ArrowRight');
+  await expect.poll(() => movementInputs.length).toBeGreaterThan(movementCountWhileDimmed);
+  await page.keyboard.up('ArrowRight');
+  sendRoomOccupancy([participationId]);
+  await expect(mediaRoomDoors.and(page.locator('[data-room-state="closed"]'))).toHaveCount(2);
+  sendRoomOccupancy([]);
+  await expect(lighting).toHaveCount(0);
+  await expect(mediaRoomDoors.and(page.locator('[data-room-state="open"]'))).toHaveCount(2);
   await expect.poll(() => officeBootstrapRequests).toBe(1);
   await expect(page.getByRole('group', { name: 'Office connection controls' })).toBeVisible();
   const invitationMicrophoneRequests = await page.evaluate(
@@ -1097,6 +1199,7 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await page.reload();
   await expect(page).toHaveURL(`/companies/${workspace.id}/offices/${officeId}`);
   await expect(page.getByText('1 person in the office')).toBeVisible();
+  await expect(lighting).toHaveCount(1);
   await expect(
     page.getByRole('button', { name: 'Activate proximity microphone', exact: true }),
   ).toHaveAttribute('aria-pressed', 'false');

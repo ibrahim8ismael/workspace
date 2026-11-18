@@ -43,7 +43,7 @@ Own the current authorized set for proximity pairs and fixed-zone group calls.
 
 ## Interface outline
 
-- `proximity:set-opt-in`, `conversation:leave`, `meeting:join`, `meeting:leave`, private `conversation:update`, and public `conversation:areas` are implemented and deployed in protocol v3.
+- `proximity:set-opt-in`, `conversation:leave`, `meeting:join`, `meeting:leave`, private `conversation:update`, public `conversation:areas`, and authoritative `meeting:zones` occupancy/admission snapshots are implemented in office protocol v4.
 - `POST /api/conversations/:conversationId/media-token` resolves either current proximity or meeting membership and issues only microphone-only grants.
 
 ## Planning question

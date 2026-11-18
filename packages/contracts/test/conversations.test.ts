@@ -8,6 +8,7 @@ import {
   OFFICE_LIMITS,
   meetingInvitationSchema,
   meetingInvitationResponseEventSchema,
+  meetingZonesSchema,
 } from '../dist/index.js';
 
 const a = '11111111-1111-4111-8111-111111111111';
@@ -36,6 +37,45 @@ const conversation = {
 };
 
 describe('future profile and private conversation shapes', () => {
+  it('bounds the public room projection and keeps admission separate from occupancy', () => {
+    const projection = {
+      workspaceId: a,
+      officeId: b,
+      officeEpoch: a,
+      mapVersion: `vivo-v1-${'a'.repeat(64)}`,
+      zones: [
+        {
+          zoneId: 'vivo-meeting-room',
+          label: 'Meeting room',
+          bounds: { tx: 2, ty: 3, width: 4, height: 5 },
+          tileSize: 32,
+          capacity: OFFICE_LIMITS.maxMeetingParticipants,
+          accessPolicy: 'explicit-admission',
+          occupancy: [a],
+          admittedMembers: [],
+          meeting: null,
+          entrances: [{ side: 'south', at: 7, state: 'occupied' }],
+        },
+      ],
+    };
+    expect(meetingZonesSchema.safeParse(projection).success).toBe(true);
+    expect(meetingZonesSchema.safeParse({ ...projection, credentials: 'token' }).success).toBe(
+      false,
+    );
+    expect(
+      meetingZonesSchema.safeParse({
+        ...projection,
+        zones: [{ ...projection.zones[0], occupancy: [a, a] }],
+      }).success,
+    ).toBe(false);
+    expect(
+      meetingZonesSchema.safeParse({
+        ...projection,
+        zones: [{ ...projection.zones[0], admittedMembers: Array(21).fill(a) }],
+      }).success,
+    ).toBe(false);
+  });
+
   it('rejects role/policy changes, empty profiles and arbitrary asset URLs', () => {
     expect(updateProfileSchema.safeParse({ displayName: 'Person' }).success).toBe(true);
     expect(updateProfileSchema.safeParse({}).success).toBe(false);

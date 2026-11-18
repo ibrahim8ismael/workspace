@@ -49,3 +49,11 @@ Pass/fail and remaining limitations:
 All P1 security controls inherited from the source brief must have evidence before pilot signoff. Assign deployment, recovery and patching owners. No capacity, recovery or revocation guarantee is verified by this register's existence.
 
 Initial backend evidence is recorded in [AUTH_IMPLEMENTATION_EVIDENCE.md](AUTH_IMPLEMENTATION_EVIDENCE.md). It covers local portions of A01–A03 and A09; actual email/provider/deployed-origin/queue/recovery requirements remain pending, so the full release gates above are not marked passed.
+
+## Issue #31 — local room authority and media isolation, 2026-11-18
+
+Local implementation acceptance passed on `codex/issue-31-room-audio-isolation`, based on main `73d3fec`. Trusted map zones are the single room definition; protocol v4 synchronizes ownership, physical occupancy, admitted IDs, meeting state and walkable entrance indicators. Coordinates do not grant meeting audio admission.
+
+The six-client real-SFU regression in `apps/api/test/auth.integration.test.ts` ran with `CP08_REAL_MEDIA=1`, Chromium 158, Node 24.22.3, the existing pinned LiveKit image and application media guard. Two adjacent room pairs plus an outside proximity pair decoded only their own partner's audio. Doorway and wall outsiders were denied room credentials. Measured forwarding cutoff was 39 ms after room exit and 1,604 ms after company-membership removal while unaffected pairs continued; retired tokens were rejected and reconnect did not retain admission. Test positions were arranged in authoritative server state; the mounted-office UI and movement tests cover their separate paths.
+
+`pnpm check` and the mounted-office UI E2E passed. This is local synthetic-audio evidence, not deployed-network, physical-speaker, sustained-load or five-sample p95 evidence. Existing broader release gates remain unchanged. Commands and review details are in [the issue #31 implementation record](ISSUE_31_ROOM_AUDIO_ISOLATION.md).

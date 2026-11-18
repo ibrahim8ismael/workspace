@@ -1,6 +1,6 @@
 # Meeting zones
 
-Status: trusted static zone authority and explicit group admission deployed in v3; live fixed-meeting audio/revocation acceptance pending · Updated: 2026-11-17
+Status: implemented in office protocol v4; local multi-client room-audio acceptance passed · Updated: 2026-11-18
 
 ## Responsibility
 
@@ -10,11 +10,13 @@ Represent fixed meeting areas with explicit server-authorized group admission an
 - State location: Versioned trusted static map geometry; live meeting membership and generations in the single office runtime.
 - The browser receives the trusted zone projection for display but cannot establish zone membership. Apply the [baseline](../../README.md#source-precedence) and [cross-cutting rules](../../architecture/README.md#shared-invariants).
 
-## Proposed data
+## Runtime data
 
 - `zoneId`, `mapVersion`, tile rectangle and tile size
 - `workspaceId`, `officeId`, office epoch
-- transient conversation ID/version, member set, generation and lifecycle
+- physical `occupancy` independently from explicitly `admittedMembers`
+- explicit-admission access policy, occupancy-indicated walkable entrances, and transient conversation ID/version/lifecycle
+- the room projection does not expose media generation, token or credentials
 - fixed capacity of twenty; office occupancy remains independently capped at twenty
 
 ## Relationships
@@ -27,9 +29,11 @@ Represent fixed meeting areas with explicit server-authorized group admission an
 ## Invariants and lifecycle
 
 - The API uses the trusted map version installed for the office; it derives zone bounds and does not trust client coordinates or zone claims.
+- The office-wide `meeting:zones` projection is scoped to workspace, office and epoch. Entrances come from trusted map collision plus map bounds and blocked tiles, are cached per trusted map and are descriptive; `occupied` never locks a doorway or exit.
+- Occupancy reflects authoritative server positions. It does not grant meeting membership or media; `admittedMembers` reflects the separate meeting runtime roster.
 - An explicit `meeting:join` requires an active live office participation, current availability, no conflicting conversation, physical presence inside the half-open zone rectangle and capacity below twenty. Invitation arrivals reserve capacity before travel begins.
 - Walking into a room does not join or enable the microphone. Walking out or losing eligibility immediately removes the member.
-- Each membership change rotates the LiveKit generation. The roster is delivered privately through `conversation:update`; the token and policy permit remain microphone-only.
+- Each membership change rotates the LiveKit generation. Detailed conversation updates are delivered privately through `conversation:update`; the office-wide room projection includes admitted participation IDs. The token and policy permit remain microphone-only.
 - The web UI shows the current room, explicit Join/Leave actions, authoritative roster, capacity, invitation responses and mic controls. Camera and screen sharing are not part of this contract.
 
 ## Interface outline
@@ -37,10 +41,8 @@ Represent fixed meeting areas with explicit server-authorized group admission an
 - `meeting:join { zoneId }`, `meeting:leave { conversationId, conversationVersion }`, and the scoped invitation/accept/decline/cancel events.
 - The server emits private authoritative roster and media readiness updates. Meeting geometry is read-only display state.
 
-## Planning question
+`meeting:zones` protocol v4 sends room ownership, map version, bounds, capacity, explicit-admission policy, occupancy, admitted roster, live conversation ID/version/state when present, and bounded entrance geometry. It carries no generation or credential.
 
-Room admission remains explicit. Fixed meetings support twenty participants; proximity groups remain capped at six. Issue #8 still needs a product decision on whether its twenty-person conversation limit applies to proximity groups as well.
+## Verification status
 
-## Next work
-
-See [implementation plan](PLAN.md), [milestones](../../planning/ROADMAP.md) and [decision register](../../decisions/README.md).
+Contract, runtime and independent boundary-review tests cover bounded snapshots, occupancy versus admission, crossing-based generation retirement, and the proximity room-domain boundary. Local real-SFU tests passed with six browser sessions: two adjacent room meetings and one separate proximity pair outside the doorway/wall. Each receiver decoded only its partner's audio; measured cutoff was 39 ms after physical room exit and 1,604 ms after company-membership revocation. Old tokens were rejected and reconnect did not restore admission. These measurements describe the local fixture, not deployed acceptance or a latency percentile. See [implementation plan](PLAN.md) and [issue #31 plan](../../planning/ISSUE_31_ROOM_AUDIO_ISOLATION.md).

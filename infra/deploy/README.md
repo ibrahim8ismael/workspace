@@ -396,7 +396,6 @@ fixed-room live multi-client audio, live media revocation, independent off-host 
 external TURN-only reachability, media host/process failure supervision and a current five-sample
 audio-cutoff p95 remain open pilot/release gates.
 
-
 ## Current deployment after Ibrahim's latest main commit — 2026-11-17
 
 The current source is merge commit

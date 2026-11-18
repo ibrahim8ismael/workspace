@@ -375,7 +375,7 @@ Exit: real two-browser audio, denied capture, opt-out/away/leave, boundary churn
 Depends on: CP08, approved D13 lifecycle and settings scope. Deliverable: the remaining agreed pilot functions.
 
 1. Add explicit fixed-zone meeting join/leave with physical/access checks and serialized capacity. Proximity and meeting participation are mutually exclusive. Leaving the zone or losing access retires the applicable generation.
-2. Enforce the provisional six-person zone cap and source-specific microphone/camera/screen grants. Screen audio remains disabled in the first slice per current media plan. Test whether the pinned SFU actually enforces required track/source caps; a client-side limit is insufficient.
+2. Enforce the twenty-person fixed-meeting cap and source-specific microphone/camera/screen grants. Proximity remains capped at six pending the issue #8 scope decision. Screen audio remains disabled in the first slice per current media plan. Test whether the pinned SFU actually enforces required track/source caps; a client-side limit is insufficient.
 3. Implement camera/screen consent and device selection/ended-track behavior, meeting tiles and clear join/retry/migration states. No recorder, bots or egress capability.
 4. Finish owner member/invitation administration and reauthenticated ownership transfer UI. Add only approved workspace settings, initially proposed name/revision/idempotency handling.
 5. Implement the agreed lifecycle through an explicitly authorized operational boundary: suspend/resume/close/export/retention according to D13. Verify old grants/leases never revive on resumption. If self-service deletion is not approved, provide the chosen operator procedure rather than an invented owner DELETE endpoint.

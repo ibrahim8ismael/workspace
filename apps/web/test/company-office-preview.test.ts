@@ -89,7 +89,7 @@ describe('company office preview selection', () => {
     ).toBeNull();
   });
 
-  it('ignores duplicate and stale updates but accepts a newer rejoin after an ended meeting', () => {
+  it('rejects ended-generation resurrection and accepts only a newer meeting generation', () => {
     const participationId = '8f34d8de-bddb-489d-9cde-f03f1a98b68e';
     const joining: ConversationUpdate = {
       officeEpoch: '668bde07-cc48-4623-a58c-2efbc8ac21d5',
@@ -117,13 +117,33 @@ describe('company office preview selection', () => {
     expect(acceptsConversationUpdate(undefined, joining, joining.officeEpoch)).toBe(true);
     expect(acceptsConversationUpdate(marker, joining, joining.officeEpoch)).toBe(false);
     expect(acceptsConversationUpdate(marker, active, joining.officeEpoch)).toBe(false);
+    const endedMarker = {
+      officeEpoch: ended.officeEpoch,
+      version: ended.version,
+      ended: true,
+      generation: ended.generation,
+    };
+    expect(
+      acceptsConversationUpdate(endedMarker, { ...active, version: 4 }, joining.officeEpoch),
+    ).toBe(false);
+    const meetingRejoin: ConversationUpdate = {
+      ...active,
+      kind: 'meeting',
+      zoneId: 'vivo-meeting-room',
+      version: 4,
+      generation: '77017341-6b80-4051-b7fa-4bdc7709c5ee',
+    };
+    expect(acceptsConversationUpdate(endedMarker, meetingRejoin, joining.officeEpoch)).toBe(true);
     expect(
       acceptsConversationUpdate(
-        { officeEpoch: ended.officeEpoch, version: ended.version, ended: true },
-        { ...active, version: 4 },
+        endedMarker,
+        { ...meetingRejoin, version: 5, generation: ended.generation },
         joining.officeEpoch,
       ),
-    ).toBe(true);
+    ).toBe(false);
+    expect(
+      acceptsConversationUpdate(endedMarker, { ...meetingRejoin, version: 3 }, joining.officeEpoch),
+    ).toBe(false);
     expect(acceptsConversationUpdate(undefined, joining, 'old-office-epoch')).toBe(false);
     expect(acceptsConversationUpdate(marker, { ...active, version: 3 }, joining.officeEpoch)).toBe(
       true,

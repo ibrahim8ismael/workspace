@@ -11,6 +11,10 @@ import {
   officeWaveSchema,
   waveEventSchema,
   conversationUpdateSchema,
+  meetingInviteEventSchema,
+  meetingInvitationResponseEventSchema,
+  meetingInvitationCancelEventSchema,
+  meetingInvitationSchema,
   meetingJoinEventSchema,
   meetingLeaveEventSchema,
   meetingZonesSchema,
@@ -27,6 +31,7 @@ import {
   type ConversationUpdate,
   type ConversationAreas,
   type MeetingZones,
+  type MeetingInvitation,
   type WorldSnapshot,
 } from '@gather/contracts';
 import { io, type Socket } from 'socket.io-client';
@@ -48,12 +53,14 @@ export type OfficeClientState = {
   conversationAreas: ConversationAreas | null;
   meetingZones: MeetingZones | null;
   waves: OfficeWave[];
+  meetingInvitations: MeetingInvitation[];
 };
 
 export type ConversationVersionMarker = {
   readonly officeEpoch: string;
   readonly version: number;
   readonly ended: boolean;
+  readonly generation?: string;
 };
 
 export function acceptsConversationUpdate(
@@ -63,7 +70,13 @@ export function acceptsConversationUpdate(
 ) {
   if (officeEpoch && update.officeEpoch !== officeEpoch) return false;
   return (
-    !previous || (previous.officeEpoch === update.officeEpoch && update.version > previous.version)
+    !previous ||
+    (previous.officeEpoch === update.officeEpoch &&
+      (!previous.ended ||
+        (update.kind === 'meeting' &&
+          previous.generation !== undefined &&
+          update.generation !== previous.generation)) &&
+      update.version > previous.version)
   );
 }
 
@@ -90,6 +103,7 @@ const EMPTY_STATE: OfficeClientState = {
   conversationAreas: null,
   meetingZones: null,
   waves: [],
+  meetingInvitations: [],
 };
 
 /** Cookie-authenticated HTTP bootstrap followed by a one-use-ticket Socket.IO session. */
@@ -142,6 +156,7 @@ export class OfficeClient {
       conversationAreas: null,
       meetingZones: null,
       waves: [],
+      meetingInvitations: [],
     });
     this.clearWaves();
     this.conversationVersions.clear();
@@ -268,6 +283,7 @@ export class OfficeClient {
           officeEpoch: update.officeEpoch,
           version: update.version,
           ended: update.state === 'ended',
+          generation: update.generation,
         });
         this.update({
           conversationUpdates: [
@@ -293,6 +309,20 @@ export class OfficeClient {
         const epoch = this.state.ready?.snapshot.officeEpoch;
         if (!parsed.success || (epoch && parsed.data.officeEpoch !== epoch)) return;
         this.update({ meetingZones: parsed.data });
+      });
+      socket.on('meeting:invitation', (raw: unknown) => {
+        if (!this.isCurrent(generation) || this.socket !== socket) return;
+        const parsed = meetingInvitationSchema.safeParse(raw);
+        if (!parsed.success || parsed.data.officeEpoch !== this.state.ready?.snapshot.officeEpoch)
+          return;
+        this.update({
+          meetingInvitations: [
+            ...this.state.meetingInvitations.filter(
+              (invitation) => invitation.invitationId !== parsed.data.invitationId,
+            ),
+            parsed.data,
+          ].slice(-50),
+        });
       });
       socket.on('world:snapshot', (raw: unknown) => {
         if (!this.isCurrent(generation) || this.socket !== socket) return;
@@ -332,6 +362,7 @@ export class OfficeClient {
           this.update({
             status: 'disconnected',
             snapshot: null,
+            meetingInvitations: [],
             message: 'Office connection closed.',
           });
       });
@@ -426,6 +457,26 @@ export class OfficeClient {
     return this.sendCommand('meeting:leave', meetingLeaveEventSchema, {
       conversationId,
       conversationVersion,
+    });
+  }
+
+  inviteToMeeting(targetParticipationId: string, zoneId: string) {
+    return this.sendCommand('meeting:invite', meetingInviteEventSchema, {
+      targetParticipationId,
+      zoneId,
+    });
+  }
+
+  respondToMeetingInvitation(invitationId: string, decision: 'accept' | 'decline') {
+    return this.sendCommand('meeting:invitation:respond', meetingInvitationResponseEventSchema, {
+      invitationId,
+      decision,
+    });
+  }
+
+  cancelMeetingInvitation(invitationId: string) {
+    return this.sendCommand('meeting:invitation:cancel', meetingInvitationCancelEventSchema, {
+      invitationId,
     });
   }
 

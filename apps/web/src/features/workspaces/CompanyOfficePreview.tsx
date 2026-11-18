@@ -147,6 +147,7 @@ export function CompanyOfficePreview({
   const [officeActionError, setOfficeActionError] = useState('');
   const [officeActionPending, setOfficeActionPending] = useState(false);
   const [wavePending, setWavePending] = useState(false);
+  const [meetingActionPending, setMeetingActionPending] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [memberActionMessage, setMemberActionMessage] = useState('');
   const [navigationTarget, setNavigationTarget] = useState<
@@ -682,8 +683,11 @@ export function CompanyOfficePreview({
           : 'Nearby voice is off. Your microphone will stay off until you turn it on.';
   const microphoneEnabled =
     proximityVoiceEnabled &&
-    microphoneIntent === participationId &&
-    proximityAudioStatus === 'live';
+    (proximityAudioStatus === 'live' ||
+      (microphoneIntent === participationId &&
+        (proximityOptedIn || activeVoiceConversation?.kind === 'meeting') &&
+        proximityAudioStatus !== 'error' &&
+        proximityAudioStatus !== 'muted'));
   const microphoneHelp = !proximityVoiceEnabled
     ? 'Nearby voice is unavailable in this deployment.'
     : permissionState.status === 'requesting'
@@ -772,6 +776,12 @@ export function CompanyOfficePreview({
   const waveNotice = state.waves
     .filter((wave) => wave.recipientParticipationId === ready.participationId)
     .at(-1);
+  const recipientMeetingNotice = state.meetingInvitations
+    .filter((invitation) => invitation.recipientParticipationId === participationId)
+    .at(-1);
+  const senderMeetingNotice = state.meetingInvitations
+    .filter((invitation) => invitation.senderParticipationId === participationId)
+    .at(-1);
 
   return (
     <div className="app-shell office-shell" data-workspace-id={detail.id}>
@@ -787,6 +797,57 @@ export function CompanyOfficePreview({
           aria-live="polite"
         >
           {waveNotice.senderName} waved to you.
+        </div>
+      )}
+      {recipientMeetingNotice && (
+        <div className="office-wave-toast" role="status" aria-live="polite">
+          {recipientMeetingNotice.status === 'pending'
+            ? `${recipientMeetingNotice.senderDisplayName} invited you to ${recipientMeetingNotice.zoneLabel}.`
+            : recipientMeetingNotice.status === 'arriving'
+              ? `Walking to ${recipientMeetingNotice.zoneLabel}…`
+              : recipientMeetingNotice.status === 'joined'
+                ? `You arrived at ${recipientMeetingNotice.zoneLabel}.`
+                : recipientMeetingNotice.reason === 'obstructed'
+                  ? 'The meeting route was interrupted.'
+                  : recipientMeetingNotice.reason === 'destination_full'
+                    ? 'The meeting room is full.'
+                    : recipientMeetingNotice.reason === 'destination_unavailable'
+                      ? 'The meeting room is unavailable.'
+                      : recipientMeetingNotice.status === 'expired'
+                        ? 'The meeting invitation expired.'
+                        : recipientMeetingNotice.status === 'declined'
+                          ? 'The meeting invitation was declined.'
+                          : 'The meeting invitation ended.'}
+          {recipientMeetingNotice.status === 'pending' && (
+            <span className="meeting-invitation-actions">
+              <button
+                type="button"
+                onClick={() =>
+                  void runOfficeAction(() =>
+                    client.respondToMeetingInvitation(
+                      recipientMeetingNotice.invitationId,
+                      'accept',
+                    ),
+                  )
+                }
+              >
+                Accept
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  void runOfficeAction(() =>
+                    client.respondToMeetingInvitation(
+                      recipientMeetingNotice.invitationId,
+                      'decline',
+                    ),
+                  )
+                }
+              >
+                Decline
+              </button>
+            </span>
+          )}
         </div>
       )}
       <nav className="rail" aria-label="Office navigation">
@@ -1059,6 +1120,25 @@ export function CompanyOfficePreview({
                     {officeActionError}
                   </p>
                 )}
+                {senderMeetingNotice &&
+                  ['pending', 'arriving'].includes(senderMeetingNotice.status) && (
+                    <p className="office-voice-status" role="status">
+                      Invitation {senderMeetingNotice.status}:{' '}
+                      {senderMeetingNotice.recipientDisplayName}{' '}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void client
+                            .cancelMeetingInvitation(senderMeetingNotice.invitationId)
+                            .catch(() =>
+                              setOfficeActionError('Could not cancel meeting invitation.'),
+                            )
+                        }
+                      >
+                        Cancel
+                      </button>
+                    </p>
+                  )}
               </div>
               {mapId === 'commons' && (
                 <div role="group" aria-labelledby="office-seats-title">
@@ -1202,6 +1282,37 @@ export function CompanyOfficePreview({
                   </button>
                 </div>
                 <div className="member-actions-buttons">
+                  {activeMeetingConversation && (
+                    <button
+                      type="button"
+                      className="dashboard-secondary"
+                      disabled={!selectedMemberIsLive || meetingActionPending}
+                      onClick={() => {
+                        setMeetingActionPending(true);
+                        setMemberActionMessage('');
+                        void client
+                          .inviteToMeeting(
+                            selectedMember.participationId,
+                            activeMeetingConversation.zoneId!,
+                          )
+                          .then(() =>
+                            setMemberActionMessage(
+                              `Invitation sent to ${selectedMember.displayName}.`,
+                            ),
+                          )
+                          .catch((error: unknown) =>
+                            setMemberActionMessage(
+                              error instanceof Error
+                                ? `Could not invite ${selectedMember.displayName} (${error.message}).`
+                                : 'Could not send meeting invitation.',
+                            ),
+                          )
+                          .finally(() => setMeetingActionPending(false));
+                      }}
+                    >
+                      Invite to meeting
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="member-action-wave"
@@ -1427,11 +1538,7 @@ export function CompanyOfficePreview({
                       title={microphoneHelp}
                       aria-describedby="office-microphone-help"
                       aria-pressed={microphoneEnabled}
-                      disabled={
-                        !proximityVoiceEnabled ||
-                        proximityPending ||
-                        (!activeVoiceConversation && !proximityOptedIn)
-                      }
+                      disabled={!proximityVoiceEnabled || proximityPending}
                       onClick={toggleConversationMicrophone}
                     >
                       {microphoneEnabled ? <Mic size={19} /> : <MicOff size={19} />}

@@ -6,6 +6,8 @@ import {
   proximityOptInEventSchema,
   updateProfileSchema,
   OFFICE_LIMITS,
+  meetingInvitationSchema,
+  meetingInvitationResponseEventSchema,
 } from '../dist/index.js';
 
 const a = '11111111-1111-4111-8111-111111111111';
@@ -86,6 +88,49 @@ describe('future profile and private conversation shapes', () => {
         participants: Array(7).fill(conversation.participants[0]),
       }).success,
     ).toBe(false);
+  });
+
+  it('accepts group meeting rosters up to 20 and validates private invitation decisions', () => {
+    const roster = Array.from({ length: OFFICE_LIMITS.maxMeetingParticipants }, (_, index) => ({
+      participationId: `00000000-0000-4000-8000-${String(index + 100).padStart(12, '0')}`,
+      displayName: `Person ${index}`,
+    }));
+    expect(
+      conversationUpdateSchema.safeParse({
+        ...conversation,
+        kind: 'meeting',
+        zoneId: 'vivo-meeting-room',
+        participants: roster,
+      }).success,
+    ).toBe(true);
+    expect(
+      meetingInvitationResponseEventSchema.safeParse({
+        eventId: a,
+        officeEpoch: b,
+        payload: { invitationId: a, decision: 'accept' },
+      }).success,
+    ).toBe(true);
+    expect(
+      meetingInvitationResponseEventSchema.safeParse({
+        eventId: a,
+        officeEpoch: b,
+        payload: { invitationId: a, decision: 'accept', userId: b },
+      }).success,
+    ).toBe(false);
+    expect(
+      meetingInvitationSchema.safeParse({
+        invitationId: a,
+        officeEpoch: b,
+        senderParticipationId: a,
+        senderDisplayName: 'Person A',
+        recipientParticipationId: b,
+        recipientDisplayName: 'Person B',
+        zoneId: 'meeting-room',
+        zoneLabel: 'Meeting Room',
+        status: 'pending',
+        expiresAt: Date.now(),
+      }).success,
+    ).toBe(true);
   });
 
   it('accepts proximity groups from two through the separate six-person group cap', () => {

@@ -25,6 +25,9 @@ import {
   proximityOptInEventSchema,
   waveEventSchema,
   officeWaveSchema,
+  meetingInviteEventSchema,
+  meetingInvitationResponseEventSchema,
+  meetingInvitationCancelEventSchema,
 } from '@gather/contracts';
 import { OfficeAdmissionService } from '../office-admission.service.js';
 import type { ConsumedOfficeTicket, OfficeReservation } from '../runtime/office-runtime.service.js';
@@ -440,45 +443,8 @@ export class OfficeGateway
         this.reply(acknowledge, parsed.data.eventId, result);
         return;
       }
-      this.roomEvents.publishConversationNotices(result.notices);
-      this.publishAreas(ticket.workspaceId, ticket.officeId);
-      this.reply(acknowledge, parsed.data.eventId, null);
-    });
-    socket.on('meeting:join', async (raw: unknown, acknowledge?: unknown) => {
-      if (!this.allowOfficeCommand(socket)) {
-        this.reply(acknowledge, this.eventId(raw), 'rate_limited');
-        return;
-      }
-      const parsed = meetingJoinEventSchema.safeParse(raw);
-      if (!parsed.success) {
-        this.reply(acknowledge, this.eventId(raw), 'validation_failed');
-        return;
-      }
-      const ticket = socket.data.officeAdmission;
-      const reservation = socket.data.officeReservation;
-      if (!ticket || !reservation) return;
-      try {
-        if (!(await this.admission.isSocketAuthorized(ticket))) {
-          this.reply(acknowledge, parsed.data.eventId, 'unauthorized');
-          this.endAccess(socket, 'authorization_ended');
-          return;
-        }
-      } catch {
-        this.reply(acknowledge, parsed.data.eventId, 'service_unavailable');
-        this.endAccess(socket, 'server_unavailable');
-        return;
-      }
-      const result = this.runtime.joinMeeting(
-        ticket.officeId,
-        ticket.workspaceId,
-        ticket.userId,
-        socket.id,
-        reservation.participationId,
-        parsed.data.officeEpoch,
-        parsed.data.payload.zoneId,
-      );
-      if (typeof result === 'string') {
-        this.reply(acknowledge, parsed.data.eventId, result);
+      if ('error' in result) {
+        this.reply(acknowledge, parsed.data.eventId, result.error);
         return;
       }
       this.roomEvents.publishConversationNotices(result.notices);
@@ -498,7 +464,7 @@ export class OfficeGateway
       const ticket = socket.data.officeAdmission;
       const reservation = socket.data.officeReservation;
       if (!ticket || !reservation) return;
-      const result = this.runtime.leaveMeeting(
+      const result = this.runtime.leaveProximityConversation(
         ticket.officeId,
         ticket.workspaceId,
         ticket.userId,
@@ -512,8 +478,156 @@ export class OfficeGateway
         this.reply(acknowledge, parsed.data.eventId, result);
         return;
       }
+      if ('error' in result) {
+        this.reply(acknowledge, parsed.data.eventId, result.error);
+        return;
+      }
       this.roomEvents.publishConversationNotices(result.notices);
+      this.roomEvents.publishConversationNotices(this.runtime.reconcileProximity(ticket.officeId));
+      this.publishMeetingInvitationNotices();
       this.publishAreas(ticket.workspaceId, ticket.officeId);
+      this.reply(acknowledge, parsed.data.eventId, null);
+    });
+    socket.on('meeting:invite', (raw: unknown, acknowledge?: unknown) => {
+      if (!this.allowOfficeCommand(socket)) {
+        this.reply(acknowledge, this.eventId(raw), 'rate_limited');
+        return;
+      }
+      const parsed = meetingInviteEventSchema.safeParse(raw);
+      if (!parsed.success) {
+        this.reply(acknowledge, this.eventId(raw), 'validation_failed');
+        return;
+      }
+      void this.handleMeetingInvite(socket, parsed.data, acknowledge).catch(() => {
+        this.reply(acknowledge, parsed.data.eventId, 'unauthorized');
+      });
+    });
+    socket.on('meeting:join', (raw: unknown, acknowledge?: unknown) => {
+      if (!this.allowOfficeCommand(socket)) {
+        this.reply(acknowledge, this.eventId(raw), 'rate_limited');
+        return;
+      }
+      const parsed = meetingJoinEventSchema.safeParse(raw);
+      if (!parsed.success) {
+        this.reply(acknowledge, this.eventId(raw), 'validation_failed');
+        return;
+      }
+      const ticket = socket.data.officeAdmission;
+      const reservation = socket.data.officeReservation;
+      if (!ticket || !reservation) return;
+      const result = this.runtime.joinMeetingZone(
+        ticket.officeId,
+        ticket.workspaceId,
+        ticket.userId,
+        socket.id,
+        reservation.participationId,
+        parsed.data.officeEpoch,
+        parsed.data.payload.zoneId,
+      );
+      if (typeof result === 'string') {
+        this.reply(acknowledge, parsed.data.eventId, result);
+        return;
+      }
+      this.roomEvents.publishConversationNotices(result.notices);
+      this.roomEvents.publishConversationNotices(this.runtime.reconcileProximity(ticket.officeId));
+      this.publishMeetingInvitationNotices();
+      this.publishAreas(ticket.workspaceId, ticket.officeId);
+      this.reply(acknowledge, parsed.data.eventId, null);
+    });
+    socket.on('meeting:invitation:respond', (raw: unknown, acknowledge?: unknown) => {
+      if (!this.allowOfficeCommand(socket)) {
+        this.reply(acknowledge, this.eventId(raw), 'rate_limited');
+        return;
+      }
+      const parsed = meetingInvitationResponseEventSchema.safeParse(raw);
+      if (!parsed.success) {
+        this.reply(acknowledge, this.eventId(raw), 'validation_failed');
+        return;
+      }
+      const ticket = socket.data.officeAdmission;
+      const reservation = socket.data.officeReservation;
+      if (!ticket || !reservation) return;
+      const result = this.runtime.respondMeetingInvitation(
+        ticket.officeId,
+        ticket.workspaceId,
+        ticket.userId,
+        socket.id,
+        reservation.participationId,
+        parsed.data.officeEpoch,
+        parsed.data.payload.invitationId,
+        parsed.data.payload.decision,
+      );
+      if (typeof result === 'string') {
+        this.reply(acknowledge, parsed.data.eventId, result);
+        return;
+      }
+      const status =
+        result.status === 'destination_full' ||
+        result.status === 'obstructed' ||
+        result.status === 'destination_unavailable'
+          ? 'cancelled'
+          : result.status;
+      const inviteNotice = this.runtime.meetingInvitationProjection(
+        ticket.officeId,
+        parsed.data.payload.invitationId,
+        status,
+        result.status === 'destination_full'
+          ? 'destination_full'
+          : result.status === 'obstructed'
+            ? 'obstructed'
+            : result.status === 'destination_unavailable'
+              ? 'destination_unavailable'
+              : undefined,
+      );
+      if (
+        ['destination_full', 'obstructed', 'destination_unavailable'].includes(result.status) &&
+        inviteNotice
+      ) {
+        socket.emit('meeting:invitation', inviteNotice);
+        if (result.senderSocketId)
+          this.namespace.sockets
+            .get(result.senderSocketId)
+            ?.emit('meeting:invitation', inviteNotice);
+      }
+      this.roomEvents.publishConversationNotices(this.runtime.reconcileProximity(ticket.officeId));
+      this.publishMeetingInvitationNotices();
+      this.publishAreas(ticket.workspaceId, ticket.officeId);
+      this.reply(acknowledge, parsed.data.eventId, null);
+    });
+    socket.on('meeting:invitation:cancel', (raw: unknown, acknowledge?: unknown) => {
+      if (!this.allowOfficeCommand(socket)) {
+        this.reply(acknowledge, this.eventId(raw), 'rate_limited');
+        return;
+      }
+      const parsed = meetingInvitationCancelEventSchema.safeParse(raw);
+      if (!parsed.success) {
+        this.reply(acknowledge, this.eventId(raw), 'validation_failed');
+        return;
+      }
+      const ticket = socket.data.officeAdmission;
+      const reservation = socket.data.officeReservation;
+      if (!ticket || !reservation) return;
+      const result = this.runtime.cancelMeetingInvitation(
+        ticket.officeId,
+        ticket.workspaceId,
+        ticket.userId,
+        socket.id,
+        reservation.participationId,
+        parsed.data.officeEpoch,
+        parsed.data.payload.invitationId,
+      );
+      if (typeof result === 'string') {
+        this.reply(acknowledge, parsed.data.eventId, result);
+        return;
+      }
+      const notice = this.runtime.meetingInvitationProjection(
+        ticket.officeId,
+        parsed.data.payload.invitationId,
+        'cancelled',
+      );
+      if (notice) socket.emit('meeting:invitation', notice);
+      if (result.recipientSocketId && notice)
+        this.namespace.sockets.get(result.recipientSocketId)?.emit('meeting:invitation', notice);
       this.reply(acknowledge, parsed.data.eventId, null);
     });
     socket.on('seat:sit', (raw: unknown, acknowledge?: unknown) => {
@@ -711,6 +825,101 @@ export class OfficeGateway
     this.reply(acknowledge, command.eventId, null);
   }
 
+  private async handleMeetingInvite(
+    socket: OfficeSocket,
+    command: ReturnType<typeof meetingInviteEventSchema.parse>,
+    acknowledge: unknown,
+  ) {
+    const ticket = socket.data.officeAdmission;
+    const reservation = socket.data.officeReservation;
+    if (!ticket || !reservation) return;
+    const sender = this.runtime.liveParticipation(
+      ticket.officeId,
+      ticket.workspaceId,
+      ticket.officeEpoch,
+      reservation.participationId,
+    );
+    const recipient = this.runtime.liveParticipation(
+      ticket.officeId,
+      ticket.workspaceId,
+      ticket.officeEpoch,
+      command.payload.targetParticipationId,
+    );
+    if (
+      !sender ||
+      sender.socketId !== socket.id ||
+      !recipient ||
+      recipient.participationId === sender.participationId
+    ) {
+      this.reply(acknowledge, command.eventId, 'conflict');
+      return;
+    }
+    const target = this.namespace.sockets.get(recipient.socketId) as OfficeSocket | undefined;
+    const targetTicket = target?.data.officeAdmission;
+    const targetRoom = `office:${ticket.workspaceId}:${ticket.officeId}`;
+    if (
+      !target?.connected ||
+      !targetTicket ||
+      !target.rooms.has(targetRoom) ||
+      targetTicket.workspaceId !== ticket.workspaceId ||
+      targetTicket.officeId !== ticket.officeId ||
+      targetTicket.officeEpoch !== ticket.officeEpoch
+    ) {
+      this.reply(acknowledge, command.eventId, 'conflict');
+      return;
+    }
+    try {
+      if (
+        !(await this.admission.isSocketAuthorized(ticket)) ||
+        !(await this.admission.isSocketAuthorized(targetTicket))
+      ) {
+        this.reply(acknowledge, command.eventId, 'unauthorized');
+        return;
+      }
+    } catch {
+      this.reply(acknowledge, command.eventId, 'unauthorized');
+      return;
+    }
+    if (
+      !socket.connected ||
+      !target.connected ||
+      this.runtime.liveParticipation(
+        ticket.officeId,
+        ticket.workspaceId,
+        ticket.officeEpoch,
+        reservation.participationId,
+      )?.socketId !== socket.id ||
+      this.runtime.liveParticipation(
+        ticket.officeId,
+        ticket.workspaceId,
+        ticket.officeEpoch,
+        command.payload.targetParticipationId,
+      )?.socketId !== target.id
+    ) {
+      this.reply(acknowledge, command.eventId, 'conflict');
+      return;
+    }
+    const result = this.runtime.createMeetingInvitation(
+      ticket.officeId,
+      ticket.workspaceId,
+      ticket.userId,
+      socket.id,
+      reservation.participationId,
+      command.officeEpoch,
+      command.payload.targetParticipationId,
+      command.payload.zoneId,
+      Date.now(),
+      command.eventId,
+    );
+    if (typeof result === 'string') {
+      this.reply(acknowledge, command.eventId, result);
+      return;
+    }
+    this.roomEvents.publishConversationNotices(this.runtime.drainMeetingNotices());
+    this.publishMeetingInvitationNotices();
+    this.reply(acknowledge, command.eventId, null);
+  }
+
   private pruneWaveStates(now: number) {
     for (const [key, state] of this.waveStates) {
       for (const [id, at] of state.eventIds)
@@ -734,10 +943,10 @@ export class OfficeGateway
       | 'validation_failed'
       | 'seat_unavailable'
       | 'seat_exit_blocked'
-      | 'conflict'
-      | 'participation_conflict'
       | 'room_full'
       | 'zone_unavailable'
+      | 'conflict'
+      | 'participation_conflict'
       | null,
   ) {
     if (typeof acknowledge !== 'function' || !idSchema.safeParse(eventId).success) return;
@@ -788,9 +997,17 @@ export class OfficeGateway
         this.namespace.to(update.roomId).emit('world:delta', worldDeltaSchema.parse(update.delta));
       }
       this.publishConversationState(workspaceId, officeId);
+      this.publishMeetingInvitationNotices();
       if (!this.runtime.hasOffice(officeId)) this.stopSimulation(officeId);
     }, 1000 / OFFICE_LIMITS.simulationHz);
     this.simulationTimers.set(officeId, timer);
+  }
+
+  private publishMeetingInvitationNotices() {
+    for (const notice of this.runtime.drainMeetingInvitationNotices()) {
+      const socket = this.namespace.sockets.get(notice.socketId);
+      if (socket?.connected) socket.emit('meeting:invitation', notice.invitation);
+    }
   }
 
   private stopSimulation(officeId: string) {
@@ -803,6 +1020,7 @@ export class OfficeGateway
   private publishConversationState(workspaceId: string, officeId: string) {
     this.roomEvents.publishConversationNotices(this.runtime.reconcileProximity(officeId));
     this.publishAreas(workspaceId, officeId);
+    this.publishMeetingInvitationNotices();
   }
 
   private publishAreas(workspaceId: string, officeId: string) {

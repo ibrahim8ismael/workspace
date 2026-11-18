@@ -1,6 +1,6 @@
 import type { SpaceMessage } from '@gather/contracts';
 import { expect, test } from '@playwright/test';
-import { OFFICE_PROTOCOL_VERSION } from '../../packages/contracts/src/versions.ts';
+import { OFFICE_PROTOCOL_VERSION } from '../../packages/contracts/dist/versions.js';
 
 const account = {
   id: '0d6c9f3e-4a2f-46cc-a66a-5f10d61c72ea',
@@ -433,6 +433,8 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
                 zoneId?: string;
                 conversationId?: string;
                 conversationVersion?: number;
+                invitationId?: string;
+                decision?: 'accept' | 'decline';
               };
             },
           ];
@@ -597,6 +599,28 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
                 participants: [],
               })}]`,
             );
+          } else if (
+            packet[0] === 'meeting:invitation:respond' &&
+            packet[1].payload?.invitationId
+          ) {
+            const status = packet[1].payload.decision === 'accept' ? 'arriving' : 'declined';
+            const response = {
+              invitationId: packet[1].payload.invitationId,
+              officeEpoch,
+              senderParticipationId: teammateParticipationId,
+              senderDisplayName: 'Office Teammate',
+              recipientParticipationId: participationId,
+              recipientDisplayName: account.displayName,
+              zoneId: meetingZoneId,
+              zoneLabel: 'E2E meeting room',
+              status,
+              expiresAt: Date.now() + 60_000,
+            };
+            socket.send(`42/office,["meeting:invitation",${JSON.stringify(response)}]`);
+            if (status === 'arriving')
+              socket.send(
+                `42/office,["meeting:invitation",${JSON.stringify({ ...response, status: 'joined' })}]`,
+              );
           } else if (packet[0] === 'seat:sit' && packet[1].payload?.seatId) {
             sittingAt = packet[1].payload.seatId;
             emitWorldDelta();
@@ -682,6 +706,41 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await expect(page.locator('.office-scene .office-map')).toHaveCount(1);
   await expect.poll(() => officeBootstrapRequests).toBe(1);
   await expect(page.getByRole('group', { name: 'Office connection controls' })).toBeVisible();
+  const invitationMicrophoneRequests = await page.evaluate(
+    () => (window as Window & { __microphoneTest: { requests: number } }).__microphoneTest.requests,
+  );
+  const sendMeetingInvitation = (invitationId: string) =>
+    officeServerSocket?.send(
+      `42/office,["meeting:invitation",${JSON.stringify({
+        invitationId,
+        officeEpoch,
+        senderParticipationId: teammateParticipationId,
+        senderDisplayName: 'Office Teammate',
+        recipientParticipationId: participationId,
+        recipientDisplayName: account.displayName,
+        zoneId: meetingZoneId,
+        zoneLabel: 'E2E meeting room',
+        status: 'pending',
+        expiresAt: Date.now() + 60_000,
+      })}]`,
+    );
+  sendMeetingInvitation('c9f5cc47-d7c9-4300-967b-0dfb94d71340');
+  await expect(page.getByText('Office Teammate invited you to E2E meeting room.')).toBeVisible();
+  expect(mediaTokenRequests).toHaveLength(0);
+  await page.getByRole('button', { name: 'Accept', exact: true }).click();
+  await expect(page.getByText('You arrived at E2E meeting room.')).toBeVisible();
+  expect(mediaTokenRequests).toHaveLength(0);
+  sendMeetingInvitation('346a6c3e-e1df-491b-a63d-8bb1c48df701');
+  await expect(page.getByText('Office Teammate invited you to E2E meeting room.')).toBeVisible();
+  await page.getByRole('button', { name: 'Decline', exact: true }).click();
+  await expect(page.getByText('The meeting invitation was declined.')).toBeVisible();
+  expect(mediaTokenRequests).toHaveLength(0);
+  expect(
+    await page.evaluate(
+      () =>
+        (window as Window & { __microphoneTest: { requests: number } }).__microphoneTest.requests,
+    ),
+  ).toBe(invitationMicrophoneRequests);
   await page.getByRole('link', { name: 'Invite people', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Employee invitations' })).toBeVisible();
   await expect(page.getByText('No invitations have been created for this company.')).toBeVisible();

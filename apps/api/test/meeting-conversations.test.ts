@@ -69,15 +69,15 @@ describe('fixed meeting conversations', () => {
     expect(conversationUpdateSchema.safeParse(secondJoin.notices[0]?.update).success).toBe(true);
   });
 
-  it('enforces the separate six-person meeting capacity and preserves one-conversation membership', () => {
-    expect(OFFICE_LIMITS.maxMeetingParticipants).toBe(6);
+  it('enforces the separate twenty-person meeting capacity and preserves one-conversation membership', () => {
+    expect(OFFICE_LIMITS.maxMeetingParticipants).toBe(20);
     const meetings = new MeetingConversations(epoch, [zone], 32);
     for (let index = 0; index < OFFICE_LIMITS.maxMeetingParticipants; index += 1) {
       const joined = meetings.join(candidate(index), zone.zoneId);
       expect(typeof joined).toBe('object');
     }
-    expect(meetings.join(candidate(6), zone.zoneId)).toBe('room_full');
-    expect(meetings.participantIds()).toHaveLength(6);
+    expect(meetings.join(candidate(20), zone.zoneId)).toBe('room_full');
+    expect(meetings.participantIds()).toHaveLength(20);
     expect(meetings.join(candidate(0), 'another-room')).toBe('zone_unavailable');
   });
 

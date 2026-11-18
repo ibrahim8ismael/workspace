@@ -15,7 +15,7 @@ Represent fixed meeting areas with explicit server-authorized group admission an
 - `zoneId`, `mapVersion`, tile rectangle and tile size
 - `workspaceId`, `officeId`, office epoch
 - transient conversation ID/version, member set, generation and lifecycle
-- fixed capacity of six; office occupancy remains independently capped at twenty
+- fixed capacity of twenty; office occupancy remains independently capped at twenty
 
 ## Relationships
 
@@ -27,19 +27,19 @@ Represent fixed meeting areas with explicit server-authorized group admission an
 ## Invariants and lifecycle
 
 - The API uses the trusted map version installed for the office; it derives zone bounds and does not trust client coordinates or zone claims.
-- An explicit `meeting:join` requires an active live office participation, current availability, no conflicting conversation, physical presence inside the half-open zone rectangle and capacity below six.
+- An explicit `meeting:join` requires an active live office participation, current availability, no conflicting conversation, physical presence inside the half-open zone rectangle and capacity below twenty. Invitation arrivals reserve capacity before travel begins.
 - Walking into a room does not join or enable the microphone. Walking out or losing eligibility immediately removes the member.
 - Each membership change rotates the LiveKit generation. The roster is delivered privately through `conversation:update`; the token and policy permit remain microphone-only.
-- The web UI shows the current room, explicit Join/Leave actions, authoritative roster, capacity and mic controls. Camera and screen sharing are not part of this contract.
+- The web UI shows the current room, explicit Join/Leave actions, authoritative roster, capacity, invitation responses and mic controls. Camera and screen sharing are not part of this contract.
 
 ## Interface outline
 
-- `meeting:join { zoneId }` and `meeting:leave { conversationId, conversationVersion }`.
+- `meeting:join { zoneId }`, `meeting:leave { conversationId, conversationVersion }`, and the scoped invitation/accept/decline/cancel events.
 - The server emits private authoritative roster and media readiness updates. Meeting geometry is read-only display state.
 
 ## Planning question
 
-Room admission remains explicit. Confirm whether capacities should ever increase beyond six; issue #8's 20-person limit does not silently alter this meeting limit.
+Room admission remains explicit. Fixed meetings support twenty participants; proximity groups remain capped at six. Issue #8 still needs a product decision on whether its twenty-person conversation limit applies to proximity groups as well.
 
 ## Next work
 

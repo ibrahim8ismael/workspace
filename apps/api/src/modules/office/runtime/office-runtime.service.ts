@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import {
   OFFICE_LIMITS,
+  conversationUpdateSchema,
+  meetingInvitationSchema,
   meetingZonesSchema,
   officeReadySchema,
   worldDeltaSchema,
@@ -16,7 +18,6 @@ import { trustedOfficeMap } from '../office-map-registry.js';
 import type { TrustedOfficeMap } from '../office-map-registry.js';
 import { ProximityPairing } from './proximity-pairing.js';
 import type { PrivateConversationNotice, ProximityCandidate } from './proximity-pairing.js';
-import { MeetingConversations } from './meeting-conversations.js';
 
 export interface ConsumedOfficeTicket {
   userId: string;
@@ -42,6 +43,33 @@ interface RuntimeParticipant {
   hasAcceptedInput: boolean;
   inputTimestamps: number[];
   inputIntent: { dx: number; dy: number; expiresAt: number };
+  meetingRoute?: { tx: number; ty: number }[];
+  meetingInvitationId?: string;
+}
+
+interface MeetingInvitationState {
+  readonly invitationId: string;
+  readonly commandEventId?: string;
+  readonly senderParticipationId: string;
+  readonly recipientParticipationId: string;
+  readonly zoneId: string;
+  readonly conversationId: string;
+  readonly generation: string;
+  readonly expiresAt: number;
+  deadlineMonotonic: number;
+  status: 'pending' | 'arriving' | 'joined' | 'declined' | 'expired' | 'cancelled';
+}
+interface MeetingGroupState {
+  zoneId: string;
+  conversationId: string;
+  generation: string;
+  version: number;
+  members: { participationId: string; socketId: string; displayName: string }[];
+  active: boolean;
+}
+interface MeetingInvitationNotice {
+  readonly socketId: string;
+  readonly invitation: ReturnType<typeof meetingInvitationSchema.parse>;
 }
 
 interface OfficeRuntime {
@@ -55,10 +83,13 @@ interface OfficeRuntime {
   readonly participationByActor: Map<string, string>;
   readonly seats: Map<string, string | null>;
   readonly proximity: ProximityPairing;
-  readonly meetings: MeetingConversations;
   lastSimulationAt: number;
   lastBroadcastAt: number;
   readonly dirtyParticipants: Set<string>;
+  readonly meetingInvitations: Map<string, MeetingInvitationState>;
+  readonly meetingNotices: PrivateConversationNotice[];
+  readonly meetingGroups: Map<string, MeetingGroupState>;
+  readonly meetingInvitationNotices: MeetingInvitationNotice[];
 }
 
 export interface OfficeReservation {
@@ -224,14 +255,13 @@ export class OfficeRuntimeService {
             participationByActor: new Map(),
             seats: this.emptySeats(map),
             proximity: new ProximityPairing(ticket.officeEpoch, map.geometry.tileSize),
-            meetings: new MeetingConversations(
-              ticket.officeEpoch,
-              map.geometry.zones.filter((zone) => zone.kind === 'meeting'),
-              map.geometry.tileSize,
-            ),
             lastSimulationAt: performance.now(),
             lastBroadcastAt: performance.now(),
             dirtyParticipants: new Set(),
+            meetingInvitations: new Map(),
+            meetingNotices: [],
+            meetingGroups: new Map(),
+            meetingInvitationNotices: [],
           };
 
     invariant(office.workspaceId === ticket.workspaceId, 401, 'unauthorized');
@@ -376,6 +406,16 @@ export class OfficeRuntimeService {
     )
       return null;
 
+    for (const invite of office.meetingInvitations.values()) {
+      if (
+        (invite.senderParticipationId === participationId ||
+          invite.recipientParticipationId === participationId) &&
+        (invite.status === 'pending' || invite.status === 'arriving')
+      )
+        this.finishMeetingInvitation(office, invite, 'cancelled', 'disconnected');
+    }
+    this.removeMeetingMember(office, participationId);
+
     const baseVersion = office.stateVersion;
     office.participants.delete(participationId);
     office.participationByActor.delete(`${workspaceId}:${userId}`);
@@ -421,12 +461,423 @@ export class OfficeRuntimeService {
     participant.inputTimestamps.push(now);
     participant.lastAcceptedInputSequence = input.sequence;
     participant.hasAcceptedInput = true;
+    if (participant.meetingRoute && input.dx === 0 && input.dy === 0) return null;
     participant.inputIntent = {
       dx: input.dx,
       dy: input.dy,
       expiresAt: now + OFFICE_LIMITS.movementIntentTimeoutMs,
     };
+    if (participant.meetingRoute) {
+      const invitationId = participant.meetingInvitationId;
+      const invite = invitationId ? office.meetingInvitations.get(invitationId) : undefined;
+      if (invite && (input.dx !== 0 || input.dy !== 0)) {
+        invite.status = 'cancelled';
+        this.queueMeetingInvitationNotice(
+          office,
+          invitationId!,
+          'cancelled',
+          participant.socketId,
+          'obstructed',
+        );
+        const sender = office.participants.get(invite.senderParticipationId);
+        if (sender)
+          this.queueMeetingInvitationNotice(
+            office,
+            invitationId!,
+            'cancelled',
+            sender.socketId,
+            'obstructed',
+          );
+      }
+      delete participant.meetingRoute;
+      delete participant.meetingInvitationId;
+    }
     return null;
+  }
+
+  createMeetingInvitation(
+    officeId: string,
+    workspaceId: string,
+    userId: string,
+    socketId: string,
+    senderParticipationId: string,
+    officeEpoch: string,
+    recipientParticipationId: string,
+    zoneId: string,
+    now = Date.now(),
+    commandEventId?: string,
+  ) {
+    const office = this.offices.get(officeId);
+    const sender = office?.participants.get(senderParticipationId);
+    const recipient = office?.participants.get(recipientParticipationId);
+    if (!office || office.workspaceId !== workspaceId || office.officeEpoch !== officeEpoch)
+      return 'stale_epoch' as const;
+    if (!sender || sender.userId !== userId || sender.socketId !== socketId)
+      return 'unauthorized' as const;
+    const zone = office.map.geometry.zones.find(
+      (item) => item.zoneId === zoneId && item.kind === 'meeting',
+    );
+    if (!zone || !recipient || recipientParticipationId === senderParticipationId)
+      return 'zone_unavailable' as const;
+    const senderTile = pixelToTile(sender.publicState.position);
+    if (
+      senderTile.tx < zone.bounds.tx ||
+      senderTile.tx >= zone.bounds.tx + zone.bounds.width ||
+      senderTile.ty < zone.bounds.ty ||
+      senderTile.ty >= zone.bounds.ty + zone.bounds.height
+    )
+      return 'zone_unavailable' as const;
+    if (
+      sender.publicState.availability !== 'available' ||
+      recipient.publicState.availability !== 'available'
+    )
+      return 'conflict' as const;
+    this.reconcileMeetingState(office, performance.now());
+    if (
+      commandEventId &&
+      [...office.meetingInvitations.values()].some(
+        (invite) =>
+          invite.senderParticipationId === senderParticipationId &&
+          invite.commandEventId === commandEventId,
+      )
+    )
+      return 'conflict' as const;
+    const activeForRecipient = [...office.meetingInvitations.values()].some(
+      (invite) =>
+        invite.recipientParticipationId === recipientParticipationId &&
+        (invite.status === 'pending' || invite.status === 'arriving'),
+    );
+    if (activeForRecipient || recipient.meetingInvitationId || recipient.publicState.seatId)
+      return 'conflict' as const;
+    const group = office.meetingGroups.get(zoneId);
+    if (
+      !group ||
+      group.members.some((member) => member.participationId === recipientParticipationId)
+    )
+      return 'conflict' as const;
+    if (
+      !group.active ||
+      !group.members.some((member) => member.participationId === senderParticipationId)
+    )
+      return 'conflict' as const;
+    const invitationId = randomUUID();
+    const expiresAt = now + OFFICE_LIMITS.meetingInvitationLifetimeMs;
+    office.meetingInvitations.set(invitationId, {
+      invitationId,
+      ...(commandEventId ? { commandEventId } : {}),
+      senderParticipationId,
+      recipientParticipationId,
+      zoneId,
+      conversationId: group.conversationId,
+      generation: group.generation,
+      expiresAt,
+      deadlineMonotonic: performance.now() + OFFICE_LIMITS.meetingInvitationLifetimeMs,
+      status: 'pending',
+    });
+    this.queueMeetingInvitationNotice(office, invitationId, 'pending', recipient.socketId);
+    this.queueMeetingInvitationNotice(office, invitationId, 'pending', sender.socketId);
+    return {
+      invitationId,
+      expiresAt,
+      zoneLabel: zone.label,
+      recipientSocketId: recipient.socketId,
+      recipientDisplayName: recipient.publicState.displayName,
+    };
+  }
+
+  joinMeetingZone(
+    officeId: string,
+    workspaceId: string,
+    userId: string,
+    socketId: string,
+    participationId: string,
+    officeEpoch: string,
+    zoneId: string,
+  ) {
+    const office = this.offices.get(officeId);
+    const participant = office?.participants.get(participationId);
+    if (!office || office.workspaceId !== workspaceId || office.officeEpoch !== officeEpoch)
+      return 'stale_epoch' as const;
+    if (!participant || participant.userId !== userId || participant.socketId !== socketId)
+      return 'unauthorized' as const;
+    const zone = office.map.geometry.zones.find(
+      (item) => item.zoneId === zoneId && item.kind === 'meeting',
+    );
+    const tile = pixelToTile(participant.publicState.position);
+    if (
+      !zone ||
+      tile.tx < zone.bounds.tx ||
+      tile.tx >= zone.bounds.tx + zone.bounds.width ||
+      tile.ty < zone.bounds.ty ||
+      tile.ty >= zone.bounds.ty + zone.bounds.height
+    )
+      return 'zone_unavailable' as const;
+    if (
+      participant.publicState.availability !== 'available' ||
+      participant.publicState.seatId ||
+      participant.meetingInvitationId
+    )
+      return 'conflict' as const;
+    const existing = office.meetingGroups.get(zoneId);
+    if (existing?.members.some((member) => member.participationId === participationId))
+      return { notices: [] as PrivateConversationNotice[] };
+    const prior = [...office.meetingGroups.values()].find((group) =>
+      group.members.some((member) => member.participationId === participationId),
+    );
+    if (prior) return 'conflict' as const;
+    const reserved = [...office.meetingInvitations.values()].filter(
+      (invite) => invite.zoneId === zoneId && invite.status === 'arriving',
+    ).length;
+    if ((existing?.members.length ?? 0) + reserved >= OFFICE_LIMITS.maxMeetingParticipants)
+      return 'room_full' as const;
+    const group = existing ?? {
+      zoneId,
+      conversationId: randomUUID(),
+      generation: randomUUID(),
+      version: 0,
+      members: [],
+      active: false,
+    };
+    if (group.members.length >= OFFICE_LIMITS.maxMeetingParticipants) return 'room_full' as const;
+    if (group.members.length)
+      office.meetingNotices.push(
+        this.meetingNotice(office, group, 'retiring', group.generation, group.version + 1),
+      );
+    group.members = [
+      ...group.members,
+      { participationId, socketId, displayName: participant.publicState.displayName },
+    ];
+    group.members.sort((left, right) => left.participationId.localeCompare(right.participationId));
+    group.generation = randomUUID();
+    group.version += 2;
+    group.active = false;
+    office.meetingGroups.set(zoneId, group);
+    office.meetingNotices.push(this.meetingNotice(office, group, 'joining'));
+    const notices = office.proximity.reconcile(this.proximityCandidates(office));
+    return { notices };
+  }
+
+  respondMeetingInvitation(
+    officeId: string,
+    workspaceId: string,
+    userId: string,
+    socketId: string,
+    recipientParticipationId: string,
+    officeEpoch: string,
+    invitationId: string,
+    decision: 'accept' | 'decline',
+  ) {
+    const office = this.offices.get(officeId);
+    const recipient = office?.participants.get(recipientParticipationId);
+    if (!office || office.workspaceId !== workspaceId || office.officeEpoch !== officeEpoch)
+      return 'stale_epoch' as const;
+    if (!recipient || recipient.userId !== userId || recipient.socketId !== socketId)
+      return 'unauthorized' as const;
+    const invite = office.meetingInvitations.get(invitationId);
+    if (
+      !invite ||
+      invite.recipientParticipationId !== recipientParticipationId ||
+      invite.status !== 'pending'
+    )
+      return 'conflict' as const;
+    const sender = office.participants.get(invite.senderParticipationId);
+    if (invite.deadlineMonotonic <= performance.now()) {
+      invite.status = 'expired';
+      this.queueMeetingInvitationNotice(office, invitationId, 'expired', recipient.socketId);
+      if (sender)
+        this.queueMeetingInvitationNotice(office, invitationId, 'expired', sender.socketId);
+      return {
+        status: 'expired' as const,
+        senderSocketId: sender?.socketId ?? null,
+        zoneId: invite.zoneId,
+      };
+    }
+    if (!sender) {
+      invite.status = 'cancelled';
+      return { status: 'cancelled' as const, senderSocketId: null, zoneId: invite.zoneId };
+    }
+    const zone = office.map.geometry.zones.find(
+      (item) => item.zoneId === invite.zoneId && item.kind === 'meeting',
+    );
+    const senderTile = pixelToTile(sender.publicState.position);
+    const senderInZone = Boolean(
+      zone &&
+      senderTile.tx >= zone.bounds.tx &&
+      senderTile.tx < zone.bounds.tx + zone.bounds.width &&
+      senderTile.ty >= zone.bounds.ty &&
+      senderTile.ty < zone.bounds.ty + zone.bounds.height,
+    );
+    const group = office.meetingGroups.get(invite.zoneId);
+    if (
+      !senderInZone ||
+      !group ||
+      group.conversationId !== invite.conversationId ||
+      group.members.some((member) => member.participationId === recipientParticipationId) ||
+      !group.members.some((member) => member.participationId === invite.senderParticipationId)
+    ) {
+      invite.status = 'cancelled';
+      return {
+        status: 'destination_unavailable' as const,
+        senderSocketId: sender.socketId,
+        zoneId: invite.zoneId,
+      };
+    }
+    if (decision === 'decline') {
+      invite.status = 'declined';
+      this.queueMeetingInvitationNotice(office, invitationId, 'declined', recipient.socketId);
+      this.queueMeetingInvitationNotice(office, invitationId, 'declined', sender.socketId);
+      return {
+        status: 'declined' as const,
+        senderSocketId: sender.socketId,
+        zoneId: invite.zoneId,
+      };
+    }
+    if (!zone) {
+      invite.status = 'cancelled';
+      return {
+        status: 'cancelled' as const,
+        senderSocketId: sender.socketId,
+        zoneId: invite.zoneId,
+      };
+    }
+    if (recipient.publicState.availability !== 'available' || recipient.publicState.seatId) {
+      this.finishMeetingInvitation(office, invite, 'cancelled', 'destination_unavailable');
+      return {
+        status: 'destination_unavailable' as const,
+        senderSocketId: sender.socketId,
+        zoneId: zone.zoneId,
+      };
+    }
+    const arrivals = [...office.meetingInvitations.values()].filter(
+      (candidate) => candidate.zoneId === zone.zoneId && candidate.status === 'arriving',
+    ).length;
+    if (group.members.length + arrivals >= OFFICE_LIMITS.maxMeetingParticipants) {
+      this.finishMeetingInvitation(office, invite, 'cancelled', 'destination_full');
+      return {
+        status: 'destination_full' as const,
+        senderSocketId: sender.socketId,
+        zoneId: zone.zoneId,
+      };
+    }
+    const reservedDestinations = new Set(
+      [...office.participants.values()].flatMap((person) => {
+        const destination = person.meetingRoute?.at(-1);
+        return destination ? [`${destination.tx}:${destination.ty}`] : [];
+      }),
+    );
+    const start = pixelToTile(recipient.publicState.position);
+    const queue = [start];
+    const parent = new Map<string, string | null>([[`${start.tx}:${start.ty}`, null]]);
+    let destination: { tx: number; ty: number } | null = null;
+    while (queue.length && !destination) {
+      const tile = queue.shift()!;
+      const occupied = [...office.participants.entries()].some(
+        ([id, person]) =>
+          id !== recipientParticipationId &&
+          pixelToTile(person.publicState.position).tx === tile.tx &&
+          pixelToTile(person.publicState.position).ty === tile.ty,
+      );
+      const inZone =
+        tile.tx >= zone.bounds.tx &&
+        tile.tx < zone.bounds.tx + zone.bounds.width &&
+        tile.ty >= zone.bounds.ty &&
+        tile.ty < zone.bounds.ty + zone.bounds.height;
+      if (
+        inZone &&
+        !occupied &&
+        !reservedDestinations.has(`${tile.tx}:${tile.ty}`) &&
+        office.map.validated.isReachable(tile) &&
+        !office.map.seats.some((seat) => seat.tile.tx === tile.tx && seat.tile.ty === tile.ty)
+      ) {
+        destination = tile;
+        break;
+      }
+      for (const next of [
+        { tx: tile.tx + 1, ty: tile.ty },
+        { tx: tile.tx - 1, ty: tile.ty },
+        { tx: tile.tx, ty: tile.ty + 1 },
+        { tx: tile.tx, ty: tile.ty - 1 },
+      ]) {
+        const key = `${next.tx}:${next.ty}`;
+        if (
+          parent.has(key) ||
+          !canStep(tile, next, office.map.validated.bounds, office.map.validated.collision)
+        )
+          continue;
+        if (
+          [...office.participants.entries()].some(
+            ([id, person]) =>
+              id !== recipientParticipationId &&
+              pixelToTile(person.publicState.position).tx === next.tx &&
+              pixelToTile(person.publicState.position).ty === next.ty,
+          )
+        )
+          continue;
+        parent.set(key, `${tile.tx}:${tile.ty}`);
+        queue.push(next);
+      }
+    }
+    if (!destination) {
+      this.finishMeetingInvitation(office, invite, 'cancelled', 'obstructed');
+      return {
+        status: 'obstructed' as const,
+        senderSocketId: sender.socketId,
+        zoneId: zone.zoneId,
+      };
+    }
+    const route: { tx: number; ty: number }[] = [];
+    let key: string | null = `${destination.tx}:${destination.ty}`;
+    while (key) {
+      const [tx, ty] = key.split(':').map(Number);
+      route.unshift({ tx: tx!, ty: ty! });
+      key = parent.get(key) ?? null;
+    }
+    if (route.length && route[0]!.tx === start.tx && route[0]!.ty === start.ty) route.shift();
+    this.removeMeetingMember(office, recipientParticipationId);
+    recipient.inputIntent = { dx: 0, dy: 0, expiresAt: 0 };
+    recipient.meetingRoute = route;
+    recipient.meetingInvitationId = invitationId;
+    invite.status = 'arriving';
+    office.meetingNotices.push(...office.proximity.reconcile(this.proximityCandidates(office)));
+    invite.deadlineMonotonic = performance.now() + 120_000;
+    this.queueMeetingInvitationNotice(office, invitationId, 'arriving', recipient.socketId);
+    this.queueMeetingInvitationNotice(office, invitationId, 'arriving', sender.socketId);
+    return { status: 'arriving' as const, senderSocketId: sender.socketId, zoneId: zone.zoneId };
+  }
+
+  cancelMeetingInvitation(
+    officeId: string,
+    workspaceId: string,
+    userId: string,
+    socketId: string,
+    participationId: string,
+    officeEpoch: string,
+    invitationId: string,
+  ) {
+    const office = this.offices.get(officeId);
+    const sender = office?.participants.get(participationId);
+    if (!office || office.workspaceId !== workspaceId || office.officeEpoch !== officeEpoch)
+      return 'stale_epoch' as const;
+    if (!sender || sender.userId !== userId || sender.socketId !== socketId)
+      return 'unauthorized' as const;
+    const invite = office.meetingInvitations.get(invitationId);
+    if (
+      !invite ||
+      invite.senderParticipationId !== participationId ||
+      !['pending', 'arriving'].includes(invite.status)
+    )
+      return 'conflict' as const;
+    invite.status = 'cancelled';
+    const recipient = office.participants.get(invite.recipientParticipationId);
+    if (recipient?.meetingInvitationId === invitationId) {
+      delete recipient.meetingInvitationId;
+      delete recipient.meetingRoute;
+    }
+    return {
+      status: 'cancelled' as const,
+      recipientSocketId: recipient?.socketId ?? null,
+      zoneId: invite.zoneId,
+    };
   }
 
   setAvailability(
@@ -446,6 +897,7 @@ export class OfficeRuntimeService {
       return 'unauthorized';
     if (participant.publicState.availability === availability) return null;
     participant.publicState.availability = availability;
+    this.reconcileMeetingState(office, performance.now());
     return this.change(office, [participant.publicState]);
   }
 
@@ -465,7 +917,13 @@ export class OfficeRuntimeService {
       return 'stale_epoch';
     if (!participant || participant.userId !== userId || participant.socketId !== socketId)
       return 'unauthorized';
-    if (enabled && office.meetings.hasParticipant(participationId)) return 'participation_conflict';
+    if (
+      enabled &&
+      [...office.meetingGroups.values()].some((group) =>
+        group.members.some((member) => member.participationId === participationId),
+      )
+    )
+      return 'participation_conflict';
     return office.proximity.setOptIn(
       participationId,
       enabled,
@@ -483,13 +941,32 @@ export class OfficeRuntimeService {
     officeEpoch: string,
     conversationId: string,
     conversationVersion: number,
-  ): { notices: PrivateConversationNotice[] } | 'stale_epoch' | 'stale_version' | 'unauthorized' {
+  ):
+    | { notices: PrivateConversationNotice[] }
+    | { error: 'stale_version' }
+    | 'stale_epoch'
+    | 'stale_version'
+    | 'unauthorized' {
     const office = this.offices.get(officeId);
     const participant = office?.participants.get(participationId);
     if (!office || office.workspaceId !== workspaceId || office.officeEpoch !== officeEpoch)
       return 'stale_epoch';
     if (!participant || participant.userId !== userId || participant.socketId !== socketId)
       return 'unauthorized';
+    const meeting = [...office.meetingGroups.entries()].find(
+      ([, group]) => group.conversationId === conversationId,
+    );
+    if (meeting) {
+      const [, group] = meeting;
+      if (
+        group.version !== conversationVersion ||
+        !group.members.some((member) => member.participationId === participationId)
+      )
+        return { error: 'stale_version' as const };
+      this.removeMeetingMember(office, participationId);
+      this.reconcileMeetingState(office, performance.now());
+      return { notices: [] };
+    }
     const result = office.proximity.leave(participationId, conversationId, conversationVersion);
     return 'error' in result ? result.error : result;
   }
@@ -497,16 +974,28 @@ export class OfficeRuntimeService {
   reconcileProximity(officeId: string): PrivateConversationNotice[] {
     const office = this.offices.get(officeId);
     if (!office) return [];
-    const candidates = this.proximityCandidates(office);
-    const notices = office.meetings.reconcile(candidates);
-    notices.push(
-      ...office.proximity.setBlockedParticipants(office.meetings.participantIds(), candidates),
-    );
-    return notices;
+    this.reconcileMeetingState(office, performance.now());
+    const meetingNotices = office.meetingNotices.splice(0);
+    return [...meetingNotices, ...office.proximity.reconcile(this.proximityCandidates(office))];
   }
 
   conversationAreas(officeId: string) {
     return this.offices.get(officeId)?.proximity.currentAreas() ?? null;
+  }
+
+  proximityMediaPermits() {
+    return [...this.offices.values()].flatMap((office) => [
+      ...office.proximity.mediaPermits(),
+      ...[...office.meetingGroups.values()].flatMap((group) =>
+        group.members.map((member) => ({
+          generation: group.generation,
+          identity: member.participationId,
+          room: group.generation,
+          version: 1,
+          sources: ['microphone'] as const,
+        })),
+      ),
+    ]);
   }
 
   meetingZones(officeId: string) {
@@ -528,10 +1017,7 @@ export class OfficeRuntimeService {
   }
 
   conversationMediaPermits() {
-    return [...this.offices.values()].flatMap((office) => [
-      ...office.proximity.mediaPermits(),
-      ...office.meetings.mediaPermits(),
-    ]);
+    return this.proximityMediaPermits();
   }
 
   conversationMediaParticipation(
@@ -541,16 +1027,19 @@ export class OfficeRuntimeService {
   ) {
     for (const office of this.offices.values()) {
       const participant = office.participants.get(participationId);
-      const candidates = this.proximityCandidates(office);
-      const conversation =
-        office.proximity.mediaConversation(participationId, conversationId, conversationVersion) ??
-        office.meetings.mediaConversation(
-          participationId,
-          conversationId,
-          conversationVersion,
-          candidates,
-        );
-      if (!participant || !conversation) continue;
+      const conversation = office.proximity.mediaConversation(
+        participationId,
+        conversationId,
+        conversationVersion,
+      );
+      const meeting = [...office.meetingGroups.values()].find(
+        (group) =>
+          group.conversationId === conversationId &&
+          group.version === conversationVersion &&
+          group.active &&
+          group.members.some((member) => member.participationId === participationId),
+      );
+      if (!participant || (!conversation && !meeting)) continue;
       return {
         participationId,
         userId: participant.userId,
@@ -561,7 +1050,10 @@ export class OfficeRuntimeService {
         officeId: office.officeId,
         officeEpoch: office.officeEpoch,
         mapVersion: office.mapVersion,
-        ...conversation,
+        conversationId: conversation?.conversationId ?? meeting!.conversationId,
+        conversationVersion: conversation?.conversationVersion ?? meeting!.version,
+        generation: conversation?.generation ?? meeting!.generation,
+        room: conversation?.room ?? meeting!.generation,
       };
     }
     return null;
@@ -569,79 +1061,100 @@ export class OfficeRuntimeService {
 
   activateProximityGeneration(generation: string): PrivateConversationNotice[] {
     for (const office of this.offices.values()) {
-      const notices = [
-        ...office.proximity.activateGeneration(generation),
-        ...office.meetings.activateGeneration(generation),
-      ];
+      const notices = office.proximity.activateGeneration(generation);
       if (notices.length > 0) return notices;
+      const group = [...office.meetingGroups.values()].find(
+        (candidate) => candidate.generation === generation,
+      );
+      if (group && !group.active) {
+        group.active = true;
+        group.version += 1;
+        const notice = this.meetingNotice(office, group, 'active');
+        return [{ socketIds: notice.socketIds, update: notice.update }];
+      }
     }
     return [];
   }
 
-  joinMeeting(
-    officeId: string,
-    workspaceId: string,
-    userId: string,
-    socketId: string,
-    participationId: string,
-    officeEpoch: string,
-    zoneId: string,
-  ):
-    | { notices: PrivateConversationNotice[] }
-    | 'stale_epoch'
-    | 'unauthorized'
-    | 'zone_unavailable'
-    | 'room_full'
-    | 'participation_conflict' {
-    const office = this.offices.get(officeId);
-    const participant = office?.participants.get(participationId);
-    if (!office || office.workspaceId !== workspaceId || office.officeEpoch !== officeEpoch)
-      return 'stale_epoch';
-    if (!participant || participant.userId !== userId || participant.socketId !== socketId)
-      return 'unauthorized';
-    if (office.proximity.hasParticipant(participationId)) return 'participation_conflict';
-    const candidate = this.proximityCandidates(office).find(
-      (item) => item.participationId === participationId,
-    );
-    if (!candidate) return 'unauthorized';
-    const result = office.meetings.join(candidate, zoneId);
-    if (typeof result === 'string') return result;
-    const notices = [...result.notices];
-    notices.push(
-      ...office.proximity.setBlockedParticipants(
-        office.meetings.participantIds(),
-        this.proximityCandidates(office),
-      ),
-    );
-    return { notices };
+  drainMeetingNotices() {
+    const notices = [...this.offices.values()].flatMap((office) => office.meetingNotices.splice(0));
+    return notices;
   }
 
-  leaveMeeting(
-    officeId: string,
-    workspaceId: string,
-    userId: string,
-    socketId: string,
-    participationId: string,
-    officeEpoch: string,
-    conversationId: string,
-    conversationVersion: number,
-  ): { notices: PrivateConversationNotice[] } | 'stale_epoch' | 'stale_version' | 'unauthorized' {
-    const office = this.offices.get(officeId);
-    const participant = office?.participants.get(participationId);
-    if (!office || office.workspaceId !== workspaceId || office.officeEpoch !== officeEpoch)
-      return 'stale_epoch';
-    if (!participant || participant.userId !== userId || participant.socketId !== socketId)
-      return 'unauthorized';
-    const result = office.meetings.leave(participationId, conversationId, conversationVersion);
-    if (typeof result === 'string') return result;
-    const notices = [...result.notices];
-    notices.push(
-      ...office.proximity.setBlockedParticipants(
-        office.meetings.participantIds(),
-        this.proximityCandidates(office),
-      ),
+  drainMeetingInvitationNotices() {
+    return [...this.offices.values()].flatMap((office) =>
+      office.meetingInvitationNotices.splice(0),
     );
-    return { notices };
+  }
+
+  meetingInvitationProjection(
+    officeId: string,
+    invitationId: string,
+    status: 'pending' | 'accepted' | 'declined' | 'expired' | 'cancelled' | 'arriving' | 'joined',
+    reason?: 'destination_unavailable' | 'destination_full' | 'obstructed' | 'disconnected',
+  ) {
+    const office = this.offices.get(officeId);
+    const invite = office?.meetingInvitations.get(invitationId);
+    if (!office || !invite) return null;
+    const sender = office.participants.get(invite.senderParticipationId);
+    const recipient = office.participants.get(invite.recipientParticipationId);
+    const zone = office.map.geometry.zones.find((item) => item.zoneId === invite.zoneId);
+    return meetingInvitationSchema.parse({
+      invitationId,
+      officeEpoch: office.officeEpoch,
+      senderParticipationId: invite.senderParticipationId,
+      senderDisplayName: sender?.publicState.displayName ?? 'Former member',
+      recipientParticipationId: invite.recipientParticipationId,
+      recipientDisplayName: recipient?.publicState.displayName ?? 'Former member',
+      zoneId: invite.zoneId,
+      zoneLabel: zone?.label ?? invite.zoneId,
+      status,
+      expiresAt: invite.expiresAt,
+      ...(reason ? { reason } : {}),
+    });
+  }
+
+  private queueMeetingInvitationNotice(
+    office: OfficeRuntime,
+    invitationId: string,
+    status: 'pending' | 'accepted' | 'declined' | 'expired' | 'cancelled' | 'arriving' | 'joined',
+    socketId: string,
+    reason?: 'destination_unavailable' | 'destination_full' | 'obstructed' | 'disconnected',
+  ) {
+    const invitation = this.meetingInvitationProjection(
+      office.officeId,
+      invitationId,
+      status,
+      reason,
+    );
+    if (invitation) office.meetingInvitationNotices.push({ socketId, invitation });
+  }
+
+  private meetingNotice(
+    office: OfficeRuntime,
+    group: MeetingGroupState,
+    state: 'joining' | 'active' | 'retiring' | 'ended',
+    generation = group.generation,
+    version = group.version,
+    members = group.members,
+  ): PrivateConversationNotice {
+    return {
+      socketIds: members.map((member) => member.socketId),
+      update: conversationUpdateSchema.parse({
+        officeEpoch: office.officeEpoch,
+        conversationId: group.conversationId,
+        kind: 'meeting',
+        zoneId: group.zoneId,
+        state,
+        version,
+        generation,
+        mediaReady: state === 'active',
+        participants:
+          state === 'ended'
+            ? []
+            : members.map(({ participationId, displayName }) => ({ participationId, displayName })),
+      }),
+    };
   }
 
   resync(
@@ -688,6 +1201,7 @@ export class OfficeRuntimeService {
       return 'stale_epoch';
     if (!participant || participant.userId !== userId || participant.socketId !== socketId)
       return 'unauthorized';
+    if (participant.meetingInvitationId) return 'conflict';
     const seat = office.map.seats.find((row) => row.seatId === seatId);
     if (!seat || office.seats.get(seatId) !== null || participant.publicState.seatId !== null)
       return 'seat_unavailable';
@@ -794,6 +1308,7 @@ export class OfficeRuntimeService {
     office.lastSimulationAt = now;
     const seconds = elapsedMs / 1000;
     const pixels = OFFICE_LIMITS.movementSpeedPixelsPerSecond * seconds;
+    this.reconcileMeetingState(office, performance.now());
     for (const [participationId, participant] of office.participants) {
       const previous = participant.publicState.position;
       const nextSequence = Math.max(
@@ -803,6 +1318,145 @@ export class OfficeRuntimeService {
       let nextPosition = previous;
       let dx = participant.inputIntent.dx;
       let dy = participant.inputIntent.dy;
+      let routeArrived =
+        participant.meetingRoute?.length === 0 && Boolean(participant.meetingInvitationId);
+      if (participant.meetingRoute?.length) {
+        const nextTile = participant.meetingRoute[0]!;
+        const target = {
+          x: nextTile.tx * office.map.geometry.tileSize + office.map.geometry.tileSize / 2,
+          y: nextTile.ty * office.map.geometry.tileSize + office.map.geometry.tileSize / 2,
+        };
+        const distance = Math.hypot(target.x - previous.x, target.y - previous.y);
+        const travel = Math.min(pixels, distance);
+        const nextPosition =
+          distance === 0
+            ? target
+            : {
+                x: previous.x + ((target.x - previous.x) / distance) * travel,
+                y: previous.y + ((target.y - previous.y) / distance) * travel,
+              };
+        const occupied = [...office.participants.entries()].some(
+          ([id, person]) =>
+            id !== participationId &&
+            pixelToTile(person.publicState.position).tx === nextTile.tx &&
+            pixelToTile(person.publicState.position).ty === nextTile.ty,
+        );
+        if (!occupied && this.canMoveBetween(office, participationId, previous, nextPosition)) {
+          participant.publicState.position = nextPosition;
+          participant.publicState.facing = this.facingFor(
+            target.x - previous.x,
+            target.y - previous.y,
+            participant.publicState.facing,
+          );
+          office.dirtyParticipants.add(participationId);
+          if (travel >= distance) {
+            participant.meetingRoute.shift();
+            routeArrived = participant.meetingRoute.length === 0;
+          }
+        } else {
+          const invite = participant.meetingInvitationId
+            ? office.meetingInvitations.get(participant.meetingInvitationId)
+            : undefined;
+          if (invite) invite.status = 'cancelled';
+          if (invite) {
+            this.queueMeetingInvitationNotice(
+              office,
+              invite.invitationId,
+              'cancelled',
+              participant.socketId,
+              'obstructed',
+            );
+            const sender = office.participants.get(invite.senderParticipationId);
+            if (sender)
+              this.queueMeetingInvitationNotice(
+                office,
+                invite.invitationId,
+                'cancelled',
+                sender.socketId,
+                'obstructed',
+              );
+          }
+          delete participant.meetingRoute;
+          delete participant.meetingInvitationId;
+        }
+      }
+      if (routeArrived) {
+        const invitationId = participant.meetingInvitationId;
+        const invite = invitationId ? office.meetingInvitations.get(invitationId) : undefined;
+        const group = invite ? office.meetingGroups.get(invite.zoneId) : undefined;
+        const sender = invite ? office.participants.get(invite.senderParticipationId) : undefined;
+        const zone = invite
+          ? office.map.geometry.zones.find((item) => item.zoneId === invite.zoneId)
+          : undefined;
+        const tile = pixelToTile(participant.publicState.position);
+        const inZone = Boolean(
+          zone &&
+          tile.tx >= zone.bounds.tx &&
+          tile.tx < zone.bounds.tx + zone.bounds.width &&
+          tile.ty >= zone.bounds.ty &&
+          tile.ty < zone.bounds.ty + zone.bounds.height,
+        );
+        if (
+          invite &&
+          invite.status === 'arriving' &&
+          group &&
+          group.members.length < OFFICE_LIMITS.maxMeetingParticipants &&
+          sender &&
+          this.isInMeetingZone(office, invite.zoneId, sender) &&
+          inZone &&
+          group.conversationId === invite.conversationId &&
+          group.members.some((member) => member.participationId === invite.senderParticipationId)
+        ) {
+          office.meetingNotices.push(
+            this.meetingNotice(office, group, 'retiring', group.generation, group.version + 1),
+          );
+          group.members = [
+            ...group.members,
+            {
+              participationId,
+              socketId: participant.socketId,
+              displayName: participant.publicState.displayName,
+            },
+          ];
+          group.members.sort((left, right) =>
+            left.participationId.localeCompare(right.participationId),
+          );
+          group.generation = randomUUID();
+          group.version += 2;
+          group.active = false;
+          office.meetingNotices.push(this.meetingNotice(office, group, 'joining'));
+          invite.status = 'joined';
+          this.queueMeetingInvitationNotice(
+            office,
+            invite.invitationId,
+            'joined',
+            participant.socketId,
+          );
+          this.queueMeetingInvitationNotice(office, invite.invitationId, 'joined', sender.socketId);
+        } else if (invite)
+          this.finishMeetingInvitation(
+            office,
+            invite,
+            'cancelled',
+            group && group.members.length >= OFFICE_LIMITS.maxMeetingParticipants
+              ? 'destination_full'
+              : 'destination_unavailable',
+          );
+        delete participant.meetingRoute;
+        delete participant.meetingInvitationId;
+      }
+      if (participant.meetingRoute) {
+        participant.publicState.lastProcessedInputSequence = nextSequence;
+        continue;
+      }
+      if (
+        routeArrived ||
+        (participant.meetingInvitationId === undefined &&
+          nextSequence !== participant.publicState.lastProcessedInputSequence)
+      ) {
+        // Route movement is already applied above; don't apply an unrelated input in the same tick.
+        if (routeArrived) continue;
+      }
       if (participant.inputIntent.expiresAt <= now) {
         dx = 0;
         dy = 0;
@@ -839,6 +1493,7 @@ export class OfficeRuntimeService {
         office.dirtyParticipants.add(participationId);
       }
     }
+    this.reconcileMeetingState(office, performance.now());
     if (
       office.dirtyParticipants.size === 0 ||
       now - office.lastBroadcastAt < 1000 / OFFICE_LIMITS.broadcastHz
@@ -864,6 +1519,119 @@ export class OfficeRuntimeService {
         seats: [],
       }),
     };
+  }
+
+  private isInMeetingZone(office: OfficeRuntime, zoneId: string, participant: RuntimeParticipant) {
+    const zone = office.map.geometry.zones.find(
+      (item) => item.zoneId === zoneId && item.kind === 'meeting',
+    );
+    const tile = pixelToTile(participant.publicState.position);
+    return Boolean(
+      zone &&
+      tile.tx >= zone.bounds.tx &&
+      tile.tx < zone.bounds.tx + zone.bounds.width &&
+      tile.ty >= zone.bounds.ty &&
+      tile.ty < zone.bounds.ty + zone.bounds.height,
+    );
+  }
+
+  private finishMeetingInvitation(
+    office: OfficeRuntime,
+    invite: MeetingInvitationState,
+    status: 'cancelled' | 'expired' | 'declined' | 'joined',
+    reason?: 'destination_unavailable' | 'destination_full' | 'obstructed' | 'disconnected',
+  ) {
+    invite.status = status;
+    const recipient = office.participants.get(invite.recipientParticipationId);
+    if (recipient?.meetingInvitationId === invite.invitationId) {
+      delete recipient.meetingRoute;
+      delete recipient.meetingInvitationId;
+      recipient.inputIntent = { dx: 0, dy: 0, expiresAt: 0 };
+    }
+    for (const id of [invite.senderParticipationId, invite.recipientParticipationId]) {
+      const participant = office.participants.get(id);
+      if (participant)
+        this.queueMeetingInvitationNotice(
+          office,
+          invite.invitationId,
+          status,
+          participant.socketId,
+          reason,
+        );
+    }
+  }
+
+  private removeMeetingMember(office: OfficeRuntime, participationId: string) {
+    for (const [zoneId, group] of office.meetingGroups) {
+      if (!group.members.some((member) => member.participationId === participationId)) continue;
+      const departing = group.members.filter(
+        (member) => member.participationId === participationId,
+      );
+      office.meetingNotices.push(
+        this.meetingNotice(office, group, 'ended', group.generation, group.version + 1, departing),
+      );
+      const retained = group.members.filter((member) => member.participationId !== participationId);
+      if (retained.length)
+        office.meetingNotices.push(
+          this.meetingNotice(
+            office,
+            group,
+            'retiring',
+            group.generation,
+            group.version + 1,
+            retained,
+          ),
+        );
+      group.members = group.members.filter((member) => member.participationId !== participationId);
+      if (!group.members.length) office.meetingGroups.delete(zoneId);
+      else {
+        group.generation = randomUUID();
+        group.version += 2;
+        group.active = false;
+        office.meetingNotices.push(this.meetingNotice(office, group, 'joining'));
+      }
+    }
+  }
+
+  private reconcileMeetingState(office: OfficeRuntime, now: number) {
+    for (const [zoneId, group] of [...office.meetingGroups]) {
+      for (const member of [...group.members]) {
+        const participant = office.participants.get(member.participationId);
+        if (
+          !participant ||
+          participant.publicState.availability !== 'available' ||
+          !this.isInMeetingZone(office, zoneId, participant)
+        )
+          this.removeMeetingMember(office, member.participationId);
+      }
+    }
+    for (const invite of office.meetingInvitations.values()) {
+      if (invite.status !== 'pending' && invite.status !== 'arriving') continue;
+      const sender = office.participants.get(invite.senderParticipationId);
+      const recipient = office.participants.get(invite.recipientParticipationId);
+      const group = office.meetingGroups.get(invite.zoneId);
+      if (invite.deadlineMonotonic <= now) this.finishMeetingInvitation(office, invite, 'expired');
+      else if (!sender || !recipient)
+        this.finishMeetingInvitation(office, invite, 'cancelled', 'disconnected');
+      else if (
+        !group ||
+        group.conversationId !== invite.conversationId ||
+        !group.members.some((member) => member.participationId === invite.senderParticipationId) ||
+        !this.isInMeetingZone(office, invite.zoneId, sender) ||
+        sender.publicState.availability !== 'available' ||
+        recipient.publicState.availability !== 'available'
+      )
+        this.finishMeetingInvitation(office, invite, 'cancelled', 'destination_unavailable');
+    }
+    // Terminal IDs remain briefly for replay rejection, with a strict per-office bound.
+    const terminal = [...office.meetingInvitations.values()].filter(
+      (invite) => invite.status !== 'pending' && invite.status !== 'arriving',
+    );
+    for (const invite of terminal.slice(
+      0,
+      Math.max(0, terminal.length - OFFICE_LIMITS.replayCacheEntries),
+    ))
+      office.meetingInvitations.delete(invite.invitationId);
   }
 
   private canMoveBetween(
@@ -913,7 +1681,13 @@ export class OfficeRuntimeService {
       participationId,
       socketId: participant.socketId,
       displayName: participant.publicState.displayName,
-      availability: participant.publicState.availability,
+      availability:
+        participant.meetingInvitationId ||
+        [...office.meetingGroups.values()].some((group) =>
+          group.members.some((member) => member.participationId === participationId),
+        )
+          ? 'busy'
+          : participant.publicState.availability,
       position: participant.publicState.position,
     }));
   }

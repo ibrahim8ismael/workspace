@@ -42,6 +42,6 @@ D12 one company/workspace/office and D13 verified-user self-service onboarding a
 
 ## Provisional budgets
 
-30 members/workspace; 3 owned workspaces/user; 20 simultaneous office participants; 6 meeting media participants; 30 movement inputs/sec; 4 KiB maximum application-event payload; 20 Hz simulation; up to 10 Hz broadcast. These are configurable starting values requiring measurement. Proposed media targets are at least 95% successful joins and two-second p95 join on a declared stable-network profile. Proposed recovery objectives are RPO one hour and RTO four hours. Keep source authorization/cutoff requirements explicit when tuning.
+30 members/workspace; 3 owned workspaces/user; 20 simultaneous office participants; 20 fixed-meeting participants; 6 proximity participants; 30 movement inputs/sec; 4 KiB maximum application-event payload; 20 Hz simulation; up to 10 Hz broadcast. These are configurable starting values requiring measurement. Proposed media targets are at least 95% successful joins and two-second p95 join on a declared stable-network profile. Proposed recovery objectives are RPO one hour and RTO four hours. Keep source authorization/cutoff requirements explicit when tuning.
 
 See [initial backlog](BACKLOG.md) for executable preparation tasks and each entity's `PLAN.md` for its work breakdown.

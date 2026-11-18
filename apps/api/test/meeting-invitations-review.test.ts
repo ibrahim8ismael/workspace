@@ -269,8 +269,13 @@ describe('meeting invitation review regressions', () => {
       ),
     );
     expect(snapshots.every((snapshot) => typeof snapshot === 'object')).toBe(true);
-    if (typeof snapshots[0] === 'object' && typeof snapshots[1] === 'object')
-      expect(snapshots[0].snapshot).toEqual(snapshots[1].snapshot);
+    if (typeof snapshots[0] === 'object' && typeof snapshots[1] === 'object') {
+      const { serverTime: senderServerTime, ...senderSnapshot } = snapshots[0].snapshot;
+      const { serverTime: recipientServerTime, ...recipientSnapshot } = snapshots[1].snapshot;
+      expect(senderServerTime).toEqual(expect.any(Number));
+      expect(recipientServerTime).toEqual(expect.any(Number));
+      expect(senderSnapshot).toEqual(recipientSnapshot);
+    }
     expect(f.respond(invite.invitationId, 'accept')).toBe('conflict');
   });
 

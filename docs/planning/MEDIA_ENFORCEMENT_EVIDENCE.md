@@ -82,3 +82,63 @@ and fixed-meeting policy, capacity/load, migration interruption, and a productio
 relevant cutoff and isolation cases. Local synthetic audio and an embedded TURN server do not prove
 reachable production UDP ports or an external TURN service. No production host/network or external
 media provider was modified for these tests.
+
+## CP08.8 — issue #18 server-enforced media revocation
+
+Date: 2026-11-18. Scope: local isolated API, policy guard, pinned LiveKit SFU, and Chromium clients
+with synthetic microphones. This verifies the application policy integration; it is not a deployed
+production cutoff/SLA measurement.
+
+### Diagnosis and enforcement path
+
+Issue #18 correctly identified that `signaling-guard.mjs` authorizes a signaling connection when it
+arrives and then pipes the established socket. That socket check alone cannot revoke a connected
+participant. The application-policy path must therefore remove that participant at the SFU. The
+current API changes the authoritative generation when membership changes; the guard denies and
+durably retires the old generation, removes its LiveKit participants, deletes the room, and confirms
+it empty before acknowledging the replacement policy. The SFU lease wrapper independently stops
+LiveKit if authenticated policy installation progress ceases. The deployment-specific
+`infra/deploy/compose.media-pilot.yaml` runs both mechanisms. The local `infra/compose.media-e2e.yaml`
+is explicitly a local-only profile and does not run the SFU lease wrapper.
+
+The previous real-media API test sent `stop` to both browser clients after revocation, which allowed
+client cooperation to conceal the security outcome. Also, the fixture did not first opt its
+synthetic publishers into microphone use after application media changed to default-muted. The
+fixture now waits for muted admission, simulates an explicit microphone action, leaves the actual
+LiveKit clients connected while the server revokes policy, samples inbound decoded RTP audio, and
+checks the old SFU room roster after policy acknowledgement. Refreshed-token reconnection now
+asserts the new session is muted while still receiving audio, then publishes only after a separate
+explicit microphone action. The isolated controller-loss fixture also had a test-only key-format
+bug: it generated hexadecimal bytes for a policy key whose strict decoder requires canonical
+base64. That fixture key is now encoded correctly, and sanitized guard startup logs are included on
+future fixture failures.
+
+### Verification
+
+| Scenario | Evidence | Result |
+| --- | --- | --- |
+| Membership revocation with uncooperative listeners | API revocation started before mutation; real browser clients had no office socket and received no client-side stop command. The empty policy installation was acknowledged at sequence 16; guard remained alive. Decoded audio stopped and stayed stable. `RoomServiceClient.listParticipants` reported zero participants in the old generation. | Passed; last decoded sample at 1,196 ms, within the 2-second maximum. This is one run, not a p95 estimate. |
+| Old and refreshed grants after revocation | The original grant's guard validation returned 403; after guard restart both the original and a genuine SFU-refreshed grant returned 403, with no signaling forwarded. The media-token API rejected the ended conversation. | Passed in the real-SFU membership-revocation test. |
+| Authorized three-user group and survivor continuity | Three clients exchanged decoded audio (two remote tracks each). After one participant left, both survivors kept one remote audio track, the removed generation was retired, and the removed identity could not rejoin with its former grant. | Passed; group room retirement 180 ms and the group member's decoded-audio cutoff 332 ms in the full `test:media-live` run. |
+| Application media regression suite | `CP07_DOCKER_CONTEXT=default pnpm test:media-live` | Passed; 2 real-LiveKit integration tests. |
+| Guard authorization and retirement regressions | `pnpm test:media-spike` | Passed; 33/33 tests, including removal/empty-room confirmation, stale-generation denial, failed-retirement fail-closed, lease progress and late-ACK cases. |
+| Combined controller/supervisor/SFU lease fault injection | `CP07_DOCKER_CONTEXT=default node spikes/media-enforcement/media-cutoff.mjs --run-local --isolated --policy-loss --guarded-supervisor --supervisor-crash --sfu-lease --source-permissions --company-isolation` | Passed. After four seconds of healthy decoded audio, the policy authority and supervisor/worker were stopped. The SFU-local lease stopped forwarding; last audible sample was 5,082 ms after fault start and media remained stable. Old and SFU-refreshed grants were denied after guard restart. Source-scope and two-company room-isolation checks passed. The shared SFU shutdown also interrupted the other company, as expected for this shared-node failure mode. |
+
+The focused membership-revocation command was:
+
+```sh
+CP08_REAL_MEDIA=1 CP08_MEDIA_END=membership-revoke CP08_MEDIA_TOKEN_REFRESH=1 \
+  CP07_DOCKER_CONTEXT=default pnpm --filter @gather/api exec vitest run \
+  --config vitest.config.ts test/auth.integration.test.ts \
+  -t "keeps proximity conversation state private and ends it on membership-revoke" \
+  --reporter=verbose
+```
+
+### Acceptance boundary
+
+This closes the real-SFU, uncooperative-client revocation gap for the tested application guard and
+membership-removal flow. The measured membership cutoff met the 2-second maximum but was above the
+initial 1-second target in this single run; no p95 claim is made. Guard/controller failure behavior
+passed the combined local SFU-lease fault test. The server's latest deployment record still leaves
+deployed revocation replay and host/process supervision as open pilot release gates. Do not treat
+this local test evidence as deployed acceptance.

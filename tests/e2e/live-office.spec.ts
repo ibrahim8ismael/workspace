@@ -714,6 +714,125 @@ async function readOfficeRtcDiagnostics(page: Page) {
   });
 }
 
+test('Vivo opens both Media room doors after the last person walks out', async ({ browser }) => {
+  test.skip(!enabled, 'Set LIVE_OFFICE_E2E=1 to use the local Docker stack.');
+  test.setTimeout(120_000);
+  const { owner, member, workspaceId } = await getLiveMediaOfficeFixture();
+  const ownerOffice = await companyPage(browser, owner.client, workspaceId);
+  const memberOffice = await companyPage(browser, member.client, workspaceId);
+  const ownerPage = ownerOffice.page;
+  const memberPage = memberOffice.page;
+  const map = (page: Page) => page.locator('.office-scene svg.office-map');
+  const lighting = (page: Page) => map(page).locator('[data-room-lighting="dimmed"]');
+  const doors = (page: Page, state: 'open' | 'closed') =>
+    map(page).locator(`[data-room-id="vivo-094907c0"][data-room-state="${state}"]`);
+  const worldToScreen = (page: Page, x: number, y: number) =>
+    map(page).evaluate(
+      (svg, point) => {
+        const screen = new DOMPoint(point.x, point.y).matrixTransform(
+          (svg as SVGSVGElement).getScreenCTM()!,
+        );
+        return { x: screen.x, y: screen.y };
+      },
+      { x, y },
+    );
+  const walk = async (page: Page, x: number, y: number) => {
+    const screen = await worldToScreen(page, x, y);
+    await page.mouse.click(screen.x, screen.y);
+  };
+  const enter = async (page: Page, name: string) => {
+    // The west entrance is between column 28 and column 29, on row 37.
+    await walk(page, 912, 1200);
+    await expect
+      .poll(
+        async () => {
+          const position = await participantPositionObservation(page, name);
+          return Math.hypot(position.authoritativeX - 912, position.authoritativeY - 1200);
+        },
+        { timeout: 15_000 },
+      )
+      .toBeLessThan(24);
+    await map(page).focus();
+    const { authoritativeY: approachY } = await participantPositionObservation(page, name);
+    if (approachY < 1190 || approachY > 1210) {
+      const key = approachY < 1190 ? 'ArrowDown' : 'ArrowUp';
+      await page.keyboard.down(key);
+      try {
+        await expect
+          .poll(
+            async () => {
+              const { authoritativeY } = await participantPositionObservation(page, name);
+              return approachY < 1190 ? authoritativeY >= 1190 : authoritativeY <= 1210;
+            },
+            { intervals: [25, 50] },
+          )
+          .toBe(true);
+      } finally {
+        await page.keyboard.up(key);
+      }
+    }
+    await page.keyboard.down('ArrowRight');
+    try {
+      await expect
+        .poll(async () => (await participantPositionObservation(page, name)).authoritativeX)
+        .toBeGreaterThan(975);
+    } finally {
+      await page.keyboard.up('ArrowRight');
+    }
+    await expect(page.getByText(/You are inside Media room/)).toBeVisible();
+  };
+
+  try {
+    await ownerPage.getByRole('button', { name: 'Join' }).click();
+    await memberPage.getByRole('button', { name: 'Join' }).click();
+    await expect(ownerPage.getByText('2 people in the office')).toBeVisible();
+    await expect(memberPage.getByText('2 people in the office')).toBeVisible();
+    for (const page of [ownerPage, memberPage]) {
+      await expect(doors(page, 'open')).toHaveCount(2);
+      await expect(lighting(page)).toHaveCount(0);
+    }
+
+    await enter(ownerPage, owner.account.displayName);
+    await expect(lighting(ownerPage)).toHaveCount(1);
+    await expect(lighting(memberPage)).toHaveCount(0);
+    for (const page of [ownerPage, memberPage]) {
+      await expect(doors(page, 'closed')).toHaveCount(2);
+    }
+
+    await enter(memberPage, member.account.displayName);
+    await expect(lighting(memberPage)).toHaveCount(1);
+    await walk(ownerPage, 880, 1200);
+    await expect(lighting(ownerPage)).toHaveCount(0);
+    await expect(lighting(memberPage)).toHaveCount(1);
+    for (const page of [ownerPage, memberPage]) {
+      await expect(doors(page, 'closed')).toHaveCount(2);
+    }
+    await expect
+      .poll(async () => {
+        const position = await participantPositionObservation(
+          memberPage,
+          owner.account.displayName,
+        );
+        return Math.hypot(position.worldX - 880, position.worldY - 1200);
+      })
+      .toBeLessThan(24);
+
+    // This floor point is inside the first person's sprite canvas but outside their body.
+    const ownerPosition = await participantPositionObservation(
+      memberPage,
+      owner.account.displayName,
+    );
+    await walk(memberPage, ownerPosition.worldX - 30, ownerPosition.worldY);
+    for (const page of [ownerPage, memberPage]) {
+      await expect(lighting(page)).toHaveCount(0);
+      await expect(doors(page, 'open')).toHaveCount(2);
+      await expect(page.getByText('2 people in the office')).toBeVisible();
+    }
+  } finally {
+    await Promise.all([ownerOffice.context.close(), memberOffice.context.close()]);
+  }
+});
+
 test('live two-browser Vivo admission, movement, seats, recovery, and company isolation', async ({
   browser,
 }) => {

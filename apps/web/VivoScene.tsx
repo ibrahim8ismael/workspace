@@ -421,8 +421,11 @@ function Avatar({
         {person.name} · {STATUS_LABEL[person.status]}
       </title>
       {person.speaking && <SpeakingIndicator />}
+      {/* The sprite canvas includes transparent padding that must not intercept map clicks. */}
+      <rect x={-14} y={-48} width={28} height={49} fill="transparent" />
       <image
         className="pixel-resource character-resource"
+        pointerEvents="none"
         href={frames?.[url] ?? url}
         x={-AVATAR_SPRITE.foot.x * AVATAR_SPRITE.renderScale}
         y={-AVATAR_SPRITE.foot.y * AVATAR_SPRITE.renderScale}

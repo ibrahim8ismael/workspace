@@ -25,7 +25,12 @@ import {
 } from '@gather/contracts';
 import { ValidationPipe } from '../../platform/http/validation.pipe.js';
 import { invariant } from '../../platform/http/errors.js';
-import { AuthService, accountDto } from './auth.service.js';
+import {
+  AuthService,
+  accountDto,
+  PENDING_REGISTRATION_COOKIE,
+  PENDING_REGISTRATION_MS,
+} from './auth.service.js';
 import {
   SessionService,
   SESSION_COOKIE,
@@ -43,6 +48,10 @@ import { clientIp } from '../../platform/http/client-ip.js';
 function browser(request: AuthRequest): BrowserContext {
   invariant(request.authContext, 403, 'csrf_rejected');
   return request.authContext;
+}
+function registrationProof(request: AuthRequest): string | undefined {
+  const value = request.cookies?.[PENDING_REGISTRATION_COOKIE];
+  return typeof value === 'string' && /^[A-Za-z0-9_-]{43}$/.test(value) ? value : undefined;
 }
 function ip(request: AuthRequest, trustedProxyIps: string): string {
   return clientIp(request.socket.remoteAddress, request.get('x-forwarded-for'), trustedProxyIps);
@@ -86,28 +95,40 @@ export class AuthController {
     @Body(new ValidationPipe(registerSchema))
     body: { email: string; password: string; displayName: string },
     @Req() request: AuthRequest,
+    @Res({ passthrough: true }) response: Response,
   ) {
     await this.abuse.authRequest(
       'register',
       ip(request, this.config.get('TRUSTED_PROXY_IPS', { infer: true })),
       body.email,
     );
-    return this.auth.register(body, browser(request));
+    const result = await this.auth.register(body, browser(request), registrationProof(request));
+    response.cookie(PENDING_REGISTRATION_COOKIE, result.registrationProof, {
+      ...cookieOptions,
+      expires: new Date(Date.now() + PENDING_REGISTRATION_MS),
+    });
+    return { message: result.message };
   }
   @Public()
   @Post('verify-email')
   @HttpCode(200)
   async verify(
     @Body(new ValidationPipe(verifyEmailSchema))
-    body: { email: string; token: string; password: string },
+    body: { email: string; token: string },
     @Req() request: AuthRequest,
+    @Res({ passthrough: true }) response: Response,
   ) {
     await this.abuse.authRequest(
       'verify',
       ip(request, this.config.get('TRUSTED_PROXY_IPS', { infer: true })),
       body.email,
     );
-    return this.auth.verifyEmail(body, browser(request));
+    const draft = await this.auth.verifyEmail(body, browser(request), registrationProof(request));
+    response.cookie(SESSION_COOKIE, draft.raw, {
+      ...cookieOptions,
+      expires: draft.record.absoluteExpiresAt,
+    });
+    return { account: draft.account, csrfToken: draft.csrfToken };
   }
   @Public()
   @Post('resend-verification')
@@ -121,7 +142,12 @@ export class AuthController {
       ip(request, this.config.get('TRUSTED_PROXY_IPS', { infer: true })),
       body.email,
     );
-    return this.auth.issueRequested(body.email, 'verify-email', browser(request));
+    return this.auth.issueRequested(
+      body.email,
+      'verify-email',
+      browser(request),
+      registrationProof(request),
+    );
   }
   @Public()
   @Post('forgot-password')

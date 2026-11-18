@@ -55,9 +55,12 @@ describe('security primitives', () => {
       digest(`account-a:reset-password:${codes[0]}`),
     );
     expect(
+      verifyEmailSchema.safeParse({ email: 'person@example.com', token: codes[0] }).success,
+    ).toBe(true);
+    expect(
       verifyEmailSchema.safeParse({ email: 'person@example.com', token: codes[0], password: 'x' })
         .success,
-    ).toBe(true);
+    ).toBe(false);
     expect(
       verifyEmailSchema.safeParse({ email: 'person@example.com', token: '12345', password: 'x' })
         .success,

@@ -24,8 +24,8 @@ Paths are shown relative to `/api`. The linked reference supplies status codes, 
 | `GET /health/live` | Process liveness only |
 | `GET /auth/csrf` | Safe anonymous or authenticated browser bootstrap |
 | `POST /auth/register` | Pending account registration |
-| `POST /auth/verify-email` | Single-use email-scoped six-digit verification with pending password proof |
-| `POST /auth/resend-verification` | Generic verification request and supersession |
+| `POST /auth/verify-email` | Single-use six-digit verification bound to the registering browser; rotates into an authenticated session |
+| `POST /auth/resend-verification` | Generic verification request limited to the browser-bound pending account |
 | `POST /auth/forgot-password` | Generic recovery request |
 | `POST /auth/reset-password` | One-use email-scoped six-digit password reset and invalidation of old sessions |
 | `POST /auth/login` | Verified active account, rotated session/CSRF |

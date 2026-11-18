@@ -42,11 +42,17 @@ async function mockApi(page: Page, signedIn = false) {
     )
       return json({ message: 'If the request is eligible, instructions will be sent.' }, 202);
     if (pathname === '/api/auth/verify-email' && method === 'POST') {
-      expect(route.request().postDataJSON()).toMatchObject({
-        email: account.email,
-      });
-      expect((route.request().postDataJSON() as { token: string }).token).toMatch(/^\d{6}$/);
-      return json({ message: 'Email verified. Sign in to continue.' });
+      const body = route.request().postDataJSON() as { email: string; token: string };
+      expect(body).toMatchObject({ email: account.email });
+      expect(body.token).toMatch(/^\d{6}$/);
+      expect('password' in body).toBe(false);
+      if (body.token === '000123')
+        return json(
+          { error: { code: 'invalid_token', message: 'invalid_token', requestId: workspaceId } },
+          400,
+        );
+      authenticated = true;
+      return json({ account, csrfToken: 'C'.repeat(43) });
     }
     if (pathname === '/api/auth/reset-password' && method === 'POST') {
       expect(route.request().postDataJSON()).toMatchObject({
@@ -118,22 +124,32 @@ test('auth destinations have distinct URLs, support history and preserve token l
   await expect(page.getByLabel('Reset code', { exact: true })).toHaveValue(code);
   await page.reload();
   await expect(page.getByLabel('Reset code', { exact: true })).toHaveValue(code);
-  await page.goto('/verify-email?code=' + code);
+  await page.goto(`/verify-email?email=${encodeURIComponent(account.email)}&code=${code}`);
   await expect(page.getByLabel('Verification code', { exact: true })).toHaveValue(code);
 
-  await page.goto('/register');
+  await page.goto(`/register?returnTo=${encodeURIComponent(entryPath)}`);
   await page.getByLabel('Name', { exact: true }).fill('Routing Person');
   await page.getByLabel('Email', { exact: true }).fill(account.email);
   await page.getByLabel('Password', { exact: true }).fill('a sufficiently long routing password');
   await page.getByRole('button', { name: 'Create account', exact: true }).click();
-  await expect(page).toHaveURL(`/verify-email?email=${encodeURIComponent(account.email)}`);
-  await expect(page.getByLabel('Email', { exact: true })).toHaveValue(account.email);
+  const verificationQuery = new URLSearchParams({ returnTo: entryPath, email: account.email });
+  await expect(page).toHaveURL(`/verify-email?${verificationQuery}`);
+  await expect(page.getByLabel('Email', { exact: true })).toHaveCount(0);
   await page.getByLabel('Verification code', { exact: true }).fill('000123');
-  await page
-    .getByLabel('Registration password', { exact: true })
-    .fill('a sufficiently long routing password');
   await page.getByRole('button', { name: 'Verify email', exact: true }).click();
-  await expect(page).toHaveURL(`/login?email=${encodeURIComponent(account.email)}`);
+  await expect(page.getByRole('alert')).toContainText('invalid, expired, or has already been used');
+  await page.getByRole('link', { name: 'Request a new verification code' }).click();
+  const resendQuery = new URLSearchParams({ returnTo: entryPath, email: account.email });
+  await expect(page).toHaveURL(`/resend-verification?${resendQuery}`);
+  await page.getByRole('button', { name: 'Resend code', exact: true }).click();
+  await expect(page).toHaveURL(`/verify-email?${verificationQuery}`);
+  await expect(page.getByRole('status')).toContainText('a new code will be sent');
+  await page.getByLabel('Verification code', { exact: true }).fill('012345');
+  await page.getByRole('button', { name: 'Verify email', exact: true }).click();
+  await expect(page).toHaveURL(entryPath);
+  await expect(page.getByRole('heading', { name: 'Routing Company' })).toBeVisible();
+  await page.reload();
+  await expect(page).toHaveURL(entryPath);
 
   await page.goto('/forgot-password');
   await page.getByLabel('Email', { exact: true }).fill(account.email);

@@ -1,5 +1,5 @@
 import { Injectable, Inject } from '@nestjs/common';
-import type { ClientSession } from 'mongoose';
+import type { ClientSession, QueryFilter } from 'mongoose';
 import { randomUUID } from 'node:crypto';
 import type { AccountDto } from '@gather/contracts';
 import { IdentityModels } from './identity.models.js';
@@ -10,12 +10,14 @@ import type { ActorContext, BrowserContext } from './sessions/session.service.js
 import { DatabaseService } from '../../platform/database/database.service.js';
 import { OutboxService } from './delivery/outbox.service.js';
 import { AuditService } from '../audit/audit.service.js';
-import { digest, newOtp } from './security/secrets.js';
+import { digest, newOtp, newSecret } from './security/secrets.js';
 import { fail, invariant } from '../../platform/http/errors.js';
 
 export const genericResponse = {
   message: 'If the request is eligible, instructions will be sent.',
 };
+export const PENDING_REGISTRATION_COOKIE = '__Host-gather_pending_registration';
+export const PENDING_REGISTRATION_MS = 7 * 24 * 60 * 60_000;
 export function accountDto(user: UserRecord): AccountDto {
   return {
     id: user._id,
@@ -85,14 +87,21 @@ export class AuthService {
   async register(
     input: { email: string; displayName: string; password: string },
     browser: BrowserContext,
+    registrationProof?: string,
   ) {
     const hash = await this.passwords.hash(input.password);
+    const proof =
+      registrationProof && /^[A-Za-z0-9_-]{43}$/.test(registrationProof)
+        ? registrationProof
+        : newSecret();
+    const expiresAt = new Date(Date.now() + PENDING_REGISTRATION_MS);
     try {
       await this.db.transaction(async (tx) => {
         await this.sessions.lockBrowser(browser, tx);
         if (await this.models.users.exists({ normalizedEmail: input.email }).session(tx)) return;
+        const userId = randomUUID();
         const user: UserRecord = {
-          _id: randomUUID(),
+          _id: userId,
           normalizedEmail: input.email,
           displayName: input.displayName,
           status: 'pending',
@@ -101,6 +110,8 @@ export class AuthService {
           policyVersion: 0,
           ownedWorkspaceCount: 0,
           createdAt: new Date(),
+          pendingRegistrationDigest: digest(`${userId}:pending-registration:${proof}`),
+          pendingRegistrationExpiresAt: expiresAt,
         };
         await this.models.users.create([user], { session: tx });
         await this.models.credentials.create(
@@ -123,18 +134,42 @@ export class AuthService {
       if (!(typeof error === 'object' && error !== null && 'code' in error && error.code === 11000))
         throw error;
     }
-    return genericResponse;
+    return { ...genericResponse, registrationProof: proof };
   }
   async issueRequested(
     email: string,
     purpose: 'verify-email' | 'reset-password',
     browser: BrowserContext,
+    registrationProof?: string,
   ) {
     await this.db.transaction(async (tx) => {
       await this.sessions.lockBrowser(browser, tx);
+      const registrationUser =
+        purpose === 'verify-email' &&
+        registrationProof &&
+        /^[A-Za-z0-9_-]{43}$/.test(registrationProof)
+          ? await this.models.users
+              .findOne({ normalizedEmail: email, status: 'pending' })
+              .session(tx)
+              .lean()
+          : null;
+      if (purpose === 'verify-email' && !registrationUser) return;
+      const filter: QueryFilter<UserRecord> = {
+        normalizedEmail: email,
+        ...(purpose === 'verify-email' ? { status: 'pending' } : {}),
+      };
       const user = await this.models.users
         .findOneAndUpdate(
-          { normalizedEmail: email, ...(purpose === 'verify-email' ? { status: 'pending' } : {}) },
+          purpose === 'verify-email'
+            ? {
+                ...filter,
+                _id: registrationUser!._id,
+                pendingRegistrationExpiresAt: { $gt: new Date() },
+                pendingRegistrationDigest: digest(
+                  `${registrationUser!._id}:pending-registration:${registrationProof}`,
+                ),
+              }
+            : filter,
           { $inc: { policyVersion: 1 } },
           { session: tx, returnDocument: 'after' },
         )
@@ -169,52 +204,69 @@ export class AuthService {
     invariant(result.modifiedCount === 1, 401, 'credentials_changed');
   }
   async verifyEmail(
-    input: { email: string; token: string; password: string },
+    input: { email: string; token: string },
     browser: BrowserContext,
+    registrationProof: string | undefined,
   ) {
+    invariant(
+      registrationProof && /^[A-Za-z0-9_-]{43}$/.test(registrationProof),
+      400,
+      'invalid_token',
+    );
     const userByEmail = await this.models.users.findOne({ normalizedEmail: input.email }).lean();
     invariant(userByEmail, 400, 'invalid_token');
-    const token = await this.models.tokens
-      .findOne({
-        userId: userByEmail._id,
-        purpose: 'verify-email',
-        consumedAt: null,
-        expiresAt: { $gt: new Date() },
-        $or: [
-          { tokenDigest: digest(`${userByEmail._id}:verify-email:${input.token}`) },
-          // Existing 43-character codes remain usable until their original expiry.
-          ...(input.token.length === 43 ? [{ tokenDigest: digest(input.token) }] : []),
-        ],
-      })
-      .lean();
-    invariant(token, 400, 'invalid_token');
-    const credential = await this.credentialProof(token.userId, input.password);
-    await this.db.transaction(async (tx) => {
+    return this.db.transaction(async (tx) => {
       await this.sessions.lockBrowser(browser, tx);
+      const now = new Date();
       const current = await this.models.tokens
         .findOneAndUpdate(
-          { _id: token._id, consumedAt: null, expiresAt: { $gt: new Date() } },
-          { $set: { consumedAt: new Date() } },
+          {
+            userId: userByEmail._id,
+            purpose: 'verify-email',
+            authVersion: userByEmail.authVersion,
+            consumedAt: null,
+            expiresAt: { $gt: now },
+            $or: [
+              { tokenDigest: digest(`${userByEmail._id}:verify-email:${input.token}`) },
+              ...(input.token.length === 43 ? [{ tokenDigest: digest(input.token) }] : []),
+            ],
+          },
+          { $set: { consumedAt: now } },
           { session: tx, returnDocument: 'after' },
         )
         .lean();
       invariant(current, 400, 'invalid_token');
-      await this.fenceCredential(credential._id, credential.version, credential.passwordHash, tx);
       const user = await this.models.users
         .findOneAndUpdate(
-          { _id: token.userId, status: 'pending', authVersion: token.authVersion },
           {
-            $set: { status: 'active', verifiedAt: new Date() },
+            _id: current.userId,
+            status: 'pending',
+            authVersion: current.authVersion,
+            pendingRegistrationDigest: digest(
+              `${current.userId}:pending-registration:${registrationProof}`,
+            ),
+            pendingRegistrationExpiresAt: { $gt: now },
+          },
+          {
+            $set: { status: 'active', verifiedAt: now },
             $inc: { authVersion: 1, policyVersion: 1 },
+            $unset: { pendingRegistrationDigest: '', pendingRegistrationExpiresAt: '' },
           },
           { session: tx, returnDocument: 'after' },
         )
         .lean();
       invariant(user, 400, 'invalid_token');
       await this.expireTokens(user._id, tx);
+      const draft = this.sessions.draft(user);
+      await this.models.sessions.updateOne(
+        { _id: browser.session._id },
+        { $set: { revokedAt: now } },
+        { session: tx },
+      );
+      await this.models.sessions.create([draft.record], { session: tx });
       await this.audit.record(user._id, 'account.verified', user._id, tx);
+      return { ...draft, account: accountDto(user) };
     });
-    return { message: 'Email verified. Sign in to continue.' };
   }
   async login(input: { email: string; password: string }, browser: BrowserContext) {
     const user = await this.models.users.findOne({ normalizedEmail: input.email }).lean();
@@ -302,6 +354,9 @@ export class AuthService {
             verifiedAt: user.verifiedAt ?? new Date(),
           },
           $inc: { authVersion: 1, policyVersion: 1 },
+          ...(user.status === 'pending'
+            ? { $unset: { pendingRegistrationDigest: '', pendingRegistrationExpiresAt: '' } }
+            : {}),
         },
         { session: tx },
       );

@@ -657,8 +657,14 @@ async function closeHttpServer(server: ReturnType<typeof createServer>) {
   });
 }
 class Client {
-  cookie = '';
+  private cookies = new Map<string, string>();
   csrf = '';
+  get cookie() {
+    return [...this.cookies].map(([name, value]) => `${name}=${value}`).join('; ');
+  }
+  cookieValue(name: string) {
+    return this.cookies.get(name);
+  }
   capture(response: HttpResponse) {
     if (response.status < 400) {
       if (response.body.csrfToken) {
@@ -668,10 +674,13 @@ class Client {
         messageResponseSchema.parse(response.body);
     }
     const values = response.headers['set-cookie'];
-    const cookie = (Array.isArray(values) ? values : [values]).find(
-      (value: unknown) => typeof value === 'string' && value.startsWith('__Host-gather_session='),
-    );
-    if (cookie) this.cookie = cookie.split(';')[0]!;
+    for (const value of Array.isArray(values) ? values : [values]) {
+      if (typeof value !== 'string') continue;
+      const match = value.match(/^(__Host-gather_[^=]+)=([^;]*)/);
+      if (!match) continue;
+      if (match[2]) this.cookies.set(match[1]!, match[2]!);
+      else this.cookies.delete(match[1]!);
+    }
     if (typeof response.body.csrfToken === 'string') this.csrf = response.body.csrfToken;
     return response;
   }
@@ -737,10 +746,9 @@ async function account(email = `person-${randomUUID()}@example.com`) {
     202,
   );
   const token = await mailCode(email, 'verify-email');
-  status(await client.send('post', '/api/auth/verify-email', { email, token, password }), 200);
-  const login = await client.send('post', '/api/auth/login', { email, password });
-  status(login, 200);
-  return { client, email, id: String(login.body.account.id) };
+  const verified = await client.send('post', '/api/auth/verify-email', { email, token });
+  status(verified, 200);
+  return { client, email, id: String(verified.body.account.id) };
 }
 async function workspace(owner: Awaited<ReturnType<typeof account>>) {
   const response = await owner.client.send('post', '/api/workspaces', {
@@ -969,6 +977,121 @@ describe('backend account authentication', () => {
       .lean();
     expect(stored?.tokenDigest === secret).toBe(false);
   });
+  it('verifies once, rotates the browser into an authenticated session, and survives anonymous expiry', async () => {
+    const client = new Client();
+    await client.bootstrap();
+    const email = `verify-rotate-${randomUUID()}@example.com`;
+    const registered = await client.send('post', '/api/auth/register', {
+      email,
+      password,
+      displayName: 'Verified Person',
+    });
+    status(registered, 202);
+    const headers = registered.headers['set-cookie'];
+    expect(headers).toEqual(
+      expect.arrayContaining([expect.stringContaining('__Host-gather_pending_registration=')]),
+    );
+    const proofCookie = client.cookie
+      .split('; ')
+      .find((value) => value.startsWith('__Host-gather_pending_registration='));
+    expect(proofCookie).toBeTruthy();
+    const oldSession = client.cookie
+      .split('; ')
+      .find((value) => value.startsWith('__Host-gather_session='));
+    const oldCsrf = client.csrf;
+    const rawSession = oldSession!.slice(oldSession!.indexOf('=') + 1);
+    const expiredAt = new Date(Date.now() - 1_000);
+    await identities.sessions.updateOne(
+      { tokenDigest: digest(rawSession) },
+      { $set: { absoluteExpiresAt: expiredAt, idleExpiresAt: expiredAt } },
+    );
+    await client.bootstrap();
+    const token = await mailCode(email, 'verify-email');
+    const verified = await client.send('post', '/api/auth/verify-email', { email, token });
+    status(verified, 200);
+    expect(Object.keys(verified.body).sort()).toEqual(['account', 'csrfToken']);
+    expect(client.csrf).not.toBe(oldCsrf);
+    expect(client.cookie).not.toContain(oldSession!);
+    expect(verified.headers['set-cookie']).toEqual(
+      expect.arrayContaining([expect.stringContaining('__Host-gather_session=')]),
+    );
+    status(await client.get('/api/auth/me'), 200);
+    status(await client.send('post', '/api/auth/verify-email', { email, token }), 400);
+    status(await client.get('/api/auth/me'), 200);
+    expect(
+      await app
+        .get(AuditService)
+        .model.countDocuments({ targetId: verified.body.account.id, action: 'account.verified' }),
+    ).toBe(1);
+  });
+  it('rejects expired pending registration bindings and verification replay', async () => {
+    const client = new Client();
+    await client.bootstrap();
+    const email = `verify-expired-${randomUUID()}@example.com`;
+    status(
+      await client.send('post', '/api/auth/register', {
+        email,
+        password,
+        displayName: 'Expired Person',
+      }),
+      202,
+    );
+    const user = await identities.users.findOne({ normalizedEmail: email }).lean();
+    expect(user).toBeTruthy();
+    const token = await mailCode(email, 'verify-email');
+    await identities.users.updateOne(
+      { _id: user!._id },
+      { $set: { pendingRegistrationExpiresAt: new Date(Date.now() - 1) } },
+    );
+    status(await client.send('post', '/api/auth/verify-email', { email, token }), 400);
+    status(await client.send('post', '/api/auth/resend-verification', { email }), 202);
+    status(await client.get('/api/auth/me'), 401);
+  });
+  it('expires an OTP, resends after cooldown, and verifies with only the replacement code', async () => {
+    const client = new Client();
+    await client.bootstrap();
+    const email = `verify-resend-${randomUUID()}@example.com`;
+    status(
+      await client.send('post', '/api/auth/register', {
+        email,
+        password,
+        displayName: 'Resend Person',
+      }),
+      202,
+    );
+    const user = await identities.users.findOne({ normalizedEmail: email }).lean();
+    const oldToken = await mailCode(email, 'verify-email');
+    await identities.tokens.updateOne(
+      { userId: user!._id, purpose: 'verify-email', consumedAt: null },
+      { $set: { expiresAt: new Date(Date.now() - 1), createdAt: new Date(Date.now() - 61_000) } },
+    );
+    status(await client.send('post', '/api/auth/verify-email', { email, token: oldToken }), 400);
+    status(await client.send('post', '/api/auth/resend-verification', { email }), 202);
+    const replacement = await mailCode(email, 'verify-email');
+    status(await client.send('post', '/api/auth/verify-email', { email, token: replacement }), 200);
+    status(await client.get('/api/auth/me'), 200);
+  });
+  it('serializes concurrent verification attempts to one authenticated session', async () => {
+    const client = new Client();
+    await client.bootstrap();
+    const email = `verify-race-${randomUUID()}@example.com`;
+    status(
+      await client.send('post', '/api/auth/register', {
+        email,
+        password,
+        displayName: 'Race Person',
+      }),
+      202,
+    );
+    const token = await mailCode(email, 'verify-email');
+    const results = await Promise.all([
+      client.send('post', '/api/auth/verify-email', { email, token }),
+      client.send('post', '/api/auth/verify-email', { email, token }),
+    ]);
+    expect(results.filter((result) => result.status === 200)).toHaveLength(1);
+    expect(results.filter((result) => result.status >= 400)).toHaveLength(1);
+    status(await client.get('/api/auth/me'), 200);
+  });
   it('rejects role overposting, NoSQL payloads, wrong CSRF and wrong Origin', async () => {
     const client = new Client();
     await client.bootstrap();
@@ -1003,7 +1126,7 @@ describe('backend account authentication', () => {
       .send({ email: 'x@example.com', password, displayName: 'Somebody' });
     status(cross, 403);
   });
-  it('prevents preregistration takeover and supports legitimate pending-account recovery', async () => {
+  it('binds verification to the registering browser and supports password recovery', async () => {
     const attacker = new Client();
     await attacker.bootstrap();
     const email = `recovery-${randomUUID()}@example.com`;
@@ -1016,13 +1139,19 @@ describe('backend account authentication', () => {
       202,
     );
     const verify = await mailCode(email, 'verify-email');
+    const duplicateBrowser = new Client();
+    await duplicateBrowser.bootstrap();
     status(
-      await attacker.send('post', '/api/auth/verify-email', {
+      await duplicateBrowser.send('post', '/api/auth/register', {
         email,
-        token: verify,
         password: 'a different mailbox password',
+        displayName: 'Duplicate Person',
       }),
-      401,
+      202,
+    );
+    status(
+      await duplicateBrowser.send('post', '/api/auth/verify-email', { email, token: verify }),
+      400,
     );
     const legitimate = new Client();
     await legitimate.bootstrap();
@@ -1034,10 +1163,7 @@ describe('backend account authentication', () => {
     );
     status(await attacker.send('post', '/api/auth/login', { email, password }), 401);
     status(await legitimate.send('post', '/api/auth/login', { email, password: newPassword }), 200);
-    status(
-      await attacker.send('post', '/api/auth/verify-email', { email, token: verify, password }),
-      400,
-    );
+    status(await attacker.send('post', '/api/auth/verify-email', { email, token: verify }), 400);
   });
   it('accepts six-digit codes including leading zeroes with account-scoped digest lookup', async () => {
     const firstEmail = `code-first-${randomUUID()}@example.com`;
@@ -1070,7 +1196,6 @@ describe('backend account authentication', () => {
       await first.send('post', '/api/auth/verify-email', {
         email: firstEmail,
         token: code,
-        password,
       }),
       200,
     );
@@ -1078,7 +1203,6 @@ describe('backend account authentication', () => {
       await second.send('post', '/api/auth/verify-email', {
         email: secondEmail,
         token: code,
-        password,
       }),
       200,
     );
@@ -1098,14 +1222,8 @@ describe('backend account authentication', () => {
     const issuedCode = await mailCode(email, 'verify-email');
     const wrongCode = issuedCode === '000000' ? '000001' : '000000';
     for (let attempt = 0; attempt < 10; attempt += 1)
-      status(
-        await client.send('post', '/api/auth/verify-email', { email, token: wrongCode, password }),
-        400,
-      );
-    status(
-      await client.send('post', '/api/auth/verify-email', { email, token: wrongCode, password }),
-      429,
-    );
+      status(await client.send('post', '/api/auth/verify-email', { email, token: wrongCode }), 400);
+    status(await client.send('post', '/api/auth/verify-email', { email, token: wrongCode }), 429);
 
     const legacyEmail = `legacy-${randomUUID()}@example.com`;
     const legacy = new Client();
@@ -1128,7 +1246,6 @@ describe('backend account authentication', () => {
       await legacy.send('post', '/api/auth/verify-email', {
         email: legacyEmail,
         token: legacyToken,
-        password,
       }),
       200,
     );
@@ -1155,7 +1272,7 @@ describe('backend account authentication', () => {
   });
   it('enforces idle expiry before TTL deletion', async () => {
     const user = await account();
-    const raw = user.client.cookie.split('=')[1]!;
+    const raw = user.client.cookieValue('__Host-gather_session')!;
     await identities.sessions.updateOne(
       { tokenDigest: digest(raw) },
       { $set: { idleExpiresAt: new Date(Date.now() - 1000) } },
@@ -1733,7 +1850,7 @@ describe('company roles and isolation', () => {
     const id = await workspace(owner);
     await join(owner, id, member);
     const session = app.get(SessionService);
-    const stale = actor(await session.load(owner.client.cookie.split('=')[1]));
+    const stale = actor(await session.load(owner.client.cookieValue('__Host-gather_session')));
     status(
       await owner.client.send('post', `/api/workspaces/${id}/transfer-ownership`, {
         userId: member.id,
@@ -1767,7 +1884,7 @@ describe('company roles and isolation', () => {
     const id = await workspace(owner);
     await join(owner, id, a);
     await join(owner, id, b);
-    const raw = owner.client.cookie.split('=')[1]!;
+    const raw = owner.client.cookieValue('__Host-gather_session')!;
     await identities.sessions.updateOne(
       { tokenDigest: digest(raw) },
       { $set: { reauthenticatedAt: new Date(Date.now() - 11 * 60000) } },

@@ -28,7 +28,6 @@ export const verifyEmailSchema = z
   .object({
     email: emailSchema,
     token: z.union([otpSchema, legacySecretSchema]),
-    password: z.string().min(1).max(128),
   })
   .strict();
 export const resetPasswordSchema = z

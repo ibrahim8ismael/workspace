@@ -62,8 +62,8 @@ All routes are under `/api`. Public authentication mutations still require valid
 |---|---|---|
 | `/auth/csrf` | GET | Safe bootstrap; returns CSRF token, never raw session secret |
 | `/auth/register` | POST | Generic pending-registration response; mail outbox |
-| `/auth/verify-email` | POST | Token plus pending password proof; no automatic login |
-| `/auth/resend-verification` | POST | Generic, throttled, supersedes previous verification |
+| `/auth/verify-email` | POST | Browser-bound single-use token; transactionally verifies and rotates into an authenticated session |
+| `/auth/resend-verification` | POST | Generic, throttled, limited to the browser-bound pending account |
 | `/auth/login` | POST | Rotate HttpOnly session; active verified account only |
 | `/auth/me` | GET | Current safe account projection |
 | `/auth/sessions` | GET | Safe session metadata without digests/secrets |

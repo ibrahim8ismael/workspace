@@ -714,6 +714,119 @@ async function readOfficeRtcDiagnostics(page: Page) {
   });
 }
 
+test('generated office renders room doors and reloads the saved layout after reconnect', async ({
+  browser,
+}, testInfo) => {
+  test.skip(!enabled, 'Set LIVE_OFFICE_E2E=1 to use the local Docker stack.');
+  test.setTimeout(90_000);
+  const fixtureId = randomUUID();
+  const owner = await createAccount(`room-layout-${fixtureId}@example.test`);
+  try {
+    const createContext = await browser.newContext({
+      storageState: await owner.client.storageState(),
+      ignoreHTTPSErrors: true,
+    });
+    let workspace: { id: string };
+    try {
+      const page = await createContext.newPage();
+      await page.goto(appOrigin);
+      await page.getByRole('button', { name: 'Create company', exact: true }).first().click();
+      const form = page.getByRole('dialog');
+      await form.getByLabel('Company name').fill(`Room layout ${fixtureId.slice(0, 12)}`);
+      const count = form.getByRole('spinbutton', { name: 'Meeting rooms' });
+      await expect(count).toHaveValue('5');
+      await count.fill('4');
+      const createdPromise = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          new URL(response.url()).pathname === '/api/workspaces',
+      );
+      await form.getByRole('button', { name: 'Create company', exact: true }).click();
+      const created = await createdPromise;
+      expect(created.status()).toBe(201);
+      ({ workspace } = (await created.json()) as { workspace: { id: string } });
+    } finally {
+      await createContext.close();
+    }
+    const workspacePath = `/api/workspaces/${workspace.id}`;
+    const detail = (await json(await owner.client.get(workspacePath))).workspace as {
+      officeId: string;
+      roomCount: number;
+      revision: number;
+    };
+    expect(detail).toMatchObject({ roomCount: 4, revision: 0 });
+    const officePath = `${workspacePath}/offices/${detail.officeId}`;
+    const before = await json(await owner.client.get(officePath));
+    const saveKey = randomUUID();
+    const shrink = () =>
+      owner.client.patch(`${officePath}/rooms`, {
+        data: { roomCount: 3, expectedRevision: detail.revision },
+        headers: { 'X-CSRF-Token': owner.csrf, 'Idempotency-Key': saveKey },
+      });
+    const assertBlockedShrink = async () => {
+      const blocked = await shrink();
+      expect(blocked.status()).toBe(409);
+      expect(await blocked.json()).toMatchObject({ error: { code: 'office_in_use' } });
+      expect((await json(await owner.client.get(officePath))).mapVersion).toBe(before.mapVersion);
+    };
+    const canvas = (page: Page) => page.getByRole('img', { name: /^Live Commons office map\./ });
+    const openOffice = async (page: Page, roomCount: number) => {
+      await page.getByRole('button', { name: 'Join', exact: true }).click();
+      await expect(canvas(page)).toBeVisible();
+      await expect
+        .poll(async () => {
+          const label = await canvas(page).getAttribute('aria-label');
+          return label?.match(/Meeting room \d+ door (?:open|closed)/g)?.length ?? 0;
+        })
+        .toBe(roomCount);
+    };
+
+    const first = await companyPage(browser, owner.client, workspace.id);
+    try {
+      const { page } = first;
+      await openOffice(page, 4);
+      await expect(canvas(page)).toHaveAttribute('aria-label', /Meeting room 4 door open/);
+      // The first join spawns in the corridor facing the west entrance of room 4.
+      await assertBlockedShrink();
+      await page.getByRole('group', { name: /Live Commons office map/ }).focus();
+      await page.keyboard.down('ArrowRight');
+      try {
+        await expect(page.getByText(/You are inside Meeting room 4\./)).toBeVisible();
+      } finally {
+        await page.keyboard.up('ArrowRight');
+      }
+      await expect(canvas(page)).toHaveAttribute('aria-label', /Meeting room 4 door closed/);
+      await assertBlockedShrink();
+    } finally {
+      await first.context.close();
+    }
+
+    await expect.poll(async () => (await shrink()).status()).toBe(200);
+    const after = await json(await owner.client.get(officePath));
+    expect(after.mapVersion).not.toBe(before.mapVersion);
+    const reconnected = await companyPage(browser, owner.client, workspace.id);
+    try {
+      await openOffice(reconnected.page, 3);
+      await expect(canvas(reconnected.page)).toHaveAttribute(
+        'aria-label',
+        /Meeting room 3 door open/,
+      );
+      await expect(canvas(reconnected.page)).not.toHaveAttribute(
+        'aria-label',
+        /Meeting room 4 door/,
+      );
+    } finally {
+      await reconnected.context.close();
+    }
+    await testInfo.attach('published map versions', {
+      body: JSON.stringify({ before: before.mapVersion, after: after.mapVersion }),
+      contentType: 'application/json',
+    });
+  } finally {
+    await owner.client.dispose();
+  }
+});
+
 test('Vivo opens both Media room doors after the last person walks out', async ({ browser }) => {
   test.skip(!enabled, 'Set LIVE_OFFICE_E2E=1 to use the local Docker stack.');
   test.setTimeout(120_000);

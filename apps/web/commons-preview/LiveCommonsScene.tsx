@@ -61,7 +61,13 @@ function mountScene(
   initialCurrentMeetingZone: MeetingZones['zones'][number] | null,
 ): MountedScene {
   const assets = readPreview();
-  if (assets.manifest.mapVersion !== bootstrap.mapVersion) {
+  const generatedWorkspace = bootstrap.manifest.mapId === 'workspace';
+  if (
+    generatedWorkspace
+      ? !bootstrap.geometry ||
+        assets.manifest.assetManifestVersion !== bootstrap.manifest.assetManifestVersion
+      : assets.manifest.mapVersion !== bootstrap.mapVersion
+  ) {
     failed();
     return {
       cleanup: () => parent.remove(),
@@ -71,7 +77,8 @@ function mountScene(
       updateCurrentMeetingZone: () => undefined,
     };
   }
-  const { geometry, catalog } = assets;
+  const geometry = bootstrap.geometry ?? assets.geometry;
+  const { catalog } = assets;
   const frames: Array<Frame | ObjectFrame> = [...assets.avatarFrames, ...assets.objectFrames];
   let disposed = false;
   let applySnapshot: (snapshot: WorldSnapshot) => void = () => undefined;

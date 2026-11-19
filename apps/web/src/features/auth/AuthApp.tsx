@@ -27,7 +27,19 @@ type AccountState = 'loading' | 'signed-out' | 'signed-in';
 function Shell({ children }: { children: ReactNode }) {
   return (
     <main className="dashboard">
-      <a className="skip-link" href="#main-content">
+      <a
+        className="skip-link"
+        href="#main-content"
+        onClick={(event) => {
+          event.preventDefault();
+          document.getElementById('main-content')?.focus();
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== 'Enter') return;
+          event.preventDefault();
+          document.getElementById('main-content')?.focus();
+        }}
+      >
         Skip to main content
       </a>
       <header className="dashboard-bar">
@@ -406,6 +418,8 @@ function AuthFlow({
           { label: 'Resend verification code', next: 'resend' },
         ]
       : [{ label: 'Back to sign in', next: 'login' }];
+  const activeStage = view === 'verify' ? 2 : view === 'reset' ? 3 : view === 'forgot' ? 2 : 1;
+  const authStages = ['Account', 'Verify email', 'Secure account'];
 
   return (
     <Shell>
@@ -417,7 +431,8 @@ function AuthFlow({
       <div className="modal-backdrop welcome-backdrop">
         <section
           id="main-content"
-          className="modal welcome-modal"
+          className="modal welcome-modal auth-flow-card"
+          data-auth-view={view}
           tabIndex={-1}
           aria-labelledby="auth-title"
         >
@@ -427,6 +442,23 @@ function AuthFlow({
             </span>
           </div>
           <span className="eyebrow">OPEN OFFICE</span>
+          <ol className="auth-progress" aria-label="Account access steps">
+            {authStages.map((stage, index) => (
+              <li
+                key={stage}
+                className={
+                  index + 1 === activeStage
+                    ? 'is-current'
+                    : index + 1 < activeStage
+                      ? 'is-complete'
+                      : ''
+                }
+              >
+                <span aria-hidden="true">{index + 1 < activeStage ? '✓' : index + 1}</span>
+                {stage}
+              </li>
+            ))}
+          </ol>
           <h1 id="auth-title" ref={titleRef} tabIndex={-1}>
             {title}
           </h1>
@@ -441,8 +473,10 @@ function AuthFlow({
               {notice}
             </p>
           )}
-          <div key={view}>{form}</div>
-          <nav aria-label="Account options">
+          <div key={view} className="auth-form" aria-busy={busy}>
+            {form}
+          </div>
+          <nav className="auth-related-links" aria-label="Account options">
             {links.map(({ label, next }, index) => (
               <span key={next}>
                 {index > 0 && ' · '}
@@ -480,7 +514,7 @@ function RoutedApp() {
   const screen =
     route.kind === 'security'
       ? 'security'
-      : ['company', 'office', 'office-alias'].includes(route.kind)
+      : ['company', 'company-settings', 'office', 'office-alias'].includes(route.kind)
         ? 'company'
         : 'companies';
   const selectedCompanyId = 'workspaceId' in route ? route.workspaceId : null;
@@ -540,8 +574,9 @@ function RoutedApp() {
       calendar: 'Office calendar',
       activity: 'Office activity',
       invitations: 'Office invitations',
+      settings: 'Space settings',
     };
-    document.title = `${titles[location.pathname] ?? (currentRoute.kind === 'office' ? officeTitles[currentRoute.page] : currentRoute.kind === 'company' ? 'Company' : currentRoute.kind === 'office-alias' ? 'Opening office' : currentRoute.kind === 'home' ? 'Home' : 'Page not found')} · ${PRODUCT_NAME}`;
+    document.title = `${titles[location.pathname] ?? (currentRoute.kind === 'office' ? officeTitles[currentRoute.page] : currentRoute.kind === 'company' ? 'Company' : currentRoute.kind === 'company-settings' ? 'Space settings' : currentRoute.kind === 'office-alias' ? 'Opening office' : currentRoute.kind === 'home' ? 'Home' : 'Page not found')} · ${PRODUCT_NAME}`;
     const frame = requestAnimationFrame(() => {
       const heading = document.querySelector<HTMLElement>('h1');
       if (heading) {
@@ -826,11 +861,13 @@ function RoutedApp() {
         page={
           route.kind === 'company'
             ? 'overview'
-            : route.kind === 'office-alias'
-              ? 'alias'
-              : route.kind === 'office'
-                ? route.page
-                : 'entry'
+            : route.kind === 'company-settings'
+              ? 'settings'
+              : route.kind === 'office-alias'
+                ? 'alias'
+                : route.kind === 'office'
+                  ? route.page
+                  : 'entry'
         }
         requestedOfficeId={route.kind === 'office' ? route.officeId : undefined}
         mutationPending={mutationPending}
@@ -838,6 +875,16 @@ function RoutedApp() {
         runMutation={runMutation}
         onBackToCompanies={backToCompanies}
         onOpenSecurity={openSecurity}
+        onReauthenticate={reauthenticate}
+        onWorkspaceUpdated={(updated) =>
+          setWorkspaces((rows) =>
+            rows.map((row) => (row.id === updated.id ? { ...row, name: updated.name } : row)),
+          )
+        }
+        onLeft={() => {
+          setWorkspaces((rows) => rows.filter((row) => row.id !== selectedCompanyId));
+          backToCompanies();
+        }}
         onUnauthorized={signedOut}
       />
     );

@@ -74,7 +74,7 @@ async function mockApi(page: Page, signedIn = false) {
       });
     if (pathname === '/api/workspaces') return json({ workspaces: [company] });
     if (pathname === `/api/workspaces/${workspaceId}`)
-      return json({ workspace: { ...company, officeId } });
+      return json({ workspace: { ...company, officeId, revision: 0, roomCount: 5 } });
     if (pathname === `/api/workspaces/${workspaceId}/members`) return json({ members: [] });
     if (pathname.endsWith('/messages')) return json({ messages: [] });
     return json(
@@ -144,6 +144,59 @@ test('auth destinations have distinct URLs, support history and preserve token l
   await page.getByLabel('New password', { exact: true }).fill('a new sufficiently long password');
   await page.getByRole('button', { name: 'Reset password', exact: true }).click();
   await expect(page).toHaveURL(`/login?email=${encodeURIComponent(account.email)}`);
+});
+
+test('auth screens keep a responsive step hierarchy, keyboard order, and actionable errors', async ({
+  page,
+}) => {
+  await mockApi(page);
+  for (const viewport of [
+    { width: 1280, height: 800 },
+    { width: 375, height: 720 },
+  ]) {
+    await page.setViewportSize(viewport);
+    for (const [path, stage] of [
+      ['/login', 'Account'],
+      ['/register', 'Account'],
+      ['/verify-email', 'Verify email'],
+      ['/resend-verification', 'Account'],
+      ['/forgot-password', 'Verify email'],
+      ['/reset-password', 'Secure account'],
+    ]) {
+      await page.goto(path!);
+      const card = page.locator('.auth-flow-card');
+      await expect(card).toBeVisible();
+      await expect(page.locator('.auth-progress li.is-current')).toContainText(stage!);
+      const bounds = await card.boundingBox();
+      expect(bounds).not.toBeNull();
+      expect(bounds!.x).toBeGreaterThanOrEqual(0);
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport.width);
+      expect(bounds!.y).toBeGreaterThanOrEqual(0);
+      expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(viewport.height);
+    }
+  }
+
+  await page.goto('/login');
+  await page.getByRole('heading', { name: 'Welcome back' }).focus();
+  await page.keyboard.press('Tab');
+  await expect(page.getByLabel('Email', { exact: true })).toBeFocused();
+  await page.route('**/api/auth/login', (route) =>
+    route.fulfill({
+      status: 401,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        error: {
+          code: 'invalid_credentials',
+          message: 'Invalid credentials',
+          requestId: workspaceId,
+        },
+      }),
+    }),
+  );
+  await page.getByLabel('Email', { exact: true }).fill(account.email);
+  await page.getByLabel('Password', { exact: true }).fill('a sufficiently long routing password');
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page.getByRole('alert')).toBeVisible();
 });
 test('protected links return to the intended company, survive refresh, and support Back/Forward', async ({
   page,
@@ -259,7 +312,9 @@ test('office invitation URLs reject members and mismatched company responses sta
     route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ workspace: { ...company, role: 'member', officeId } }),
+      body: JSON.stringify({
+        workspace: { ...company, role: 'member', officeId, revision: 0, roomCount: 5 },
+      }),
     }),
   );
   await page.goto(`/companies/${workspaceId}/offices/${officeId}/invitations`);

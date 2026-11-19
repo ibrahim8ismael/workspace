@@ -11,6 +11,7 @@ export interface WorkspaceRecord {
   ownerId: string;
   status: 'active' | 'suspended';
   policyVersion: number;
+  revision?: number;
   memberCount: number;
   createdAt: Date;
 }
@@ -56,6 +57,7 @@ const workspaceSchema = new Schema<WorkspaceRecord>(
     ownerId: { type: String, required: true },
     status: { type: String, enum: ['active', 'suspended'], required: true },
     policyVersion: { type: Number, required: true },
+    revision: { type: Number, required: false, default: 0 },
     memberCount: { type: Number, required: true },
     createdAt: { type: Date, required: true },
   },

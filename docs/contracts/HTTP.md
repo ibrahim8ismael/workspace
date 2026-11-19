@@ -40,7 +40,9 @@ Paths are shown relative to `/api`. The linked reference supplies status codes, 
 | `POST /workspaces` | Verified active account creates a tenant, owner membership and office within quota |
 | `GET /workspaces` | Current tenant memberships and independent roles |
 | `GET /workspaces/:workspaceId` | Current member/owner reads selected company |
+| `PATCH /workspaces/:workspaceId` | Owner renames with `name` + `expectedRevision`; transaction-scoped idempotency; conflicts do not overwrite a newer name |
 | `GET /workspaces/:workspaceId/members` | Current member/owner reads safe directory |
+| `PATCH /workspaces/:workspaceId/offices/:officeId/rooms` | Owner updates generated room count with `roomCount` + `expectedRevision`; rejects while anyone is connected, then rotates the immutable map version |
 | `GET /workspaces/:workspaceId/offices/:officeId/messages` | Current workspace member reads the latest 100 unexpired messages from that exact office |
 | `POST /workspaces/:workspaceId/offices/:officeId/messages` | Current workspace member sends to General through the legacy alias; scoped idempotency, 60/minute budget and 90-day retention |
 | `GET /workspaces/:workspaceId/invitations` | Current owner lists safe invitation metadata |
@@ -55,17 +57,19 @@ Paths are shown relative to `/api`. The linked reference supplies status codes, 
 
 | Stage | Method and path | Request/result | Authorization and behavior |
 | --- | --- | --- | --- |
-| M2 | `GET /workspaces/:workspaceId` | Add `officeId` to detail response | Current workspace member. Keep list/create contracts intact |
-| M2 | `GET /workspaces/:workspaceId/offices/:officeId` | Return `{ officeId, workspaceId, mapVersion, protocolVersion, manifest }` | Scoped membership. Return `office_not_ready` for missing or unapproved map configuration |
+| M2 | `GET /workspaces/:workspaceId` | Implemented detail adds `officeId`, `revision`, and `roomCount`; create/list DTOs stay unchanged | Current workspace member |
+| M2 | `GET /workspaces/:workspaceId/offices/:officeId` | Return `{ officeId, workspaceId, mapVersion, protocolVersion, manifest }`, with generated geometry for workspace maps | Scoped membership. Return `office_not_ready` for missing or unapproved map configuration |
 | M2 | `POST /workspaces/:workspaceId/offices/:officeId/join-ticket` | `{ mapVersion, protocolVersion }` → `201 { ticket, expiresAt }` | Implemented in CP03. Recheck current session and membership inside the write. 30-second maximum, capped by session expiry, one-use, bound to the API office epoch and active grant |
 | M2 | `POST /workspaces/:workspaceId/offices/:officeId/takeover-reference` | `{ participationId }` → `201 { reference, expiresAt }` | Implemented in CP05.4b. Issue a short-lived reference only for the caller's current participation, bound to the same session, active grant, workspace, office and epoch |
 | M2 | `POST /workspaces/:workspaceId/offices/:officeId/join-ticket/takeover` | `{ mapVersion, protocolVersion, reference }` → `201 { ticket, expiresAt }` | Implemented in CP05.4b. Consume the reference once and recheck the exact target at reservation. Ordinary join-ticket issuance never evicts an existing tab |
 | M2 | `PATCH /auth/me/profile` | Strict nonempty subset of `{ displayName, appearance }`. Return updated safe profile | Actor updates only their account. Use a bounded display name and IDs from the approved appearance catalog. The office runtime publishes a safe projection to the actor's authorized office |
 | M3 | `POST /conversations/:conversationId/media-token` | `{ participationId, conversationVersion }` → `200 { serverUrl, token, expiresAt, conversationVersion, generation }` | Check that the referenced live participation belongs to the same session and current conversation. Resolve tenant, generation, identity and publish sources server-side and install the exact current permit before signing. See [media contract](MEDIA.md) |
-| M4 | `PATCH /workspaces/:workspaceId` | Proposed initial setting is `name`, with explicit revision and idempotency semantics | Current owner with recent proof and transaction-time policy check. Confirm settings scope under D13 before freezing this route |
+| M4 | `PATCH /workspaces/:workspaceId` | Implemented name update with explicit revision and idempotency semantics | Current owner; policy is rechecked in the transaction. Recent password proof remains required for ownership transfer |
 | M5 | `GET /health/ready` | Minimal readiness status for ingress/operations | Restricted probing. Distinguish API/world readiness from media availability so a media outage does not create an unguarded route |
 
 The [office admission plan](../planning/OFFICE_ADMISSION_IMPLEMENTATION.md) gives the bootstrap and ticket implementation details. The takeover flow is a separate explicit route, with bounded one-use references tied to the current session and grant. Session logout/rotation, password reset, account/workspace suspension and membership removal feed the live revocation path.
+
+Settings mutations return `409 revision_conflict` for a stale expected revision. Room-count changes return `409 office_in_use` while any participant is connected; neither conflict mutates the workspace or office map.
 
 Company switching uses the existing workspace list and scoped requests, with the selected company explicit in the caller's context. D13 must define onboarding access, who can suspend/resume/close a company, export and retention before any operator or destructive endpoint is frozen. Account deletion and slug reuse also need a lifecycle decision. The customer owner role alone grants no operational access.
 

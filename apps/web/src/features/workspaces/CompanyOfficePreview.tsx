@@ -24,10 +24,12 @@ import {
   Settings2,
   UserPlus,
   Volume2,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
 import type { AccountDto } from '@gather/contracts';
 import type { OfficeWorkspaceDetail } from '../../lib/api';
-import { ApiClient } from '../../lib/api';
+import { ApiClient, ApiError } from '../../lib/api';
 import { DEFAULT_LOOK } from '../../../avatarLook';
 import VivoScene from '../../../VivoScene';
 import type { Overrides } from '../../../../shared/office-objects.js';
@@ -37,7 +39,7 @@ import type { Participant } from '../../../types';
 import { EntryMicrophone } from '../office/entry-microphone';
 import { MicrophonePermission } from '../office/microphone-permission';
 import { AppLink } from '../../routing/AppLink';
-import { officePath, type OfficePage } from '../../routing/routes';
+import { companySettingsPath, officePath, type OfficePage } from '../../routing/routes';
 import { OfficeClient } from '../office/office-client';
 import {
   latestMeetingConversation,
@@ -51,6 +53,7 @@ import { RemoteAudioPlayback } from '../office/remote-audio-playback';
 import { effectsVolume } from '../../../footsteps';
 import { notifyReceivedWaves, WaveNotificationSound } from '../office/wave-notification';
 import { CompanyInvitationManager } from './CompanyInvitationManager';
+import { deriveWorkspacePresence } from './workspace-member-presence';
 import './office-preview.css';
 
 const CommonsScene = lazy(() =>
@@ -98,6 +101,10 @@ export function CompanyOfficePreview({
   onOpenSecurity,
 }: Props) {
   const titleRef = useRef<HTMLHeadingElement>(null);
+  const onUnauthorizedRef = useRef(onUnauthorized);
+  useEffect(() => {
+    onUnauthorizedRef.current = onUnauthorized;
+  }, [onUnauthorized]);
   const client = useMemo(
     () => new OfficeClient(api, detail.id, detail.officeId),
     [api, detail.id, detail.officeId],
@@ -210,6 +217,19 @@ export function CompanyOfficePreview({
   );
   const [zoom, setZoom] = useState(1.35);
   const [localSection, setLocalSection] = useState<OfficeSection>('office');
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [memberRefresh, setMemberRefresh] = useState(0);
+  const memberDirectoryKey = `${detail.id}:${memberRefresh}`;
+  const [memberDirectory, setMemberDirectory] = useState<{
+    key: string;
+    members: Awaited<ReturnType<ApiClient['workspaceMembers']>>;
+    loading: boolean;
+    error: string;
+  }>({ key: `${detail.id}:0`, members: [], loading: true, error: '' });
+  const memberDirectoryCurrent = memberDirectory.key === memberDirectoryKey;
+  const workspaceMembers = memberDirectoryCurrent ? memberDirectory.members : [];
+  const workspaceMembersLoading = !memberDirectoryCurrent || memberDirectory.loading;
+  const workspaceMembersError = memberDirectoryCurrent ? memberDirectory.error : '';
   const section = routePage && routePage !== 'entry' ? routePage : localSection;
   const selectedMember = selectedMemberId
     ? (state.snapshot?.participants.find(
@@ -225,6 +245,34 @@ export function CompanyOfficePreview({
     if (onNavigatePage) onNavigatePage(next);
     else setLocalSection(next);
   };
+  useEffect(() => {
+    const controller = new AbortController();
+    let current = true;
+    void api.workspaceMembers(detail.id, controller.signal).then(
+      (members) => {
+        if (current)
+          setMemberDirectory({ key: memberDirectoryKey, members, loading: false, error: '' });
+      },
+      (caught: unknown) => {
+        if (!current || controller.signal.aborted) return;
+        if (caught instanceof ApiError && (caught.status === 401 || caught.status === 403))
+          onUnauthorizedRef.current('Your access to this space changed.');
+        setMemberDirectory({
+          key: memberDirectoryKey,
+          members: [],
+          loading: false,
+          error:
+            caught instanceof ApiError && (caught.status === 401 || caught.status === 403)
+              ? ''
+              : 'Could not load the member directory.',
+        });
+      },
+    );
+    return () => {
+      current = false;
+      controller.abort();
+    };
+  }, [api, detail.id, memberDirectoryKey]);
   const joiningFromEntry = useRef(false);
   const previousPage = useRef(routePage);
   useEffect(() => {
@@ -668,6 +716,7 @@ export function CompanyOfficePreview({
 
   const { bootstrap, ready, snapshot } = state;
   const mapId = bootstrap.manifest.mapId;
+  const mapName = mapId === 'vivo' ? 'Vivo' : mapId === 'workspace' ? 'Workspace' : 'Commons';
   const participantCount = snapshot.participants.length;
   const conversationMembers = activeProximityConversation?.participants ?? [];
   const conversationMemberNames = conversationMembers.map((participant) =>
@@ -798,7 +847,10 @@ export function CompanyOfficePreview({
     .at(-1);
 
   return (
-    <div className="app-shell office-shell" data-workspace-id={detail.id}>
+    <div
+      className={`app-shell office-shell${sidebarOpen ? '' : ' is-sidebar-collapsed'}`}
+      data-workspace-id={detail.id}
+    >
       <a className="skip-link" href="#office-map">
         Skip to office map
       </a>
@@ -872,6 +924,20 @@ export function CompanyOfficePreview({
           <span />
         </div>
         <div className="rail-main">
+          <button
+            type="button"
+            className="sidebar-toggle-rail"
+            aria-label={sidebarOpen ? 'Close member sidebar' : 'Open member sidebar'}
+            aria-expanded={sidebarOpen}
+            aria-controls="office-member-sidebar"
+            onClick={() => setSidebarOpen((open) => !open)}
+          >
+            {sidebarOpen ? (
+              <PanelLeftClose size={20} aria-hidden="true" />
+            ) : (
+              <PanelLeftOpen size={20} aria-hidden="true" />
+            )}
+          </button>
           <AppLink
             to={officePath(detail.id, detail.officeId, 'office')}
             className={`nav-item${section === 'office' ? ' current' : ''}`}
@@ -918,6 +984,14 @@ export function CompanyOfficePreview({
           </AppLink>
         </div>
         <div className="rail-bottom">
+          <AppLink
+            to={companySettingsPath(detail.id)}
+            className="nav-item"
+            aria-label="Space settings"
+            title="Space settings"
+          >
+            <Settings2 size={19} />
+          </AppLink>
           {detail.role === 'owner' && (
             <AppLink
               to={officePath(detail.id, detail.officeId, 'invitations')}
@@ -953,18 +1027,33 @@ export function CompanyOfficePreview({
       </nav>
 
       <div className="workspace">
-        <aside className="side-panel panel-people office-shell-sidebar" aria-label="Office details">
+        <aside
+          id="office-member-sidebar"
+          className="side-panel panel-people office-shell-sidebar"
+          aria-label="Office details"
+          aria-hidden={!sidebarOpen}
+        >
           <div className="panel-heading">
             <h1 id="company-office-preview-title" ref={titleRef} tabIndex={-1}>
               {detail.name}
             </h1>
+            <button
+              type="button"
+              className="office-sidebar-close"
+              aria-label="Close member sidebar"
+              aria-expanded={sidebarOpen}
+              aria-controls="office-member-sidebar"
+              onClick={() => setSidebarOpen(false)}
+            >
+              <PanelLeftClose size={18} aria-hidden="true" />
+            </button>
           </div>
 
           {section === 'office' ? (
             <>
               <div className="floor-selector">
                 <LayoutGrid size={15} />
-                <span>{mapId === 'vivo' ? 'Vivo office' : 'Commons office'}</span>
+                <span>{mapName} office</span>
                 <span className="office-preview-badge">Office</span>
               </div>
               <p className="office-sidebar-summary">
@@ -1200,29 +1289,87 @@ export function CompanyOfficePreview({
             <p className="empty-small">Enter the office to update your status or use a seat.</p>
           ) : null}
 
-          {section === 'office' && snapshot && snapshot.participants.length > 0 && (
-            <section className="office-people-list" aria-label="People in the office">
-              <h2>People here</h2>
-              <ul>
-                {snapshot.participants.map((participant) => (
-                  <li key={participant.participationId}>
-                    <button
-                      type="button"
-                      className="office-person-select"
-                      disabled={participant.participationId === ready.participationId}
-                      aria-pressed={selectedMemberId === participant.participationId}
-                      onClick={(event) => {
-                        selectionTrigger.current = event.currentTarget;
-                        setSelectedMemberId(participant.participationId);
-                        setMemberActionMessage('');
-                      }}
-                    >
-                      <span>{participant.displayName}</span>
-                      <small>{participant.availability}</small>
-                    </button>
-                  </li>
-                ))}
-              </ul>
+          {section === 'office' && (
+            <section className="office-people-list" aria-label="Space members" aria-live="polite">
+              <h2>Members</h2>
+              {workspaceMembersLoading && <p role="status">Loading members…</p>}
+              {workspaceMembersError && (
+                <p role="alert">
+                  {workspaceMembersError}{' '}
+                  <button
+                    type="button"
+                    className="link-button"
+                    onClick={() => setMemberRefresh((n) => n + 1)}
+                  >
+                    Retry
+                  </button>
+                </p>
+              )}
+              {!workspaceMembersLoading &&
+                !workspaceMembersError &&
+                (() => {
+                  const meetingMembers = new Set(
+                    (state.meetingZones?.zones ?? []).flatMap((zone) => zone.admittedMembers),
+                  );
+                  const presence = deriveWorkspacePresence(
+                    workspaceMembers,
+                    connected ? (snapshot?.participants ?? []) : [],
+                    meetingMembers,
+                  );
+                  return (
+                    <>
+                      <h3>Online · {presence.online.length}</h3>
+                      {presence.online.length ? (
+                        <ul>
+                          {presence.online.map(({ member, participant, inMeeting }) => {
+                            return (
+                              <li key={member.userId}>
+                                <button
+                                  type="button"
+                                  className="office-person-select"
+                                  disabled={participant.participationId === ready.participationId}
+                                  aria-pressed={selectedMemberId === participant.participationId}
+                                  onClick={(event) => {
+                                    selectionTrigger.current = event.currentTarget;
+                                    setSelectedMemberId(participant.participationId);
+                                    setMemberActionMessage('');
+                                  }}
+                                >
+                                  <span>
+                                    {member.displayName}
+                                    {member.userId === account.id ? ' (you)' : ''}
+                                  </span>
+                                  <small>
+                                    {participant.availability}
+                                    {inMeeting ? ' · In a meeting' : ''}
+                                  </small>
+                                </button>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      ) : (
+                        <p>No one is online.</p>
+                      )}
+                      <h3>Offline · {presence.offline.length}</h3>
+                      {presence.offline.length ? (
+                        <ul>
+                          {presence.offline.map((member) => (
+                            <li className="office-person-offline" key={member.userId}>
+                              <span>
+                                {member.displayName}
+                                {member.userId === account.id ? ' (you)' : ''}
+                              </span>
+                              <small>Offline</small>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p>No one is offline.</p>
+                      )}
+                    </>
+                  );
+                })()}
             </section>
           )}
 
@@ -1235,7 +1382,7 @@ export function CompanyOfficePreview({
                   ? 'Connecting…'
                   : 'Not connected'}
             </span>
-            <span>{mapId === 'vivo' ? 'Vivo' : 'Commons'}</span>
+            <span>{mapName}</span>
           </div>
         </aside>
 
@@ -1246,7 +1393,7 @@ export function CompanyOfficePreview({
           tabIndex={-1}
           aria-label={
             section === 'office'
-              ? `OpenOfficeForAll ${mapId === 'vivo' ? 'Vivo' : 'Commons'} office map`
+              ? `OpenOfficeForAll ${mapName} office map`
               : section === 'chat'
                 ? 'Office messages'
                 : section === 'invitations'
@@ -1414,11 +1561,7 @@ export function CompanyOfficePreview({
           {section === 'office' ? (
             <>
               <div className="office-map-heading">
-                <strong>
-                  {connected
-                    ? `Live ${mapId === 'vivo' ? 'Vivo' : 'Commons'} office`
-                    : `${mapId === 'vivo' ? 'Vivo' : 'Commons'} office`}
-                </strong>
+                <strong>{connected ? `Live ${mapName} office` : `${mapName} office`}</strong>
                 <span className="office-preview-badge">{connected ? 'Live' : 'Read only'}</span>
               </div>
               <div className="office-map-stage">

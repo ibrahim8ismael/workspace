@@ -13,7 +13,11 @@ import { DatabaseService } from '../../platform/database/database.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { digest, newInvitationCode } from '../identity/security/secrets.js';
 import { invariant } from '../../platform/http/errors.js';
-import { APPROVED_OFFICE_MAP_VERSION } from '../office/office-map-registry.js';
+import {
+  APPROVED_OFFICE_MAP_VERSION,
+  trustedOfficeMap,
+  workspaceOfficeMapVersion,
+} from '../office/office-map-registry.js';
 
 function dto(workspace: WorkspaceRecord, role: MembershipRecord['role']): WorkspaceDto {
   return {
@@ -125,7 +129,11 @@ export class TenancyService {
     });
     return result;
   }
-  async create(context: ActorContext, input: { name: string; slug: string }, key: string) {
+  async create(
+    context: ActorContext,
+    input: { name: string; slug: string; roomCount?: number },
+    key: string,
+  ) {
     return this.db.transaction(async (tx) => {
       await this.sessions.lockActor(context, tx);
       return this.operation(context, 'workspace.create', key, input, tx, async () => {
@@ -166,7 +174,10 @@ export class TenancyService {
             {
               _id: randomUUID(),
               workspaceId: workspace._id,
-              mapVersion: APPROVED_OFFICE_MAP_VERSION,
+              mapVersion:
+                input.roomCount === undefined
+                  ? APPROVED_OFFICE_MAP_VERSION
+                  : workspaceOfficeMapVersion(input.roomCount),
               createdAt: new Date(),
             },
           ],
@@ -203,8 +214,94 @@ export class TenancyService {
       const { workspace, member } = await this.lockAccess(context, id, tx);
       const office = await this.models.offices.findOne({ workspaceId: id }).session(tx).lean();
       invariant(office, 404, 'not_found');
+      const map = trustedOfficeMap(office.mapVersion);
+      invariant(map, 409, 'office_not_ready');
       return officeWorkspaceDetailResponseSchema.parse({
-        workspace: { ...dto(workspace, member.role), officeId: office._id },
+        workspace: {
+          ...dto(workspace, member.role),
+          officeId: office._id,
+          revision: workspace.revision ?? 0,
+          roomCount:
+            map.manifest.roomCount ??
+            map.geometry.zones.filter((zone) => zone.kind === 'meeting').length,
+        },
+      });
+    });
+  }
+
+  async rename(
+    context: ActorContext,
+    id: string,
+    input: { name: string; expectedRevision: number },
+    key: string,
+  ) {
+    return this.db.transaction(async (tx) => {
+      const { workspace } = await this.lockAccess(context, id, tx, true);
+      return this.operation(context, `workspace.rename:${id}`, key, input, tx, async () => {
+        const revision = workspace.revision ?? 0;
+        invariant(revision === input.expectedRevision, 409, 'revision_conflict');
+        const updated = await this.models.workspaces
+          .findOneAndUpdate(
+            {
+              _id: id,
+              ownerId: context.user._id,
+              status: 'active',
+              policyVersion: workspace.policyVersion,
+            },
+            { $set: { name: input.name, revision: revision + 1 } },
+            { session: tx, returnDocument: 'after' },
+          )
+          .lean();
+        invariant(updated, 409, 'revision_conflict');
+        await this.audit.record(context.user._id, 'workspace.renamed', id, tx, id);
+        return { message: 'Space name updated.', revision: revision + 1, name: input.name };
+      });
+    });
+  }
+
+  async updateRoomCount(
+    context: ActorContext,
+    id: string,
+    officeId: string,
+    input: { roomCount: number; expectedRevision: number },
+    key: string,
+  ) {
+    return this.db.transaction(async (tx) => {
+      const { workspace } = await this.lockAccess(context, id, tx, true);
+      return this.operation(context, `workspace.rooms:${id}`, key, input, tx, async () => {
+        const revision = workspace.revision ?? 0;
+        invariant(revision === input.expectedRevision, 409, 'revision_conflict');
+        const office = await this.models.offices
+          .findOne({ _id: officeId, workspaceId: id })
+          .session(tx)
+          .lean();
+        invariant(office, 404, 'not_found');
+        const mapVersion = workspaceOfficeMapVersion(input.roomCount);
+        const updatedWorkspace = await this.models.workspaces.updateOne(
+          {
+            _id: id,
+            ownerId: context.user._id,
+            status: 'active',
+            policyVersion: workspace.policyVersion,
+          },
+          { $set: { revision: revision + 1 } },
+          { session: tx },
+        );
+        invariant(updatedWorkspace.modifiedCount === 1, 409, 'revision_conflict');
+        if (office.mapVersion !== mapVersion) {
+          const updatedOffice = await this.models.offices.updateOne(
+            { _id: officeId, workspaceId: id, mapVersion: office.mapVersion },
+            { $set: { mapVersion } },
+            { session: tx },
+          );
+          invariant(updatedOffice.modifiedCount === 1, 409, 'revision_conflict');
+        }
+        await this.audit.record(context.user._id, 'workspace.rooms_changed', id, tx, id);
+        return {
+          message: 'Office room count updated.',
+          revision: revision + 1,
+          roomCount: input.roomCount,
+        };
       });
     });
   }
@@ -217,6 +314,16 @@ export class TenancyService {
         .lean();
       invariant(office, 404, 'not_found');
       return office;
+    });
+  }
+  async assertOwnerOffice(context: ActorContext, workspaceId: string, officeId: string) {
+    return this.db.transaction(async (tx) => {
+      await this.lockAccess(context, workspaceId, tx, true);
+      const office = await this.models.offices
+        .findOne({ _id: officeId, workspaceId })
+        .session(tx)
+        .lean();
+      invariant(office, 404, 'not_found');
     });
   }
   async members(context: ActorContext, id: string) {

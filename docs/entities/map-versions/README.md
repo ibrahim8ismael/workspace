@@ -1,13 +1,13 @@
 # Map versions
 
-Status: draft plan · Updated: 2026-11-05 · Target: M0–M2
+Status: implemented for static maps and generated workspace offices · Updated: 2026-11-19
 
 ## Responsibility
 
-Provide the same immutable geometry and identifiers to Phaser and server simulation.
+Provide the same immutable geometry and identifiers to browser rendering and server simulation.
 
 - Owning module: Maps / packages/world.
-- State location: Immutable static manifests; MongoDB metadata if needed.
+- State location: Immutable static manifests and deterministic workspace geometry; MongoDB stores the selected map version.
 - These are proposed contracts and fields, not implemented models. Apply the [baseline](../../README.md#source-precedence) and [cross-cutting rules](../../architecture/README.md#shared-invariants).
 
 ## Proposed data
@@ -41,17 +41,17 @@ Provide the same immutable geometry and identifiers to Phaser and server simulat
 - Static JSON is allowed; no general map editor/upload in MVP.
 - Validate stable IDs and compatible map/protocol versions before admission.
 
-CP01 freezes the public manifest reference/hash/version/pixel conventions in [OFFICE_V1.md](../../contracts/OFFICE_V1.md). The actual immutable geometry payload/export/schema, selected assets and collision/spawn checks remain CP02 work; fixture hashes are not approved versions.
+CP01 freezes the public manifest reference/hash/version/pixel conventions in [OFFICE_V1.md](../../contracts/OFFICE_V1.md). Static Commons and Vivo maps are validated against their packaged geometry and asset hashes. Workspace maps are generated from a bounded room count (1–100), validated by `packages/world`, and identified by a content hash over canonical geometry and the Commons art manifest. Their geometry is included in the authenticated office bootstrap. Existing workspaces retain their selected map until an owner changes the room count; changing it creates a new map version and stable index-based room IDs.
 
 ## Interface outline
 
-- Authorized map manifest bootstrap plus versioned static geometry assets.
+- Authorized map manifest/bootstrap with versioned static geometry; generated workspace maps use the same shared `OfficeGeometry` validation and collision rules.
 - Pure collision/pathfinding contracts belong in packages/world.
 
 ## Planning question
 
-Choose direct upstream JSON adaptation versus Tiled import; atlas packing remains optional.
+General map editing/import remains out of scope. Generated workspace room geometry currently uses the shared deterministic layout.
 
 ## Next work
 
-See [implementation plan](PLAN.md), [milestones](../../planning/ROADMAP.md) and [decision register](../../decisions/README.md).
+See [implementation plan](PLAN.md), [milestones](../../planning/ROADMAP.md) and [decision register](../../decisions/README.md). Browser rendering support is verified for the active Commons and Vivo renderers; Phaser is not the active office renderer.

@@ -34,6 +34,8 @@ const positionSchema = z
 export const publicParticipantSchema = z
   .object({
     participationId: idSchema,
+    /** Tenant-scoped stable identity lets the member directory join live presence safely. */
+    userId: idSchema.optional(),
     displayName: z.string().min(2).max(80),
     appearance: appearanceSchema,
     position: positionSchema,

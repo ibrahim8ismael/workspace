@@ -26,6 +26,8 @@ import {
   csrfResponseSchema,
   apiErrorResponseSchema,
   messageResponseSchema,
+  renameWorkspaceResponseSchema,
+  updateWorkspaceRoomCountResponseSchema,
   workspaceResponseSchema,
   workspacesResponseSchema,
   membersResponseSchema,
@@ -664,8 +666,12 @@ class Client {
       if (response.body.csrfToken) {
         if (response.body.account) authenticatedResponseSchema.parse(response.body);
         else csrfResponseSchema.parse(response.body);
-      } else if (typeof response.body.message === 'string')
-        messageResponseSchema.parse(response.body);
+      } else if (typeof response.body.message === 'string') {
+        if ('name' in response.body) renameWorkspaceResponseSchema.parse(response.body);
+        else if ('roomCount' in response.body)
+          updateWorkspaceRoomCountResponseSchema.parse(response.body);
+        else messageResponseSchema.parse(response.body);
+      }
     }
     const values = response.headers['set-cookie'];
     const cookie = (Array.isArray(values) ? values : [values]).find(
@@ -688,7 +694,7 @@ class Client {
     return response;
   }
   async send(
-    method: 'post' | 'delete',
+    method: 'post' | 'patch' | 'delete',
     path: string,
     body: Record<string, unknown> = {},
     key = randomUUID(),
@@ -742,10 +748,11 @@ async function account(email = `person-${randomUUID()}@example.com`) {
   status(login, 200);
   return { client, email, id: String(login.body.account.id) };
 }
-async function workspace(owner: Awaited<ReturnType<typeof account>>) {
+async function workspace(owner: Awaited<ReturnType<typeof account>>, roomCount?: number) {
   const response = await owner.client.send('post', '/api/workspaces', {
     name: 'Example Company',
     slug: `company-${randomUUID()}`,
+    ...(roomCount === undefined ? {} : { roomCount }),
   });
   status(response, 201);
   return String(response.body.workspace.id);
@@ -1402,6 +1409,141 @@ describe('company roles and isolation', () => {
     extendSessionResponseSchema.parse(extended.body);
   });
 
+  it('creates versioned room-count layouts and applies owner-only revision-safe space settings', async () => {
+    const owner = await account();
+    const member = await account();
+    const stranger = await account();
+    const workspaceId = await workspace(owner, 20);
+    const office = await tenancy.offices.findOne({ workspaceId }).lean();
+    expect(office).toBeTruthy();
+    const officeId = office!._id;
+    const path = `/api/workspaces/${workspaceId}`;
+    const officePath = `${path}/offices/${officeId}`;
+
+    let detail = await owner.client.get(path);
+    status(detail, 200);
+    expect(officeWorkspaceDetailResponseSchema.parse(detail.body).workspace).toMatchObject({
+      roomCount: 20,
+      revision: 0,
+    });
+    const initialMap = await owner.client.get(officePath);
+    status(initialMap, 200);
+    expect(officeBootstrapResponseSchema.parse(initialMap.body)).toMatchObject({
+      manifest: { mapId: 'workspace', roomCount: 20 },
+      geometry: {
+        zones: expect.arrayContaining([expect.objectContaining({ zoneId: 'workspace-room-020' })]),
+      },
+    });
+    expect(initialMap.body.geometry.zones).toHaveLength(20);
+
+    await join(owner, workspaceId, member);
+    status(
+      await member.client.send('patch', path, { name: 'Forbidden', expectedRevision: 0 }),
+      403,
+    );
+    status(
+      await member.client.send('patch', `${officePath}/rooms`, {
+        roomCount: 3,
+        expectedRevision: 0,
+      }),
+      403,
+    );
+    status(
+      await stranger.client.send('patch', path, { name: 'Foreign', expectedRevision: 0 }),
+      403,
+    );
+
+    const renameKey = randomUUID();
+    const renamed = await owner.client.send(
+      'patch',
+      path,
+      { name: 'New display name', expectedRevision: 0 },
+      renameKey,
+    );
+    status(renamed, 200);
+    expect(renamed.body).toMatchObject({ name: 'New display name', revision: 1 });
+    expect(
+      await owner.client.send(
+        'patch',
+        path,
+        { name: 'New display name', expectedRevision: 0 },
+        renameKey,
+      ),
+    ).toMatchObject({ body: renamed.body });
+    const conflict = await owner.client.send('patch', path, {
+      name: 'Stale overwrite',
+      expectedRevision: 0,
+    });
+    status(conflict, 409);
+    expect(conflict.body.error.code).toBe('revision_conflict');
+
+    const membership = await tenancy.memberships
+      .findOne({ workspaceId, userId: member.id, status: 'active' })
+      .lean();
+    const session = await identities.sessions
+      .findOne({ userId: member.id, kind: 'authenticated', revokedAt: null })
+      .lean();
+    expect(membership).toBeTruthy();
+    expect(session).toBeTruthy();
+    const runtime = app.get(OfficeRuntimeService);
+    const socketId = `room-count-test-${randomUUID()}`;
+    const reservation = runtime.reserve(
+      {
+        userId: member.id,
+        displayName: 'Member',
+        sessionId: session!._id,
+        membershipGrantId: membership!.membershipGrantId!,
+        workspaceId,
+        officeId,
+        officeEpoch: app.get(OfficeEpochRegistry).forOffice(officeId),
+        mapVersion: office!.mapVersion,
+        protocolVersion: OFFICE_PROTOCOL_VERSION,
+      },
+      socketId,
+    );
+    const occupiedUpdate = await owner.client.send('patch', `${officePath}/rooms`, {
+      roomCount: 25,
+      expectedRevision: 1,
+    });
+    status(occupiedUpdate, 409);
+    expect(occupiedUpdate.body.error.code).toBe('office_in_use');
+    runtime.release(officeId, workspaceId, member.id, socketId, reservation.participationId);
+
+    const roomKey = randomUUID();
+    const changedRooms = await owner.client.send(
+      'patch',
+      `${officePath}/rooms`,
+      { roomCount: 25, expectedRevision: 1 },
+      roomKey,
+    );
+    status(changedRooms, 200);
+    expect(changedRooms.body).toMatchObject({ roomCount: 25, revision: 2 });
+    expect(
+      await owner.client.send(
+        'patch',
+        `${officePath}/rooms`,
+        { roomCount: 25, expectedRevision: 1 },
+        roomKey,
+      ),
+    ).toMatchObject({ body: changedRooms.body });
+    detail = await owner.client.get(path);
+    expect(officeWorkspaceDetailResponseSchema.parse(detail.body).workspace).toMatchObject({
+      name: 'New display name',
+      roomCount: 25,
+      revision: 2,
+    });
+    const updatedMap = await owner.client.get(officePath);
+    status(updatedMap, 200);
+    expect(officeBootstrapResponseSchema.parse(updatedMap.body)).toMatchObject({
+      manifest: { mapId: 'workspace', roomCount: 25 },
+    });
+    expect(updatedMap.body.geometry.zones).toHaveLength(25);
+    expect(updatedMap.body.geometry.zones[19]).toMatchObject({
+      zoneId: 'workspace-room-020',
+      bounds: initialMap.body.geometry.zones[19].bounds,
+    });
+  });
+
   it('scopes office bootstrap to an active workspace member and an approved configured map', async () => {
     const owner = await account();
     const member = await account();
@@ -1414,7 +1556,8 @@ describe('company roles and isolation', () => {
     const officeId = office!._id;
     const otherOffice = await tenancy.offices.findOne({ workspaceId: otherWorkspaceId }).lean();
     const route = `/api/workspaces/${workspaceId}/offices/${officeId}`;
-    const approved = vivoManifest.mapVersion;
+    const approved = office!.mapVersion;
+    const approvedManifest = trustedOfficeMap(approved)!.manifest;
 
     const detail = await owner.client.get(`/api/workspaces/${workspaceId}`);
     status(detail, 200);
@@ -1446,7 +1589,7 @@ describe('company roles and isolation', () => {
         workspaceId,
         mapVersion: approved,
         protocolVersion: OFFICE_PROTOCOL_VERSION,
-        manifest: vivoManifest,
+        manifest: approvedManifest,
       });
     }
 
@@ -1483,7 +1626,9 @@ describe('company roles and isolation', () => {
     const owner = await account();
     const workspaceId = await workspace(owner);
     const office = await tenancy.offices.findOne({ workspaceId }).lean();
-    expect(office?.mapVersion).toBe(vivoManifest.mapVersion);
+    expect(trustedOfficeMap(office?.mapVersion ?? '')?.manifest).toMatchObject({
+      mapId: 'vivo',
+    });
     const pendingId = randomUUID();
     const configuredId = randomUUID();
     const pendingWorkspaceId = randomUUID();
@@ -1532,9 +1677,10 @@ describe('company roles and isolation', () => {
       workspaceId: configuredWorkspaceId,
       mapVersion: `commons-v1-${'0'.repeat(64)}`,
     });
-    expect((await tenancy.offices.findById(office!._id).lean())?.mapVersion).toBe(
-      vivoManifest.mapVersion,
-    );
+    expect(
+      trustedOfficeMap((await tenancy.offices.findById(office!._id).lean())?.mapVersion ?? '')
+        ?.manifest.mapId,
+    ).toBe('vivo');
   });
 
   it('migrates only the exact trusted Commons office version to Vivo', async () => {
@@ -2370,7 +2516,7 @@ describe('office socket admission', () => {
       expect(ready.snapshot.seats.every((seat) => seat.occupantParticipationId === null)).toBe(
         true,
       );
-      expect(Object.keys(ready.snapshot.participants[0]!)).not.toContain('userId');
+      expect(ready.snapshot.participants[0]?.userId).toBe(owner.id);
       expect(Object.keys(ready.snapshot.participants[0]!)).not.toContain('sessionId');
     } finally {
       client.disconnect();

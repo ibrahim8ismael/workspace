@@ -44,7 +44,7 @@ function fixture(recipientInside = false, nearbyBeforeJoin = false) {
   const runtime = new OfficeRuntimeService();
   const people = [1, 2, 3].map((number) => {
     const ticket = {
-      userId: `user-${number}`,
+      userId: `00000000-0000-4000-8000-${String(number).padStart(12, '0')}`,
       displayName: `User ${number}`,
       sessionId: `session-${number}`,
       membershipGrantId: `grant-${number}`,

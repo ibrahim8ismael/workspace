@@ -195,6 +195,20 @@ interface StoredTakeoverReference extends TakeoverReferenceBinding {
 export class OfficeRuntimeService {
   private readonly offices = new Map<string, OfficeRuntime>();
   private readonly takeoverReferences = new Map<string, StoredTakeoverReference>();
+  private readonly reconfiguringOffices = new Set<string>();
+
+  async withOfficeReconfiguration<T>(officeId: string, action: () => Promise<T>): Promise<T> {
+    invariant(!this.reconfiguringOffices.has(officeId), 409, 'office_in_use');
+    const office = this.offices.get(officeId);
+    invariant(!office || office.participants.size === 0, 409, 'office_in_use');
+    this.reconfiguringOffices.add(officeId);
+    if (office) this.offices.delete(officeId);
+    try {
+      return await action();
+    } finally {
+      this.reconfiguringOffices.delete(officeId);
+    }
+  }
 
   liveParticipation(
     officeId: string,
@@ -287,6 +301,7 @@ export class OfficeRuntimeService {
   }
 
   reserve(ticket: ConsumedOfficeTicket, socketId: string): OfficeReservation {
+    invariant(!this.reconfiguringOffices.has(ticket.officeId), 409, 'office_in_use');
     const map = trustedOfficeMap(ticket.mapVersion);
     invariant(map, 409, 'office_not_ready');
     const current = this.offices.get(ticket.officeId);
@@ -385,6 +400,7 @@ export class OfficeRuntimeService {
     const participationId = randomUUID();
     const participant: WorldSnapshot['participants'][number] = {
       participationId,
+      userId: ticket.userId,
       displayName: ticket.displayName,
       appearance: map.defaultAppearance,
       position: this.spawnFor(reservationOffice),

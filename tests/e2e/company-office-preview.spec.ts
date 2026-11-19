@@ -84,6 +84,9 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
     };
   });
   let authenticated = false;
+  let workspaceName = workspace.name;
+  let workspaceRevision = 0;
+  let workspaceRoomCount = 5;
   const invitation = {
     id: '16ab92cd-cbd4-44b6-b827-196ae6044937',
     email: 'coworker@example.test',
@@ -151,6 +154,33 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
       invitationStatus = 'revoked';
       return json({ message: 'Invitation revoked.' });
     }
+    if (method === 'PATCH' && path === `/api/workspaces/${workspace.id}`) {
+      expect(request.headers()['idempotency-key']).toBeTruthy();
+      const body = request.postDataJSON() as { name: string; expectedRevision: number };
+      expect(body.expectedRevision).toBe(workspaceRevision);
+      workspaceName = body.name;
+      workspaceRevision += 1;
+      return json({
+        message: 'Space name updated.',
+        name: workspaceName,
+        revision: workspaceRevision,
+      });
+    }
+    if (
+      method === 'PATCH' &&
+      path === `/api/workspaces/${workspace.id}/offices/${officeId}/rooms`
+    ) {
+      expect(request.headers()['idempotency-key']).toBeTruthy();
+      const body = request.postDataJSON() as { roomCount: number; expectedRevision: number };
+      expect(body.expectedRevision).toBe(workspaceRevision);
+      workspaceRoomCount = body.roomCount;
+      workspaceRevision += 1;
+      return json({
+        message: 'Office room count updated.',
+        roomCount: workspaceRoomCount,
+        revision: workspaceRevision,
+      });
+    }
 
     if (method === 'GET' && path === '/api/auth/csrf') return json({ csrfToken: 'A'.repeat(43) });
     if (method === 'GET' && path === '/api/auth/me')
@@ -164,9 +194,21 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
     if (method === 'GET' && path === '/api/auth/sessions')
       return authenticated ? json({ sessions: [session] }) : json({}, 401);
     if (method === 'GET' && path === '/api/workspaces')
-      return authenticated ? json({ workspaces: [workspace] }) : json({}, 401);
+      return authenticated
+        ? json({ workspaces: [{ ...workspace, name: workspaceName }] })
+        : json({}, 401);
     if (method === 'GET' && path === `/api/workspaces/${workspace.id}`)
-      return authenticated ? json({ workspace: { ...workspace, officeId } }) : json({}, 401);
+      return authenticated
+        ? json({
+            workspace: {
+              ...workspace,
+              name: workspaceName,
+              officeId,
+              revision: workspaceRevision,
+              roomCount: workspaceRoomCount,
+            },
+          })
+        : json({}, 401);
     if (method === 'GET' && path === `/api/workspaces/${workspace.id}/members`)
       return json({
         members: [
@@ -373,6 +415,7 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
           participants: [
             {
               participationId,
+              userId: account.id,
               displayName: account.displayName,
               appearance: { bodyId: 'commons-worker', paletteId: 'teal' },
               position: firstSeat ? { x: 624, y: 1168 } : position,
@@ -410,6 +453,7 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
               participants: [
                 {
                   participationId,
+                  userId: account.id,
                   displayName: account.displayName,
                   appearance: { bodyId: 'commons-worker', paletteId: 'teal' },
                   position: officeManifest.spawn,
@@ -808,6 +852,14 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await expect(mediaRoomDoors.and(page.locator('[data-room-state="open"]'))).toHaveCount(2);
   await expect.poll(() => officeBootstrapRequests).toBe(1);
   await expect(page.getByRole('group', { name: 'Office connection controls' })).toBeVisible();
+  const memberSidebar = page.locator('#office-member-sidebar');
+  await expect(memberSidebar.getByText('Online · 1')).toBeVisible();
+  await expect(memberSidebar.getByText('Offline · 1')).toBeVisible();
+  await memberSidebar.getByRole('button', { name: 'Close member sidebar' }).click();
+  await expect(memberSidebar).toBeHidden();
+  await page.getByRole('button', { name: 'Open member sidebar' }).click();
+  await expect(memberSidebar.getByText('Online · 1')).toBeVisible();
+  expect(officeConnections).toBe(1);
   const invitationMicrophoneRequests = await page.evaluate(
     () => (window as Window & { __microphoneTest: { requests: number } }).__microphoneTest.requests,
   );
@@ -1001,9 +1053,7 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
     page.getByText('Nearby voice is off. Your microphone will stay off until you turn it on.'),
   ).toBeVisible();
   await expect(page.getByRole('group', { name: 'Seats' })).toHaveCount(0);
-  await expect(page.getByRole('region', { name: 'People in the office' })).toContainText(
-    account.displayName,
-  );
+  await expect(page.locator('#office-member-sidebar').getByText(account.displayName)).toBeVisible();
   await page.getByRole('link', { name: 'Messages' }).click();
   await expect(page.getByRole('heading', { name: 'Welcome to #General' })).toBeVisible();
   await expect(page.getByText('Welcome to the team chat')).toBeVisible();
@@ -1069,19 +1119,17 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await page.getByRole('button', { name: 'General', exact: true }).click();
   await page.getByRole('link', { name: 'Office', exact: true }).click();
   await expect(page.locator('.office-scene .office-map')).toHaveCount(1);
-  await page.getByRole('link', { name: 'Back to companies' }).focus();
+  const busyButton = page.getByRole('button', { name: 'Busy', exact: true });
+  await busyButton.focus();
   await page.keyboard.press('Tab');
-  await page.keyboard.press('Tab');
-  await expect(page.getByRole('button', { name: 'Busy', exact: true })).toBeFocused();
-  const busyFocusStyle = await page
-    .getByRole('button', { name: 'Busy', exact: true })
-    .evaluate((button) => getComputedStyle(button).outlineStyle);
-  expect(busyFocusStyle).toBe('solid');
-  await page.getByRole('button', { name: 'Busy', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Busy', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'true',
+  await page.keyboard.press('Shift+Tab');
+  await expect(busyButton).toBeFocused();
+  const busyFocusStyle = await busyButton.evaluate(
+    (button) => getComputedStyle(button).outlineStyle,
   );
+  expect(busyFocusStyle).toBe('solid');
+  await busyButton.click();
+  await expect(busyButton).toHaveAttribute('aria-pressed', 'true');
   officeHistory.push({
     id: '7db151ba-fbf2-42a3-ad73-59bdad580f0e',
     senderId: '41bbf5d6-37d7-4468-9892-9776ff19e008',
@@ -1241,6 +1289,7 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
       serverTime: Date.now(),
       participants: [participationId, teammateParticipationId].map((id) => ({
         participationId: id,
+        userId: id === participationId ? account.id : teammateParticipationId,
         displayName: id === participationId ? account.displayName : 'Office Teammate',
         appearance: { bodyId: 'commons-worker', paletteId: 'teal' },
         position: officeManifest.spawn,
@@ -1253,6 +1302,8 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
     })}]`,
   );
   await expect(page.getByText('2 people in the office')).toBeVisible();
+  await expect(memberSidebar.getByText('Online · 2')).toBeVisible();
+  await expect(memberSidebar.getByText('Offline · 0')).toBeVisible();
   const waveId = 'f3e6c7c8-49f2-49ef-92b6-609ddca1c111';
   const sendWave = (eventId: string, recipientId = participationId) =>
     officeServerSocket?.send(
@@ -1314,6 +1365,21 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
     ),
   ).toBe(true);
   await expect(page.locator('.office-scene .office-map')).toHaveCount(0);
+  await page.getByRole('link', { name: 'Company details' }).click();
+  await page.getByRole('link', { name: 'Space settings' }).click();
+  await expect(page.getByRole('heading', { name: 'E2E Company' })).toBeVisible();
+  await expect(
+    page.locator('.space-member-list').getByText('Office Teammate', { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Employee invitations' })).toBeVisible();
+  await page.getByLabel('Display name').fill('E2E Updated Company');
+  await page.getByRole('button', { name: 'Save name' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Space name updated.' })).toBeVisible();
+  await page.getByLabel('Meeting room count').fill('20');
+  await page.getByRole('button', { name: 'Save room count' }).click();
+  await expect(
+    page.getByRole('status').filter({ hasText: 'Office layout saved with 20 rooms.' }),
+  ).toBeVisible();
   expect(unexpectedApiCalls).toEqual([]);
   expect(officeEvents).toContain('connect');
   expect(officeEvents).toContain('presence:update');

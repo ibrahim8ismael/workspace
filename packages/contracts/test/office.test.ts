@@ -191,7 +191,7 @@ describe('office v1 contracts (fixtures do not approve a map or grant access)', 
     expect(workspaceResponseSchema.safeParse({ workspace }).success).toBe(true);
     expect(
       officeWorkspaceDetailResponseSchema.safeParse({
-        workspace: { ...workspace, officeId: other },
+        workspace: { ...workspace, officeId: other, revision: 0, roomCount: 5 },
       }).success,
     ).toBe(true);
     expect(
@@ -253,14 +253,7 @@ describe('office v1 contracts (fixtures do not approve a map or grant access)', 
 
   it('rejects private projections, duplicate participants and inconsistent seat occupancy', () => {
     expect(worldSnapshotSchema.safeParse(snapshot).success).toBe(true);
-    for (const field of [
-      'userId',
-      'sessionId',
-      'email',
-      'authVersion',
-      'conversationId',
-      'leaseDeadline',
-    ]) {
+    for (const field of ['sessionId', 'email', 'authVersion', 'conversationId', 'leaseDeadline']) {
       expect(
         worldSnapshotSchema.safeParse({
           ...snapshot,

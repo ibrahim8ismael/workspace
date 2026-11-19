@@ -52,6 +52,30 @@ export const createWorkspaceSchema = z
       .min(3)
       .max(60)
       .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+    roomCount: z.number().int().min(1).max(100).optional(),
+  })
+  .strict();
+export const renameWorkspaceSchema = z
+  .object({ name: z.string().trim().min(2).max(80), expectedRevision: z.number().int().min(0) })
+  .strict();
+export const renameWorkspaceResponseSchema = z
+  .object({
+    message: z.string().min(1).max(256),
+    name: z.string().min(2).max(80),
+    revision: z.number().int().min(1),
+  })
+  .strict();
+export const updateWorkspaceRoomCountSchema = z
+  .object({
+    roomCount: z.number().int().min(1).max(100),
+    expectedRevision: z.number().int().min(0),
+  })
+  .strict();
+export const updateWorkspaceRoomCountResponseSchema = z
+  .object({
+    message: z.string().min(1).max(256),
+    roomCount: z.number().int().min(1).max(100),
+    revision: z.number().int().min(1),
   })
   .strict();
 export const createInvitationSchema = z.object({ email: emailSchema }).strict();

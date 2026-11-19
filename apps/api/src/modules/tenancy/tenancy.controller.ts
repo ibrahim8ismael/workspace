@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Delete,
   Body,
   Param,
@@ -17,6 +18,7 @@ import {
   transferOwnershipSchema,
   idSchema,
   emptyBodySchema,
+  renameWorkspaceSchema,
 } from '@gather/contracts';
 import type { AuthRequest } from '../identity/security/guards.js';
 import { actor } from '../identity/sessions/session.service.js';
@@ -39,7 +41,8 @@ export class WorkspacesController {
   ) {}
   @Post()
   async create(
-    @Body(new ValidationPipe(createWorkspaceSchema)) body: { name: string; slug: string },
+    @Body(new ValidationPipe(createWorkspaceSchema))
+    body: { name: string; slug: string; roomCount?: number },
     @Req() request: AuthRequest,
   ) {
     const context = actor(request.authContext);
@@ -62,6 +65,16 @@ export class WorkspaceController {
     @Req() request: AuthRequest,
   ) {
     return this.tenancy.get(actor(request.authContext), id);
+  }
+  @OwnerOnly()
+  @Patch()
+  rename(
+    @Param('workspaceId', new ValidationPipe(idSchema)) id: string,
+    @Body(new ValidationPipe(renameWorkspaceSchema))
+    body: { name: string; expectedRevision: number },
+    @Req() request: AuthRequest,
+  ) {
+    return this.tenancy.rename(actor(request.authContext), id, body, key(request));
   }
   @Get('members') members(
     @Param('workspaceId', new ValidationPipe(idSchema)) id: string,

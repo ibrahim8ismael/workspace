@@ -366,7 +366,14 @@ describe('same-origin API client', () => {
     expect(requests).toBe(1);
 
     const validClient = new ApiClient(async () =>
-      json({ workspace: { ...company.workspace, officeId: session.id } }),
+      json({
+        workspace: {
+          ...company.workspace,
+          officeId: session.id,
+          revision: 0,
+          roomCount: 5,
+        },
+      }),
     );
     await expect(validClient.workspaceDetail(company.workspace.id)).resolves.toMatchObject({
       ...company.workspace,

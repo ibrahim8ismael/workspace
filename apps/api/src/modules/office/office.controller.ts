@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Inject, Param, Post, Req } from '@nestjs/common';
+import { Body, Controller, Get, Inject, Param, Patch, Post, Req } from '@nestjs/common';
 import {
   idSchema,
   joinTicketRequestSchema,
@@ -7,6 +7,7 @@ import {
   takeoverReferenceRequestSchema,
   takeoverReferenceResponseSchema,
   takeoverTicketRequestSchema,
+  updateWorkspaceRoomCountSchema,
 } from '@gather/contracts';
 import type { AuthRequest } from '../identity/security/guards.js';
 import { actor } from '../identity/sessions/session.service.js';
@@ -15,6 +16,7 @@ import { invariant } from '../../platform/http/errors.js';
 import { TenancyService } from '../tenancy/tenancy.service.js';
 import { trustedOfficeBootstrap } from './office-map-registry.js';
 import { OfficeAdmissionService } from './office-admission.service.js';
+import { OfficeRuntimeService } from './runtime/office-runtime.service.js';
 import type {
   JoinTicketRequest,
   TakeoverReferenceRequest,
@@ -26,7 +28,28 @@ export class OfficeController {
   constructor(
     @Inject(TenancyService) private readonly tenancy: TenancyService,
     @Inject(OfficeAdmissionService) private readonly admission: OfficeAdmissionService,
+    @Inject(OfficeRuntimeService) private readonly runtime: OfficeRuntimeService,
   ) {}
+
+  @Patch('rooms')
+  async updateRooms(
+    @Param('workspaceId', new ValidationPipe(idSchema)) workspaceId: string,
+    @Param('officeId', new ValidationPipe(idSchema)) officeId: string,
+    @Body(new ValidationPipe(updateWorkspaceRoomCountSchema))
+    body: {
+      roomCount: number;
+      expectedRevision: number;
+    },
+    @Req() request: AuthRequest,
+  ) {
+    const key = request.get('idempotency-key');
+    invariant(key && /^[A-Za-z0-9_-]{16,100}$/.test(key), 400, 'idempotency_key_required');
+    const context = actor(request.authContext);
+    await this.tenancy.assertOwnerOffice(context, workspaceId, officeId);
+    return this.runtime.withOfficeReconfiguration(officeId, () =>
+      this.tenancy.updateRoomCount(context, workspaceId, officeId, body, key),
+    );
+  }
 
   @Get()
   async bootstrap(

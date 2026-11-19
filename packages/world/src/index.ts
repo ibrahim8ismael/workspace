@@ -23,4 +23,5 @@ export {
 } from './collision.js';
 export { COMMONS_GEOMETRY } from './commons.js';
 export { VIVO_GEOMETRY, VIVO_BLOCKED_TILES } from './vivo.js';
+export { MAX_WORKSPACE_ROOM_COUNT, generateWorkspaceOfficeGeometry } from './workspace.js';
 export { validateOfficeGeometry } from './geometry.js';

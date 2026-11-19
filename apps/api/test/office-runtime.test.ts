@@ -10,7 +10,7 @@ import type { ConsumedOfficeTicket } from '../dist/modules/office/runtime/office
 
 function ticket(userNumber: number, mapVersion = commonsManifest.mapVersion): ConsumedOfficeTicket {
   return {
-    userId: `user-${userNumber}`,
+    userId: `00000000-0000-4000-8000-${String(userNumber).padStart(12, '0')}`,
     displayName: `User ${userNumber}`,
     sessionId: `session-${userNumber}`,
     membershipGrantId: `grant-${userNumber}`,
@@ -157,7 +157,7 @@ describe('office runtime reservations', () => {
     const removed = runtime.release(
       '20000000-0000-4000-8000-000000000001',
       '10000000-0000-4000-8000-000000000001',
-      'user-1',
+      ticket(1).userId,
       'socket-1',
       first.participationId,
     );

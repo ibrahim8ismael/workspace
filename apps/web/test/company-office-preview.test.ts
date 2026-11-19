@@ -30,6 +30,8 @@ const detail: OfficeWorkspaceDetail = {
   slug: 'example-company',
   role: 'member',
   memberCount: 3,
+  revision: 0,
+  roomCount: 5,
 };
 const account: AccountDto = {
   id: 'cfd1f021-46b8-45f2-b6c8-a60e88d648f8',

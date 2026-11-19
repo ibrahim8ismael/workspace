@@ -12,7 +12,57 @@ import {
 import { OFFICE_LIMITS } from '../limits.js';
 
 export const worldPointSchema = z.object({ x: z.number().min(0), y: z.number().min(0) }).strict();
-const mapGeometryPathPattern = /^\/maps\/(?:commons|vivo)-v1-[a-f0-9]{64}\.json$/;
+const tilePointSchema = z
+  .object({ tx: z.number().int().min(0), ty: z.number().int().min(0) })
+  .strict();
+const tileRectSchema = z
+  .object({
+    tx: z.number().int().min(0),
+    ty: z.number().int().min(0),
+    width: z.number().int().min(1),
+    height: z.number().int().min(1),
+  })
+  .strict();
+export const workspaceGeometrySchema = z
+  .object({
+    mapId: z.literal('workspace'),
+    tileSize: z.literal(MAP_TILE_SIZE),
+    widthTiles: z
+      .number()
+      .int()
+      .min(1)
+      .max(OFFICE_LIMITS.maxWorldDimension / MAP_TILE_SIZE),
+    heightTiles: z
+      .number()
+      .int()
+      .min(1)
+      .max(OFFICE_LIMITS.maxWorldDimension / MAP_TILE_SIZE),
+    spawn: worldPointSchema,
+    blockedEdges: z
+      .array(z.tuple([tilePointSchema, tilePointSchema]))
+      .max(OFFICE_LIMITS.maxWorkspaceRooms * 28),
+    objects: z.array(z.never()).max(0),
+    zones: z
+      .array(
+        z
+          .object({
+            zoneId: z
+              .string()
+              .min(1)
+              .max(80)
+              .regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/),
+            label: z.string().min(1).max(80),
+            kind: z.literal('meeting'),
+            bounds: tileRectSchema,
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(OFFICE_LIMITS.maxWorkspaceRooms),
+  })
+  .strict();
+const mapGeometryPathPattern =
+  /^\/maps\/(?:commons|vivo|workspace)-v1-(?:[1-9][0-9]{0,2}-)?[a-f0-9]{64}\.json$/;
 export const mapManifestSchema = z
   .object({
     formatVersion: z.literal(MAP_FORMAT_VERSION),
@@ -29,6 +79,7 @@ export const mapManifestSchema = z
       .strict(),
     spawn: worldPointSchema,
     geometryPath: z.string().regex(mapGeometryPathPattern),
+    roomCount: z.number().int().min(1).max(OFFICE_LIMITS.maxWorkspaceRooms).optional(),
     assetManifestVersion: z
       .string()
       .min(1)
@@ -37,7 +88,13 @@ export const mapManifestSchema = z
   })
   .strict()
   .superRefine((value, ctx) => {
-    if (value.mapVersion !== `${value.mapId}-v1-${value.contentHash}`)
+    const workspaceVersion = `workspace-v1-${value.roomCount}-${value.contentHash}`;
+    if (
+      value.mapId === 'workspace'
+        ? value.roomCount === undefined || value.mapVersion !== workspaceVersion
+        : value.roomCount !== undefined ||
+          value.mapVersion !== `${value.mapId}-v1-${value.contentHash}`
+    )
       ctx.addIssue({ code: 'custom', path: ['mapVersion'], message: 'Map hash/version mismatch' });
     if (value.geometryPath !== `/maps/${value.mapVersion}.json`)
       ctx.addIssue({
@@ -51,7 +108,15 @@ export const mapManifestSchema = z
 
 /** Detail only; existing workspace create/list response shapes remain unchanged. */
 export const officeWorkspaceDetailResponseSchema = z
-  .object({ workspace: workspaceDtoSchema.extend({ officeId: idSchema }).strict() })
+  .object({
+    workspace: workspaceDtoSchema
+      .extend({
+        officeId: idSchema,
+        revision: z.number().int().min(0),
+        roomCount: z.number().int().min(1).max(OFFICE_LIMITS.maxWorkspaceRooms),
+      })
+      .strict(),
+  })
   .strict();
 
 export const officeBootstrapResponseSchema = z
@@ -61,11 +126,35 @@ export const officeBootstrapResponseSchema = z
     mapVersion: mapVersionSchema,
     protocolVersion: protocolVersionSchema,
     manifest: mapManifestSchema,
+    geometry: workspaceGeometrySchema.optional(),
   })
   .strict()
   .refine((value) => value.mapVersion === value.manifest.mapVersion, {
     path: ['mapVersion'],
     message: 'Bootstrap/manifest version mismatch',
+  })
+  .superRefine((value, ctx) => {
+    if (value.manifest.mapId === 'workspace') {
+      if (!value.geometry) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['geometry'],
+          message: 'Generated geometry required',
+        });
+        return;
+      }
+      if (
+        value.geometry.widthTiles * MAP_TILE_SIZE !== value.manifest.bounds.width ||
+        value.geometry.heightTiles * MAP_TILE_SIZE !== value.manifest.bounds.height ||
+        value.geometry.tileSize !== value.manifest.tileSize ||
+        value.geometry.spawn.x !== value.manifest.spawn.x ||
+        value.geometry.spawn.y !== value.manifest.spawn.y ||
+        value.geometry.zones.length !== value.manifest.roomCount
+      )
+        ctx.addIssue({ code: 'custom', path: ['geometry'], message: 'Geometry/manifest mismatch' });
+    } else if (value.geometry) {
+      ctx.addIssue({ code: 'custom', path: ['geometry'], message: 'Static maps omit geometry' });
+    }
   });
 
 export const joinTicketRequestSchema = z

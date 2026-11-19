@@ -1,6 +1,6 @@
 # Workspaces implementation plan
 
-Status: initial subset implemented; release and integration work remain open · Updated: 2026-11-08 · Target: M1
+Status: owner/member settings and configurable generated office layouts implemented; wider release gates remain open · Updated: 2026-11-19 · Target: pilot
 
 Implementation boundary: [current API and limitations](../../contracts/AUTH_AND_ROLES_API.md), [completion plan](../../planning/PROJECT_COMPLETION_PLAN.md) and [CP00 progress](../../planning/IMPLEMENTATION_PROGRESS.md). Checked implementation tasks describe existing code, not production acceptance.
 
@@ -12,9 +12,10 @@ Implementation boundary: [current API and limitations](../../contracts/AUTH_AND_
 - [x] Implement create/list/detail DTOs and slug validation/uniqueness.
 - [x] Implement transactional creation with counters and scoped idempotent result lookup.
 - [x] Implement owner-only invitations/removal and transactional ownership transfer.
-- [ ] Implement only the settings/lifecycle controls agreed under D13 (CP09).
+- [x] Implement revision-safe owner rename, owner/member settings, member directory, leave, and existing invitation/removal/transfer actions.
+- [x] Let workspace creators choose a room count and owners change it later without changing other workspace maps.
 - [x] Commit safe security audit records with company mutations.
-- [ ] Add owner/member onboarding/administration UI under CP04/CP09.
+- [x] Add owner/member settings UI; destructive membership actions use confirmation and server-side policy checks.
 
 ## Acceptance criteria
 

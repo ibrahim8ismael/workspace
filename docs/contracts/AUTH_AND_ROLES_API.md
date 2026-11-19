@@ -51,9 +51,11 @@ A workspace is the current MVP company boundary. The owner accepted one company/
 
 | Method/path | Input | Permission / success |
 |---|---|---|
-| POST `/workspaces` | `name`, `slug` | Verified active account; 201 `{ workspace }`, initial owner + office reference |
+| POST `/workspaces` | `name`, `slug`, optional `roomCount` (1–100) | Verified active account; 201 `{ workspace }`, initial owner + selected office map. The current web form submits its five-room default; omitted values keep the existing Vivo layout for older clients. |
 | GET `/workspaces` | — | Current memberships; 200 `{ workspaces }` (bounded list) |
-| GET `/workspaces/:workspaceId` | UUID | Current member/owner; 200 `{ workspace }` |
+| GET `/workspaces/:workspaceId` | UUID | Current member/owner; 200 `{ workspace }` including `officeId`, `revision`, and `roomCount` |
+| PATCH `/workspaces/:workspaceId` | `name`, `expectedRevision` | Current owner; tenant-scoped rename with revision conflict and required idempotency key |
+| PATCH `/workspaces/:workspaceId/offices/:officeId/rooms` | `roomCount`, `expectedRevision` | Current owner; revision-safe generated map update; rejects while office participants are connected |
 | GET `/workspaces/:workspaceId/members` | UUID | Current member/owner; safe names, IDs and roles |
 | POST `/workspaces/:workspaceId/invitations` | `email` | Current owner; 201 safe invitation metadata; code sent through outbox |
 | GET `/workspaces/:workspaceId/invitations` | UUID | Current owner; safe metadata/status, never token/digest |
@@ -63,9 +65,9 @@ A workspace is the current MVP company boundary. The owner accepted one company/
 | POST `/workspaces/:workspaceId/leave` | `{}` | Current member; owner transfers first |
 | POST `/workspaces/:workspaceId/transfer-ownership` | `userId` | Current owner, recent password proof, existing active verified member target |
 
-Workspace create/list DTO: `{ id, name, slug, role, memberCount }`. CP03 adds `officeId` to the workspace detail response. Member projection excludes email/credentials. Unknown fields—including role/status/ownerId overrides—are rejected. UUID path substitution does not bypass tenant policy.
+Workspace create/list DTO remains `{ id, name, slug, role, memberCount }`. Detail adds `officeId`, `revision`, and `roomCount`. Workspace rename preserves its stable ID and slug. Each generated room has a stable index-based ID; the count and deterministic geometry hash form the workspace map version. Existing static workspaces keep their current map until an owner changes the room count. Member projection excludes email/credentials. Unknown fields—including role/status/ownerId overrides—are rejected. UUID path substitution does not bypass tenant policy.
 
-Selected initial quotas: three owned companies per user, 30 members per company, 50 pending invites per company, seven-day invite expiry. Invitations do not reserve member slots. Counters and membership/owner changes share a transaction; retries do not increment twice. Ownership changes serialize on workspace policy and atomically change both membership roles and ownership counters. New offices store the trusted Vivo map version. The pending-map backfill, explicit legacy Commons-to-Vivo migration, authorized bootstrap and one-use join-ticket API are implemented alongside [CP03](../planning/OFFICE_ADMISSION_IMPLEMENTATION.md#cp03-implementation-evidence). Socket admission and media integration follow in CP05 and later packets.
+Selected initial quotas: three owned companies per user, 30 members per company, 50 pending invites per company, seven-day invite expiry. Invitations do not reserve member slots. Counters and membership/owner changes share a transaction; retries do not increment twice. Ownership changes serialize on workspace policy and atomically change both membership roles and ownership counters. Room-count updates fence office admission, require an empty office runtime, and persist the new generated map version transactionally. A room-count update changes only the selected workspace. Static Vivo/Commons workspaces are preserved until an owner explicitly selects a room count.
 
 ## Persistence, indexes and delivery
 

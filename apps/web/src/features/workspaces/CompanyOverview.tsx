@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router';
 import { AppLink } from '../../routing/AppLink';
-import { officePath, type OfficePage } from '../../routing/routes';
+import { companySettingsPath, officePath, type OfficePage } from '../../routing/routes';
 import { ArrowLeft, LayoutGrid } from 'lucide-react';
 import type { AccountDto } from '@gather/contracts';
 import type { RefObject } from 'react';
@@ -9,6 +9,7 @@ import { ApiClient, ApiError, type OfficeWorkspaceDetail } from '../../lib/api';
 import { messageForApi } from '../auth/messages';
 import { canOpenOfficePreview } from './company-overview-view';
 import { PRODUCT_NAME } from '../../brand';
+import { SpaceSettings } from './SpaceSettings';
 
 const LazyCompanyOfficePreview = lazy(() =>
   import('./CompanyOfficePreview').then(({ CompanyOfficePreview }) => ({
@@ -34,6 +35,9 @@ type Props = {
   runMutation: <T>(action: () => Promise<T>) => Promise<T>;
   onBackToCompanies: () => void;
   onOpenSecurity: () => void;
+  onReauthenticate: (password: string) => Promise<AccountDto | null>;
+  onWorkspaceUpdated: (workspace: OfficeWorkspaceDetail) => void;
+  onLeft: () => void;
   onUnauthorized: (notice?: string) => void;
 };
 
@@ -48,6 +52,9 @@ export function CompanyOverview({
   runMutation,
   onBackToCompanies,
   onOpenSecurity,
+  onReauthenticate,
+  onWorkspaceUpdated,
+  onLeft,
   onUnauthorized,
 }: Props) {
   const navigate = useNavigate();
@@ -167,6 +174,27 @@ export function CompanyOverview({
   }
   if (detail && page === 'alias')
     return <Navigate replace to={officePath(workspaceId, detail.officeId, 'entry')} />;
+  if (detail && page === 'settings')
+    return (
+      <SpaceSettings
+        key={workspaceId}
+        account={account}
+        api={api}
+        workspace={detail}
+        mutationPending={mutationPending}
+        runMutation={runMutation}
+        onReauthenticate={onReauthenticate}
+        onUnauthorized={onUnauthorized}
+        onBack={() => navigate(officePath(workspaceId, detail.officeId, 'entry'))}
+        onLeft={onLeft}
+        onUpdated={(updated) => {
+          setSnapshot((current) =>
+            current?.workspaceId === workspaceId ? { ...current, detail: updated } : current,
+          );
+          onWorkspaceUpdated(updated);
+        }}
+      />
+    );
   if (detail && page !== 'overview' && canOpenOfficePreview(detail, workspaceId, false, error)) {
     return (
       <Suspense
@@ -244,6 +272,9 @@ export function CompanyOverview({
               to={officePath(workspaceId, detail.officeId, 'entry')}
             >
               Open office
+            </AppLink>
+            <AppLink className="dashboard-secondary" to={companySettingsPath(workspaceId)}>
+              Space settings
             </AppLink>
           </section>
         )}

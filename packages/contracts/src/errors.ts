@@ -28,6 +28,7 @@ export const httpErrorCodeSchema = z.enum([
   'rate_limited',
   'reauthentication_required',
   'request_failed',
+  'revision_conflict',
   'service_unavailable',
   'target_unavailable_or_quota',
   'unauthorized',
@@ -42,6 +43,7 @@ export const httpErrorCodeSchema = z.enum([
 
 export const officeErrorCodeSchema = z.enum([
   'office_not_ready',
+  'office_in_use',
   'map_version_mismatch',
   'protocol_mismatch',
   'stale_epoch',

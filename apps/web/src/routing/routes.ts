@@ -1,5 +1,6 @@
 export type AuthView = 'login' | 'register' | 'verify' | 'resend' | 'forgot' | 'reset';
-export type OfficePage = 'entry' | 'office' | 'chat' | 'calendar' | 'activity' | 'invitations';
+export type OfficePage =
+  'entry' | 'office' | 'chat' | 'calendar' | 'activity' | 'invitations' | 'settings';
 export const authPaths: Record<AuthView, string> = {
   login: '/login',
   register: '/register',
@@ -12,6 +13,7 @@ export type AppRoute =
   | { kind: 'home' | 'companies' | 'security' | 'invitation' | 'not-found' }
   | { kind: 'auth'; view: AuthView }
   | { kind: 'company'; workspaceId: string }
+  | { kind: 'company-settings'; workspaceId: string }
   | { kind: 'office-alias'; workspaceId: string }
   | { kind: 'office'; workspaceId: string; officeId: string; page: OfficePage }
   | { kind: 'redirect'; to: string };
@@ -19,6 +21,7 @@ const id =
   '[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[1-8][a-fA-F0-9]{3}-[89abAB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}';
 export const companyPath = (workspaceId: string) => `/companies/${workspaceId}`;
 export const officeAliasPath = (workspaceId: string) => `${companyPath(workspaceId)}/office`;
+export const companySettingsPath = (workspaceId: string) => `${companyPath(workspaceId)}/settings`;
 export const officePath = (workspaceId: string, officeId: string, page: OfficePage = 'office') =>
   `${companyPath(workspaceId)}/offices/${officeId}${page === 'office' ? '' : `/${page}`}`;
 export function parseRoute(path: string): AppRoute {
@@ -39,11 +42,13 @@ export function parseRoute(path: string): AppRoute {
   if (path === '/companies') return { kind: 'companies' };
   if (path === '/account/security') return { kind: 'security' };
   if (path === '/invitations/accept') return { kind: 'invitation' };
+  const settings = path.match(new RegExp(`^/companies/(${id})/settings$`));
+  if (settings) return { kind: 'company-settings', workspaceId: settings[1]! };
   const company = path.match(new RegExp(`^/companies/(${id})(/office)?$`));
   if (company) return { kind: company[2] ? 'office-alias' : 'company', workspaceId: company[1]! };
   const office = path.match(
     new RegExp(
-      `^/companies/(${id})/offices/(${id})(?:/(entry|chat|calendar|activity|invitations))?$`,
+      `^/companies/(${id})/offices/(${id})(?:/(entry|chat|calendar|activity|invitations|settings))?$`,
     ),
   );
   if (office)
@@ -56,9 +61,15 @@ export function parseRoute(path: string): AppRoute {
   return { kind: 'not-found' };
 }
 export function isProtected(route: AppRoute) {
-  return ['companies', 'company', 'office-alias', 'office', 'security', 'invitation'].includes(
-    route.kind,
-  );
+  return [
+    'companies',
+    'company',
+    'company-settings',
+    'office-alias',
+    'office',
+    'security',
+    'invitation',
+  ].includes(route.kind);
 }
 /** Only known internal destinations may survive a login. Never redirect to another origin. */
 export function safeReturnTo(value: string | null): string {

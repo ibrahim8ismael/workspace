@@ -70,6 +70,7 @@ export function WorkspaceHome({
   runMutation,
 }: Props) {
   const [companyName, setCompanyName] = useState('');
+  const [roomCount, setRoomCount] = useState(5);
   const [slug, setSlug] = useState('');
   const [inviteCode, setInviteCode] = useState(invitationToken);
   const [companyQuery, setCompanyQuery] = useState('');
@@ -132,7 +133,7 @@ export function WorkspaceHome({
 
   async function createCompany(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const input = { name: companyName, slug };
+    const input = { name: companyName, slug, roomCount };
     const key = createKey.current.forPayload(input);
     const current = lifecycle.current;
     const controller = new AbortController();
@@ -150,6 +151,7 @@ export function WorkspaceHome({
       setCreateUncertain(false);
       setCompanyName('');
       setSlug('');
+      setRoomCount(5);
       closeDialog();
       onWorkspaces((rows) => [
         result.workspace,
@@ -477,6 +479,20 @@ export function WorkspaceHome({
                         value={slug}
                       />
                     </span>
+                  </label>
+                  <label className="dashboard-label">
+                    Meeting rooms
+                    <input
+                      type="number"
+                      min={1}
+                      max={100}
+                      step={1}
+                      required
+                      value={roomCount}
+                      disabled={mutating}
+                      onChange={(event) => setRoomCount(Number(event.target.value))}
+                    />
+                    <small>Choose 1–100 rooms. You can change this later in Space settings.</small>
                   </label>
                   {error && !loadError && (
                     <p className="form-error" role="alert">

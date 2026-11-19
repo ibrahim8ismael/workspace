@@ -5,6 +5,8 @@ import {
   authenticatedResponseSchema,
   changePasswordSchema,
   createWorkspaceSchema,
+  renameWorkspaceSchema,
+  updateWorkspaceRoomCountSchema,
   createInvitationSchema,
   csrfResponseSchema,
   emptyBodySchema,
@@ -25,6 +27,8 @@ import {
   type SpaceMessage,
   registerSchema,
   reauthenticateSchema,
+  renameWorkspaceResponseSchema,
+  updateWorkspaceRoomCountResponseSchema,
   resetPasswordSchema,
   sendOfficeMessageSchema,
   sessionDtoSchema,
@@ -179,7 +183,7 @@ export class ApiClient {
     responseSchema: z.ZodType<T>,
     idempotencyKey?: string,
     signal?: AbortSignal,
-    method: 'POST' | 'DELETE' = 'POST',
+    method: 'POST' | 'PATCH' | 'DELETE' = 'POST',
   ): Promise<T> {
     const parsedInput = requestSchema.safeParse(input);
     if (!parsedInput.success) throw new ApiError('validation_failed', 400);
@@ -296,6 +300,88 @@ export class ApiClient {
         signal,
       )
     ).members;
+  }
+
+  renameWorkspace(id: string, input: unknown, idempotencyKey: string, signal?: AbortSignal) {
+    const parsedId = idSchema.safeParse(id);
+    if (!parsedId.success) throw new ApiError('validation_failed', 400);
+    return this.mutate(
+      `/workspaces/${encodeURIComponent(parsedId.data)}`,
+      input,
+      renameWorkspaceSchema,
+      renameWorkspaceResponseSchema,
+      idempotencyKey,
+      signal,
+      'PATCH',
+    );
+  }
+
+  updateWorkspaceRoomCount(
+    workspaceId: string,
+    officeId: string,
+    input: unknown,
+    idempotencyKey: string,
+    signal?: AbortSignal,
+  ) {
+    const workspace = idSchema.safeParse(workspaceId);
+    const office = idSchema.safeParse(officeId);
+    if (!workspace.success || !office.success) throw new ApiError('validation_failed', 400);
+    return this.mutate(
+      `/workspaces/${encodeURIComponent(workspace.data)}/offices/${encodeURIComponent(office.data)}/rooms`,
+      input,
+      updateWorkspaceRoomCountSchema,
+      updateWorkspaceRoomCountResponseSchema,
+      idempotencyKey,
+      signal,
+      'PATCH',
+    );
+  }
+
+  removeWorkspaceMember(workspaceId: string, userId: string, key: string, signal?: AbortSignal) {
+    const workspace = idSchema.safeParse(workspaceId);
+    const user = idSchema.safeParse(userId);
+    if (!workspace.success || !user.success) throw new ApiError('validation_failed', 400);
+    return this.mutate(
+      `/workspaces/${encodeURIComponent(workspace.data)}/members/${encodeURIComponent(user.data)}`,
+      {},
+      emptyBodySchema,
+      messageResponseSchema,
+      key,
+      signal,
+      'DELETE',
+    );
+  }
+
+  leaveWorkspace(workspaceId: string, key: string, signal?: AbortSignal) {
+    const workspace = idSchema.safeParse(workspaceId);
+    if (!workspace.success) throw new ApiError('validation_failed', 400);
+    return this.mutate(
+      `/workspaces/${encodeURIComponent(workspace.data)}/leave`,
+      {},
+      emptyBodySchema,
+      messageResponseSchema,
+      key,
+      signal,
+    );
+  }
+
+  transferWorkspaceOwnership(
+    workspaceId: string,
+    userId: string,
+    key: string,
+    signal?: AbortSignal,
+  ) {
+    const workspace = idSchema.safeParse(workspaceId);
+    const user = idSchema.safeParse(userId);
+    if (!workspace.success || !user.success) throw new ApiError('validation_failed', 400);
+    return this.mutate(
+      `/workspaces/${encodeURIComponent(workspace.data)}/transfer-ownership`,
+      { userId: user.data },
+      z.object({ userId: idSchema }).strict(),
+      messageResponseSchema,
+      key,
+      signal,
+    );
   }
 
   async officeMessages(workspaceId: string, officeId: string, signal?: AbortSignal) {

@@ -813,9 +813,122 @@ kbd {
   color: var(--muted);
 }
 .welcome-modal {
-  width: 390px;
+  width: min(440px, calc(100vw - 32px));
   text-align: center;
-  padding: 29px 32px 26px;
+  padding: clamp(22px, 5vw, 34px);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: 0 24px 70px #17142326;
+}
+.auth-flow-card {
+  text-align: left;
+}
+.auth-flow-card .welcome-art {
+  height: 54px;
+  justify-content: start;
+  margin: 0 0 12px;
+  padding: 0;
+}
+.auth-flow-card .eyebrow {
+  display: block;
+  margin-bottom: 10px;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 750;
+}
+.auth-progress {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  margin: 17px 0 22px;
+  padding: 0;
+  list-style: none;
+}
+.auth-progress li {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.25;
+}
+.auth-progress li span {
+  display: grid;
+  width: 23px;
+  height: 23px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  font-weight: 700;
+}
+.auth-progress li.is-current {
+  color: var(--text);
+  font-weight: 700;
+}
+.auth-progress li.is-current span,
+.auth-progress li.is-complete span {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: white;
+}
+.auth-flow-card h1 {
+  margin-top: 0;
+  font-size: clamp(25px, 6vw, 30px);
+}
+.auth-flow-card > p:not(.form-error):not(.auth-signed) {
+  max-width: none;
+  margin: 0 0 20px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.auth-flow-card form {
+  display: grid;
+  gap: 14px;
+}
+.auth-flow-card form label {
+  display: block;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 650;
+}
+.auth-flow-card form label span {
+  display: block;
+}
+.auth-flow-card form label input {
+  min-height: 46px;
+  margin-top: 6px;
+  border-color: var(--border);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 15px;
+}
+.auth-flow-card form .enter-button {
+  width: 100%;
+  min-height: 48px;
+  margin-top: 3px;
+}
+.auth-related-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 14px;
+  margin-top: 18px;
+  padding-top: 15px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+.auth-related-links > span + span::before {
+  content: none;
+}
+.auth-flow-card .form-error,
+.auth-flow-card .auth-signed {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  text-align: left;
+  line-height: 1.5;
 }
 .welcome-art {
   height: 76px;
@@ -3734,6 +3847,9 @@ button .avatar {
 .welcome-modal label + label {
   margin-top: 12px;
 }
+.auth-flow-card label + label {
+  margin-top: 0;
+}
 
 /* Interactive objects: hint and window. */
 .interact-hint {
@@ -4823,6 +4939,16 @@ button .avatar {
   }
   .dashboard-heading .dashboard-secondary {
     width: 100%;
+  }
+}
+@media (max-width: 480px) {
+  .auth-progress li {
+    grid-template-columns: 22px 1fr;
+    gap: 4px;
+    font-size: 9px;
+  }
+  .auth-related-links {
+    justify-content: flex-start;
   }
 }
 .template-preview {

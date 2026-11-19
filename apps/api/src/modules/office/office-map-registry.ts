@@ -1,9 +1,19 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
-import { appearanceSchema, mapManifestSchema, OFFICE_PROTOCOL_VERSION } from '@gather/contracts';
+import {
+  appearanceSchema,
+  mapManifestSchema,
+  OFFICE_PROTOCOL_VERSION,
+  MAP_FORMAT_VERSION,
+} from '@gather/contracts';
 import type { OfficeBootstrapResponse } from '@gather/contracts';
-import { COMMONS_GEOMETRY, VIVO_GEOMETRY, validateOfficeGeometry } from '@gather/world';
+import {
+  COMMONS_GEOMETRY,
+  VIVO_GEOMETRY,
+  generateWorkspaceOfficeGeometry,
+  validateOfficeGeometry,
+} from '@gather/world';
 import commonsManifestJson from '@gather/assets/manifests/commons-map.json' with { type: 'json' };
 import vivoManifestJson from '@gather/assets/manifests/vivo-map.json' with { type: 'json' };
 import type { OfficeGeometry, OfficeSeatDefinition, ValidatedOfficeGeometry } from '@gather/world';
@@ -85,6 +95,7 @@ const commonsMap = loadTrustedMap(commonsManifestJson, COMMONS_GEOMETRY);
 const vivoMap = loadTrustedMap(vivoManifestJson, VIVO_GEOMETRY);
 const maps = [commonsMap, vivoMap];
 const mapsByVersion = new Map(maps.map((map) => [map.manifest.mapVersion, map]));
+const generatedMapsByVersion = new Map<string, TrustedOfficeMap>();
 const defaultMap = mapsByVersion.get(vivoManifestJson.mapVersion);
 if (!defaultMap) throw new Error('The default Vivo office map is not registered');
 
@@ -95,7 +106,49 @@ export const APPROVED_OFFICE_MAP_VERSION = defaultMap.manifest.mapVersion;
 export const LEGACY_OFFICE_MAP_VERSIONS = Object.freeze([commonsMap.manifest.mapVersion]);
 
 export function trustedOfficeMap(version: string): TrustedOfficeMap | null {
-  return mapsByVersion.get(version) ?? null;
+  const registered = mapsByVersion.get(version);
+  if (registered) return registered;
+  const match = /^workspace-v1-([1-9][0-9]?|100)-([a-f0-9]{64})$/.exec(version);
+  if (!match) return null;
+  const cached = generatedMapsByVersion.get(version);
+  if (cached) return cached;
+  const roomCount = Number(match[1]);
+  const geometry = generateWorkspaceOfficeGeometry(roomCount);
+  const assetManifestVersion = commonsMap.manifest.assetManifestVersion;
+  const envelope = {
+    assetManifestVersion,
+    coordinateUnits: 'pixels' as const,
+    formatVersion: MAP_FORMAT_VERSION,
+    ...geometry,
+  };
+  const bytes = Buffer.from(JSON.stringify(envelope));
+  const contentHash = createHash('sha256').update(bytes).digest('hex');
+  if (contentHash !== match[2]) return null;
+  const manifest = mapManifestSchema.parse({
+    formatVersion: MAP_FORMAT_VERSION,
+    mapId: 'workspace',
+    mapVersion: version,
+    contentHash,
+    coordinateUnits: 'pixels',
+    tileSize: geometry.tileSize,
+    bounds: {
+      width: geometry.widthTiles * geometry.tileSize,
+      height: geometry.heightTiles * geometry.tileSize,
+    },
+    spawn: geometry.spawn,
+    geometryPath: `/maps/${version}.json`,
+    roomCount,
+    assetManifestVersion,
+  });
+  const trusted = Object.freeze({
+    manifest: Object.freeze(manifest),
+    geometry,
+    validated: validateOfficeGeometry(geometry),
+    seats: Object.freeze([]),
+    defaultAppearance: commonsMap.defaultAppearance,
+  });
+  generatedMapsByVersion.set(version, trusted);
+  return trusted;
 }
 
 export function trustedOfficeBootstrap(
@@ -111,5 +164,21 @@ export function trustedOfficeBootstrap(
     mapVersion: map.manifest.mapVersion,
     protocolVersion: OFFICE_PROTOCOL_VERSION,
     manifest: map.manifest,
+    ...(map.manifest.mapId === 'workspace' ? { geometry: map.geometry as never } : {}),
   };
+}
+
+/** Build a generated map identity with the same canonical envelope used by trustedOfficeMap. */
+export function workspaceOfficeMapVersion(roomCount: number): string {
+  const geometry = generateWorkspaceOfficeGeometry(roomCount);
+  const envelope = {
+    assetManifestVersion: commonsMap.manifest.assetManifestVersion,
+    coordinateUnits: 'pixels' as const,
+    formatVersion: MAP_FORMAT_VERSION,
+    ...geometry,
+  };
+  const hash = createHash('sha256')
+    .update(Buffer.from(JSON.stringify(envelope)))
+    .digest('hex');
+  return `workspace-v1-${roomCount}-${hash}`;
 }

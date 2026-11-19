@@ -9,7 +9,7 @@ export function messageForApi(error: unknown) {
       return 'That email and password do not match. Check them and try again.';
     case 'invalid_token':
     case 'invalid_invitation':
-      return 'That code is invalid, expired, or has already been used.';
+      return 'That code is invalid, expired, or has already been used. Check it or request a new one.';
     case 'validation_failed':
       return 'Check the entered details and try again.';
     case 'rate_limited':

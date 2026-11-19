@@ -121,17 +121,13 @@ async function createAccount(email: string) {
   expect(register.status()).toBe(202);
   const verifyToken = await mailToken(email, 'Verify your email', registeredAt);
   const verified = await client.post('/api/auth/verify-email', {
-    data: { email, token: verifyToken, password },
+    data: { email, token: verifyToken },
     headers: { 'X-CSRF-Token': csrf },
   });
   expect(verified.status()).toBe(200);
-  const login = await client.post('/api/auth/login', {
-    data: { email, password },
-    headers: { 'X-CSRF-Token': csrf },
-  });
-  const loginBody = await json(login);
-  csrf = String(loginBody.csrfToken);
-  const account = loginBody.account as { id: string; displayName: string };
+  const verifiedBody = await json(verified);
+  csrf = String(verifiedBody.csrfToken);
+  const account = verifiedBody.account as { id: string; displayName: string };
   return { client, csrf, account, email };
 }
 

@@ -15,6 +15,8 @@ export interface UserRecord {
   policyVersion: number;
   ownedWorkspaceCount: number;
   createdAt: Date;
+  pendingRegistrationDigest?: string;
+  pendingRegistrationExpiresAt?: Date;
 }
 export interface CredentialRecord {
   _id: string;
@@ -65,6 +67,8 @@ export const userSchema = new Schema<UserRecord>(
     policyVersion: { type: Number, required: true },
     ownedWorkspaceCount: { type: Number, required: true },
     createdAt: { type: Date, required: true },
+    pendingRegistrationDigest: { type: String, select: false },
+    pendingRegistrationExpiresAt: { type: Date },
   },
   schemaOptions,
 );

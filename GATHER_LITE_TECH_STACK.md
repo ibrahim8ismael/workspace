@@ -164,7 +164,7 @@ Source: [OWASP password recovery](https://cheatsheetseries.owasp.org/cheatsheets
 |---|---|---|
 | GET /api/auth/csrf | Bootstrap session-bound CSRF token | Same-origin Fetch Metadata and custom header, preserve valid session, no-store, rate limit |
 | POST /api/auth/register | Create pending account and verification delivery | Anonymous CSRF, origin, validation, uniqueness, abuse limits |
-| POST /api/auth/verify-email | Verify pending account | CSRF, verification token, pending password, atomic consume/account update |
+| POST /api/auth/verify-email | Verify browser-bound pending account | CSRF, single-use code, registration proof, atomic consume/account/session rotation |
 | POST /api/auth/resend-verification | Replace verification delivery | CSRF, generic response, supersede prior verification token, delivery limits |
 | POST /api/auth/login | Verify credentials and issue fresh session cookie | Anonymous/authenticated CSRF, origin, throttling, bounded hash work |
 | GET /api/auth/me | Return safe current-user/session data | Valid server session, no-store |

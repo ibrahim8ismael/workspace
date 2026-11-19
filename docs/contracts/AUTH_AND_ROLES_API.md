@@ -8,7 +8,7 @@ Strict browser-safe response schemas for the existing account/workspace/member/i
 
 ## Browser/client contract
 
-The prefix is `/api`. Authentication uses only the opaque `__Host-gather_session` cookie (`Secure; HttpOnly; SameSite=Lax; Path=/`, no Domain). Raw session secrets never appear in JSON. Non-browser test clients can maintain the cookie explicitly; browser integration requires a suitable HTTPS/same-origin deployment. Loopback HTTPS onboarding/session flows are verified; public ingress/proxy and real delivery acceptance remain pending.
+The prefix is `/api`. Authentication uses the opaque `__Host-gather_session` cookie (`Secure; HttpOnly; SameSite=Lax; Path=/`, no Domain). Registration also sets a separate seven-day `__Host-gather_pending_registration` proof cookie with the same attributes. Its server-side digest is tied to each pending user created by that browser; duplicate registration and resend keep generic responses and cannot claim another browser's pending account. Raw cookie secrets never appear in JSON. Non-browser test clients can maintain cookies explicitly; browser integration requires a suitable HTTPS/same-origin deployment. Loopback HTTPS onboarding/session flows are verified; public ingress/proxy and real delivery acceptance remain pending.
 
 1. Request `GET /api/auth/csrf` with `Sec-Fetch-Site: same-origin` and `X-Requested-With: XMLHttpRequest`. An optional Origin must exactly match `APP_ORIGIN`. It returns `{ csrfToken }` and creates an anonymous cookie if needed. A valid existing session is preserved.
 2. Every state-changing call sends `Content-Type: application/json`, exact `Origin: <APP_ORIGIN>`, the cookie, and `X-CSRF-Token: <csrfToken>`. Send `{}` for empty commands. Missing/wrong Origin or CSRF fails before domain changes.
@@ -22,9 +22,9 @@ All private responses are no-store. Errors have `{ error: { code, message, reque
 | Method/path | Input | Success |
 |---|---|---|
 | GET `/auth/csrf` | Safe bootstrap headers | 200 `{ csrfToken }` |
-| POST `/auth/register` | `email`, `displayName`, `password` | 202 generic instructions; pending account, no authenticated session |
-| POST `/auth/verify-email` | `email`, six-digit `token`, original pending `password` | 200 verified; sign in separately |
-| POST `/auth/resend-verification` | `email` | 202 generic instructions; a new code is issued after the 60-second resend cooldown |
+| POST `/auth/register` | `email`, `displayName`, `password` | 202 generic instructions; creates a pending account bound to this browser; no authenticated session |
+| POST `/auth/verify-email` | `email`, six-digit `token` | 200 `{ account, csrfToken }`; consumes the code, verifies the bound account, and rotates to an authenticated session atomically |
+| POST `/auth/resend-verification` | `email` | 202 generic instructions; only the browser holding that pending account's proof may resend after the 60-second cooldown |
 | POST `/auth/forgot-password` | `email` | 202 generic instructions; unknown address indistinguishable in response |
 | POST `/auth/reset-password` | `email`, six-digit `token`, `newPassword` | 200; all sessions invalidated, no automatic login |
 | POST `/auth/login` | `email`, `password` | 200 `{ account, csrfToken }` and rotated cookie |

@@ -563,14 +563,18 @@ export class ApiClient {
   }
 
   verify(input: unknown, signal?: AbortSignal) {
+    const generation = this.generation;
     return this.mutate(
       '/auth/verify-email',
       input,
       verifyEmailSchema,
-      messageResponseSchema,
+      authenticatedResponseSchema,
       undefined,
       signal,
-    );
+    ).then((response) => {
+      this.rotateSession(response, generation);
+      return response.account;
+    });
   }
 
   resendVerification(input: unknown, signal?: AbortSignal) {

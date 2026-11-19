@@ -258,29 +258,29 @@ function AuthFlow({
     );
   } else if (view === 'verify') {
     title = 'Verify your email';
-    subtitle = 'Enter the code from your email and the password you registered with.';
-    form = (
+    subtitle = 'Enter the code from your email. Your registration stays linked to this browser.';
+    form = !address ? (
+      <div>
+        <p>
+          Open this page in the browser where you registered, or create an account to receive a
+          code.
+        </p>
+        <AppLink to={pathFor('register')}>Create an account</AppLink>
+        {' · '}
+        <AppLink to={pathFor('forgot')}>Recover an existing account</AppLink>
+      </div>
+    ) : (
       <form
         onSubmit={(event) =>
           void submit(event, async (values, isCurrent) => {
-            await api.verify({
-              email: String(values.get('email') ?? ''),
+            const account = await api.verify({
+              email: query.get('email') ?? '',
               token: values.get('token'),
-              password: values.get('password'),
             });
-            if (!isCurrent()) return;
-            move('login', 'Your account is verified. Sign in to continue.');
+            if (isCurrent()) await onLogin(account);
           })
         }
       >
-        <Field
-          label="Email"
-          name="email"
-          type="email"
-          autoComplete="email"
-          defaultValue={address}
-          onChange={setAddress}
-        />
         <Field
           label="Verification code"
           name="token"
@@ -292,15 +292,11 @@ function AuthFlow({
           maxLength={43}
           inputMode="numeric"
         />
-        <Field
-          label="Registration password"
-          name="password"
-          type="password"
-          autoComplete="current-password"
-        />
         <button className="primary enter-button" disabled={busy} type="submit">
           {busy ? 'Verifying…' : 'Verify email'}
         </button>
+        <AppLink to={pathFor('resend')}>Request a new verification code</AppLink>
+        <AppLink to={pathFor('forgot')}>Recover an existing account</AppLink>
       </form>
     );
   } else if (view === 'resend') {
@@ -312,7 +308,9 @@ function AuthFlow({
           void submit(event, async (values, isCurrent) => {
             await api.resendVerification({ email: values.get('email') });
             if (!isCurrent()) return;
-            setNotice('If the address needs verification, a new code will be sent.');
+            const email = String(values.get('email') ?? '');
+            setAddress(email);
+            move('verify', 'If the address can be verified, a new code will be sent.', email);
           })
         }
       >
@@ -327,6 +325,7 @@ function AuthFlow({
         <button className="primary enter-button" disabled={busy} type="submit">
           {busy ? 'Sending…' : 'Resend code'}
         </button>
+        <AppLink to={pathFor('verify')}>Return to verification</AppLink>
       </form>
     );
   } else if (view === 'forgot') {
@@ -833,7 +832,11 @@ function RoutedApp() {
         to={`/login?returnTo=${encodeURIComponent(location.pathname + location.search)}`}
       />
     );
-  if (state === 'signed-in' && route.kind === 'auth' && ['login', 'register'].includes(route.view))
+  if (
+    state === 'signed-in' &&
+    route.kind === 'auth' &&
+    ['login', 'register', 'verify'].includes(route.view)
+  )
     return (
       <Navigate replace to={safeReturnTo(new URLSearchParams(location.search).get('returnTo'))} />
     );

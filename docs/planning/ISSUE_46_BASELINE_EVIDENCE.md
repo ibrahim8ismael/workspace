@@ -35,5 +35,5 @@ These versions were read from the compiled map registry. The generated browser t
 ## Verification commands
 
 - `pnpm test:world` passed all 42 tests.
-- The focused API run passed all three room-count integration cases using the disposable MongoDB replica set. The full `pnpm test:api` run is in progress.
+- The focused API run passed all three room-count integration cases using the disposable MongoDB replica set. The full `pnpm test:api` run passed 139 tests across seven files, with two tests skipped.
 - The focused live test passed on the exact baseline Docker build, with one Chromium scenario completing in 25.9 seconds. Re-run it with `LIVE_OFFICE_E2E=1 pnpm exec playwright test tests/e2e/live-office.spec.ts -g 'generated office renders' --workers=1`. It requires the local stack and the appropriate Mailpit URL.

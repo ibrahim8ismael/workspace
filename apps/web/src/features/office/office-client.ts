@@ -144,11 +144,12 @@ export class OfficeClient {
     this.resyncPending = false;
     this.socket?.disconnect();
     this.socket = null;
+    const preserveLastOfficeView = Boolean(
+      this.state.bootstrap && this.state.ready && this.state.snapshot,
+    );
     this.update({
       status: 'connecting',
-      bootstrap: null,
-      ready: null,
-      snapshot: null,
+      ...(preserveLastOfficeView ? {} : { bootstrap: null, ready: null, snapshot: null }),
       message: '',
       chatEvents: [],
       spaceChatEvents: {},
@@ -353,7 +354,7 @@ export class OfficeClient {
       });
       socket.on('connect_error', (error) => {
         if (!this.isCurrent(generation)) return;
-        this.update({ status: 'error', snapshot: null, message: safeSocketMessage(error.message) });
+        this.update({ status: 'error', message: safeSocketMessage(error.message) });
       });
       socket.on('disconnect', () => {
         if (!this.isCurrent(generation) || this.socket !== socket) return;
@@ -361,14 +362,13 @@ export class OfficeClient {
         if (!this.closed && this.isCurrent(generation))
           this.update({
             status: 'disconnected',
-            snapshot: null,
             meetingInvitations: [],
             message: 'Office connection closed.',
           });
       });
     } catch (error) {
       if (!this.isCurrent(generation)) return;
-      this.update({ status: 'error', snapshot: null, message: safeErrorMessage(error) });
+      this.update({ status: 'error', message: safeErrorMessage(error) });
     }
   }
 

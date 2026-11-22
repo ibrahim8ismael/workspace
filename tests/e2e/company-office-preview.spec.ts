@@ -120,6 +120,7 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   let officeTicketRequests = 0;
   let officeConnections = 0;
   let officeServerSocket: import('@playwright/test').WebSocketRoute | undefined;
+  let setOfficeStateVersion: ((version: number) => void) | undefined;
   let holdNextMediaSocket = false;
   let heldLiveKitSocketClosed = false;
   let interruptOfficeConnection: (() => Promise<void>) | undefined;
@@ -368,6 +369,9 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
       '0{"sid":"e2e-engine","upgrades":[],"pingInterval":25000,"pingTimeout":20000,"maxPayload":100000}',
     );
     let stateVersion = 0;
+    setOfficeStateVersion = (version) => {
+      stateVersion = version;
+    };
     let areaSequence = 0;
     let proximityVersion = 0;
     let proximityConversationActive = false;
@@ -853,12 +857,21 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await expect.poll(() => officeBootstrapRequests).toBe(1);
   await expect(page.getByRole('group', { name: 'Office connection controls' })).toBeVisible();
   const memberSidebar = page.locator('#office-member-sidebar');
-  await expect(memberSidebar.getByText('Online · 1')).toBeVisible();
-  await expect(memberSidebar.getByText('Offline · 1')).toBeVisible();
+  await expect(memberSidebar.getByText('Online (1)')).toBeVisible();
+  await expect(memberSidebar.getByText('Offline (1)')).toBeVisible();
+  const peopleSearch = memberSidebar.getByRole('searchbox', { name: 'Search people' });
+  await peopleSearch.fill('Office Teammate');
+  await expect(memberSidebar.getByText('Online (0)')).toBeVisible();
+  await expect(memberSidebar.getByText('Offline (1)')).toBeVisible();
+  await memberSidebar.getByRole('button', { name: 'Office Teammate Offline' }).click();
+  await expect(page.getByRole('dialog', { name: 'Member actions' })).toContainText('Offline');
+  await page.getByRole('button', { name: 'Close member actions' }).click();
+  await memberSidebar.getByRole('button', { name: 'Clear people search' }).click();
+  await expect(memberSidebar.getByText('Online (1)')).toBeVisible();
   await memberSidebar.getByRole('button', { name: 'Close member sidebar' }).click();
   await expect(memberSidebar).toBeHidden();
   await page.getByRole('button', { name: 'Open member sidebar' }).click();
-  await expect(memberSidebar.getByText('Online · 1')).toBeVisible();
+  await expect(memberSidebar.getByText('Online (1)')).toBeVisible();
   expect(officeConnections).toBe(1);
   const invitationMicrophoneRequests = await page.evaluate(
     () => (window as Window & { __microphoneTest: { requests: number } }).__microphoneTest.requests,
@@ -1139,11 +1152,11 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   });
   expect(interruptOfficeConnection).toBeDefined();
   await interruptOfficeConnection!();
-  await expect(page.getByText('Office connection closed.')).toBeVisible();
-  await expect(page.locator('.office-scene .office-map')).toHaveCount(0);
+  await expect(page.getByText('Reconnecting to live presence…')).toBeVisible();
+  await expect(page.locator('.office-scene .office-map')).toHaveCount(1);
   await expect.poll(() => officeEvents.filter((event) => event === 'disconnect').length).toBe(1);
-  await page.getByRole('button', { name: 'Join' }).click();
   await expect(page.getByText('1 person in the office')).toBeVisible();
+  await expect.poll(() => officeConnections).toBe(2);
   await expect(page.locator('.office-scene .office-map')).toHaveCount(1);
   await page.getByRole('link', { name: 'Messages' }).click();
   await expect(page.getByText('This arrived during the reconnect')).toBeVisible();
@@ -1301,9 +1314,44 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
       seats: [],
     })}]`,
   );
+  setOfficeStateVersion?.(1000000);
   await expect(page.getByText('2 people in the office')).toBeVisible();
-  await expect(memberSidebar.getByText('Online · 2')).toBeVisible();
-  await expect(memberSidebar.getByText('Offline · 0')).toBeVisible();
+  await expect(memberSidebar.getByText('Online (2)')).toBeVisible();
+  await expect(memberSidebar.getByText('Offline (0)')).toBeVisible();
+  const directoryParticipant = (id: string) => ({
+    participationId: id,
+    userId: id === participationId ? account.id : teammateParticipationId,
+    displayName: id === participationId ? account.displayName : 'Office Teammate',
+    appearance: { bodyId: 'commons-worker', paletteId: 'teal' },
+    position: officeManifest.spawn,
+    facing: 'south',
+    availability: 'available',
+    seatId: null,
+    lastProcessedInputSequence: 0,
+  });
+  const sendDirectorySnapshot = (version: number, includeTeammate: boolean) => {
+    setOfficeStateVersion?.(version);
+    officeServerSocket?.send(
+      `42/office,["world:snapshot",${JSON.stringify({
+        officeEpoch,
+        stateVersion: version,
+        serverTime: Date.now(),
+        participants: [participationId, ...(includeTeammate ? [teammateParticipationId] : [])].map(
+          directoryParticipant,
+        ),
+        seats: [],
+      })}]`,
+    );
+  };
+  sendDirectorySnapshot(1000001, false);
+  await expect(memberSidebar.getByText('Online (2)')).toBeVisible();
+  await expect(memberSidebar.getByText('Reconnecting', { exact: true })).toBeVisible();
+  await page.waitForTimeout(7100);
+  await expect(memberSidebar.getByText('Online (1)')).toBeVisible();
+  await expect(memberSidebar.getByText('Offline (1)')).toBeVisible();
+  sendDirectorySnapshot(1000002, true);
+  await expect(memberSidebar.getByText('Online (2)')).toBeVisible();
+  await expect(memberSidebar.getByText('Offline (0)')).toBeVisible();
   const waveId = 'f3e6c7c8-49f2-49ef-92b6-609ddca1c111';
   const sendWave = (eventId: string, recipientId = participationId) =>
     officeServerSocket?.send(

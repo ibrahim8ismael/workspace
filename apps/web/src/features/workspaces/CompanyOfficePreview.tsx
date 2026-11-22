@@ -41,6 +41,7 @@ import { MicrophonePermission } from '../office/microphone-permission';
 import { AppLink } from '../../routing/AppLink';
 import { companySettingsPath, officePath, type OfficePage } from '../../routing/routes';
 import { OfficeClient } from '../office/office-client';
+import { OfficeReconnectSupervisor } from '../office/office-reconnect-supervisor';
 import {
   latestMeetingConversation,
   latestProximityConversation,
@@ -53,7 +54,7 @@ import { RemoteAudioPlayback } from '../office/remote-audio-playback';
 import { effectsVolume } from '../../../footsteps';
 import { notifyReceivedWaves, WaveNotificationSound } from '../office/wave-notification';
 import { CompanyInvitationManager } from './CompanyInvitationManager';
-import { deriveWorkspacePresence } from './workspace-member-presence';
+import { WorkspacePeopleDirectory } from './WorkspacePeopleDirectory';
 import './office-preview.css';
 
 const CommonsScene = lazy(() =>
@@ -110,6 +111,16 @@ export function CompanyOfficePreview({
     [api, detail.id, detail.officeId],
   );
   const state = useSyncExternalStore(client.subscribe, client.getSnapshot, client.getSnapshot);
+  const reconnectSupervisor = useMemo(() => new OfficeReconnectSupervisor(client), [client]);
+  useEffect(() => {
+    reconnectSupervisor.start();
+    return () => reconnectSupervisor.stop();
+  }, [reconnectSupervisor]);
+  const reconnectState = useSyncExternalStore(
+    reconnectSupervisor.subscribe,
+    reconnectSupervisor.getSnapshot,
+    reconnectSupervisor.getSnapshot,
+  );
   const [waveSound] = useState(() => new WaveNotificationSound());
   const seenWaveNotifications = useRef(new Set<string>());
   const connected = state.status === 'connected';
@@ -167,6 +178,7 @@ export function CompanyOfficePreview({
   const [wavePending, setWavePending] = useState(false);
   const [meetingActionPending, setMeetingActionPending] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+  const [selectedOfflineMemberId, setSelectedOfflineMemberId] = useState<string | null>(null);
   const [memberActionMessage, setMemberActionMessage] = useState('');
   const [navigationTarget, setNavigationTarget] = useState<
     | {
@@ -183,6 +195,7 @@ export function CompanyOfficePreview({
   const officeMapRef = useRef<HTMLElement | null>(null);
   const closeMemberCard = useCallback((restoreFocus = true) => {
     setSelectedMemberId(null);
+    setSelectedOfflineMemberId(null);
     setMemberActionMessage('');
     setNavigationTarget(undefined);
     if (restoreFocus) requestAnimationFrame(() => selectionTrigger.current?.focus());
@@ -231,15 +244,53 @@ export function CompanyOfficePreview({
   const workspaceMembersLoading = !memberDirectoryCurrent || memberDirectory.loading;
   const workspaceMembersError = memberDirectoryCurrent ? memberDirectory.error : '';
   const section = routePage && routePage !== 'entry' ? routePage : localSection;
-  const selectedMember = selectedMemberId
-    ? (state.snapshot?.participants.find(
-        (participant) => participant.participationId === selectedMemberId,
-      ) ?? null)
+  const selectedMember = connected
+    ? selectedMemberId
+      ? (state.snapshot?.participants.find(
+          (participant) => participant.participationId === selectedMemberId,
+        ) ?? null)
+      : selectedOfflineMemberId
+        ? (state.snapshot?.participants.find(
+            (participant) => participant.userId === selectedOfflineMemberId,
+          ) ?? null)
+        : null
     : null;
+  const selectedOfflineMember =
+    selectedOfflineMemberId && !selectedMember
+      ? (workspaceMembers.find((member) => member.userId === selectedOfflineMemberId) ?? null)
+      : null;
+  const selectedDirectoryUserId =
+    selectedMember?.userId ?? selectedOfflineMember?.userId ?? selectedOfflineMemberId ?? null;
   useEffect(() => {
-    if (selectedMemberId)
+    if (selectedMemberId || selectedOfflineMemberId)
       memberCardRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
-  }, [selectedMemberId]);
+  }, [selectedMemberId, selectedOfflineMemberId]);
+  const selectOnlineMember = useCallback(
+    (
+      entry: { member: { userId: string }; participant: { participationId: string } },
+      trigger: HTMLButtonElement,
+    ) => {
+      selectionTrigger.current = trigger;
+      setSelectedOfflineMemberId(null);
+      setSelectedMemberId(entry.participant.participationId);
+      setMemberActionMessage('');
+    },
+    [],
+  );
+  const selectOfflineMember = useCallback(
+    (member: { userId: string }, trigger: HTMLButtonElement) => {
+      selectionTrigger.current = trigger;
+      setSelectedMemberId(null);
+      setSelectedOfflineMemberId(member.userId);
+      setMemberActionMessage('');
+    },
+    [],
+  );
+  const retryMemberDirectory = useCallback(() => setMemberRefresh((n) => n + 1), []);
+  const meetingParticipationIds = useMemo(
+    () => new Set((state.meetingZones?.zones ?? []).flatMap((zone) => zone.admittedMembers)),
+    [state.meetingZones],
+  );
   const setSection = (next: OfficeSection) => {
     if (next !== 'office') closeMemberCard(false);
     if (onNavigatePage) onNavigatePage(next);
@@ -573,7 +624,20 @@ export function CompanyOfficePreview({
     });
   }
 
-  if (!connected) {
+  const keepOfficeShell = Boolean(
+    !connected &&
+    state.status !== 'idle' &&
+    state.status !== 'ended' &&
+    routePage !== 'entry' &&
+    state.bootstrap &&
+    state.ready &&
+    state.snapshot,
+  );
+  const displayBootstrap = state.bootstrap;
+  const displayReady = state.ready;
+  const displaySnapshot = state.snapshot;
+
+  if (!connected && !keepOfficeShell) {
     return (
       <main className="office-prejoin" data-workspace-id={detail.id}>
         <a className="skip-link" href="#join-office-form">
@@ -687,10 +751,10 @@ export function CompanyOfficePreview({
   }
 
   if (
-    !state.bootstrap ||
-    !state.ready ||
-    !state.snapshot ||
-    state.snapshot.participants.some(
+    !displayBootstrap ||
+    !displayReady ||
+    !displaySnapshot ||
+    displaySnapshot.participants.some(
       (participant) => !sceneAvatarForAppearance(participant.appearance),
     )
   ) {
@@ -714,7 +778,9 @@ export function CompanyOfficePreview({
     );
   }
 
-  const { bootstrap, ready, snapshot } = state;
+  const bootstrap = displayBootstrap;
+  const ready = displayReady;
+  const snapshot = displaySnapshot;
   const mapId = bootstrap.manifest.mapId;
   const mapName = mapId === 'vivo' ? 'Vivo' : mapId === 'workspace' ? 'Workspace' : 'Commons';
   const participantCount = snapshot.participants.length;
@@ -834,8 +900,11 @@ export function CompanyOfficePreview({
             ? 'Stand up before using Go to.'
             : '';
   const noOverrides: Overrides = {};
-  const connectionMessage =
-    participantCount === 1 ? '1 person in the office' : `${participantCount} people in the office`;
+  const connectionMessage = connected
+    ? participantCount === 1
+      ? '1 person in the office'
+      : `${participantCount} people in the office`
+    : 'Reconnecting to the office';
   const waveNotice = state.waves
     .filter((wave) => wave.recipientParticipationId === ready.participationId)
     .at(-1);
@@ -1053,8 +1122,8 @@ export function CompanyOfficePreview({
             <>
               <div className="floor-selector">
                 <LayoutGrid size={15} />
-                <span>{mapName} office</span>
-                <span className="office-preview-badge">Office</span>
+                <span>Floor 1</span>
+                <span className="office-floor-map-name">{mapName}</span>
               </div>
               <p className="office-sidebar-summary">
                 Choose a room on the map and talk with your team.
@@ -1084,6 +1153,21 @@ export function CompanyOfficePreview({
                   : 'Company activity is not connected to an activity feed yet.'}
               </p>
             </div>
+          )}
+
+          {section === 'office' && (
+            <WorkspacePeopleDirectory
+              client={client}
+              members={workspaceMembers}
+              meetingParticipationIds={meetingParticipationIds}
+              selfId={account.id}
+              selectedUserId={selectedDirectoryUserId}
+              loading={workspaceMembersLoading}
+              error={workspaceMembersError}
+              onRetry={retryMemberDirectory}
+              onSelectOnline={selectOnlineMember}
+              onSelectOffline={selectOfflineMember}
+            />
           )}
 
           {section === 'office' && connected && state.snapshot && self ? (
@@ -1286,103 +1370,34 @@ export function CompanyOfficePreview({
               )}
             </div>
           ) : section === 'office' ? (
-            <p className="empty-small">Enter the office to update your status or use a seat.</p>
+            <p className="empty-small">
+              {keepOfficeShell
+                ? 'Office controls are paused while your connection is restored.'
+                : 'Enter the office to update your status or use a seat.'}
+            </p>
           ) : null}
-
-          {section === 'office' && (
-            <section className="office-people-list" aria-label="Space members" aria-live="polite">
-              <h2>Members</h2>
-              {workspaceMembersLoading && <p role="status">Loading members…</p>}
-              {workspaceMembersError && (
-                <p role="alert">
-                  {workspaceMembersError}{' '}
-                  <button
-                    type="button"
-                    className="link-button"
-                    onClick={() => setMemberRefresh((n) => n + 1)}
-                  >
-                    Retry
-                  </button>
-                </p>
-              )}
-              {!workspaceMembersLoading &&
-                !workspaceMembersError &&
-                (() => {
-                  const meetingMembers = new Set(
-                    (state.meetingZones?.zones ?? []).flatMap((zone) => zone.admittedMembers),
-                  );
-                  const presence = deriveWorkspacePresence(
-                    workspaceMembers,
-                    connected ? (snapshot?.participants ?? []) : [],
-                    meetingMembers,
-                  );
-                  return (
-                    <>
-                      <h3>Online · {presence.online.length}</h3>
-                      {presence.online.length ? (
-                        <ul>
-                          {presence.online.map(({ member, participant, inMeeting }) => {
-                            return (
-                              <li key={member.userId}>
-                                <button
-                                  type="button"
-                                  className="office-person-select"
-                                  disabled={participant.participationId === ready.participationId}
-                                  aria-pressed={selectedMemberId === participant.participationId}
-                                  onClick={(event) => {
-                                    selectionTrigger.current = event.currentTarget;
-                                    setSelectedMemberId(participant.participationId);
-                                    setMemberActionMessage('');
-                                  }}
-                                >
-                                  <span>
-                                    {member.displayName}
-                                    {member.userId === account.id ? ' (you)' : ''}
-                                  </span>
-                                  <small>
-                                    {participant.availability}
-                                    {inMeeting ? ' · In a meeting' : ''}
-                                  </small>
-                                </button>
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      ) : (
-                        <p>No one is online.</p>
-                      )}
-                      <h3>Offline · {presence.offline.length}</h3>
-                      {presence.offline.length ? (
-                        <ul>
-                          {presence.offline.map((member) => (
-                            <li className="office-person-offline" key={member.userId}>
-                              <span>
-                                {member.displayName}
-                                {member.userId === account.id ? ' (you)' : ''}
-                              </span>
-                              <small>Offline</small>
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p>No one is offline.</p>
-                      )}
-                    </>
-                  );
-                })()}
-            </section>
-          )}
 
           <div className="sidebar-foot">
             <span className={`connection ${connected ? 'connected' : ''}`}>
               <i />
               {connected
                 ? 'Connected'
-                : state.status === 'connecting'
-                  ? 'Connecting…'
-                  : 'Not connected'}
+                : keepOfficeShell
+                  ? 'Reconnecting…'
+                  : state.status === 'connecting'
+                    ? 'Connecting…'
+                    : 'Not connected'}
             </span>
             <span>{mapName}</span>
+            {!connected && keepOfficeShell && reconnectState.exhausted && (
+              <button
+                className="office-reconnect-button"
+                type="button"
+                onClick={() => reconnectSupervisor.retryNow()}
+              >
+                Retry
+              </button>
+            )}
           </div>
         </aside>
 
@@ -1558,6 +1573,44 @@ export function CompanyOfficePreview({
               </section>,
               document.body,
             )}
+          {section === 'office' &&
+            selectedOfflineMember &&
+            !selectedMember &&
+            typeof document !== 'undefined' &&
+            createPortal(
+              <section
+                ref={memberCardRef}
+                className="member-actions-card"
+                role="dialog"
+                aria-label="Member actions"
+                aria-modal="false"
+                onClick={(event) => event.stopPropagation()}
+                onPointerDown={(event) => event.stopPropagation()}
+              >
+                <div className="member-actions-header">
+                  <span className="member-actions-avatar" aria-hidden="true">
+                    {selectedOfflineMember.displayName.trim().charAt(0).toUpperCase() || '?'}
+                  </span>
+                  <div className="member-actions-identity">
+                    <strong>{selectedOfflineMember.displayName}</strong>
+                    <span className="member-actions-status">
+                      <i />
+                      Offline
+                    </span>
+                  </div>
+                  <button
+                    className="member-actions-close"
+                    type="button"
+                    aria-label="Close member actions"
+                    onClick={() => closeMemberCard()}
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+                <p className="member-actions-message">This person is offline.</p>
+              </section>,
+              document.body,
+            )}
           {section === 'office' ? (
             <>
               <div className="office-map-heading">
@@ -1568,7 +1621,7 @@ export function CompanyOfficePreview({
                 {mapId === 'vivo' ? (
                   <VivoScene
                     participants={sceneParticipants}
-                    selfId={connected ? (state.ready?.participationId ?? null) : null}
+                    selfId={connected ? ready.participationId : null}
                     objects={[]}
                     zoom={zoom}
                     simplified={false}
@@ -1578,8 +1631,8 @@ export function CompanyOfficePreview({
                     overrides={noOverrides}
                     authoritativeMovement
                     authoritativeRevision={{
-                      epoch: state.snapshot.officeEpoch,
-                      version: state.snapshot.stateVersion,
+                      epoch: snapshot.officeEpoch,
+                      version: snapshot.stateVersion,
                     }}
                     onMove={() => {}}
                     onMovementIntent={(dx, dy) => client.move(dx, dy)}
@@ -1591,6 +1644,7 @@ export function CompanyOfficePreview({
                       );
                       if (!member) return;
                       selectionTrigger.current = trigger ?? null;
+                      setSelectedOfflineMemberId(null);
                       setSelectedMemberId(id);
                       setMemberActionMessage('');
                     }}
@@ -1656,7 +1710,7 @@ export function CompanyOfficePreview({
                   <small>
                     {connected
                       ? 'Use arrow keys or WASD to move.'
-                      : 'Enter the office to move and interact.'}
+                      : 'Interactions are paused while your office connection is restored.'}
                   </small>
                   {connected && (
                     <small id="office-microphone-help" className="office-microphone-help">

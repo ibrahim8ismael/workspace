@@ -544,3 +544,59 @@ three protected `.env` image references, recreate API and Caddy/worker with the 
 overlays, then restart `media-guard` after API health so it negotiates a fresh policy epoch. Keep
 MongoDB, Redis, media-retirement and lease volumes and current authentication/revocation state. Do
 not restore the pre-deploy archive over the live database.
+
+## Workspace Admin and login rollout — 2026-11-22
+
+Deployed the tested workspace Admin RBAC and restored Sign-In design from local commit
+`3a68d1b30b9396fa2675e151275757a40bae3745`, based on `main` commit
+`78f798e1873347bb2c1fe10edd5902c04bae83e3`. The pilot API and web/Caddy images are tagged
+`gather-lite-api:3a68d1b-admin-20261122` and `gather-lite-web:3a68d1b-admin-20261122`. The protected
+deployment `.env` references those tags and remains mode `0600`.
+
+Before rollout, MongoDB archive `/tmp/gather-lite-pre-admin-20261122.archive.gz` was created from
+the live `gather_lite` database, verified with `gzip -t`, and stored mode `0600` (187,098 bytes).
+No database indexes or migrations were run. MongoDB, queue Redis, Mailpit, media guard, worker,
+and all named volumes were preserved. API and Caddy are healthy on the new images. LiveKit was
+recreated once during the Compose rollout because the initial command used the isolated checkout's
+bind-mount path; it is running again on the existing image and lease volume, and the media guard is
+healthy. No media policy or guard configuration was changed.
+
+Verified after rollout:
+
+- `https://gather.imtelak.com/login` returned HTTP 200 with `TLS_VERIFY=0`; the page serves the new
+  hashed JavaScript and CSS assets. The deployed login screenshot is `/tmp/gather-login-deployed.png`.
+- `/api/health/live` returned `{"status":"ok","service":"api"}`. The same-origin CSRF bootstrap
+  returned HTTP 200 when sent its required Origin, Fetch-Site and X-Requested-With headers. An
+  unauthenticated workspace role PATCH returned HTTP 401.
+- The deployment API and Caddy containers report healthy; MongoDB, Redis and the media guard remain
+  healthy. A post-deploy read-only query confirmed the specified account is active and verified,
+  with role `owner` in `bany` and `member` in `helloworld`.
+- `pnpm check` passed: 142 API tests passed, 2 skipped; all 87 web tests, 30 contracts tests, 42
+  world tests, 33 media-spike tests, lint, typechecks and production builds passed. `pnpm test:e2e`
+  passed 17 tests with 14 live-service scenarios skipped. The targeted auth-route and Owner/Admin
+  browser tests passed 15/15. The browser Admin journey uses the test API fixture; backend
+  authorization was exercised by the Mongo-backed API integration suite.
+
+The user confirmed `helloworld` as the target workspace. The account is already the Owner of `bany`
+(Owner cannot be changed to Admin) and is a Member of `helloworld`. Its current verified Owner is
+`test@test.com`. Promotion remains pending until that Owner uses the deployed role-management API
+with recent reauthentication. No live role was modified by database update or by the unauthenticated
+API probe.
+
+To restart or update the deployed API/web pair, use the runtime Compose files in the isolated
+checkout and keep the same overlays and environment file:
+
+```sh
+docker compose --env-file /tmp/gather-main-deploy/infra/deploy/.env \
+  -f /tmp/gather-admin-rbac/infra/deploy/compose.runtime.yaml \
+  -f /tmp/gather-admin-rbac/infra/deploy/compose.runtime.media-pilot.yaml \
+  -f /tmp/gather-admin-rbac/infra/deploy/compose.runtime.mailpit.yaml \
+  -f /tmp/gather-admin-rbac/infra/deploy/compose.runtime.proxy.yaml \
+  --profile media-pilot --profile mailpit up -d --no-build api caddy
+```
+
+For code rollback before any Admin role has been granted, restore only the image references in the
+protected `.env` to API `gather-lite-api:1b35b82-20261119` and web
+`gather-lite-web:78f798e-bany-sidebar-20261122`, then run the same command. Keep MongoDB, Redis,
+media-retirement/lease state and current authentication state; do not restore the archive over the
+live database. Do not roll back to the older API while any Admin memberships exist.

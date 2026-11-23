@@ -54,6 +54,7 @@ import { RemoteAudioPlayback } from '../office/remote-audio-playback';
 import { effectsVolume } from '../../../footsteps';
 import { notifyReceivedWaves, WaveNotificationSound } from '../office/wave-notification';
 import { CompanyInvitationManager } from './CompanyInvitationManager';
+import { workspaceRoleLabel } from './workspace-role';
 import { WorkspacePeopleDirectory } from './WorkspacePeopleDirectory';
 import './office-preview.css';
 
@@ -668,7 +669,7 @@ export function CompanyOfficePreview({
             </h1>
             <p className="office-prejoin-summary">
               {detail.memberCount} company {detail.memberCount === 1 ? 'member' : 'members'} ·{' '}
-              {detail.role === 'owner' ? 'Owner' : 'Member'}
+              {workspaceRoleLabel(detail.role)}
             </p>
             <form
               id="join-office-form"
@@ -1061,7 +1062,7 @@ export function CompanyOfficePreview({
           >
             <Settings2 size={19} />
           </AppLink>
-          {detail.role === 'owner' && (
+          {(detail.role === 'owner' || detail.role === 'admin') && (
             <AppLink
               to={officePath(detail.id, detail.officeId, 'invitations')}
               className={`nav-item${section === 'invitations' ? ' current' : ''}`}
@@ -1784,7 +1785,7 @@ export function CompanyOfficePreview({
                 )}
               </div>
             </>
-          ) : section === 'invitations' && detail.role === 'owner' ? (
+          ) : section === 'invitations' && (detail.role === 'owner' || detail.role === 'admin') ? (
             <div className="dashboard office-invitations">
               <CompanyInvitationManager
                 api={api}

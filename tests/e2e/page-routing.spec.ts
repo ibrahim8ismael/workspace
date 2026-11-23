@@ -171,31 +171,40 @@ test('auth screens keep a responsive step hierarchy, keyboard order, and actiona
     { width: 375, height: 720 },
   ]) {
     await page.setViewportSize(viewport);
-    for (const [path, stage] of [
-      ['/login', 'Account'],
-      ['/register', 'Account'],
-      ['/verify-email', 'Verify email'],
-      ['/resend-verification', 'Account'],
-      ['/forgot-password', 'Verify email'],
-      ['/reset-password', 'Secure account'],
+    for (const [path, stage, action] of [
+      ['/login', 'Account', 'Sign in'],
+      ['/register', 'Account', 'Create account'],
+      ['/verify-email?email=routing%40example.test', 'Verify email', 'Verify email'],
+      ['/resend-verification', 'Account', 'Resend code'],
+      ['/forgot-password', 'Verify email', 'Send reset code'],
+      ['/reset-password', 'Secure account', 'Reset password'],
     ]) {
       await page.goto(path!);
       const card = page.locator('.auth-flow-card');
       await expect(card).toBeVisible();
       await expect(page.locator('.auth-progress li.is-current')).toContainText(stage!);
+      await expect(card.getByRole('heading', { level: 1 })).toBeVisible();
+      await expect(card.getByRole('button', { name: action!, exact: true })).toBeVisible();
+      await expect(card.locator('form')).toHaveAttribute('aria-labelledby', 'auth-title');
+      await expect(card.locator('form input:required').first()).toBeVisible();
       const bounds = await card.boundingBox();
       expect(bounds).not.toBeNull();
       expect(bounds!.x).toBeGreaterThanOrEqual(0);
       expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport.width);
       expect(bounds!.y).toBeGreaterThanOrEqual(0);
       expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(viewport.height);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+        viewport.width,
+      );
     }
   }
 
   await page.goto('/login');
   await page.getByRole('heading', { name: 'Welcome back' }).focus();
   await page.keyboard.press('Tab');
-  await expect(page.getByLabel('Email', { exact: true })).toBeFocused();
+  const email = page.getByLabel('Email', { exact: true });
+  await expect(email).toBeFocused();
+  await expect(email).toHaveCSS('outline-style', 'solid');
   await page.route('**/api/auth/login', (route) =>
     route.fulfill({
       status: 401,
@@ -213,6 +222,10 @@ test('auth screens keep a responsive step hierarchy, keyboard order, and actiona
   await page.getByLabel('Password', { exact: true }).fill('a sufficiently long routing password');
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await expect(page.getByRole('alert')).toBeVisible();
+  await expect(page.locator('.auth-flow-card form')).toHaveAttribute(
+    'aria-describedby',
+    'auth-feedback',
+  );
 });
 test('protected links return to the intended company, survive refresh, and support Back/Forward', async ({
   page,

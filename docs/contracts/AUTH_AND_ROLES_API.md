@@ -47,7 +47,7 @@ Sessions start at 12 hours absolute/60 minutes idle. Passive heartbeat does not 
 
 ## Company routes and permissions
 
-A workspace is the current MVP company boundary. The owner accepted one company/workspace/office for MVP on 2026-11-08 (D12); a future organization hierarchy requires a separate scope/migration decision. Each membership has `owner` or `member` and independent active/revoked status. A customer owner has no platform operations privileges.
+A workspace is the current MVP company boundary. The owner accepted one company/workspace/office for MVP on 2026-11-08 (D12); a future organization hierarchy requires a separate scope/migration decision. Each membership has `owner`, `admin` or `member` and independent active/revoked status. Roles are scoped to one workspace; a customer owner has no platform operations privileges.
 
 | Method/path | Input | Permission / success |
 |---|---|---|
@@ -57,17 +57,20 @@ A workspace is the current MVP company boundary. The owner accepted one company/
 | PATCH `/workspaces/:workspaceId` | `name`, `expectedRevision` | Current owner; tenant-scoped rename with revision conflict and required idempotency key |
 | PATCH `/workspaces/:workspaceId/offices/:officeId/rooms` | `roomCount`, `expectedRevision` | Current owner; revision-safe generated map update; rejects while office participants are connected |
 | GET `/workspaces/:workspaceId/members` | UUID | Current member/owner; safe names, IDs and roles |
-| POST `/workspaces/:workspaceId/invitations` | `email` | Current owner; 201 safe invitation metadata; code sent through outbox |
-| GET `/workspaces/:workspaceId/invitations` | UUID | Current owner; safe metadata/status, never token/digest |
-| DELETE `/workspaces/:workspaceId/invitations/:invitationId` | JSON `{}` | Current owner; revoke pending invite |
+| PATCH `/workspaces/:workspaceId/members/:userId/role` | `role: admin\|member` | Current owner with recent password proof when granting Admin; audited, idempotent role transition |
+| POST `/workspaces/:workspaceId/invitations` | `email` | Current owner or admin; 201 safe invitation metadata; code sent through outbox |
+| GET `/workspaces/:workspaceId/invitations` | UUID | Current owner or admin; safe metadata/status, never token/digest |
+| DELETE `/workspaces/:workspaceId/invitations/:invitationId` | JSON `{}` | Current owner or admin; revoke pending invite |
 | POST `/invitations/accept` | `token` | Matching verified mailbox; atomically consume/create or reactivate membership |
-| DELETE `/workspaces/:workspaceId/members/:userId` | JSON `{}` | Current owner; owner cannot be removed through this path |
-| POST `/workspaces/:workspaceId/leave` | `{}` | Current member; owner transfers first |
-| POST `/workspaces/:workspaceId/transfer-ownership` | `userId` | Current owner, recent password proof, existing active verified member target |
+| DELETE `/workspaces/:workspaceId/members/:userId` | JSON `{}` | Owner removes Admins or Members; Admin removes ordinary Members; Owner and other Admins are protected |
+| POST `/workspaces/:workspaceId/leave` | `{}` | Current admin/member; Owner transfers first |
+| POST `/workspaces/:workspaceId/transfer-ownership` | `userId` | Current owner, recent password proof, existing active verified Admin or Member target |
+
+Both the HTTP guard and transactional service methods enforce roles. Owner-only workspace rename, office room configuration, role assignment and ownership transfer remain Owner-only. Admins cannot grant or manage Owner/Admin privileges. Ordinary Members can read workspace/member data, enter the office, use normal chat and leave; they cannot manage invitations or other memberships. Role changes rotate the target `membershipGrantId` and increment its policy version so previous office admission grants cannot be replayed.
 
 Workspace create/list DTO remains `{ id, name, slug, role, memberCount }`. Detail adds `officeId`, `revision`, and `roomCount`. Workspace rename preserves its stable ID and slug. Each generated room has a stable index-based ID; the count and deterministic geometry hash form the workspace map version. Existing static workspaces keep their current map until an owner changes the room count. Member projection excludes email/credentials. Unknown fields—including role/status/ownerId overrides—are rejected. UUID path substitution does not bypass tenant policy.
 
-Selected initial quotas: three owned companies per user, 30 members per company, 50 pending invites per company, seven-day invite expiry. Invitations do not reserve member slots. Counters and membership/owner changes share a transaction; retries do not increment twice. Ownership changes serialize on workspace policy and atomically change both membership roles and ownership counters. Room-count updates fence office admission, require an empty office runtime, and persist the new generated map version transactionally. A room-count update changes only the selected workspace. Static Vivo/Commons workspaces are preserved until an owner explicitly selects a room count.
+Selected initial quotas: three owned companies per user, 30 members per company, 50 pending invites per company, seven-day invite expiry. Invitations do not reserve member slots. Counters and membership/owner changes share a transaction; retries do not increment twice. Role and ownership changes serialize on workspace policy; role transitions are idempotent and audit the before/after role. Ownership changes atomically update membership roles and ownership counters. Room-count updates fence office admission, require an empty office runtime, and persist the new generated map version transactionally. A room-count update changes only the selected workspace. Static Vivo/Commons workspaces are preserved until an owner explicitly selects a room count.
 
 ## Persistence, indexes and delivery
 

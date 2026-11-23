@@ -7,7 +7,7 @@ Initial backend scope is now described by the [implemented auth/company API guid
 
 ## Responsibility
 
-Authorize a user inside one customer-company workspace with an owner or member role. The same global user may hold independent memberships in different companies; roles and access never carry between them.
+Authorize a user inside one customer-company workspace with an owner, admin or member role. The same global user may hold independent memberships in different companies; roles and access never carry between them.
 
 - Owning module: Memberships.
 - State location: MongoDB: memberships.
@@ -20,7 +20,7 @@ Source: [owning model](../../../apps/api/src/modules/tenancy/tenancy.models.ts).
 - `_id`
 - `workspaceId`
 - `userId`
-- `role (owner, member)`
+- `role (owner, admin, member)`
 - `status (active, revoked)`
 - `policyVersion`
 - `membershipGrantId` (optional on older rows)
@@ -37,7 +37,9 @@ Reactivation preserves _id and resets role, status and joinedAt. CP03 assigns a 
 
 ## Invariants and lifecycle
 
-- Unique (workspaceId, userId); role is server-assigned.
+- Unique (workspaceId, userId); role is server-assigned and scoped to that workspace.
+- Exactly one active Owner matches `workspaces.ownerId`; only that Owner can assign or revoke Admin privileges.
+- Role changes rotate `membershipGrantId` and increment membership/workspace policy versions so stale office admission authority cannot be replayed.
 - Revocation and privileged mutation must contend through real conditional policy writes, including across awaits.
 - Owner removal requires atomic transfer to an existing verified member.
 - Removal updates counters once and invalidates office/conversation/media access.
@@ -45,7 +47,8 @@ Reactivation preserves _id and resets role, status and joinedAt. CP03 assigns a 
 ## Interface outline
 
 - GET /api/workspaces/:workspaceId/members.
-- DELETE /api/workspaces/:workspaceId/members/:userId, POST .../leave and POST .../transfer-ownership are implemented with per-operation tenant/role rules.
+- PATCH /api/workspaces/:workspaceId/members/:userId/role is Owner-only and accepts only Admin or Member.
+- DELETE /api/workspaces/:workspaceId/members/:userId permits Owner removal of Admins/Members and Admin removal of ordinary Members. POST .../leave and POST .../transfer-ownership remain separately authorized.
 
 ## Planning question
 

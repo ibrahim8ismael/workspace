@@ -15,9 +15,9 @@ D12 is resolved for MVP: do not add a parent organization/multiple-workspace hie
 ## Company onboarding and administration
 
 - Company onboarding creates the customer tenant, initial owner and office transactionally. The owner selected verified-user self-service creation on 2026-11-08 (D13 onboarding). Existing engineering quotas still apply; full lifecycle/retention/export decisions remain open.
-- Owners invite verified team members, remove access and transfer ownership through current tenant policy. Owner/member remain the MVP roles; a separate company admin role is a future choice.
+- Owners manage workspace roles, invite verified team members, remove access and transfer ownership through current tenant policy. Workspace Admin is scoped to one company and cannot manage Owner/Admin privileges or Owner-only settings.
 - A global account can switch only among its current authorized companies. Invitations identify the intended company and recipient; accepting one cannot grant unrelated tenant access.
-- Platform operators are separate from customer owners. Company ownership grants no infrastructure or cross-company privileges. Any future support access requires explicit scoped authorization and an audit trail; no implicit impersonation or global support bypass.
+- Platform operators are separate from customer owners and admins. Customer workspace roles grant no infrastructure or cross-company privileges. Any future support access requires explicit scoped authorization and an audit trail; no implicit impersonation or global support bypass.
 - Company lifecycle needs active/suspended/closed semantics and offboarding/data-retention decisions. Account suspension and company suspension are distinct; define how company suspension removes office and media access before exposing the control.
 
 ## Isolation and service operation

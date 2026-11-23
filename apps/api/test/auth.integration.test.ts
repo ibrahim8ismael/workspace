@@ -31,6 +31,7 @@ import {
   workspaceResponseSchema,
   workspacesResponseSchema,
   membersResponseSchema,
+  updateWorkspaceMemberRoleResponseSchema,
   invitationResponseSchema,
   invitationsResponseSchema,
   sessionsResponseSchema,
@@ -1524,6 +1525,173 @@ describe('company roles and isolation', () => {
     const extended = await owner.client.send('post', '/api/auth/session/extend');
     status(extended, 200);
     extendSessionResponseSchema.parse(extended.body);
+  });
+
+  it('enforces workspace-scoped Owner and Admin permissions through real transactions', async () => {
+    const owner = await account();
+    const admin = await account();
+    const ordinary = await account();
+    const secondAdmin = await account();
+    const invited = await account();
+    const outsider = await account();
+    const workspaceId = await workspace(owner);
+    await join(owner, workspaceId, admin);
+    await join(owner, workspaceId, ordinary);
+    await join(owner, workspaceId, secondAdmin);
+    const memberPath = `/api/workspaces/${workspaceId}/members`;
+    const rolePath = (userId: string) => `${memberPath}/${userId}/role`;
+
+    const adminMembershipBefore = await tenancy.memberships
+      .findOne({ workspaceId, userId: admin.id, status: 'active' })
+      .lean();
+    expect(adminMembershipBefore?.role).toBe('member');
+    const ownerSession = await identities.sessions
+      .findOne({ userId: owner.id, revokedAt: null })
+      .lean();
+    expect(ownerSession).toBeTruthy();
+    await identities.sessions.updateOne(
+      { _id: ownerSession!._id },
+      { $set: { reauthenticatedAt: new Date(Date.now() - 11 * 60_000) } },
+    );
+    const needsReauthentication = await owner.client.send('patch', rolePath(admin.id), {
+      role: 'admin',
+    });
+    status(needsReauthentication, 403);
+    expect(needsReauthentication.body.error.code).toBe('reauthentication_required');
+
+    status(await owner.client.send('post', '/api/auth/reauthenticate', { password }), 200);
+    const promotionKey = randomUUID();
+    const promoted = await owner.client.send(
+      'patch',
+      rolePath(admin.id),
+      { role: 'admin' },
+      promotionKey,
+    );
+    status(promoted, 200);
+    expect(updateWorkspaceMemberRoleResponseSchema.parse(promoted.body)).toEqual({
+      member: { userId: admin.id, role: 'admin' },
+    });
+    expect(
+      await owner.client.send('patch', rolePath(admin.id), { role: 'admin' }, promotionKey),
+    ).toMatchObject({ body: promoted.body });
+    const adminMembership = await tenancy.memberships
+      .findOne({ workspaceId, userId: admin.id, status: 'active' })
+      .lean();
+    expect(adminMembership).toMatchObject({ role: 'admin' });
+    expect(adminMembership!.membershipGrantId).not.toBe(adminMembershipBefore!.membershipGrantId);
+    const workspaces = await admin.client.get('/api/workspaces');
+    status(workspaces, 200);
+    expect(workspaces.body.workspaces).toContainEqual(
+      expect.objectContaining({ id: workspaceId, role: 'admin' }),
+    );
+    const workspaceDetail = await admin.client.get(`/api/workspaces/${workspaceId}`);
+    status(workspaceDetail, 200);
+    expect(workspaceDetail.body.workspace.role).toBe('admin');
+    const members = await admin.client.get(memberPath);
+    status(members, 200);
+    expect(membersResponseSchema.parse(members.body).members).toContainEqual(
+      expect.objectContaining({ userId: admin.id, role: 'admin' }),
+    );
+    expect(
+      await app
+        .get(AuditService)
+        .model.findOne({
+          workspaceId,
+          actorId: owner.id,
+          targetId: admin.id,
+          action: 'membership.role_changed.member_to_admin',
+        })
+        .lean(),
+    ).toBeTruthy();
+
+    const forbiddenOwnerRole = await owner.client.send('patch', rolePath(ordinary.id), {
+      role: 'owner',
+    });
+    status(forbiddenOwnerRole, 400);
+    status(await admin.client.send('patch', rolePath(ordinary.id), { role: 'admin' }), 403);
+    status(await admin.client.send('patch', rolePath(admin.id), { role: 'member' }), 403);
+    status(
+      await admin.client.send('patch', `/api/workspaces/${workspaceId}`, {
+        name: 'Admin cannot rename',
+        expectedRevision: 0,
+      }),
+      403,
+    );
+    status(
+      await admin.client.send('post', `/api/workspaces/${workspaceId}/transfer-ownership`, {
+        userId: secondAdmin.id,
+      }),
+      403,
+    );
+
+    const revokeInvite = await admin.client.send(
+      'post',
+      `/api/workspaces/${workspaceId}/invitations`,
+      {
+        email: 'revoke-this@example.test',
+      },
+    );
+    status(revokeInvite, 201);
+    const pendingInvitations = await admin.client.get(`/api/workspaces/${workspaceId}/invitations`);
+    status(pendingInvitations, 200);
+    expect(invitationsResponseSchema.parse(pendingInvitations.body).invitations).toContainEqual(
+      expect.objectContaining({ id: revokeInvite.body.invitation.id, status: 'pending' }),
+    );
+    status(
+      await admin.client.send(
+        'delete',
+        `/api/workspaces/${workspaceId}/invitations/${revokeInvite.body.invitation.id}`,
+      ),
+      200,
+    );
+
+    const invitation = await invite(admin, workspaceId, invited);
+    status(
+      await invited.client.send('post', '/api/invitations/accept', { token: invitation.token }),
+      200,
+    );
+    const joined = await tenancy.memberships
+      .findOne({ workspaceId, userId: invited.id, status: 'active' })
+      .lean();
+    expect(joined?.role).toBe('member');
+    status(await owner.client.send('patch', rolePath(secondAdmin.id), { role: 'admin' }), 200);
+    status(await admin.client.send('delete', `${memberPath}/${secondAdmin.id}`), 403);
+    const ownerRemoval = await admin.client.send('delete', `${memberPath}/${owner.id}`);
+    status(ownerRemoval, 409);
+    expect(ownerRemoval.body.error.code).toBe('owner_transfer_required');
+    status(await ordinary.client.get(`/api/workspaces/${workspaceId}/invitations`), 403);
+    status(
+      await ordinary.client.send('post', `/api/workspaces/${workspaceId}/invitations`, {
+        email: 'unauthorized@example.test',
+      }),
+      403,
+    );
+    status(await ordinary.client.send('delete', `${memberPath}/${invited.id}`), 403);
+    status(await outsider.client.get(memberPath), 403);
+
+    const removed = await admin.client.send('delete', `${memberPath}/${invited.id}`);
+    status(removed, 200);
+    expect(
+      await tenancy.memberships.findOne({ workspaceId, userId: invited.id }).lean(),
+    ).toMatchObject({ status: 'revoked', role: 'member' });
+
+    const demotionKey = randomUUID();
+    const demoted = await owner.client.send(
+      'patch',
+      rolePath(admin.id),
+      { role: 'member' },
+      demotionKey,
+    );
+    status(demoted, 200);
+    expect(updateWorkspaceMemberRoleResponseSchema.parse(demoted.body).member.role).toBe('member');
+    status(await admin.client.get(`/api/workspaces/${workspaceId}/invitations`), 403);
+    status(await admin.client.send('post', `/api/workspaces/${workspaceId}/leave`, {}), 200);
+    const owners = await tenancy.memberships.countDocuments({
+      workspaceId,
+      status: 'active',
+      role: 'owner',
+    });
+    expect(owners).toBe(1);
   });
 
   it('creates versioned room-count layouts and applies owner-only revision-safe space settings', async () => {

@@ -4,6 +4,7 @@ import { Schema } from 'mongoose';
 import type { Connection, Model } from 'mongoose';
 import type { WorkspaceLayoutPlacementDto, WorkspaceLayoutPreset } from '@gather/contracts';
 import { registerModel, schemaOptions } from '../../platform/database/models.js';
+import type { WorkspaceRole } from '@gather/contracts';
 
 export interface WorkspaceRecord {
   _id: string;
@@ -20,7 +21,7 @@ export interface MembershipRecord {
   _id: string;
   workspaceId: string;
   userId: string;
-  role: 'owner' | 'member';
+  role: WorkspaceRole;
   status: 'active' | 'revoked';
   policyVersion: number;
   membershipGrantId?: string;
@@ -75,7 +76,7 @@ const membershipSchema = new Schema<MembershipRecord>(
     _id: { type: String, required: true },
     workspaceId: { type: String, required: true },
     userId: { type: String, required: true },
-    role: { type: String, enum: ['owner', 'member'], required: true },
+    role: { type: String, enum: ['owner', 'admin', 'member'], required: true },
     status: { type: String, enum: ['active', 'revoked'], required: true },
     policyVersion: { type: Number, required: true },
     membershipGrantId: { type: String, required: false },

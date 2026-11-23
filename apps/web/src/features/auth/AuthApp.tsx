@@ -9,7 +9,7 @@ import {
   officeAliasPath,
   type AuthView,
 } from '../../routing/routes';
-import { LayoutGrid } from 'lucide-react';
+import { ArrowRight, LayoutGrid, LockKeyhole } from 'lucide-react';
 import type { AccountDto, WorkspaceDto } from '@gather/contracts';
 import { PRODUCT_NAME } from '../../brand';
 import { ApiClient, ApiError } from '../../lib/api';
@@ -21,12 +21,13 @@ import { AccountSecurity } from './AccountSecurity';
 import { useSessionGuard } from './use-session-guard';
 import { useSessionExpiry } from './use-session-expiry';
 import './account.css';
+import './auth-flow.css';
 
 type AccountState = 'loading' | 'signed-out' | 'signed-in';
 
 function Shell({ children }: { children: ReactNode }) {
   return (
-    <main className="dashboard">
+    <main className="dashboard auth-page">
       <a
         className="skip-link"
         href="#main-content"
@@ -42,13 +43,17 @@ function Shell({ children }: { children: ReactNode }) {
       >
         Skip to main content
       </a>
-      <header className="dashboard-bar">
+      <header className="dashboard-bar auth-topbar">
         <a className="dashboard-brand" href="/" aria-label={`${PRODUCT_NAME} home`}>
           <span className="workspace-logo" aria-hidden="true">
             <LayoutGrid size={18} />
           </span>
           <strong>{PRODUCT_NAME}</strong>
         </a>
+        <div className="auth-topbar-note">
+          <LockKeyhole size={15} aria-hidden="true" />
+          Private team workspace
+        </div>
       </header>
       {children}
     </main>
@@ -67,6 +72,7 @@ function Field({
   inputMode,
   pattern,
   placeholder,
+  hint,
   onChange,
 }: {
   label: string;
@@ -80,12 +86,15 @@ function Field({
   inputMode?: 'numeric' | 'text';
   pattern?: string;
   placeholder?: string;
+  hint?: string;
   onChange?: (value: string) => void;
 }) {
+  const hintId = hint ? `auth-hint-${name}` : undefined;
   return (
-    <label>
-      <span>{label}</span>
+    <div className="auth-field">
+      <label htmlFor={`auth-input-${name}`}>{label}</label>
       <input
+        id={`auth-input-${name}`}
         name={name}
         type={type}
         spellCheck={type === 'email' || name === 'token' ? false : undefined}
@@ -97,9 +106,36 @@ function Field({
         inputMode={inputMode}
         pattern={pattern}
         placeholder={placeholder}
+        aria-describedby={hintId}
         onChange={onChange ? (event) => onChange(event.target.value) : undefined}
       />
-    </label>
+      {hint && (
+        <small className="auth-field-hint" id={hintId}>
+          {hint}
+        </small>
+      )}
+    </div>
+  );
+}
+
+function SubmitButton({
+  busy,
+  label,
+  pendingLabel,
+}: {
+  busy: boolean;
+  label: string;
+  pendingLabel: string;
+}) {
+  return (
+    <button className="primary enter-button" aria-busy={busy} disabled={busy} type="submit">
+      <span>{busy ? pendingLabel : label}</span>
+      {busy ? (
+        <span className="auth-spinner" aria-hidden="true" />
+      ) : (
+        <ArrowRight size={17} aria-hidden="true" />
+      )}
+    </button>
   );
 }
 
@@ -134,11 +170,17 @@ function AuthFlow({
   const [address, setAddress] = useState(query.get('email') ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState(
-    (location.state as { notice?: string } | null)?.notice ?? initialNotice,
+  const routeNotice = (location.state as { notice?: string } | null)?.notice ?? '';
+  const [notice, setNotice] = useState(routeNotice || initialNotice);
+  const [noticeKind, setNoticeKind] = useState<'success' | 'info'>(
+    routeNotice ? 'success' : 'info',
   );
   const generation = useRef(0);
   const titleRef = useRef<HTMLHeadingElement>(null);
+  const formA11yProps = {
+    'aria-labelledby': 'auth-title',
+    'aria-describedby': error || notice ? 'auth-feedback' : undefined,
+  };
 
   useEffect(() => {
     titleRef.current?.focus();
@@ -156,6 +198,7 @@ function AuthFlow({
     setBusy(false);
     setError('');
     setNotice(message);
+    setNoticeKind('success');
   }
 
   async function submit(
@@ -182,11 +225,12 @@ function AuthFlow({
   }
 
   let title = 'Welcome back';
-  let subtitle = 'Sign in to see your companies.';
+  let subtitle = 'Sign in to open your team’s shared workspace.';
   let form: ReactNode;
   if (view === 'login') {
     form = (
       <form
+        {...formA11yProps}
         onSubmit={(event) =>
           void submit(event, async (values, isCurrent) => {
             const account = await api.login({
@@ -206,16 +250,15 @@ function AuthFlow({
           onChange={setAddress}
         />
         <Field label="Password" name="password" type="password" autoComplete="current-password" />
-        <button className="primary enter-button" disabled={busy} type="submit">
-          {busy ? 'Signing in…' : 'Sign in'}
-        </button>
+        <SubmitButton busy={busy} label="Sign in" pendingLabel="Signing in…" />
       </form>
     );
   } else if (view === 'register') {
     title = 'Create your account';
-    subtitle = 'Enter your details to get started.';
+    subtitle = 'Set up your profile and we’ll guide you through email verification.';
     form = (
       <form
+        {...formA11yProps}
         onSubmit={(event) =>
           void submit(event, async (values, isCurrent) => {
             await api.register({
@@ -250,17 +293,16 @@ function AuthFlow({
           autoComplete="new-password"
           minLength={15}
           maxLength={128}
+          hint="Use at least 15 characters."
         />
-        <button className="primary enter-button" disabled={busy} type="submit">
-          {busy ? 'Creating account…' : 'Create account'}
-        </button>
+        <SubmitButton busy={busy} label="Create account" pendingLabel="Creating account…" />
       </form>
     );
   } else if (view === 'verify') {
     title = 'Verify your email';
     subtitle = 'Enter the code from your email. Your registration stays linked to this browser.';
     form = !address ? (
-      <div>
+      <div className="auth-recovery-guidance">
         <p>
           Open this page in the browser where you registered, or create an account to receive a
           code.
@@ -271,13 +313,15 @@ function AuthFlow({
       </div>
     ) : (
       <form
+        {...formA11yProps}
         onSubmit={(event) =>
           void submit(event, async (values, isCurrent) => {
             const account = await api.verify({
               email: query.get('email') ?? '',
               token: values.get('token'),
             });
-            if (isCurrent()) await onLogin(account);
+            if (!isCurrent()) return;
+            await onLogin(account);
           })
         }
       >
@@ -291,24 +335,22 @@ function AuthFlow({
           minLength={6}
           maxLength={43}
           inputMode="numeric"
+          hint="Enter your 6-digit code or open the secure link in your email."
         />
-        <button className="primary enter-button" disabled={busy} type="submit">
-          {busy ? 'Verifying…' : 'Verify email'}
-        </button>
-        <AppLink to={pathFor('resend')}>Request a new verification code</AppLink>
-        <AppLink to={pathFor('forgot')}>Recover an existing account</AppLink>
+        <SubmitButton busy={busy} label="Verify email" pendingLabel="Verifying…" />
       </form>
     );
   } else if (view === 'resend') {
     title = 'Resend verification';
-    subtitle = 'We will send a new code if the address needs verification.';
+    subtitle = 'We’ll send a fresh code if this account still needs verification.';
     form = (
       <form
+        {...formA11yProps}
         onSubmit={(event) =>
           void submit(event, async (values, isCurrent) => {
-            await api.resendVerification({ email: values.get('email') });
-            if (!isCurrent()) return;
             const email = String(values.get('email') ?? '');
+            await api.resendVerification({ email });
+            if (!isCurrent()) return;
             setAddress(email);
             move('verify', 'If the address can be verified, a new code will be sent.', email);
           })
@@ -322,17 +364,15 @@ function AuthFlow({
           defaultValue={address}
           onChange={setAddress}
         />
-        <button className="primary enter-button" disabled={busy} type="submit">
-          {busy ? 'Sending…' : 'Resend code'}
-        </button>
-        <AppLink to={pathFor('verify')}>Return to verification</AppLink>
+        <SubmitButton busy={busy} label="Resend code" pendingLabel="Sending…" />
       </form>
     );
   } else if (view === 'forgot') {
     title = 'Reset your password';
-    subtitle = 'Request a password reset code by email.';
+    subtitle = 'We’ll email a secure reset code if there’s an account for this address.';
     form = (
       <form
+        {...formA11yProps}
         onSubmit={(event) =>
           void submit(event, async (values, isCurrent) => {
             const email = String(values.get('email') ?? '');
@@ -351,16 +391,15 @@ function AuthFlow({
           defaultValue={address}
           onChange={setAddress}
         />
-        <button className="primary enter-button" disabled={busy} type="submit">
-          {busy ? 'Sending…' : 'Send reset code'}
-        </button>
+        <SubmitButton busy={busy} label="Send reset code" pendingLabel="Sending…" />
       </form>
     );
   } else {
     title = 'Choose a new password';
-    subtitle = 'Use the reset code from your email.';
+    subtitle = 'Enter the reset code and choose a new password for your account.';
     form = (
       <form
+        {...formA11yProps}
         onSubmit={(event) =>
           void submit(event, async (values, isCurrent) => {
             await api.resetPassword({
@@ -393,6 +432,7 @@ function AuthFlow({
           minLength={6}
           maxLength={43}
           inputMode="numeric"
+          hint="Enter your 6-digit code or open the secure link in your email."
         />
         <Field
           label="New password"
@@ -401,10 +441,9 @@ function AuthFlow({
           autoComplete="new-password"
           minLength={15}
           maxLength={128}
+          hint="Use at least 15 characters."
         />
-        <button className="primary enter-button" disabled={busy} type="submit">
-          {busy ? 'Updating…' : 'Reset password'}
-        </button>
+        <SubmitButton busy={busy} label="Reset password" pendingLabel="Updating…" />
       </form>
     );
   }
@@ -416,82 +455,149 @@ function AuthFlow({
           { label: 'Forgot password?', next: 'forgot' },
           { label: 'Resend verification code', next: 'resend' },
         ]
-      : [{ label: 'Back to sign in', next: 'login' }];
+      : view === 'verify'
+        ? [
+            { label: 'Request a new verification code', next: 'resend' },
+            { label: 'Recover an existing account', next: 'forgot' },
+            { label: 'Back to sign in', next: 'login' },
+          ]
+        : view === 'register'
+          ? [{ label: 'Already have an account? Sign in', next: 'login' }]
+          : view === 'resend'
+            ? [
+                { label: 'Enter a verification code', next: 'verify' },
+                { label: 'Back to sign in', next: 'login' },
+              ]
+            : view === 'forgot'
+              ? [
+                  { label: 'Back to sign in', next: 'login' },
+                  { label: 'Create an account', next: 'register' },
+                ]
+              : [
+                  { label: 'Request another reset code', next: 'forgot' },
+                  { label: 'Back to sign in', next: 'login' },
+                ];
   const activeStage = view === 'verify' ? 2 : view === 'reset' ? 3 : view === 'forgot' ? 2 : 1;
   const authStages = ['Account', 'Verify email', 'Secure account'];
 
   return (
     <Shell>
-      <div className="dashboard-body">
-        <div className="dashboard-empty">
-          <p>Sign in to see your companies.</p>
-        </div>
-      </div>
-      <div className="modal-backdrop welcome-backdrop">
-        <section
-          id="main-content"
-          className="modal welcome-modal auth-flow-card"
-          data-auth-view={view}
-          tabIndex={-1}
-          aria-labelledby="auth-title"
-        >
-          <div className="welcome-art" aria-hidden="true">
-            <span className="workspace-logo">
-              <LayoutGrid size={22} />
-            </span>
-          </div>
-          <span className="eyebrow">OPEN OFFICE</span>
-          <ol className="auth-progress" aria-label="Account access steps">
-            {authStages.map((stage, index) => (
-              <li
-                key={stage}
-                className={
-                  index + 1 === activeStage
-                    ? 'is-current'
-                    : index + 1 < activeStage
-                      ? 'is-complete'
-                      : ''
-                }
-              >
-                <span aria-hidden="true">{index + 1 < activeStage ? '✓' : index + 1}</span>
-                {stage}
-              </li>
-            ))}
-          </ol>
-          <h1 id="auth-title" ref={titleRef} tabIndex={-1}>
-            {title}
-          </h1>
-          <p>{subtitle}</p>
-          {error && (
-            <p className="form-error" role="alert">
-              {error}
-            </p>
-          )}
-          {notice && (
-            <p className="auth-signed" role="status">
-              {notice}
-            </p>
-          )}
-          <div key={view} className="auth-form" aria-busy={busy}>
-            {form}
-          </div>
-          <nav className="auth-related-links" aria-label="Account options">
-            {links.map(({ label, next }, index) => (
-              <span key={next}>
-                {index > 0 && ' · '}
-                <AppLink className="link-button" disabled={busy} to={pathFor(next)}>
-                  {label}
-                </AppLink>
-              </span>
-            ))}
-            {initialRetry && view === 'login' && (
-              <p>
-                <button className="link-button" disabled={busy} type="button" onClick={onRetry}>
-                  Retry connection
-                </button>
+      <div className="auth-stage">
+        <section className="auth-layout" aria-label="Gather Lite account access">
+          <aside className="auth-story" aria-label="A shared office for your team">
+            <div className="auth-story-topline">
+              <span className="auth-story-spark" aria-hidden="true" />A calmer way to work together
+            </div>
+            <div className="auth-story-copy">
+              <h2>
+                Make room for
+                <br />
+                <em>good work.</em>
+              </h2>
+              <p>Bring your people into one shared office, wherever the day takes them.</p>
+            </div>
+            <div className="auth-room-illustration" aria-hidden="true">
+              <div className="auth-room-orbit auth-room-orbit-one" />
+              <div className="auth-room-orbit auth-room-orbit-two" />
+              <div className="auth-room-grid" />
+              <span className="auth-room-avatar auth-room-avatar-one">AM</span>
+              <span className="auth-room-avatar auth-room-avatar-two">JL</span>
+              <span className="auth-room-avatar auth-room-avatar-three">SK</span>
+              <div className="auth-room-note">
+                <span className="auth-room-note-icon">
+                  <LayoutGrid size={16} />
+                </span>
+                <span>
+                  <strong>Your team, together</strong>
+                  <small>One shared place to connect</small>
+                </span>
+                <span className="auth-room-note-dot" />
+              </div>
+            </div>
+            <div className="auth-story-footer">
+              <span>{PRODUCT_NAME.toUpperCase()}</span>
+              <span>Work feels better together.</span>
+            </div>
+          </aside>
+
+          <section
+            id="main-content"
+            className="auth-flow-card auth-form-panel"
+            data-auth-view={view}
+            tabIndex={-1}
+            aria-labelledby="auth-title"
+          >
+            <div className="auth-form-panel-inner">
+              <div className="auth-step-caption">
+                <span>ACCOUNT ACCESS</span>
+                <span>
+                  Step {activeStage} <i aria-hidden="true">/</i> 3
+                </span>
+              </div>
+              <ol className="auth-progress" aria-label="Account access steps">
+                {authStages.map((stage, index) => {
+                  const current = index + 1 === activeStage;
+                  const complete = index + 1 < activeStage;
+                  return (
+                    <li
+                      key={stage}
+                      className={current ? 'is-current' : complete ? 'is-complete' : ''}
+                      aria-current={current ? 'step' : undefined}
+                    >
+                      <span aria-hidden="true">{complete ? '✓' : index + 1}</span>
+                      {stage}
+                    </li>
+                  );
+                })}
+              </ol>
+              <h1 id="auth-title" ref={titleRef} tabIndex={-1}>
+                {title}
+              </h1>
+              <p className="auth-subtitle">{subtitle}</p>
+              {error && (
+                <div id="auth-feedback" className="auth-feedback is-error" role="alert">
+                  <span className="auth-feedback-mark" aria-hidden="true">
+                    !
+                  </span>
+                  <span>{error}</span>
+                </div>
+              )}
+              {!error && notice && (
+                <div
+                  id="auth-feedback"
+                  className={`auth-feedback is-${noticeKind}`}
+                  role="status"
+                  aria-live="polite"
+                >
+                  <span className="auth-feedback-mark" aria-hidden="true">
+                    {noticeKind === 'success' ? '✓' : 'i'}
+                  </span>
+                  <span>{notice}</span>
+                </div>
+              )}
+              <div key={view} className="auth-form" aria-busy={busy}>
+                {form}
+              </div>
+              <nav className="auth-related-links" aria-label="Related account steps">
+                {links.map(({ label, next }) => (
+                  <AppLink key={next} className="link-button" disabled={busy} to={pathFor(next)}>
+                    {label}
+                  </AppLink>
+                ))}
+              </nav>
+              {initialRetry && view === 'login' && (
+                <div className="auth-retry-note">
+                  <span>Having trouble connecting?</span>
+                  <button disabled={busy} type="button" onClick={onRetry}>
+                    Retry connection
+                  </button>
+                </div>
+              )}
+              <p className="auth-panel-footnote">
+                Sign in to reach the spaces your team has shared with you.
               </p>
-            )}
-          </nav>
+            </div>
+          </section>
         </section>
       </div>
     </Shell>

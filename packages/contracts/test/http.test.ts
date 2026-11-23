@@ -7,6 +7,8 @@ import {
   sessionsResponseSchema,
   workspaceResponseSchema,
   invitationsResponseSchema,
+  updateWorkspaceMemberRoleSchema,
+  updateWorkspaceMemberRoleResponseSchema,
 } from '../dist/index.js';
 
 const id = '11111111-1111-4111-8111-111111111111';
@@ -54,15 +56,32 @@ describe('existing HTTP public projections', () => {
     expect(workspaceResponseSchema.safeParse({ workspace }).success).toBe(true);
     expect(
       workspaceResponseSchema.safeParse({ workspace: { ...workspace, role: 'admin' } }).success,
-    ).toBe(false);
+    ).toBe(true);
     expect(
       workspaceResponseSchema.safeParse({ workspace: { ...workspace, memberCount: 1.5 } }).success,
     ).toBe(false);
     const member = { userId: id, displayName: 'Person', role: 'member', joinedAt: date };
     expect(membersResponseSchema.safeParse({ members: [member] }).success).toBe(true);
     expect(
+      membersResponseSchema.safeParse({ members: [{ ...member, role: 'admin' }] }).success,
+    ).toBe(true);
+    expect(
       membersResponseSchema.safeParse({ members: [{ ...member, email: account.email }] }).success,
     ).toBe(false);
+  });
+
+  it('limits role assignments to workspace admins and returns a safe updated member', () => {
+    expect(updateWorkspaceMemberRoleSchema.safeParse({ role: 'admin' }).success).toBe(true);
+    expect(updateWorkspaceMemberRoleSchema.safeParse({ role: 'member' }).success).toBe(true);
+    expect(updateWorkspaceMemberRoleSchema.safeParse({ role: 'owner' }).success).toBe(false);
+    expect(updateWorkspaceMemberRoleSchema.safeParse({ role: 'admin', ownerId: id }).success).toBe(
+      false,
+    );
+    expect(
+      updateWorkspaceMemberRoleResponseSchema.safeParse({
+        member: { userId: id, role: 'admin' },
+      }).success,
+    ).toBe(true);
   });
 
   it('rejects invitation secrets in metadata and impossible statuses', () => {

@@ -58,6 +58,9 @@ export const memberDtoSchema = z
     joinedAt: z.iso.datetime(),
   })
   .strict();
+export const updateWorkspaceMemberRoleResponseSchema = z
+  .object({ member: z.object({ userId: idSchema, role: workspaceRoleSchema }).strict() })
+  .strict();
 export const membersResponseSchema = z
   .object({ members: z.array(memberDtoSchema).max(30) })
   .strict();

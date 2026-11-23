@@ -2,12 +2,15 @@ import { Injectable, Inject, SetMetadata } from '@nestjs/common';
 import type { CanActivate, ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { idSchema } from '@gather/contracts';
+import type { WorkspaceRole } from '@gather/contracts';
 import { TenancyService } from '../tenancy.service.js';
 import { actor } from '../../identity/sessions/session.service.js';
 import type { AuthRequest } from '../../identity/security/guards.js';
 import { invariant } from '../../../platform/http/errors.js';
 
 export const OwnerOnly = () => SetMetadata('gather:owner', true);
+export const WorkspaceRoles = (...roles: WorkspaceRole[]) =>
+  SetMetadata('gather:workspace-roles', roles);
 @Injectable()
 export class WorkspaceGuard implements CanActivate {
   constructor(
@@ -23,7 +26,15 @@ export class WorkspaceGuard implements CanActivate {
         context.getHandler(),
         context.getClass(),
       ]) ?? false;
-    await this.tenancy.access(actor(request.authContext), id.data, owner);
+    const roles = this.reflector.getAllAndOverride<WorkspaceRole[]>('gather:workspace-roles', [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    await this.tenancy.access(
+      actor(request.authContext),
+      id.data,
+      owner ? ['owner'] : (roles ?? ['owner', 'admin', 'member']),
+    );
     return true;
   }
 }

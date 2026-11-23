@@ -15,6 +15,7 @@ import { messageForApi } from '../auth/messages';
 import { AppLink } from '../../routing/AppLink';
 import { companyPath, officeAliasPath } from '../../routing/routes';
 import { PRODUCT_NAME } from '../../brand';
+import { workspaceRoleLabel } from './workspace-role';
 
 type Props = {
   invitationRoute?: boolean;
@@ -387,7 +388,7 @@ export function WorkspaceHome({
                     </span>
                     <div>
                       <strong>{workspace.name}</strong>
-                      <span>{workspace.role === 'owner' ? 'Owner' : 'Member'}</span>
+                      <span>{workspaceRoleLabel(workspace.role)}</span>
                     </div>
                   </div>
                   <span className="dashboard-company-members">

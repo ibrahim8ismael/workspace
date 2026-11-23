@@ -19,6 +19,7 @@ import {
   idSchema,
   emptyBodySchema,
   renameWorkspaceSchema,
+  updateWorkspaceMemberRoleSchema,
 } from '@gather/contracts';
 import type { CreateWorkspaceInput } from '@gather/contracts';
 import type { AuthRequest } from '../identity/security/guards.js';
@@ -27,7 +28,7 @@ import { AbuseService } from '../identity/security/abuse.service.js';
 import { ValidationPipe } from '../../platform/http/validation.pipe.js';
 import { invariant } from '../../platform/http/errors.js';
 import { TenancyService } from './tenancy.service.js';
-import { WorkspaceGuard, OwnerOnly } from './policies/workspace.guard.js';
+import { WorkspaceGuard, OwnerOnly, WorkspaceRoles } from './policies/workspace.guard.js';
 
 function key(request: AuthRequest) {
   const value = request.get('idempotency-key');
@@ -83,13 +84,15 @@ export class WorkspaceController {
   ) {
     return this.tenancy.members(actor(request.authContext), id);
   }
-  @OwnerOnly() @Get('invitations') invitations(
+  @WorkspaceRoles('owner', 'admin')
+  @Get('invitations')
+  invitations(
     @Param('workspaceId', new ValidationPipe(idSchema)) id: string,
     @Req() request: AuthRequest,
   ) {
     return this.tenancy.invitations(actor(request.authContext), id);
   }
-  @OwnerOnly()
+  @WorkspaceRoles('owner', 'admin')
   @Post('invitations')
   async invite(
     @Param('workspaceId', new ValidationPipe(idSchema)) id: string,
@@ -100,7 +103,7 @@ export class WorkspaceController {
     await this.abuse.consume('invitation-create', id, 30, 3600_000);
     return this.tenancy.invite(context, id, body.email, key(request));
   }
-  @OwnerOnly()
+  @WorkspaceRoles('owner', 'admin')
   @Delete('invitations/:invitationId')
   revokeInvitation(
     @Param('workspaceId', new ValidationPipe(idSchema)) id: string,
@@ -114,7 +117,7 @@ export class WorkspaceController {
       key(request),
     );
   }
-  @OwnerOnly()
+  @WorkspaceRoles('owner', 'admin')
   @Delete('members/:userId')
   remove(
     @Param('workspaceId', new ValidationPipe(idSchema)) id: string,
@@ -122,6 +125,22 @@ export class WorkspaceController {
     @Req() request: AuthRequest,
   ) {
     return this.tenancy.remove(actor(request.authContext), id, userId, key(request));
+  }
+  @OwnerOnly()
+  @Patch('members/:userId/role')
+  updateMemberRole(
+    @Param('workspaceId', new ValidationPipe(idSchema)) id: string,
+    @Param('userId', new ValidationPipe(idSchema)) userId: string,
+    @Body(new ValidationPipe(updateWorkspaceMemberRoleSchema)) body: { role: 'admin' | 'member' },
+    @Req() request: AuthRequest,
+  ) {
+    return this.tenancy.updateMemberRole(
+      actor(request.authContext),
+      id,
+      userId,
+      body.role,
+      key(request),
+    );
   }
   @Post('leave')
   @HttpCode(200)

@@ -42,7 +42,10 @@ export const changePasswordSchema = z
   .strict();
 export const reauthenticateSchema = z.object({ password: z.string().min(1).max(128) }).strict();
 export const emptyBodySchema = z.object({}).strict();
-export const workspaceRoleSchema = z.enum(['owner', 'member']);
+export const workspaceRoleSchema = z.enum(['owner', 'admin', 'member']);
+export const workspaceMemberRoleSchema = z.enum(['admin', 'member']);
+export type WorkspaceRole = z.infer<typeof workspaceRoleSchema>;
+export type WorkspaceMemberRole = z.infer<typeof workspaceMemberRoleSchema>;
 export const workspaceLayoutPresetSchema = z.enum([
   'studio-orthogonal',
   'studio',
@@ -106,6 +109,9 @@ export const updateWorkspaceRoomCountResponseSchema = z
 export const createInvitationSchema = z.object({ email: emailSchema }).strict();
 export const acceptInvitationSchema = z.object({ token: invitationCodeSchema }).strict();
 export const transferOwnershipSchema = z.object({ userId: idSchema }).strict();
+export const updateWorkspaceMemberRoleSchema = z
+  .object({ role: workspaceMemberRoleSchema })
+  .strict();
 export interface AccountDto {
   id: string;
   email: string;
@@ -116,6 +122,6 @@ export interface WorkspaceDto {
   id: string;
   name: string;
   slug: string;
-  role: 'owner' | 'member';
+  role: WorkspaceRole;
   memberCount: number;
 }

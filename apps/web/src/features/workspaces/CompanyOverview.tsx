@@ -10,6 +10,7 @@ import { messageForApi } from '../auth/messages';
 import { canOpenOfficePreview } from './company-overview-view';
 import { PRODUCT_NAME } from '../../brand';
 import { SpaceSettings } from './SpaceSettings';
+import { workspaceRoleLabel } from './workspace-role';
 
 const LazyCompanyOfficePreview = lazy(() =>
   import('./CompanyOfficePreview').then(({ CompanyOfficePreview }) => ({
@@ -161,7 +162,7 @@ export function CompanyOverview({
   if (
     detail &&
     ((requestedOfficeId && requestedOfficeId !== detail.officeId) ||
-      (page === 'invitations' && detail.role !== 'owner'))
+      (page === 'invitations' && !['owner', 'admin'].includes(detail.role)))
   ) {
     return (
       <main className="dashboard">
@@ -265,7 +266,7 @@ export function CompanyOverview({
         {detail && page === 'overview' && (
           <section className="dashboard-info-panel">
             <p>
-              {detail.memberCount} company members · {detail.role === 'owner' ? 'Owner' : 'Member'}
+              {detail.memberCount} company members · {workspaceRoleLabel(detail.role)}
             </p>
             <AppLink
               className="dashboard-create"

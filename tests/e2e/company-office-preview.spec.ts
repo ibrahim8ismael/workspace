@@ -86,6 +86,7 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   let authenticated = false;
   let workspaceName = workspace.name;
   let workspaceRevision = 0;
+  let conflictNextRename = false;
   let workspaceRoomCount = 5;
   const invitation = {
     id: '16ab92cd-cbd4-44b6-b827-196ae6044937',
@@ -159,6 +160,21 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
       expect(request.headers()['idempotency-key']).toBeTruthy();
       const body = request.postDataJSON() as { name: string; expectedRevision: number };
       expect(body.expectedRevision).toBe(workspaceRevision);
+      if (conflictNextRename) {
+        conflictNextRename = false;
+        workspaceName = 'E2E Updated Elsewhere';
+        workspaceRevision += 1;
+        return json(
+          {
+            error: {
+              code: 'revision_conflict',
+              message: 'revision_conflict',
+              requestId,
+            },
+          },
+          409,
+        );
+      }
       workspaceName = body.name;
       workspaceRevision += 1;
       return json({
@@ -1421,6 +1437,14 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   ).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Employee invitations' })).toBeVisible();
   await page.getByLabel('Display name').fill('E2E Updated Company');
+  await page.getByRole('button', { name: 'Save name' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Space name updated.' })).toBeVisible();
+  conflictNextRename = true;
+  await page.getByLabel('Display name').fill('E2E Conflict Draft');
+  await page.getByRole('button', { name: 'Save name' }).click();
+  await expect(page.getByRole('alert')).toContainText('Your draft is preserved');
+  await expect(page.getByLabel('Display name')).toHaveValue('E2E Conflict Draft');
+  await expect(page.getByRole('heading', { name: 'E2E Updated Elsewhere' })).toBeVisible();
   await page.getByRole('button', { name: 'Save name' }).click();
   await expect(page.getByRole('status').filter({ hasText: 'Space name updated.' })).toBeVisible();
   await page.getByLabel('Meeting room count').fill('20');

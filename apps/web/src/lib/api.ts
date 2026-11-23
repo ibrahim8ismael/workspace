@@ -10,6 +10,7 @@ import {
   workspaceLayoutSnapshotSchema,
   saveWorkspaceLayoutSchema,
   publishWorkspaceLayoutSchema,
+  updateWorkspaceMemberRoleSchema,
   createInvitationSchema,
   csrfResponseSchema,
   emptyBodySchema,
@@ -32,6 +33,7 @@ import {
   reauthenticateSchema,
   renameWorkspaceResponseSchema,
   updateWorkspaceRoomCountResponseSchema,
+  updateWorkspaceMemberRoleResponseSchema,
   resetPasswordSchema,
   sendOfficeMessageSchema,
   sessionDtoSchema,
@@ -389,6 +391,27 @@ export class ApiClient {
       key,
       signal,
       'DELETE',
+    );
+  }
+
+  updateWorkspaceMemberRole(
+    workspaceId: string,
+    userId: string,
+    input: unknown,
+    key: string,
+    signal?: AbortSignal,
+  ) {
+    const workspace = idSchema.safeParse(workspaceId);
+    const user = idSchema.safeParse(userId);
+    if (!workspace.success || !user.success) throw new ApiError('validation_failed', 400);
+    return this.mutate(
+      `/workspaces/${encodeURIComponent(workspace.data)}/members/${encodeURIComponent(user.data)}/role`,
+      input,
+      updateWorkspaceMemberRoleSchema,
+      updateWorkspaceMemberRoleResponseSchema,
+      key,
+      signal,
+      'PATCH',
     );
   }
 

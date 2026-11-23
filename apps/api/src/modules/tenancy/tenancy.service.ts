@@ -7,6 +7,8 @@ import type {
   PublishWorkspaceLayoutInput,
   SaveWorkspaceLayoutInput,
   WorkspaceDto,
+  WorkspaceMemberRole,
+  WorkspaceRole,
   WorkspaceLayoutSnapshot,
 } from '@gather/contracts';
 import {
@@ -89,13 +91,17 @@ export class TenancyService {
     @Inject(OutboxService) private readonly outbox: OutboxService,
     @Inject(AuditService) private readonly audit: AuditService,
   ) {}
-  async access(context: ActorContext, workspaceId: string, owner = false) {
+  async access(
+    context: ActorContext,
+    workspaceId: string,
+    roles: readonly WorkspaceRole[] = ['owner', 'admin', 'member'],
+  ) {
     const member = await this.models.memberships
       .findOne({
         workspaceId,
         userId: context.user._id,
         status: 'active',
-        ...(owner ? { role: 'owner' } : {}),
+        role: { $in: roles },
       })
       .read('primary')
       .readConcern('linearizable')
@@ -106,16 +112,26 @@ export class TenancyService {
       .findOne({
         _id: workspaceId,
         status: 'active',
-        ...(owner ? { ownerId: context.user._id } : {}),
+        ...(roles.length === 1 && roles[0] === 'owner' ? { ownerId: context.user._id } : {}),
       })
       .read('primary')
       .readConcern('linearizable')
       .maxTimeMS(2000)
       .lean();
     invariant(workspace, 403, 'workspace_unavailable');
+    invariant(
+      (member.role === 'owner') === (workspace.ownerId === context.user._id),
+      403,
+      'workspace_unavailable',
+    );
     return { workspace, member };
   }
-  async lockAccess(context: ActorContext, id: string, tx: ClientSession, owner = false) {
+  async lockAccess(
+    context: ActorContext,
+    id: string,
+    tx: ClientSession,
+    roles: readonly WorkspaceRole[] = ['owner', 'admin', 'member'],
+  ) {
     await this.sessions.lockActor(context, tx);
     const member = await this.models.memberships
       .findOneAndUpdate(
@@ -123,7 +139,7 @@ export class TenancyService {
           workspaceId: id,
           userId: context.user._id,
           status: 'active',
-          ...(owner ? { role: 'owner' } : {}),
+          role: { $in: roles },
         },
         { $inc: { policyVersion: 1 } },
         { session: tx, returnDocument: 'after' },
@@ -132,12 +148,21 @@ export class TenancyService {
     invariant(member, 403, 'membership_required');
     const workspace = await this.models.workspaces
       .findOneAndUpdate(
-        { _id: id, status: 'active', ...(owner ? { ownerId: context.user._id } : {}) },
+        {
+          _id: id,
+          status: 'active',
+          ...(roles.length === 1 && roles[0] === 'owner' ? { ownerId: context.user._id } : {}),
+        },
         { $inc: { policyVersion: 1 } },
         { session: tx, returnDocument: 'after' },
       )
       .lean();
     invariant(workspace, 403, 'workspace_unavailable');
+    invariant(
+      (member.role === 'owner') === (workspace.ownerId === context.user._id),
+      403,
+      'workspace_unavailable',
+    );
     return { workspace, member };
   }
   private async operation<T>(
@@ -276,7 +301,7 @@ export class TenancyService {
     key: string,
   ) {
     return this.db.transaction(async (tx) => {
-      const { workspace } = await this.lockAccess(context, id, tx, true);
+      const { workspace } = await this.lockAccess(context, id, tx, ['owner']);
       return this.operation(context, `workspace.rename:${id}`, key, input, tx, async () => {
         const revision = workspace.revision ?? 0;
         invariant(revision === input.expectedRevision, 409, 'revision_conflict');
@@ -307,7 +332,7 @@ export class TenancyService {
     key: string,
   ) {
     return this.db.transaction(async (tx) => {
-      const { workspace } = await this.lockAccess(context, id, tx, true);
+      const { workspace } = await this.lockAccess(context, id, tx, ['owner']);
       return this.operation(context, `workspace.rooms:${id}`, key, input, tx, async () => {
         const revision = workspace.revision ?? 0;
         invariant(revision === input.expectedRevision, 409, 'revision_conflict');
@@ -348,7 +373,7 @@ export class TenancyService {
   }
   async getWorkspaceLayout(context: ActorContext, workspaceId: string, officeId: string) {
     return this.db.transaction(async (tx) => {
-      await this.lockAccess(context, workspaceId, tx, true);
+      await this.lockAccess(context, workspaceId, tx, ['owner']);
       return layoutSnapshot(await this.findOfficeForLayout(workspaceId, officeId, tx));
     });
   }
@@ -361,7 +386,7 @@ export class TenancyService {
     key: string,
   ) {
     return this.db.transaction(async (tx) => {
-      await this.lockAccess(context, workspaceId, tx, true);
+      await this.lockAccess(context, workspaceId, tx, ['owner']);
       return this.operation(
         context,
         `workspace.layout.save:${workspaceId}:${officeId}`,
@@ -429,7 +454,7 @@ export class TenancyService {
     key: string,
   ) {
     return this.db.transaction(async (tx) => {
-      await this.lockAccess(context, workspaceId, tx, true);
+      await this.lockAccess(context, workspaceId, tx, ['owner']);
       let mapChanged = false;
       const snapshot = await this.operation(
         context,
@@ -482,13 +507,17 @@ export class TenancyService {
     key: string,
   ): Promise<WorkspaceLayoutSnapshot | null> {
     return this.db.transaction(async (tx) => {
-      await this.lockAccess(context, workspaceId, tx, true);
+      await this.lockAccess(context, workspaceId, tx, ['owner']);
       await this.findOfficeForLayout(workspaceId, officeId, tx);
       const scope = `workspace.layout.publish:${workspaceId}:${officeId}`;
       const id = digest(`${context.user._id}:${scope}:${key}`);
       const existing = await this.models.operations.findById(id).session(tx).lean();
       if (!existing) return null;
-      invariant(existing.fingerprint === digest(JSON.stringify(input)), 409, 'idempotency_conflict');
+      invariant(
+        existing.fingerprint === digest(JSON.stringify(input)),
+        409,
+        'idempotency_conflict',
+      );
       return workspaceLayoutSnapshotSchema.parse(existing.result);
     });
   }
@@ -515,7 +544,7 @@ export class TenancyService {
   }
   async assertOwnerOffice(context: ActorContext, workspaceId: string, officeId: string) {
     return this.db.transaction(async (tx) => {
-      await this.lockAccess(context, workspaceId, tx, true);
+      await this.lockAccess(context, workspaceId, tx, ['owner']);
       const office = await this.models.offices
         .findOne({ _id: officeId, workspaceId })
         .session(tx)
@@ -551,7 +580,7 @@ export class TenancyService {
   }
   private async inviteOnce(context: ActorContext, id: string, email: string, key: string) {
     return this.db.transaction(async (tx) => {
-      await this.lockAccess(context, id, tx, true);
+      await this.lockAccess(context, id, tx, ['owner', 'admin']);
       return this.operation(context, `invitation.create:${id}`, key, { email }, tx, async () => {
         const user = await this.identities.users
           .findOne({ normalizedEmail: email })
@@ -628,7 +657,7 @@ export class TenancyService {
   }
   async invitations(context: ActorContext, id: string) {
     return this.db.transaction(async (tx) => {
-      await this.lockAccess(context, id, tx, true);
+      await this.lockAccess(context, id, tx, ['owner', 'admin']);
       const rows = await this.models.invitations
         .find({ workspaceId: id })
         .session(tx)
@@ -653,7 +682,7 @@ export class TenancyService {
   }
   async revokeInvitation(context: ActorContext, id: string, invitationId: string, key: string) {
     return this.db.transaction(async (tx) => {
-      await this.lockAccess(context, id, tx, true);
+      await this.lockAccess(context, id, tx, ['owner', 'admin']);
       return this.operation(
         context,
         `invitation.revoke:${id}`,
@@ -774,7 +803,12 @@ export class TenancyService {
   }
   async remove(context: ActorContext, id: string, userId: string, key: string, leave = false) {
     return this.db.transaction(async (tx) => {
-      await this.lockAccess(context, id, tx, !leave);
+      const { member: actorMember } = await this.lockAccess(
+        context,
+        id,
+        tx,
+        leave ? ['owner', 'admin', 'member'] : ['owner', 'admin'],
+      );
       return this.operation(
         context,
         `membership.remove:${id}`,
@@ -789,6 +823,11 @@ export class TenancyService {
             .lean();
           invariant(member, 404, 'not_found');
           invariant(member.role !== 'owner', 409, 'owner_transfer_required');
+          invariant(
+            leave || actorMember.role === 'owner' || member.role === 'member',
+            403,
+            'role_management_forbidden',
+          );
           await this.models.memberships.updateOne(
             { _id: member._id, status: 'active' },
             { $set: { status: 'revoked' }, $inc: { policyVersion: 1 } },
@@ -831,10 +870,15 @@ export class TenancyService {
     invariant(userId !== context.user._id, 400, 'invalid_target');
     return this.db.transaction(async (tx) => {
       this.sessions.recent(context);
-      await this.lockAccess(context, id, tx, true);
+      await this.lockAccess(context, id, tx, ['owner']);
       return this.operation(context, `ownership.transfer:${id}`, key, { userId }, tx, async () => {
         const member = await this.models.memberships
-          .findOne({ workspaceId: id, userId, status: 'active', role: 'member' })
+          .findOne({
+            workspaceId: id,
+            userId,
+            status: 'active',
+            role: { $in: ['admin', 'member'] },
+          })
           .session(tx)
           .lean();
         invariant(member, 400, 'verified_member_required');
@@ -851,21 +895,24 @@ export class TenancyService {
           )
           .lean();
         invariant(target, 409, 'target_unavailable_or_quota');
-        await this.models.memberships.updateOne(
+        const currentOwner = await this.models.memberships.updateOne(
           { workspaceId: id, userId: context.user._id, role: 'owner', status: 'active' },
-          { $set: { role: 'member' }, $inc: { policyVersion: 1 } },
+          { $set: { role: 'member', membershipGrantId: randomUUID() }, $inc: { policyVersion: 1 } },
           { session: tx },
         );
-        await this.models.memberships.updateOne(
-          { _id: member._id, role: 'member', status: 'active' },
-          { $set: { role: 'owner' }, $inc: { policyVersion: 1 } },
+        invariant(currentOwner.modifiedCount === 1, 409, 'ownership_conflict');
+        const nextOwner = await this.models.memberships.updateOne(
+          { _id: member._id, role: member.role, status: 'active' },
+          { $set: { role: 'owner', membershipGrantId: randomUUID() }, $inc: { policyVersion: 1 } },
           { session: tx },
         );
-        await this.models.workspaces.updateOne(
+        invariant(nextOwner.modifiedCount === 1, 409, 'ownership_conflict');
+        const updatedWorkspace = await this.models.workspaces.updateOne(
           { _id: id, ownerId: context.user._id },
           { $set: { ownerId: userId }, $inc: { policyVersion: 1 } },
           { session: tx },
         );
+        invariant(updatedWorkspace.modifiedCount === 1, 409, 'ownership_conflict');
         await this.identities.users.updateOne(
           { _id: context.user._id, ownedWorkspaceCount: { $gt: 0 } },
           { $inc: { ownedWorkspaceCount: -1 } },
@@ -874,6 +921,62 @@ export class TenancyService {
         await this.audit.record(context.user._id, 'ownership.transferred', userId, tx, id);
         return { message: 'Ownership transferred.' };
       });
+    });
+  }
+
+  async updateMemberRole(
+    context: ActorContext,
+    id: string,
+    userId: string,
+    role: WorkspaceMemberRole,
+    key: string,
+  ) {
+    invariant(userId !== context.user._id, 400, 'invalid_target');
+    if (role === 'admin') this.sessions.recent(context);
+    return this.db.transaction(async (tx) => {
+      if (role === 'admin') this.sessions.recent(context);
+      await this.lockAccess(context, id, tx, ['owner']);
+      return this.operation(
+        context,
+        `membership.role:${id}`,
+        key,
+        { userId, role },
+        tx,
+        async () => {
+          const target = await this.models.memberships
+            .findOne({ workspaceId: id, userId, status: 'active' })
+            .session(tx)
+            .lean();
+          invariant(target, 404, 'not_found');
+          invariant(target.role !== 'owner', 409, 'owner_transfer_required');
+          invariant(target.role !== role, 409, 'role_unchanged');
+          const previousRole = target.role;
+          const updated = await this.models.memberships
+            .findOneAndUpdate(
+              {
+                _id: target._id,
+                workspaceId: id,
+                status: 'active',
+                role: previousRole,
+              },
+              {
+                $set: { role, membershipGrantId: randomUUID() },
+                $inc: { policyVersion: 1 },
+              },
+              { session: tx, returnDocument: 'after' },
+            )
+            .lean();
+          invariant(updated, 409, 'membership_conflict');
+          await this.audit.record(
+            context.user._id,
+            `membership.role_changed.${previousRole}_to_${role}`,
+            userId,
+            tx,
+            id,
+          );
+          return { member: { userId, role: updated.role } };
+        },
+      );
     });
   }
 }

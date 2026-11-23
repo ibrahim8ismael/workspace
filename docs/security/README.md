@@ -4,16 +4,18 @@ Status: initial HTTP auth/tenant controls locally verified; browser/live/product
 
 ## Permission baseline
 
-| Action | Anonymous / pending | Active verified member | Workspace owner |
+| Action | Anonymous / pending | Member | Admin | Owner |
 |---|---|---|---|
 | Register, request verification/recovery | Bounded, generic request flows | Supported account flow | Same account rules |
 | Create workspace | Denied | Allowed within owned quota | Allowed within owned quota |
 | Accept invitation | Denied | Matching verified mailbox only | Same recipient rule |
-| Read tenant / enter office / join eligible call | Denied | Current membership and resource policy required | Same admission/capacity checks |
+| Read tenant / enter office / use chat | Denied | Current membership and resource policy required | Same | Same |
 | Change own availability/appearance | Denied for office actions | Allowlisted self fields | Same self rules |
-| Invite/remove members, change workspace settings | Denied | Denied | Conditional current owner policy |
-| Leave workspace | Denied | Allowed with exact counter update | Transfer ownership first |
-| Transfer ownership | Denied | Cannot initiate | Recent reauthentication; verified member target and exact counters |
+| View/invite/revoke invitations | Denied | Denied | Conditional current membership policy | Conditional current owner policy |
+| Remove ordinary Members | Denied | Denied | Conditional current membership policy | Conditional current owner policy |
+| Promote/demote Admins, rename, configure rooms, transfer ownership | Denied | Denied | Denied | Current owner policy; recent proof for grants/transfer |
+| Leave workspace | Denied | Allowed with exact counter update | Allowed with exact counter update | Transfer ownership first |
+| Transfer ownership | Denied | Cannot initiate | Cannot initiate | Recent reauthentication; verified Admin or Member target and exact counters |
 | Read operational audit/control endpoints | Denied | Denied | Workspace role does not imply infrastructure privileges |
 
 Suspended/revoked/expired identities fail regardless of role. Exact read projections and destructive commands require contract completion. Infrastructure administrators require MFA; user MFA policy remains a future launch decision.

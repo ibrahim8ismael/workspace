@@ -4,14 +4,20 @@ import { isDeepStrictEqual } from 'node:util';
 import {
   appearanceSchema,
   mapManifestSchema,
+  workspaceGeometrySchema,
   OFFICE_PROTOCOL_VERSION,
   MAP_FORMAT_VERSION,
 } from '@gather/contracts';
-import type { OfficeBootstrapResponse } from '@gather/contracts';
+import type {
+  OfficeBootstrapResponse,
+  WorkspaceLayoutPlacementDto,
+  WorkspaceLayoutPreset,
+} from '@gather/contracts';
 import {
   COMMONS_GEOMETRY,
   VIVO_GEOMETRY,
   generateWorkspaceOfficeGeometry,
+  compileWorkspaceLayout,
   validateOfficeGeometry,
 } from '@gather/world';
 import commonsManifestJson from '@gather/assets/manifests/commons-map.json' with { type: 'json' };
@@ -19,6 +25,8 @@ import vivoManifestJson from '@gather/assets/manifests/vivo-map.json' with { typ
 import type { OfficeGeometry, OfficeSeatDefinition, ValidatedOfficeGeometry } from '@gather/world';
 
 export interface TrustedOfficeMap {
+  readonly layoutPreset?: WorkspaceLayoutPreset;
+  readonly layout?: WorkspaceLayoutPlacementDto[];
   readonly manifest: OfficeBootstrapResponse['manifest'];
   readonly geometry: OfficeGeometry;
   readonly validated: ValidatedOfficeGeometry;
@@ -105,7 +113,78 @@ export const APPROVED_OFFICE_MAP_VERSION = defaultMap.manifest.mapVersion;
 /** Exact registered legacy versions that may be migrated to the current default. */
 export const LEGACY_OFFICE_MAP_VERSIONS = Object.freeze([commonsMap.manifest.mapVersion]);
 
-export function trustedOfficeMap(version: string): TrustedOfficeMap | null {
+const editedMapsByVersion = new Map<string, TrustedOfficeMap>();
+const maxCachedEditedMaps = 64;
+
+export function workspaceLayoutOfficeMap(
+  layout: WorkspaceLayoutPlacementDto[],
+  layoutPreset?: WorkspaceLayoutPreset,
+): TrustedOfficeMap {
+  // Mongoose field ordering can differ from input ordering after a restart.
+  layout = layout.map(({ id, name, templateId, origin: { tx, ty } }) => ({
+    id,
+    ...(name && { name }),
+    templateId,
+    origin: { tx, ty },
+  }));
+  const { geometry, validated } = compileWorkspaceLayout(layout, layoutPreset);
+  const assetManifestVersion = commonsMap.manifest.assetManifestVersion;
+  const contentHash = createHash('sha256')
+    .update(
+      JSON.stringify({
+        assetManifestVersion,
+        formatVersion: MAP_FORMAT_VERSION,
+        coordinateUnits: 'pixels',
+        layout,
+        ...(layoutPreset && { layoutPreset }),
+        geometry,
+      }),
+    )
+    .digest('hex');
+  const roomCount = geometry.zones.length;
+  const mapVersion = `workspace-v1-${roomCount}-${contentHash}`;
+  const manifest = mapManifestSchema.parse({
+    formatVersion: MAP_FORMAT_VERSION,
+    mapId: 'workspace',
+    mapVersion,
+    contentHash,
+    coordinateUnits: 'pixels',
+    tileSize: geometry.tileSize,
+    bounds: validated.bounds,
+    spawn: geometry.spawn,
+    geometryPath: `/maps/${mapVersion}.json`,
+    roomCount,
+    assetManifestVersion,
+  });
+  return Object.freeze({
+    layout,
+    ...(layoutPreset && { layoutPreset }),
+    manifest: Object.freeze(manifest),
+    geometry,
+    validated,
+    seats: Object.freeze(geometry.objects.flatMap((object) => object.seats)),
+    defaultAppearance: commonsMap.defaultAppearance,
+  });
+}
+
+export function trustedOfficeMap(
+  version: string,
+  layout?: WorkspaceLayoutPlacementDto[],
+  layoutPreset?: WorkspaceLayoutPreset,
+): TrustedOfficeMap | null {
+  if (layout) {
+    const cached = editedMapsByVersion.get(version);
+    if (cached && cached.layoutPreset === layoutPreset && isDeepStrictEqual(cached.layout, layout))
+      return cached;
+    const map = workspaceLayoutOfficeMap(layout, layoutPreset);
+    if (map.manifest.mapVersion !== version) return null;
+    if (editedMapsByVersion.size >= maxCachedEditedMaps) {
+      const oldest = editedMapsByVersion.keys().next().value;
+      if (oldest !== undefined) editedMapsByVersion.delete(oldest);
+    }
+    editedMapsByVersion.set(version, map);
+    return map;
+  }
   const registered = mapsByVersion.get(version);
   if (registered) return registered;
   const match = /^workspace-v1-([1-9][0-9]?|100)-([a-f0-9]{64})$/.exec(version);
@@ -155,8 +234,10 @@ export function trustedOfficeBootstrap(
   officeId: string,
   workspaceId: string,
   version: string,
+  layout?: WorkspaceLayoutPlacementDto[],
+  layoutPreset?: WorkspaceLayoutPreset,
 ): OfficeBootstrapResponse | null {
-  const map = trustedOfficeMap(version);
+  const map = trustedOfficeMap(version, layout, layoutPreset);
   if (!map) return null;
   return {
     officeId,
@@ -164,7 +245,11 @@ export function trustedOfficeBootstrap(
     mapVersion: map.manifest.mapVersion,
     protocolVersion: OFFICE_PROTOCOL_VERSION,
     manifest: map.manifest,
-    ...(map.manifest.mapId === 'workspace' ? { geometry: map.geometry as never } : {}),
+    ...(map.manifest.mapId === 'workspace'
+      ? { geometry: workspaceGeometrySchema.parse(map.geometry) }
+      : {}),
+    ...(map.layout ? { layout: map.layout } : {}),
+    ...(map.layoutPreset && { layoutPreset: map.layoutPreset }),
   };
 }
 

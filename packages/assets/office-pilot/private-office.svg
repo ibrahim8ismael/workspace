@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="160" viewBox="0 0 192 160" shape-rendering="crispEdges">
+  <title>Private office with an oak desk, glass clerestory, and south entrance</title>
+  <defs>
+    <pattern id="oak" width="64" height="32" patternUnits="userSpaceOnUse">
+      <path fill="#eedcc1" d="M0 0h64v32H0z"/>
+      <path fill="#e7d0b1" d="M0 0h24v8H0zM38 8h26v8H38zM0 16h18v8H0zM29 24h35v8H29z"/>
+      <path fill="#f5e5cc" d="M24 0h40v8H24zM0 8h38v8H0zM18 16h46v8H18z"/>
+      <path fill="none" stroke="#ceb18d" stroke-opacity=".46" d="M0 0h64M0 8h64M0 16h64M0 24h64M24 0v8M38 8v8M18 16v8M29 24v8"/>
+      <path fill="none" stroke="#fff2dc" stroke-opacity=".65" d="M5 5h12m21 0h19M3 12h19m25 1h12M24 21h11m10-1h12M8 28h11m17 1h20"/>
+    </pattern>
+    <pattern id="mat" width="8" height="8" patternUnits="userSpaceOnUse">
+      <path fill="#aab8a1" d="M0 0h8v8H0z"/>
+      <path fill="#bbc7ae" d="M0 2h8v1H0zm0 4h8v1H0z"/>
+      <path fill="#879b89" opacity=".64" d="M0 1h2v1H0zm4 4h2v1H4z"/>
+    </pattern>
+  </defs>
+  <path fill="url(#oak)" d="M0 0h192v160H0z"/>
+  <!-- Raised rear partition and low cutaway side walls. -->
+  <path fill="#b99a7c" d="M0 0h192v32H0z"/>
+  <path fill="#d4b699" d="M6 5h180v22H6z"/>
+  <path fill="#edcfad" d="M0 0h192v5H0zm7 5h178v2H7z"/>
+  <path fill="#9b7f68" d="M0 27h192v5H0z"/>
+  <path fill="#dabb97" d="M6 31h180v2H6z"/>
+  <path fill="#9b7f68" d="M0 0h6v160H0zm186 0h6v160h-6zM0 153h64v7H0zm128 0h64v7h-64z"/>
+  <path fill="#d6b792" d="M1 5h3v149H1zm187 0h3v149h-3zM6 153h58v3H6zm122 0h58v3h-58z"/>
+  <path fill="#f6e4ca" d="M6 33h1v119H6zm179 0h1v119h-1z"/>
+  <!-- The only south entry is two clear tiles wide. -->
+  <path fill="#ac8566" d="M64 155h64v5H64z"/>
+  <path fill="#ebd4ad" d="M64 155h64v2H64z"/>
+  <path fill="#6b655c" d="M59 151h5v9h-5zm69 0h5v9h-5z"/>
+  <path fill="#c3ac8f" d="M60 152h3v5h-3zm69 0h3v5h-3z"/>
+  <path fill="#b29b7e" d="M69 147h8v2h-8zm46 0h8v2h-8z"/>
+  <!-- The window, cabinet and picture are all in the rear wall band. -->
+  <path fill="#5c6265" d="M19 5h99v22H19z"/>
+  <path fill="#818f8d" d="M21 6h95v19H21z"/>
+  <path fill="#55747a" d="M23 8h91v15H23z"/>
+  <path fill="#a8cac3" d="M24 9h23v13H24zm25 0h39v13H49zm41 0h23v13H90z"/>
+  <path fill="#789da0" d="M24 9h23v3H24zm25 0h39v3H49zm41 0h23v3H90z"/>
+  <path fill="#d5e8d5" opacity=".63" d="M29 12h3v10h-3zm32 0h4v10h-4zm31 0h2v10h-2z"/>
+  <path fill="#e5d1b5" d="M18 25h101v3H18z"/>
+  <path fill="#886a58" d="M139 6h34v18h-34z"/>
+  <path fill="#f1e2c4" d="M141 8h30v14h-30z"/>
+  <path fill="#8dafa3" d="M144 11h24v9h-24z"/>
+  <path fill="#58736f" d="M144 18h5v-3h4v3h4v-5h5v3h6v4h-24z"/>
+  <path fill="#e5bf81" d="M163 11h3v3h-3z"/>
+  <!-- Woven chair mat is flush with the floor. -->
+  <path fill="#798d7a" d="M32 62h87v70H32z"/>
+  <path fill="url(#mat)" d="M35 65h81v64H35z"/>
+  <path fill="none" stroke="#d6d5b4" d="M38 68h75v58H38z"/>
+  <!-- Desk fits tile columns 1–2, row 2. -->
+  <path fill="#65524a" opacity=".3" d="M34 87h61v9H34z"/>
+  <path fill="#835e4e" d="M32 68h64v20H32zm2 19h6v8h-6zm54 0h6v8h-6z"/>
+  <path fill="#bd8b65" d="M32 66h64v22H32z"/>
+  <path fill="#d9a873" d="M34 66h60v16H34z"/>
+  <path fill="#eec397" d="M34 66h60v3H34z"/>
+  <path fill="#b97d57" d="M34 83h60v4H34z"/>
+  <path fill="#42555c" d="M57 68h19v10H57zm8 9h4v3h-4zm-3 2h10v2H62z"/>
+  <path fill="#91bbb3" d="M59 69h15v6H59z"/>
+  <path fill="#526d71" d="M59 69h15v2H59z"/>
+  <path fill="#eee1bf" d="M39 72h10v7H39z"/>
+  <path fill="#a98e75" d="M41 73h6v1h-6zm0 2h4v1h-4z"/>
+  <path fill="#bf806c" d="M85 72h5v6h-5z"/>
+  <path fill="#ecb08c" d="M86 72h4v2h-4zm4 2h2v3h-2z"/>
+  <!-- Task chair centered on its seat tile at (2, 3). -->
+  <path fill="#3f4e51" opacity=".26" d="M68 121h24v6H68z"/>
+  <path fill="#374449" d="M72 100h16v2h3v17h-3v4h-5v3h-6v-3h-5v-4h-3v-17h3z"/>
+  <path fill="#597471" d="M74 102h12v4H74zm-2 6h16v7H72zm1 9h14v4H73z"/>
+  <path fill="#8b9f95" d="M74 102h12v2H74zm-4 7h3v6h-3zm17 0h3v6h-3z"/>
+  <path fill="#314345" d="M74 114h12v2H74zm2 7h8v2h-8z"/>
+</svg>

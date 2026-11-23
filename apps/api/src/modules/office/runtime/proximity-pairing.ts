@@ -17,7 +17,7 @@ export interface ProximityCandidate {
   readonly displayName: string;
   readonly availability: 'available' | 'busy' | 'away';
   readonly position: { readonly x: number; readonly y: number };
-  /** Meeting room boundary containing the participant, or null in shared office space. */
+  /** Enclosed room boundary containing the participant, or null in shared office space. */
   readonly roomId?: string | null;
 }
 

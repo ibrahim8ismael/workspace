@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="128" viewBox="0 0 192 128">
+  <title>Two workstations with a shared entrance</title>
+  <defs>
+    <pattern id="parquet" width="24" height="24" patternUnits="userSpaceOnUse">
+      <path fill="#f1dfc6" d="M0 0h24v24H0z"/>
+      <path fill="#ead3b4" d="M0 0h12v12H0zM12 12h12v12H12z"/>
+      <path fill="none" stroke="#dec59f" stroke-width=".6" d="M0 0h24v24H0zM0 12h24M12 0v24M4 0v12M8 0v12M16 12v12M20 12v12M12 4h12M12 8h12M0 16h12M0 20h12"/>
+      <path fill="none" stroke="#fff3df" stroke-width=".6" d="M1 1v10m4-10v10m8-10h10m-10 4h10M1 13h10m-10 4h10m2-4v10m4-10v10"/>
+    </pattern>
+    <g id="window">
+      <path fill="#534e47" d="M0 1h46v24H0z"/>
+      <path fill="#8f9a9c" d="M1 0h44v23H1z"/>
+      <path fill="#4e626a" d="M3 2h40v19H3z"/>
+      <path fill="#acd2ce" d="M4 3h10v17H4zm12 0h25v17H16z"/>
+      <path fill="#77a7a8" d="M4 3h10v2H4zm12 0h25v2H16z"/>
+      <path fill="#cfebe1" d="M7 5h2v15H7zm13 0h3v15h-3z" opacity=".54"/>
+      <path fill="#586b71" d="M16 13h25v2H16z"/>
+      <path fill="#d7ded6" d="M0 22h46v2H0z"/>
+    </g>
+    <g id="desk">
+      <path fill="#76614e" opacity=".29" d="M7 22h49v10H10v-2H7z"/>
+      <path fill="#a7765d" d="M5 7h53v17H5zM6 23h5v7H6zm46 0h5v7h-5z"/>
+      <path fill="#866452" d="M8 24h3v6H8zm46 0h3v6h-3z"/>
+      <path fill="#f6d4a1" d="M5 5h53v13H5z"/>
+      <path fill="#ffe4ba" d="M6 5h51v2H6z"/>
+      <path fill="#d9a376" d="M5 18h53v4H5z"/>
+      <path fill="#b98865" d="M5 22h53v2H5z"/>
+      <path fill="#b6926b" opacity=".54" d="M9 9h13v1H9zm27 6h17v1H36z"/>
+    </g>
+    <g id="chair">
+      <path fill="#5f534f" opacity=".26" d="M0 19h24v5H0z"/>
+      <path fill="#3e4552" d="M2 2h3V0h14v2h3v17h-2v3h-4v-2H8v2H4v-3H2z"/>
+      <path fill="currentColor" d="M5 2h14v12H5zM6 15h12v4H6z"/>
+      <path fill="#ebebdc" opacity=".32" d="M5 2h14v2H5zM6 8h12v1H6zM6 15h12v1H6z"/>
+      <path fill="#32394a" d="M6 12h12v2H6zM9 19h6v2H9z"/>
+      <path fill="#a8aead" d="M2 8h3v7H2zm17 0h3v7h-3z"/>
+    </g>
+    <g id="planter">
+      <path fill="#7a5f50" opacity=".25" d="M1 22h18v4H1z"/>
+      <path fill="#695f66" d="M1 16h17v7h-2v2H4v-2H1z"/>
+      <path fill="#93909a" d="M1 16h17v3H1z"/>
+      <path fill="#915f48" d="M4 16h10v2H4z"/>
+      <path fill="#4b7557" d="M8 3h4v3h3v3h3v5h-2v2H4v-2H1v-4h3V7h4z"/>
+      <path fill="#87ac6c" d="M8 3h4v3h3v4h-4v6H8v-4H4V9h3z"/>
+      <path fill="#a8c581" d="M8 5h3v2H8zm4 3h2v2h-2zm-7 2h2v2H5z"/>
+    </g>
+  </defs>
+
+  <path fill="url(#parquet)" d="M0 0h192v128H0z"/>
+  <path fill="#e7c7a0" opacity=".7" d="M0 30h64v4H0zm128 0h64v4h-64z"/>
+  <path fill="#cba37e" d="M0 0h64v31H0zm128 0h64v31h-64z"/>
+  <path fill="#e5c9a8" d="M0 2h64v3H0zm128 0h64v3h-64z"/>
+  <path fill="#bc9473" d="M1 26h63v5H1zm127 0h63v5h-63z"/>
+  <path fill="#f8e1ba" d="M0 31h64v2H0zm128 0h64v2h-64z"/>
+  <use href="#window" x="7" y="4"/>
+  <use href="#window" x="139" y="4"/>
+  <path fill="#a98061" d="M0 0h3v128H0zm189 0h3v128h-3zM0 125h192v3H0zM61 1h3v31h-3zm67 0h3v31h-3z"/>
+  <path fill="#f9e3c2" d="M3 33h1v92H3zm185 0h1v92h-1zM4 124h184v1H4z"/>
+  <path fill="#c59c73" d="M64 0h64v4H64z"/>
+  <path fill="#f8e2bd" d="M64 1h64v2H64z"/>
+
+  <use href="#desk" y="32"/>
+  <use href="#desk" x="128" y="32"/>
+  <path fill="#526a69" d="M30 36h14v8H30zm5 8h4v2h-4z"/>
+  <path fill="#49616a" d="M31 36h12v6H31z"/>
+  <path fill="#a1bdb4" d="M32 37h10v3H32z"/>
+  <path fill="#eee2cc" d="M15 41h7v5h-7z"/>
+  <path fill="#aa9274" d="M16 42h5v1h-5z"/>
+  <path fill="#736d77" d="M143 40h16v7h-16z"/>
+  <path fill="#c5c3cb" d="M144 40h14v5h-14z"/>
+  <path fill="#687c76" d="M169 39h5v5h-5z"/>
+  <path fill="#a5b197" d="M170 39h3v2h-3z"/>
+  <use href="#chair" x="36" y="68" color="#64777b"/>
+  <use href="#chair" x="132" y="68" color="#77708a"/>
+
+  <path fill="#c38f69" opacity=".48" d="M71 31h1v29h-1zm49 0h1v29h-1z"/>
+  <path fill="#a9aa8f" d="M76 11h40v14H76z"/>
+  <path fill="#c6c8ab" d="M77 12h38v11H77z"/>
+  <path fill="#e0dfc2" d="M79 13h34v1H79zM79 20h34v1H79z"/>
+  <path fill="#889477" d="M79 16h34v1H79zM79 18h34v1H79z"/>
+  <use href="#planter" x="7" y="97"/>
+  <path fill="#e9d6bb" d="M69 106h54v1H69zm0 4h54v1H69z"/>
+</svg>

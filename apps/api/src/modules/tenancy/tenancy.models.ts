@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectConnection } from '@nestjs/mongoose';
 import { Schema } from 'mongoose';
 import type { Connection, Model } from 'mongoose';
+import type { WorkspaceLayoutPlacementDto, WorkspaceLayoutPreset } from '@gather/contracts';
 import { registerModel, schemaOptions } from '../../platform/database/models.js';
 
 export interface WorkspaceRecord {
@@ -47,6 +48,11 @@ export interface OfficeRecord {
   _id: string;
   workspaceId: string;
   mapVersion: string;
+  layoutRevision?: number;
+  draftPreset?: WorkspaceLayoutPreset;
+  publishedPreset?: WorkspaceLayoutPreset;
+  draftLayout?: WorkspaceLayoutPlacementDto[];
+  publishedLayout?: WorkspaceLayoutPlacementDto[];
   createdAt: Date;
 }
 const workspaceSchema = new Schema<WorkspaceRecord>(
@@ -108,11 +114,44 @@ const operationSchema = new Schema<OperationRecord>(
   },
   schemaOptions,
 );
+const layoutPlacementSchema = new Schema<WorkspaceLayoutPlacementDto>(
+  {
+    id: { type: String, required: true },
+    name: { type: String },
+    templateId: {
+      type: String,
+      enum: [
+        'reception',
+        'small',
+        'large',
+        'desks',
+        'private-office',
+        'team-studio',
+        'lounge',
+        'garden',
+      ],
+      required: true,
+    },
+    origin: {
+      tx: { type: Number, required: true },
+      ty: { type: Number, required: true },
+    },
+  },
+  { _id: false, strict: 'throw' },
+);
 const officeSchema = new Schema<OfficeRecord>(
   {
     _id: { type: String, required: true },
     workspaceId: { type: String, required: true },
     mapVersion: { type: String, required: true },
+    layoutRevision: { type: Number, default: 0 },
+    draftPreset: { type: String, enum: ['studio-orthogonal', 'studio', 'startup', 'corporate'] },
+    publishedPreset: {
+      type: String,
+      enum: ['studio-orthogonal', 'studio', 'startup', 'corporate'],
+    },
+    draftLayout: { type: [layoutPlacementSchema], default: undefined },
+    publishedLayout: { type: [layoutPlacementSchema], default: undefined },
     createdAt: { type: Date, required: true },
   },
   schemaOptions,

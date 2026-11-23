@@ -92,16 +92,25 @@ export async function createLiveKitProximityRoom(
       const handler = (speakers: import('livekit-client').Participant[]) =>
         listener(
           speakers
-            .filter((speaker) => speaker.isMicrophoneEnabled)
+            .filter(
+              (speaker) =>
+                speaker.isMicrophoneEnabled &&
+                (speaker === room.localParticipant ||
+                  room.remoteParticipants.get(speaker.identity) === speaker),
+            )
             .map((speaker) => speaker.identity),
         );
       const refresh = () => handler(room.activeSpeakers);
       room.on(RoomEvent.ActiveSpeakersChanged, handler);
       room.on(RoomEvent.TrackMuted, refresh);
+      room.on(RoomEvent.TrackUnpublished, refresh);
+      room.on(RoomEvent.LocalTrackUnpublished, refresh);
       room.on(RoomEvent.ParticipantDisconnected, refresh);
       return () => {
         room.off(RoomEvent.ActiveSpeakersChanged, handler);
         room.off(RoomEvent.TrackMuted, refresh);
+        room.off(RoomEvent.TrackUnpublished, refresh);
+        room.off(RoomEvent.LocalTrackUnpublished, refresh);
         room.off(RoomEvent.ParticipantDisconnected, refresh);
       };
     },

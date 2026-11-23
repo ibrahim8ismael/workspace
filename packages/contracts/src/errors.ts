@@ -13,6 +13,7 @@ export const httpErrorCodeSchema = z.enum([
   'invalid_credentials',
   'invalid_invitation',
   'invalid_json',
+  'invalid_office_layout',
   'invalid_target',
   'invalid_token',
   'invalid_workspace_id',
@@ -44,6 +45,8 @@ export const httpErrorCodeSchema = z.enum([
 export const officeErrorCodeSchema = z.enum([
   'office_not_ready',
   'office_in_use',
+  'office_layout_managed',
+  'office_layout_confirmation_required',
   'map_version_mismatch',
   'protocol_mismatch',
   'stale_epoch',

@@ -20,6 +20,7 @@ import {
   emptyBodySchema,
   renameWorkspaceSchema,
 } from '@gather/contracts';
+import type { CreateWorkspaceInput } from '@gather/contracts';
 import type { AuthRequest } from '../identity/security/guards.js';
 import { actor } from '../identity/sessions/session.service.js';
 import { AbuseService } from '../identity/security/abuse.service.js';
@@ -42,7 +43,7 @@ export class WorkspacesController {
   @Post()
   async create(
     @Body(new ValidationPipe(createWorkspaceSchema))
-    body: { name: string; slug: string; roomCount?: number },
+    body: CreateWorkspaceInput,
     @Req() request: AuthRequest,
   ) {
     const context = actor(request.authContext);

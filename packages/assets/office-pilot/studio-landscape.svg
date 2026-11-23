@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="96" viewBox="0 0 192 96" shape-rendering="crispEdges">
+  <title>Planted exterior pocket with a flowering tree and limestone edging</title>
+  <defs>
+    <g id="grass">
+      <path fill="#57745d" d="M8 19V9H6V4H4v8h2v7h2zm2 0h2V8h2V2h-2v6h-2zm3-1h2v-5h2V9h-2v4h-2zm-8-1h2v-4H5v-3H3v4h2z"/>
+      <path fill="#9cad72" d="M5 5h1v7H5zm7-2h1v9h-1zm3 7h1v3h-1z"/>
+    </g>
+    <g id="aster">
+      <path fill="#54745b" d="M3 2h2v10H3zm2 5h4v2H5z"/>
+      <path fill="currentColor" d="M2 0h4v2h2v3H6v1H2V5H0V2h2z"/>
+      <path fill="#edd2a3" d="M3 2h2v2H3z"/>
+    </g>
+  </defs>
+  <!-- A low border gives the plant bed a distinct edge in the overview. -->
+  <path fill="#5c796a" opacity=".2" d="M19 46h153v5h9v8h4v20h-8v6H15v-7H7V61h6v-9h6z"/>
+  <path fill="#7f856c" d="M18 42h151v6h10v8h5v19h-7v7H15v-7H8V55h5v-7h5z"/>
+  <path fill="#b6a989" d="M18 42h151v6h10v8h5v15h-7v7H15v-7H8V55h5v-7h5z"/>
+  <path fill="#cec09a" d="M20 43h145v4H20zM9 56h4v13H9zm170 0h4v14h-4zM17 73h158v4H17z"/>
+  <path fill="#9a8f73" d="M36 73h2v4h-2zm18 0h2v4h-2zm19 0h2v4h-2zm20 0h2v4h-2zm18 0h2v4h-2zm20 0h2v4h-2zm19 0h2v4h-2zm17 0h2v4h-2z"/>
+  <path fill="#8a9c77" d="M19 48h151v4h5v5h3v11h-6v4H20v-4h-6V57h2v-4h3z"/>
+  <path fill="#a2af81" d="M20 49h25v2H20zm97 2h49v2h-49zm-7 14h62v2h-62zm-91 0h21v2H19z"/>
+  <path fill="#738a70" d="M33 64h4v1h-4zm43 3h7v1h-7zm42-8h4v1h-4zm36 3h5v1h-5z"/>
+  <path fill="#527062" opacity=".36" d="M26 43h46v4h19v15H76v5H26v-5H17V50h9z"/>
+  <path fill="#6f594e" d="M47 28h9v13h6v4h-6v12h7v4h-8v4h-8v-3H37v-4h10V43h-5v-5h5z"/>
+  <path fill="#a18364" d="M49 31h4v25h4v4h-5v3h-4v-4h-7v-1h8z"/>
+  <path fill="#caa082" d="M50 36h2v19h-2z"/>
+  <!-- Stepped canopy with a few fallen petals on the lawn. -->
+  <path fill="#665b66" d="M30 15h10V9h11V5h14v5h12v6h10v8h6v12h-7v8H75v5H61v-4H49v6H35v-6H24v-8h-8V25h7v-6h7z"/>
+  <path fill="#986f83" d="M31 16h11v-5h10V7h12v5h11v5h10v9h6v9h-7v7H73v4H61v-4H48v6H37v-5H26v-8h-7v-9h6v-6h6z"/>
+  <path fill="#bd8b99" d="M32 17h12v-5h9V8h10v5h11v5h10v7h5v7h-8v7H71v4H60v-4H48v6h-9v-5H29v-7h-8v-6h6v-6h5z"/>
+  <path fill="#d5a3a8" d="M36 16h10v-5h14v4h10v5h10v4H66v4H55v-4H44v4H31v-5h5z"/>
+  <path fill="#ebc0b5" d="M46 13h8v2h-8zm7-3h6v2h-6zm13 8h5v2h-5zM35 21h8v2h-8zm20 6h5v2h-5z"/>
+  <path fill="#a9798c" d="M26 33h8v4h-8zm15 6h5v4h-5zm22-4h9v4h-9zm12 1h8v2h-8z"/>
+  <path fill="#ddadb0" d="M26 57h5v2h-5zm47-1h5v2h-5zm-37 8h4v1h-4zm32 3h5v1h-5z"/>
+  <use href="#grass" x="99" y="48"/>
+  <use href="#aster" x="116" y="56" color="#cf9ca4"/>
+  <use href="#grass" x="126" y="47"/>
+  <use href="#aster" x="142" y="54" color="#d4b585"/>
+  <use href="#grass" x="154" y="49"/>
+  <use href="#aster" x="164" y="58" color="#d1a3b0"/>
+  <path fill="#b5a582" d="M25 83h19v2H25zm119 0h17v2h-17z"/>
+</svg>

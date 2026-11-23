@@ -2167,6 +2167,90 @@ describe('company roles and isolation', () => {
     expect((await bootstrap(member)).layout).toEqual(revised);
   });
 
+  it('keeps generated room identities on a 20-to-25-to-5 change and isolates another workspace', async () => {
+    const owner = await account();
+    const independentlyOwned = await account();
+    const workspaceId = await workspace(owner, 20);
+    const separateWorkspaceId = await workspace(independentlyOwned, 5);
+    const officePath = async (id: string) => {
+      const office = await tenancy.offices.findOne({ workspaceId: id }).lean();
+      if (!office) throw new Error('Office missing');
+      return `/api/workspaces/${id}/offices/${office._id}`;
+    };
+    const path = await officePath(workspaceId);
+    const separatePath = await officePath(separateWorkspaceId);
+    const readLayout = async (actor: Awaited<ReturnType<typeof account>>, route: string) => {
+      const response = await actor.client.get(route);
+      status(response, 200);
+      const layout = officeBootstrapResponseSchema.parse(response.body);
+      if (!layout.geometry) throw new Error('Generated office geometry missing');
+      return { mapVersion: layout.mapVersion, zones: layout.geometry.zones };
+    };
+
+    const initial = await readLayout(owner, path);
+    const separate = await readLayout(independentlyOwned, separatePath);
+    expect(initial.zones).toHaveLength(20);
+    expect(separate.zones).toHaveLength(5);
+    for (const [roomCount, revision] of [
+      [25, 0],
+      [5, 1],
+    ] as const) {
+      const changed = await owner.client.send('patch', `${path}/rooms`, {
+        roomCount,
+        expectedRevision: revision,
+      });
+      status(changed, 200);
+      const settings = await owner.client.get(`/api/workspaces/${workspaceId}`);
+      status(settings, 200);
+      expect(officeWorkspaceDetailResponseSchema.parse(settings.body).workspace).toMatchObject({
+        roomCount,
+        revision: revision + 1,
+      });
+      const current = await readLayout(owner, path);
+      expect(current.zones).toHaveLength(roomCount);
+      const retainedCount = Math.min(20, roomCount);
+      expect(current.zones.slice(0, retainedCount)).toEqual(initial.zones.slice(0, retainedCount));
+      expect(current.mapVersion).not.toBe(initial.mapVersion);
+      expect(await readLayout(independentlyOwned, separatePath)).toEqual(separate);
+    }
+  });
+
+  it('keeps the legacy Vivo layout selected until the owner explicitly changes the count', async () => {
+    const owner = await account();
+    const workspaceId = await workspace(owner);
+    const office = await tenancy.offices.findOne({ workspaceId }).lean();
+    if (!office) throw new Error('Office missing');
+    const path = `/api/workspaces/${workspaceId}/offices/${office._id}`;
+    const legacyMap = trustedOfficeMap(office.mapVersion);
+    if (!legacyMap) throw new Error('Legacy map missing');
+    const legacyRooms = legacyMap.geometry.zones.filter((zone) => zone.kind === 'meeting');
+
+    const settings = await owner.client.get(`/api/workspaces/${workspaceId}`);
+    status(settings, 200);
+    expect(officeWorkspaceDetailResponseSchema.parse(settings.body).workspace).toMatchObject({
+      roomCount: legacyRooms.length,
+      revision: 0,
+    });
+    const before = await owner.client.get(path);
+    status(before, 200);
+    expect(officeBootstrapResponseSchema.parse(before.body)).toMatchObject({
+      mapVersion: vivoManifest.mapVersion,
+      manifest: { mapId: 'vivo' },
+    });
+
+    const roomCount = legacyRooms.length + 1;
+    status(
+      await owner.client.send('patch', `${path}/rooms`, { roomCount, expectedRevision: 0 }),
+      200,
+    );
+    const after = await owner.client.get(path);
+    status(after, 200);
+    const converted = officeBootstrapResponseSchema.parse(after.body);
+    expect(converted.mapVersion).not.toBe(vivoManifest.mapVersion);
+    expect(converted.manifest).toMatchObject({ mapId: 'workspace', roomCount });
+    expect(converted.geometry?.zones).toHaveLength(roomCount);
+  });
+
   it('scopes office bootstrap to an active workspace member and an approved configured map', async () => {
     const owner = await account();
     const member = await account();

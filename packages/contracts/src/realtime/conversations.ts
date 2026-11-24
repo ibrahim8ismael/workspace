@@ -181,6 +181,38 @@ export const meetingJoinEventSchema = officeCommandSchema(
 );
 export const meetingLeaveEventSchema = conversationLeaveEventSchema;
 
+const meetingScreenShareIdentitySchema = z.object({
+  conversationId: idSchema,
+  shareId: idSchema,
+});
+export const meetingScreenShareStartEventSchema = officeCommandSchema(
+  meetingScreenShareIdentitySchema.extend({ conversationVersion: stateVersionSchema }).strict(),
+);
+export const meetingScreenShareConfirmEventSchema = officeCommandSchema(
+  meetingScreenShareIdentitySchema.strict(),
+);
+export const meetingScreenShareStopEventSchema = officeCommandSchema(
+  meetingScreenShareIdentitySchema.strict(),
+);
+
+export const meetingScreenSharePresentationSchema = z
+  .object({
+    shareId: idSchema,
+    presenterParticipationId: idSchema,
+    status: z.enum(['starting', 'live']),
+    startedAt: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+  })
+  .strict();
+export const meetingScreenShareUpdateSchema = z
+  .object({
+    officeEpoch: idSchema,
+    conversationId: idSchema,
+    zoneId: staticIdSchema,
+    version: stateVersionSchema,
+    presentation: meetingScreenSharePresentationSchema.nullable(),
+  })
+  .strict();
+
 export const meetingInviteEventSchema = officeCommandSchema(
   z.object({ targetParticipationId: idSchema, zoneId: staticIdSchema }).strict(),
 );
@@ -218,5 +250,7 @@ export const meetingInvitationSchema = z
 
 export type ConversationUpdate = z.infer<typeof conversationUpdateSchema>;
 export type ConversationAreas = z.infer<typeof conversationAreasSchema>;
+export type MeetingScreenSharePresentation = z.infer<typeof meetingScreenSharePresentationSchema>;
+export type MeetingScreenShareUpdate = z.infer<typeof meetingScreenShareUpdateSchema>;
 export type MeetingZones = z.infer<typeof meetingZonesSchema>;
 export type MeetingInvitation = z.infer<typeof meetingInvitationSchema>;

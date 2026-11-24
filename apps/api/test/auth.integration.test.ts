@@ -43,6 +43,7 @@ import {
   officeCommandAckSchema,
   officeWaveSchema,
   meetingInvitationSchema,
+  meetingScreenShareUpdateSchema,
   meetingZonesSchema,
   worldDeltaSchema,
   worldSnapshotSchema,
@@ -6530,6 +6531,146 @@ describe('meeting invitation socket flow', () => {
           decision: 'accept',
         }),
       ).toMatchObject({ ok: false });
+    } finally {
+      for (const socket of sockets) socket.disconnect();
+    }
+  });
+});
+
+describe('meeting screen-share socket flow', () => {
+  it('allows only current meeting members to start and broadcasts one authoritative presenter state', async () => {
+    const owner = await account();
+    const member = await account();
+    const observer = await account();
+    const workspaceId = await workspace(owner);
+    await join(owner, workspaceId, member);
+    await join(owner, workspaceId, observer);
+    const users = [owner, member, observer];
+    const tickets = await Promise.all(users.map((user) => issueTicket(user, workspaceId)));
+    const sockets = tickets.map(({ ticket }) =>
+      officeSocket({ ticket, protocolVersion: OFFICE_PROTOCOL_VERSION }),
+    );
+    const ready: ReturnType<typeof officeReadySchema.parse>[] = [];
+    const shareUpdates: ReturnType<typeof meetingScreenShareUpdateSchema.parse>[][] = [[], [], []];
+    sockets.forEach((socket, index) =>
+      socket.on('meeting:screen-share:update', (raw: unknown) => {
+        const parsed = meetingScreenShareUpdateSchema.safeParse(raw);
+        if (parsed.success) shareUpdates[index]!.push(parsed.data);
+      }),
+    );
+    try {
+      for (const socket of sockets) {
+        const readyEvent = nextSocketEvent<unknown>(socket, 'office:ready');
+        await connectSocket(socket);
+        ready.push(officeReadySchema.parse(await readyEvent));
+      }
+      const firstReady = ready[0]!;
+      const runtime = app.get(OfficeRuntimeService);
+      const room = VIVO_GEOMETRY.zones.find((zone) => zone.kind === 'meeting')!;
+      const office = (
+        runtime as unknown as {
+          offices: Map<
+            string,
+            { participants: Map<string, { publicState: WorldSnapshot['participants'][number] }> }
+          >;
+        }
+      ).offices.get(firstReady.officeId)!;
+      const inside = {
+        x: (room.bounds.tx + 0.5) * VIVO_GEOMETRY.tileSize,
+        y: (room.bounds.ty + 0.5) * VIVO_GEOMETRY.tileSize,
+      };
+      for (const session of ready)
+        office.participants.get(session.participationId)!.publicState.position = inside;
+
+      const command = async (index: number, event: string, payload: object) =>
+        officeCommandAckSchema.parse(
+          await new Promise<unknown>((resolve) =>
+            sockets[index]!.emit(
+              event,
+              { eventId: randomUUID(), officeEpoch: firstReady.snapshot.officeEpoch, payload },
+              resolve,
+            ),
+          ),
+        );
+      expect(await command(0, 'meeting:join', { zoneId: room.zoneId })).toMatchObject({ ok: true });
+      expect(await command(1, 'meeting:join', { zoneId: room.zoneId })).toMatchObject({ ok: true });
+      const meeting = () =>
+        runtime
+          .meetingZones(firstReady.officeId)!
+          .zones.find((zoneState) => zoneState.zoneId === room.zoneId)!.meeting!;
+      const outsiderShareId = randomUUID();
+      expect(
+        await command(2, 'meeting:screen-share:start', {
+          conversationId: meeting().conversationId,
+          conversationVersion: meeting().version,
+          shareId: outsiderShareId,
+        }),
+      ).toMatchObject({ ok: false, error: { code: 'unauthorized' } });
+
+      const shareIds = [randomUUID(), randomUUID()];
+      const starts = await Promise.all(
+        [0, 1].map((index) =>
+          command(index, 'meeting:screen-share:start', {
+            conversationId: meeting().conversationId,
+            conversationVersion: meeting().version,
+            shareId: shareIds[index]!,
+          }),
+        ),
+      );
+      expect(starts.filter((result) => result.ok)).toHaveLength(1);
+      expect(
+        starts.filter((result) => !result.ok && result.error.code === 'conflict'),
+      ).toHaveLength(1);
+      const presenterIndex = starts[0]!.ok ? 0 : 1;
+      const viewerIndex = presenterIndex === 0 ? 1 : 0;
+      const shareId = shareIds[presenterIndex]!;
+      await vi.waitFor(() => {
+        for (const index of [0, 1])
+          expect(
+            shareUpdates[index]!.some((update) => update.presentation?.shareId === shareId),
+          ).toBe(true);
+      });
+
+      expect(
+        await command(presenterIndex, 'meeting:screen-share:confirm', {
+          conversationId: meeting().conversationId,
+          shareId,
+        }),
+      ).toMatchObject({ ok: true });
+      await vi.waitFor(() => {
+        expect(shareUpdates[viewerIndex]!.at(-1)?.presentation).toMatchObject({
+          shareId,
+          status: 'live',
+        });
+      });
+      expect(
+        await command(viewerIndex, 'meeting:screen-share:stop', {
+          conversationId: meeting().conversationId,
+          shareId,
+        }),
+      ).toMatchObject({ ok: false, error: { code: 'conflict' } });
+
+      const admittedState = nextSocketEvent<unknown>(sockets[2]!, 'meeting:screen-share:update');
+      expect(await command(2, 'meeting:join', { zoneId: room.zoneId })).toMatchObject({ ok: true });
+      expect(meetingScreenShareUpdateSchema.parse(await admittedState).presentation).toMatchObject({
+        shareId,
+        status: 'live',
+      });
+
+      const activeMeeting = meeting();
+      const survivorIndices = [0, 1, 2].filter((index) => index !== presenterIndex);
+      const clearedStates = survivorIndices.map((index) =>
+        nextSocketEvent<unknown>(sockets[index]!, 'meeting:screen-share:update'),
+      );
+      expect(
+        await command(presenterIndex, 'meeting:leave', {
+          conversationId: activeMeeting.conversationId,
+          conversationVersion: activeMeeting.version,
+        }),
+      ).toMatchObject({ ok: true });
+      const cleared = await Promise.all(clearedStates);
+      for (const event of cleared)
+        expect(meetingScreenShareUpdateSchema.parse(event).presentation).toBeNull();
     } finally {
       for (const socket of sockets) socket.disconnect();
     }

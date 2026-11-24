@@ -10,6 +10,8 @@ Status: implementation and gated actual media acceptance complete in this checko
 - [x] Prevent proximity pairing from forming or expanding across room domains; retire the old generation and retain eligible same-domain survivors after a boundary crossing.
 - [x] Revalidate room/proximity membership when media permits and token participation are read so a stale generation stops authorizing new media.
 - [x] Cache room entrance geometry per trusted map, including bounds, blocked tiles and collision edges. Occupancy status is descriptive and does not lock exits.
+- [x] Keep one ephemeral, server-authoritative screen-share reservation per explicit meeting, with authenticated start/confirm/stop commands, replay-safe share IDs, private versioned updates, join/resync snapshots, and bounded expiry for abandoned starts.
+- [x] Clear presenter ownership on meeting departure or office authorization loss without changing proximity conversations or microphone-only permits.
 
 ## Verification recorded
 

@@ -22,6 +22,11 @@ import {
   officeClientEventSchemas,
   waveEventSchema,
   officeWaveSchema,
+  meetingScreenShareStartEventSchema,
+  meetingScreenShareConfirmEventSchema,
+  meetingScreenShareStopEventSchema,
+  meetingScreenShareUpdateSchema,
+  officeServerEventSchemas,
 } from '../dist/index.js';
 
 const id = '11111111-1111-4111-8111-111111111111';
@@ -66,7 +71,49 @@ const snapshot = {
 };
 const command = { eventId: id, officeEpoch: other, payload: { sequence: 1, dx: 1, dy: 0 } };
 
-describe('office v1 contracts (fixtures do not approve a map or grant access)', () => {
+describe('office protocol contracts (fixtures do not approve a map or grant access)', () => {
+  it('versions strict meeting screen-share commands and private presentation updates', () => {
+    const start = {
+      eventId: id,
+      officeEpoch: other,
+      payload: { conversationId: id, conversationVersion: 3, shareId: other },
+    };
+    expect(OFFICE_PROTOCOL_VERSION).toBe(6);
+    expect(meetingScreenShareStartEventSchema.safeParse(start).success).toBe(true);
+    expect(
+      meetingScreenShareStartEventSchema.safeParse({
+        ...start,
+        payload: { ...start.payload, presenterParticipationId: id },
+      }).success,
+    ).toBe(false);
+    const identity = {
+      eventId: id,
+      officeEpoch: other,
+      payload: { conversationId: id, shareId: other },
+    };
+    expect(meetingScreenShareConfirmEventSchema.safeParse(identity).success).toBe(true);
+    expect(meetingScreenShareStopEventSchema.safeParse(identity).success).toBe(true);
+    const update = {
+      officeEpoch: other,
+      conversationId: id,
+      zoneId: 'meeting-room',
+      version: 4,
+      presentation: {
+        shareId: other,
+        presenterParticipationId: id,
+        status: 'starting',
+        startedAt: 100,
+      },
+    };
+    expect(meetingScreenShareUpdateSchema.safeParse(update).success).toBe(true);
+    expect(meetingScreenShareUpdateSchema.safeParse({ ...update, generation: id }).success).toBe(
+      false,
+    );
+    expect(officeServerEventSchemas['meeting:screen-share:update'].safeParse(update).success).toBe(
+      true,
+    );
+  });
+
   it('validates a target-only wave command and bounded wave broadcast', () => {
     expect(
       waveEventSchema.safeParse({

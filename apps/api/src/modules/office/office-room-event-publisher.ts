@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import type { Namespace, Socket } from 'socket.io';
 import type {
   ConversationAreas,
+  MeetingScreenShareUpdate,
   MeetingZones,
   OfficeMessage,
   SpaceMessage,
@@ -121,6 +122,20 @@ export class OfficeRoomEventPublisher {
       for (const socketId of new Set(notice.socketIds)) {
         const recipient = this.namespace?.sockets.get(socketId);
         if (recipient?.connected) recipient.emit('conversation:update', notice.update);
+      }
+    }
+  }
+
+  publishMeetingScreenShareNotices(
+    notices: readonly {
+      readonly socketIds: readonly string[];
+      readonly update: MeetingScreenShareUpdate;
+    }[],
+  ) {
+    for (const notice of notices) {
+      for (const socketId of new Set(notice.socketIds)) {
+        const recipient = this.namespace?.sockets.get(socketId);
+        if (recipient?.connected) recipient.emit('meeting:screen-share:update', notice.update);
       }
     }
   }

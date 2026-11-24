@@ -4,6 +4,7 @@ export const OFFICE_LIMITS = Object.freeze({
   maxMeetingParticipants: 20,
   maxProximityParticipants: 6,
   meetingInvitationLifetimeMs: 60_000,
+  meetingScreenShareStartTimeoutMs: 30_000,
   maxInboundEventBytes: 4096,
   maxSnapshotBytes: 65536,
   maxWorldDimension: 32768,

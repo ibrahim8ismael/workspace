@@ -1063,6 +1063,7 @@ export class OfficeRuntimeService {
             generation: group.generation,
             identity: member.participationId,
             room: group.generation,
+            roomLifecycle: 'stable' as const,
             version: 1,
             sources: ['microphone'] as const,
           })),

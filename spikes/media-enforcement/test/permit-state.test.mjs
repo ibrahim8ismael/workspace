@@ -155,3 +155,73 @@ test('membership changes cannot narrow permits inside a still-active generation'
   assert.equal(state.allows(query), false);
   assert.equal(state.allows({ ...changedRoster, source: 'microphone' }), false);
 });
+
+test('stable meeting room roster changes install in place and retire only after final departure', async () => {
+  const { state } = fixture();
+  const first = { ...permit, roomLifecycle: 'stable' };
+  const second = { ...first, identity: 'u2' };
+  let sequence = 1;
+  const install = async (permits) => {
+    const pull = state.beginPull('stable-' + sequence);
+    const current = sequence++;
+    return state.installWithRetirement({ ...pull, sequence: current, permits }, async () => {
+      assert.fail('a non-empty stable meeting must not retire its room');
+    });
+  };
+
+  assert.equal(await install([first]), true);
+  assert.equal(await install([first, second]), true);
+  assert.equal(state.allows({ ...first, source: 'microphone' }), true);
+  assert.equal(state.allows({ ...second, source: 'microphone' }), true);
+
+  assert.equal(await install([second]), true);
+  assert.equal(state.allows({ ...first, source: 'microphone' }), false);
+  assert.equal(state.allows({ ...second, source: 'microphone' }), true);
+
+  const finalPull = state.beginPull('stable-final');
+  assert.equal(
+    await state.installWithRetirement(
+      { ...finalPull, sequence, permits: [] },
+      async (generation) => generation === 'g1',
+    ),
+    true,
+  );
+  assert.equal(state.allows({ ...second, source: 'microphone' }), false);
+  const replay = state.beginPull('stable-replay');
+  assert.equal(
+    await state.installWithRetirement(
+      { ...replay, sequence: sequence + 1, permits: [first] },
+      async () => true,
+    ),
+    false,
+  );
+});
+
+test('stable meeting permits cannot move a live generation to a different room', async () => {
+  const { state } = fixture();
+  const stablePermit = { ...permit, roomLifecycle: 'stable' };
+  const firstPull = state.beginPull('stable-room-first');
+  assert.equal(
+    await state.installWithRetirement({ ...firstPull, sequence: 1, permits: [stablePermit] }, async () => true),
+    true,
+  );
+
+  const replacement = state.beginPull('stable-room-replacement');
+  let retiredRoom;
+  assert.equal(
+    await state.installWithRetirement(
+      {
+        ...replacement,
+        sequence: 2,
+        permits: [{ ...stablePermit, room: 'replacement-room' }],
+      },
+      async (generation) => {
+        retiredRoom = generation;
+        return true;
+      },
+    ),
+    false,
+  );
+  assert.equal(retiredRoom, stablePermit.generation);
+  assert.equal(state.allows({ ...stablePermit, source: 'microphone' }), false);
+});

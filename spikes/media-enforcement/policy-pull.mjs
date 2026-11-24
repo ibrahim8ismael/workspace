@@ -147,11 +147,16 @@ export async function pullPolicy({
       Object.keys(snapshot).sort().join(',') !== 'epoch,nonce,permits,sequence' ||
       !Array.isArray(snapshot.permits) ||
       snapshot.permits.length > 256 ||
-      snapshot.permits.some(
-        (permit) =>
-          !permit ||
-          Object.keys(permit).sort().join(',') !== 'generation,identity,room,sources,version',
-      )
+      snapshot.permits.some((permit) => {
+        if (!permit) return true;
+        const keys = Object.keys(permit).sort().join(',');
+        return (
+          (keys !== 'generation,identity,room,sources,version' &&
+            keys !== 'generation,identity,room,roomLifecycle,sources,version') ||
+          (permit.roomLifecycle !== undefined &&
+            !['rotating', 'stable'].includes(permit.roomLifecycle))
+        );
+      })
     )
       return false;
     onVerified(snapshot);

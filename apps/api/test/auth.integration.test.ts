@@ -6532,6 +6532,356 @@ describe('meeting invitation socket flow', () => {
   });
 });
 
+describe('fixed meeting media room continuity', () => {
+  it.skipIf(!runLiveMediaFixture)(
+    'keeps stable LiveKit room audio through meeting joins, departure, and re-entry',
+    async () => {
+      const users: Awaited<ReturnType<typeof account>>[] = [];
+      for (let index = 0; index < 3; index += 1) users.push(await account());
+      const workspaceId = await workspace(users[0]!);
+      for (const member of users.slice(1)) await join(users[0]!, workspaceId, member);
+      const tickets = await Promise.all(users.map((user) => issueTicket(user, workspaceId)));
+      const sockets = tickets.map(({ ticket }) =>
+        officeSocket({ ticket, protocolVersion: OFFICE_PROTOCOL_VERSION }),
+      );
+      const updateQueues = sockets.map((socket) => socketEventQueue(socket, 'conversation:update'));
+      const mediaClients: ApplicationMediaClient[] = [];
+      let livekit: Awaited<ReturnType<typeof startLiveKitFixture>> | undefined;
+      let fixture: Awaited<ReturnType<typeof startViteMediaFixture>> | undefined;
+      let guard: ApplicationGuard | undefined;
+      let retirementDirectory: string | undefined;
+
+      const waitForUpdate = (
+        index: number,
+        predicate: (update: ReturnType<typeof conversationUpdateSchema.parse>) => boolean,
+      ) =>
+        updateQueues[index]!((raw) => {
+          const parsed = conversationUpdateSchema.safeParse(raw);
+          return parsed.success && predicate(parsed.data);
+        }).then((raw) => conversationUpdateSchema.parse(raw));
+
+      const command = async (index: number, event: string, payload: object) =>
+        officeCommandAckSchema.parse(
+          await new Promise<unknown>((resolve) =>
+            sockets[index]!.emit(
+              event,
+              { eventId: randomUUID(), officeEpoch: ready[0]!.snapshot.officeEpoch, payload },
+              resolve,
+            ),
+          ),
+        );
+
+      const waitForInstalledPermits = async (generation: string, count: number, label: string) => {
+        const policy = app.get(MediaPolicyService) as unknown as {
+          installed?: { permits: Array<{ generation: string }> };
+        };
+        await vi.waitFor(
+          () => {
+            const installedCount =
+              policy.installed?.permits.filter((permit) => permit.generation === generation)
+                .length ?? 0;
+            expect(installedCount, label).toBe(count);
+          },
+          { timeout: 15000, interval: 50 },
+        );
+      };
+
+      const ready: ReturnType<typeof officeReadySchema.parse>[] = [];
+      try {
+        for (const socket of sockets) {
+          const notice = nextSocketEvent<unknown>(socket, 'office:ready');
+          await connectSocket(socket);
+          ready.push(officeReadySchema.parse(await notice));
+        }
+
+        const runtime = app.get(OfficeRuntimeService);
+        const officeId = ready[0]!.officeId;
+        const room = VIVO_GEOMETRY.zones.find((zone) => zone.kind === 'meeting')!;
+        const map = trustedOfficeMap(vivoManifest.mapVersion)!;
+        const roomTiles = Array.from(
+          { length: room.bounds.width * room.bounds.height },
+          (_, index) => ({
+            tx: room.bounds.tx + (index % room.bounds.width),
+            ty: room.bounds.ty + Math.floor(index / room.bounds.width),
+          }),
+        ).filter(
+          (tile) =>
+            map.validated.isReachable(tile) &&
+            !map.seats.some((seat) => seat.tile.tx === tile.tx && seat.tile.ty === tile.ty),
+        );
+        if (roomTiles.length < 3)
+          throw new Error('Expected three reachable tiles in a meeting room');
+        const office = (
+          runtime as unknown as {
+            offices: Map<
+              string,
+              {
+                participants: Map<string, { publicState: { position: { x: number; y: number } } }>;
+              }
+            >;
+          }
+        ).offices.get(officeId)!;
+        ready.forEach((member, index) => {
+          const tile = roomTiles[index]!;
+          office.participants.get(member.participationId)!.publicState.position = {
+            x: tile.tx * 32 + 16,
+            y: tile.ty * 32 + 16,
+          };
+        });
+
+        const initialJoiningEvents = [0, 1].map((index) =>
+          waitForUpdate(
+            index,
+            (update) => update.state === 'joining' && update.participants.length === 2,
+          ),
+        );
+        expect(await command(0, 'meeting:join', { zoneId: room.zoneId })).toMatchObject({
+          ok: true,
+        });
+        expect(await command(1, 'meeting:join', { zoneId: room.zoneId })).toMatchObject({
+          ok: true,
+        });
+        const initialJoining = await Promise.all(initialJoiningEvents);
+        expect(initialJoining[0]).toEqual(initialJoining[1]);
+
+        livekit = await startLiveKitFixture();
+        fixture = await startViteMediaFixture();
+        if (!liveMediaGuardPort) throw new Error('real media guard port is unavailable');
+        retirementDirectory = await mkdtemp(resolve(tmpdir(), 'gather-cp08-meeting-guard-'));
+        const apiAddress = app.getHttpServer().address() as AddressInfo;
+        guard = startApplicationGuard({
+          apiBaseUrl: 'http://127.0.0.1:' + apiAddress.port,
+          epoch: randomBytes(32).toString('hex'),
+          host: '127.0.0.1',
+          port: liveMediaGuardPort,
+          retirementDirectory,
+          sfuUpstream: 'http://127.0.0.1:' + livekit.signalingPort,
+          origin: fixture.origin,
+        });
+        await waitForInstalledPermits(
+          initialJoining[0]!.generation,
+          2,
+          'two meeting participant permits are installed',
+        );
+
+        const initialActiveEvents = [0, 1].map((index) =>
+          waitForUpdate(
+            index,
+            (update) =>
+              update.state === 'active' &&
+              update.conversationId === initialJoining[0]!.conversationId &&
+              update.participants.length === 2,
+          ),
+        );
+        const initialActive = (await Promise.all(initialActiveEvents))[0]!;
+        expect(initialActive.generation).toBe(initialJoining[0]!.generation);
+
+        const issueGrant = async (index: number, conversation: typeof initialActive) => {
+          const response = await users[index]!.client.send(
+            'post',
+            '/api/conversations/' + conversation.conversationId + '/media-token',
+            {
+              participationId: ready[index]!.participationId,
+              conversationVersion: conversation.version,
+            },
+          );
+          status(response, 200);
+          const grant = mediaTokenResponseSchema.parse(response.body);
+          const claims = await new TokenVerifier(livekitApiKey, livekitApiSecret).verify(
+            grant.token,
+            0,
+          );
+          expect(claims.sub).toBe(ready[index]!.participationId);
+          expect(claims.video).toMatchObject({
+            room: conversation.generation,
+            roomJoin: true,
+            canPublish: true,
+            canPublishSources: ['microphone'],
+            canSubscribe: true,
+          });
+          return { ...grant, identity: ready[index]!.participationId };
+        };
+
+        const startClient = async (index: number, conversation: typeof initialActive) => {
+          const client = startApplicationMediaClient({
+            fixtureUrl: fixture!.url,
+            grants: [await issueGrant(index, conversation)],
+          });
+          mediaClients.push(client);
+          await waitForApplicationMediaMessage(
+            client,
+            (message) => message.kind === 'connected',
+            'the meeting member to connect to LiveKit',
+          );
+          return client;
+        };
+
+        const expectAudioAdvancing = async (client: ApplicationMediaClient) => {
+          const priorCount = client.messages.filter(
+            (message) => message.kind === 'audio-advancing',
+          ).length;
+          client.send({ kind: 'expect-audio-advancing' });
+          await vi.waitFor(
+            () => {
+              const reports = client.messages.filter(
+                (message) => message.kind === 'audio-advancing',
+              );
+              if (reports.length <= priorCount)
+                throw new Error('waiting for decoded meeting audio');
+              const deltas = reports[priorCount]!['decodedAudioSampleDeltas'] as number[];
+              expect(deltas.length).toBe(1);
+              expect(deltas[0]).toBeGreaterThan(0);
+            },
+            { timeout: 10000, interval: 50 },
+          );
+        };
+
+        const firstClient = await startClient(0, initialActive);
+        const secondClient = await startClient(1, initialActive);
+        await Promise.all([expectAudioAdvancing(firstClient), expectAudioAdvancing(secondClient)]);
+
+        const thirdJoiningEvent = waitForUpdate(
+          2,
+          (update) => update.state === 'joining' && update.participants.length === 3,
+        );
+        expect(await command(2, 'meeting:join', { zoneId: room.zoneId })).toMatchObject({
+          ok: true,
+        });
+        const thirdJoining = await thirdJoiningEvent;
+        expect(thirdJoining).toMatchObject({
+          conversationId: initialActive.conversationId,
+          generation: initialActive.generation,
+          mediaReady: false,
+        });
+        await waitForInstalledPermits(
+          initialActive.generation,
+          3,
+          'all three meeting participant permits are installed',
+        );
+        const thirdActiveEvents = [0, 1, 2].map((index) =>
+          waitForUpdate(
+            index,
+            (update) =>
+              update.state === 'active' &&
+              update.conversationId === initialActive.conversationId &&
+              update.version > thirdJoining.version,
+          ),
+        );
+        const thirdActive = (await Promise.all(thirdActiveEvents))[0]!;
+        expect(thirdActive.generation).toBe(initialActive.generation);
+        const thirdClient = await startClient(2, thirdActive);
+        await Promise.all([
+          expectAudioAdvancing(firstClient),
+          expectAudioAdvancing(secondClient),
+          expectAudioAdvancing(thirdClient),
+        ]);
+
+        const roomService = new RoomServiceClient(
+          'http://127.0.0.1:' + livekit.signalingPort,
+          livekitApiKey,
+          livekitApiSecret,
+        );
+        await vi.waitFor(
+          async () => {
+            const participants = await roomService.listParticipants(initialActive.generation);
+            expect(participants.map(({ identity }) => identity).sort()).toEqual(
+              ready.map(({ participationId }) => participationId).sort(),
+            );
+          },
+          { timeout: 5000, interval: 50 },
+        );
+
+        const remainingActiveEvent = waitForUpdate(
+          0,
+          (update) =>
+            update.state === 'active' &&
+            update.conversationId === thirdActive.conversationId &&
+            update.participants.length === 2 &&
+            update.version > thirdActive.version,
+        );
+        const thirdEndedEvent = waitForUpdate(
+          2,
+          (update) =>
+            update.state === 'ended' && update.conversationId === thirdActive.conversationId,
+        );
+        expect(
+          await command(2, 'meeting:leave', {
+            conversationId: thirdActive.conversationId,
+            conversationVersion: thirdActive.version,
+          }),
+        ).toMatchObject({ ok: true });
+        await waitForInstalledPermits(
+          initialActive.generation,
+          2,
+          'the departed participant permit is revoked',
+        );
+        const remainingActive = await remainingActiveEvent;
+        const thirdEnded = await thirdEndedEvent;
+        expect(remainingActive.generation).toBe(initialActive.generation);
+        expect(thirdEnded.generation).toBe(initialActive.generation);
+        await Promise.all([expectAudioAdvancing(firstClient), expectAudioAdvancing(secondClient)]);
+        await stopApplicationMediaClient(thirdClient);
+
+        const thirdRejoiningEvent = waitForUpdate(
+          2,
+          (update) =>
+            update.state === 'joining' &&
+            update.conversationId === initialActive.conversationId &&
+            update.participants.length === 3 &&
+            update.version > remainingActive.version,
+        );
+        expect(await command(2, 'meeting:join', { zoneId: room.zoneId })).toMatchObject({
+          ok: true,
+        });
+        const thirdRejoining = await thirdRejoiningEvent;
+        expect(thirdRejoining.generation).toBe(initialActive.generation);
+        await waitForInstalledPermits(
+          initialActive.generation,
+          3,
+          'the re-entering participant permit is installed',
+        );
+        const reentryActiveEvents = [0, 1, 2].map((index) =>
+          waitForUpdate(
+            index,
+            (update) =>
+              update.state === 'active' &&
+              update.conversationId === initialActive.conversationId &&
+              update.version > thirdRejoining.version,
+          ),
+        );
+        const reentryActive = (await Promise.all(reentryActiveEvents))[0]!;
+        expect(reentryActive.generation).toBe(initialActive.generation);
+        const rejoinedClient = await startClient(2, reentryActive);
+        await Promise.all([
+          expectAudioAdvancing(firstClient),
+          expectAudioAdvancing(secondClient),
+          expectAudioAdvancing(rejoinedClient),
+        ]);
+
+        console.info(
+          'stable meeting media verification: ' +
+            JSON.stringify({
+              members: 3,
+              oneRoomGeneration: initialActive.generation,
+              liveAudioAfterJoin: true,
+              liveAudioAfterDeparture: true,
+              liveAudioAfterReentry: true,
+              thirdMemberReentered: true,
+            }),
+        );
+      } finally {
+        await Promise.all(mediaClients.map(stopApplicationMediaClient));
+        if (guard) await stopApplicationGuard(guard);
+        if (fixture) await fixture.stop();
+        if (livekit) await livekit.stop();
+        if (retirementDirectory) await rm(retirementDirectory, { recursive: true, force: true });
+        for (const socket of sockets) socket.disconnect();
+      }
+    },
+    180000,
+  );
+});
+
 describe('authoritative room audio isolation', () => {
   it.skipIf(!runLiveMediaFixture)(
     'isolates adjacent room meetings from doorway and wall outsiders and cuts off exited or revoked receivers',

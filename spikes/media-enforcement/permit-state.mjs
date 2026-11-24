@@ -41,6 +41,16 @@ export class PermitState {
       );
       const replacement = [...next.values()].filter((permit) => permit.generation === generation);
       if (!this.#sameGenerationPolicy(current, replacement)) {
+        const stableMeetingRoster =
+          current.length > 0 &&
+          replacement.length > 0 &&
+          current.every(
+            (permit) => permit.roomLifecycle === 'stable' && permit.room === current[0].room,
+          ) &&
+          replacement.every(
+            (permit) => permit.roomLifecycle === 'stable' && permit.room === current[0].room,
+          );
+        if (stableMeetingRoster) continue;
         this.#pendingRetirements.add(generation);
         try {
           this.retire(generation);
@@ -93,6 +103,8 @@ export class PermitState {
         !permit.identity ||
         typeof permit.room !== 'string' ||
         !permit.room ||
+        (permit.roomLifecycle !== undefined &&
+          !['rotating', 'stable'].includes(permit.roomLifecycle)) ||
         !Number.isSafeInteger(permit.version) ||
         permit.version < 0 ||
         !Array.isArray(permit.sources) ||
@@ -122,6 +134,7 @@ export class PermitState {
       return (
         replacement &&
         replacement.room === permit.room &&
+        (replacement.roomLifecycle ?? 'rotating') === (permit.roomLifecycle ?? 'rotating') &&
         replacement.version === permit.version &&
         replacement.sources.length === permit.sources.length &&
         replacement.sources.every((source) => permit.sources.includes(source))

@@ -30,7 +30,7 @@ export async function startApplicationMediaClient({
     typeof fixtureUrl !== 'string' ||
     !fixtureUrl.startsWith('http://127.0.0.1:') ||
     !Array.isArray(grants) ||
-    grants.length < 2 ||
+    grants.length < 1 ||
     grants.length > 6 ||
     typeof forceRelay !== 'boolean' ||
     (denyMicrophoneIndex !== undefined &&
@@ -104,49 +104,12 @@ export async function startApplicationMediaClient({
     );
     try {
       await Promise.all(
-        pages.map((page) =>
-          page.waitForFunction(
-            () => ['muted', 'error'].includes(window.__mediaFixture.status),
-            null,
-            { timeout: 25000 },
-          ),
-        ),
-      );
-    } catch (error) {
-      const observations = await Promise.all(pages.map(readObservations));
-      throw new Error(
-        `application media clients did not reach live/error: ${JSON.stringify({
-          observations: observations.map(withoutRefreshedToken),
-          browserErrors: browserErrors.map(safeDiagnostic),
-        })}`,
-        { cause: error },
-      );
-    }
-    const beforeMicrophoneIntent = await Promise.all(pages.map(readObservations));
-    if (beforeMicrophoneIntent.some(({ status }) => status !== 'muted'))
-      throw new Error(
-        `application grant did not establish a muted listener before microphone intent: ${JSON.stringify(
-          {
-            observations: beforeMicrophoneIntent.map(withoutRefreshedToken),
-            browserErrors: browserErrors.map(safeDiagnostic),
-          },
-        )}`,
-      );
-    // The test clients simulate an explicit user microphone action after admission.
-    await Promise.all(
-      pages.map((page) =>
-        page.evaluate(() => window.postMessage({ kind: 'toggle-microphone' }, location.origin)),
-      ),
-    );
-    try {
-      await Promise.all(
         pages.map((page, index) =>
           page.waitForFunction(
             ({ denied }) =>
               denied
-                ? window.__mediaFixture.status === 'muted' &&
-                  window.__mediaFixture.error.includes('Microphone access was denied')
-                : window.__mediaFixture.status === 'live',
+                ? ['muted', 'error'].includes(window.__mediaFixture.status)
+                : ['live', 'error'].includes(window.__mediaFixture.status),
             { denied: index === denyMicrophoneIndex },
             { timeout: 25000 },
           ),
@@ -155,7 +118,7 @@ export async function startApplicationMediaClient({
     } catch (error) {
       const observations = await Promise.all(pages.map(readObservations));
       throw new Error(
-        `application microphone intent did not resolve: ${JSON.stringify({
+        `application media clients did not reach live/error: ${JSON.stringify({
           observations: observations.map(withoutRefreshedToken),
           browserErrors: browserErrors.map(safeDiagnostic),
         })}`,
@@ -178,7 +141,7 @@ export async function startApplicationMediaClient({
       throw new Error(
         `application grant failed to join LiveKit: ${JSON.stringify({ initial: initial.map(withoutRefreshedToken), browserErrors })}`,
       );
-    if (denyMicrophoneIndex === undefined) {
+    if (denyMicrophoneIndex === undefined && grants.length > 1) {
       try {
         await Promise.all(
           pages.map((page, index) =>

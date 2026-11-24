@@ -32,6 +32,7 @@ export const mediaPolicyPermitSchema = z
     generation: idSchema,
     identity: idSchema,
     room: idSchema,
+    roomLifecycle: z.enum(['rotating', 'stable']).optional(),
     version: positiveVersionSchema,
     sources: z.array(mediaSourceSchema).min(1).max(3),
   })

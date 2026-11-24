@@ -66,6 +66,7 @@ describe('fixed meeting conversations', () => {
     });
     expect(secondJoin.notices[0]?.update.generation).toBe(generation1);
     expect(meetings.mediaPermits()).toHaveLength(2);
+    expect(meetings.mediaPermits().every((permit) => permit.roomLifecycle === 'stable')).toBe(true);
     expect(meetings.mediaPermits().every((permit) => permit.generation === generation1)).toBe(true);
     expect(conversationUpdateSchema.safeParse(secondJoin.notices[0]?.update).success).toBe(true);
   });

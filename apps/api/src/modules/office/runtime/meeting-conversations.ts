@@ -160,6 +160,7 @@ export class MeetingConversations {
         generation: conversation.generation,
         identity: member.participationId,
         room: conversation.generation,
+        roomLifecycle: 'stable' as const,
         version: 1,
         sources: ['microphone'] as const,
       })),

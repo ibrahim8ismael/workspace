@@ -202,7 +202,10 @@ test('stable meeting permits cannot move a live generation to a different room',
   const stablePermit = { ...permit, roomLifecycle: 'stable' };
   const firstPull = state.beginPull('stable-room-first');
   assert.equal(
-    await state.installWithRetirement({ ...firstPull, sequence: 1, permits: [stablePermit] }, async () => true),
+    await state.installWithRetirement(
+      { ...firstPull, sequence: 1, permits: [stablePermit] },
+      async () => true,
+    ),
     true,
   );
 

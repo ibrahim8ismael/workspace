@@ -43,7 +43,7 @@ describe('fixed meeting conversations', () => {
     }
   });
 
-  it('is idempotent for repeated joins and rotates one shared generation for group admission', () => {
+  it('is idempotent and keeps one media room identity through group admission', () => {
     const meetings = new MeetingConversations(epoch, [zone], 32);
     const first = candidate(0);
     const firstJoin = meetings.join(first, zone.zoneId);
@@ -58,14 +58,15 @@ describe('fixed meeting conversations', () => {
       conversationId,
       kind: 'meeting',
       zoneId: zone.zoneId,
+      state: 'joining',
       participants: [
         { participationId: first.participationId },
         { participationId: candidate(1, 96, 96).participationId },
       ],
     });
-    expect(secondJoin.notices[0]?.update.generation).not.toBe(generation1);
+    expect(secondJoin.notices[0]?.update.generation).toBe(generation1);
     expect(meetings.mediaPermits()).toHaveLength(2);
-    expect(meetings.mediaPermits().every((permit) => permit.generation !== generation1)).toBe(true);
+    expect(meetings.mediaPermits().every((permit) => permit.generation === generation1)).toBe(true);
     expect(conversationUpdateSchema.safeParse(secondJoin.notices[0]?.update).success).toBe(true);
   });
 
@@ -81,7 +82,7 @@ describe('fixed meeting conversations', () => {
     expect(meetings.join(candidate(0), 'another-room')).toBe('zone_unavailable');
   });
 
-  it('removes a leaver and keeps the remaining meeting active on a new authorized generation', () => {
+  it('removes a leaver without rotating the room and accepts their later re-entry', () => {
     const meetings = new MeetingConversations(epoch, [zone], 32);
     const first = candidate(0);
     const second = candidate(1);
@@ -102,16 +103,16 @@ describe('fixed meeting conversations', () => {
     const leave = meetings.leave(first.participationId, active.conversationId, active.version);
     expect(typeof leave).toBe('object');
     if (typeof leave === 'object') {
-      expect(leave.notices.map((notice) => notice.update.state)).toEqual(['joining', 'ended']);
-      const remaining = leave.notices[0]!.update;
-      const firstEnded = leave.notices[1]!.update;
+      expect(leave.notices.map((notice) => notice.update.state)).toEqual(['ended', 'active']);
+      const firstEnded = leave.notices[0]!.update;
+      const remaining = leave.notices[1]!.update;
       expect(remaining.participants.map((member) => member.participationId)).toEqual([
         second.participationId,
       ]);
-      expect(remaining.generation).not.toBe(active.generation);
+      expect(remaining.generation).toBe(active.generation);
       expect(firstEnded.version).toBe(remaining.version);
       expect(meetings.mediaPermits()).toMatchObject([
-        { generation: remaining.generation, identity: second.participationId },
+        { generation: active.generation, identity: second.participationId },
       ]);
 
       const rejoined = meetings.join(first, zone.zoneId);
@@ -119,6 +120,13 @@ describe('fixed meeting conversations', () => {
       if (typeof rejoined === 'object') {
         expect(rejoined.notices[0]?.update.version).toBeGreaterThan(firstEnded.version);
         expect(rejoined.notices[0]?.update.participants).toHaveLength(2);
+        expect(rejoined.notices[0]?.update.generation).toBe(active.generation);
+        const reentryReady = meetings.activateGeneration(active.generation)[0]?.update;
+        expect(reentryReady).toMatchObject({
+          state: 'active',
+          conversationId: active.conversationId,
+          generation: active.generation,
+        });
       }
     }
   });

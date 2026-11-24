@@ -43,6 +43,7 @@ import { companySettingsPath, officePath, type OfficePage } from '../../routing/
 import { OfficeClient } from '../office/office-client';
 import { OfficeReconnectSupervisor } from '../office/office-reconnect-supervisor';
 import {
+  conversationMediaContextKey,
   latestMeetingConversation,
   latestProximityConversation,
 } from '../office/proximity-conversation';
@@ -171,9 +172,10 @@ export function CompanyOfficePreview({
     ? `${voiceMembership.kind}:${voiceMembership.conversationId}:${participationId}`
     : null;
   const activeVoiceConversation = activeMeetingConversation ?? activeProximityConversation;
-  const activeVoiceContextKey = activeVoiceConversation
-    ? `${activeVoiceConversation.kind}:${activeVoiceConversation.conversationId}:${activeVoiceConversation.version}:${activeVoiceConversation.generation}:${participationId}`
-    : null;
+  const activeVoiceContextKey = conversationMediaContextKey(
+    activeVoiceConversation,
+    participationId,
+  );
   const [officeActionError, setOfficeActionError] = useState('');
   const [officeActionPending, setOfficeActionPending] = useState(false);
   const [wavePending, setWavePending] = useState(false);

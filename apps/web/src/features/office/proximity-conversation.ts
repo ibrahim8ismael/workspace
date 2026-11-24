@@ -14,6 +14,16 @@ export function latestMeetingConversation(
   return latestConversation(updates, participationId, 'meeting');
 }
 
+export function conversationMediaContextKey(
+  conversation: ConversationUpdate | null,
+  participationId: string | null,
+) {
+  if (!conversation || !participationId) return null;
+  if (conversation.kind === 'meeting')
+    return `${conversation.kind}:${conversation.conversationId}:${conversation.generation}:${participationId}`;
+  return `${conversation.kind}:${conversation.conversationId}:${conversation.version}:${conversation.generation}:${participationId}`;
+}
+
 function latestConversation(
   updates: ConversationUpdate[],
   participationId: string | null,

@@ -64,7 +64,12 @@ interface MeetingGroupState {
   conversationId: string;
   generation: string;
   version: number;
-  members: { participationId: string; socketId: string; displayName: string }[];
+  members: {
+    participationId: string;
+    socketId: string;
+    displayName: string;
+    mediaVersion: number;
+  }[];
   pendingMemberIds: Set<string>;
   active: boolean;
 }
@@ -197,6 +202,7 @@ export class OfficeRuntimeService {
   private readonly offices = new Map<string, OfficeRuntime>();
   private readonly takeoverReferences = new Map<string, StoredTakeoverReference>();
   private readonly reconfiguringOffices = new Set<string>();
+  private mediaAuthorizationVersion = 0;
 
   async withOfficeReconfiguration<T>(officeId: string, action: () => Promise<T>): Promise<T> {
     invariant(!this.reconfiguringOffices.has(officeId), 409, 'office_in_use');
@@ -1064,7 +1070,7 @@ export class OfficeRuntimeService {
             identity: member.participationId,
             room: group.generation,
             roomLifecycle: 'stable' as const,
-            version: 1,
+            version: member.mediaVersion,
             sources: ['microphone'] as const,
           })),
         ),
@@ -1139,7 +1145,10 @@ export class OfficeRuntimeService {
           group.active &&
           group.members.some((member) => member.participationId === participationId),
       );
-      if (!participant || (!conversation && !meeting)) continue;
+      const meetingMember = meeting?.members.find(
+        (member) => member.participationId === participationId,
+      );
+      if (!participant || (!conversation && !meetingMember)) continue;
       return {
         participationId,
         userId: participant.userId,
@@ -1154,6 +1163,7 @@ export class OfficeRuntimeService {
         conversationVersion: conversation?.conversationVersion ?? meeting!.version,
         generation: conversation?.generation ?? meeting!.generation,
         room: conversation?.room ?? meeting!.generation,
+        mediaVersion: meetingMember?.mediaVersion ?? 1,
       };
     }
     return null;
@@ -1692,15 +1702,17 @@ export class OfficeRuntimeService {
   private addMeetingMember(
     office: OfficeRuntime,
     group: MeetingGroupState,
-    member: MeetingGroupState['members'][number],
+    member: Omit<MeetingGroupState['members'][number], 'mediaVersion'>,
   ) {
-    group.members = [...group.members, member].sort((left, right) =>
+    invariant(Number.isSafeInteger(this.mediaAuthorizationVersion + 1), 503, 'media_unavailable');
+    const authorizedMember = { ...member, mediaVersion: ++this.mediaAuthorizationVersion };
+    group.members = [...group.members, authorizedMember].sort((left, right) =>
       left.participationId.localeCompare(right.participationId),
     );
-    group.pendingMemberIds.add(member.participationId);
+    group.pendingMemberIds.add(authorizedMember.participationId);
     group.version += 1;
     const recipients = group.active
-      ? [member.socketId]
+      ? [authorizedMember.socketId]
       : group.members.map((current) => current.socketId);
     office.meetingNotices.push(
       this.meetingNotice(

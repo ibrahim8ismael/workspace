@@ -4,6 +4,22 @@ import { sourceGrantsAllowed } from './source-grants.mjs';
 export function applicationTokenAllowed(claims, permits, retired) {
   const room = claims.video?.room;
   const identity = claims.sub;
+  let mediaVersion;
+  try {
+    const metadata = JSON.parse(claims.metadata);
+    if (
+      !metadata ||
+      typeof metadata !== 'object' ||
+      Array.isArray(metadata) ||
+      Object.keys(metadata).sort().join(',') !== 'gatherMediaVersion' ||
+      !Number.isSafeInteger(metadata.gatherMediaVersion) ||
+      metadata.gatherMediaVersion < 1
+    )
+      return false;
+    mediaVersion = metadata.gatherMediaVersion;
+  } catch {
+    return false;
+  }
   if (
     claims.video?.roomJoin !== true ||
     typeof room !== 'string' ||
@@ -11,14 +27,14 @@ export function applicationTokenAllowed(claims, permits, retired) {
     !room ||
     !identity ||
     retired.has(room) ||
-    !sourceGrantsAllowed(claims, permits)
+    !sourceGrantsAllowed(claims, permits, mediaVersion)
   )
     return false;
   return permits.allows({
     generation: room,
     identity,
     room,
-    version: 1,
+    version: mediaVersion,
     source: 'microphone',
   });
 }

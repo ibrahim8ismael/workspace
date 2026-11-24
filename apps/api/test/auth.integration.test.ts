@@ -205,13 +205,17 @@ async function startViteMediaFixture() {
 }
 
 async function startLiveKitFixture() {
-  const context = process.env['CP07_DOCKER_CONTEXT'] ?? 'orbstack';
+  const context = process.env['CP07_DOCKER_CONTEXT'];
   const docker = async (...args: string[]) => {
     try {
-      const result = await execFileAsync('docker', ['--context', context, ...args], {
-        timeout: 30000,
-        maxBuffer: 65536,
-      });
+      const result = await execFileAsync(
+        'docker',
+        [...(context ? ['--context', context] : []), ...args],
+        {
+          timeout: 30000,
+          maxBuffer: 65536,
+        },
+      );
       return result.stdout.trim();
     } catch {
       throw new Error(`LiveKit fixture Docker operation failed: ${args[0]}`);
@@ -6534,7 +6538,7 @@ describe('meeting invitation socket flow', () => {
 
 describe('fixed meeting media room continuity', () => {
   it.skipIf(!runLiveMediaFixture)(
-    'keeps stable LiveKit room audio through meeting joins, departure, and re-entry',
+    'keeps stable LiveKit room audio through roster changes and revokes uncooperative members',
     async () => {
       const users: Awaited<ReturnType<typeof account>>[] = [];
       for (let index = 0; index < 3; index += 1) users.push(await account());
@@ -6692,6 +6696,9 @@ describe('fixed meeting media room continuity', () => {
             0,
           );
           expect(claims.sub).toBe(ready[index]!.participationId);
+          expect(JSON.parse(String(claims.metadata))).toMatchObject({
+            gatherMediaVersion: expect.any(Number),
+          });
           expect(claims.video).toMatchObject({
             room: conversation.generation,
             roomJoin: true,
@@ -6700,6 +6707,14 @@ describe('fixed meeting media room continuity', () => {
             canSubscribe: true,
           });
           return { ...grant, identity: ready[index]!.participationId };
+        };
+        const mediaVersionFor = async (grant: Awaited<ReturnType<typeof issueGrant>>) => {
+          const claims = await new TokenVerifier(livekitApiKey, livekitApiSecret).verify(
+            grant.token,
+            0,
+          );
+          return (JSON.parse(String(claims.metadata)) as { gatherMediaVersion: number })
+            .gatherMediaVersion;
         };
 
         const startClient = async (index: number, conversation: typeof initialActive) => {
@@ -6770,6 +6785,8 @@ describe('fixed meeting media room continuity', () => {
         const thirdActive = (await Promise.all(thirdActiveEvents))[0]!;
         expect(thirdActive.generation).toBe(initialActive.generation);
         const thirdClient = await startClient(2, thirdActive);
+        const staleThirdGrant = await issueGrant(2, thirdActive);
+        const staleThirdVersion = await mediaVersionFor(staleThirdGrant);
         await Promise.all([
           expectAudioAdvancing(firstClient),
           expectAudioAdvancing(secondClient),
@@ -6804,6 +6821,8 @@ describe('fixed meeting media room continuity', () => {
           (update) =>
             update.state === 'ended' && update.conversationId === thirdActive.conversationId,
         );
+        const revocationStartedAt = Date.now();
+        thirdClient.send({ kind: 'expect-server-cutoff', startedAt: revocationStartedAt });
         expect(
           await command(2, 'meeting:leave', {
             conversationId: thirdActive.conversationId,
@@ -6819,8 +6838,66 @@ describe('fixed meeting media room continuity', () => {
         const thirdEnded = await thirdEndedEvent;
         expect(remainingActive.generation).toBe(initialActive.generation);
         expect(thirdEnded.generation).toBe(initialActive.generation);
+        const cutoff = await waitForApplicationMediaMessage(
+          thirdClient,
+          (message) => message.kind === 'server-cutoff',
+          'the uncooperative departed meeting participant to lose LiveKit media',
+        );
+        expect(cutoff.stable).toBe(true);
+        expect(cutoff.cutoffMs).toEqual(expect.any(Number));
+        const stableRosterTrace = guard!.messages
+          .filter(({ kind }) => kind?.startsWith('stable_roster_'))
+          .map(({ kind, participants, durationMs }) => ({ kind, participants, durationMs }));
+        expect(
+          cutoff.cutoffMs as number,
+          `stable roster trace: ${JSON.stringify(stableRosterTrace)}`,
+        ).toBeLessThanOrEqual(2000);
+        const staleReplayUrl = new URL(`http://127.0.0.1:${liveMediaGuardPort}/rtc/v1/validate`);
+        staleReplayUrl.searchParams.set('access_token', staleThirdGrant.token);
+        staleReplayUrl.searchParams.set(
+          'join_request',
+          Buffer.from(JSON.stringify({ protocol: 12 })).toString('base64url'),
+        );
+        expect((await fetch(staleReplayUrl, { headers: { Origin: fixture!.origin } })).status).toBe(
+          403,
+        );
+        status(
+          await users[2]!.client.send(
+            'post',
+            `/api/conversations/${thirdActive.conversationId}/media-token`,
+            {
+              participationId: ready[2]!.participationId,
+              conversationVersion: thirdActive.version,
+            },
+          ),
+          409,
+        );
+        await vi.waitFor(
+          async () => {
+            const participants = await roomService.listParticipants(initialActive.generation);
+            expect(participants.map(({ identity }) => identity).sort()).toEqual(
+              ready
+                .slice(0, 2)
+                .map(({ participationId }) => participationId)
+                .sort(),
+            );
+          },
+          { timeout: 5000, interval: 50 },
+        );
         await Promise.all([expectAudioAdvancing(firstClient), expectAudioAdvancing(secondClient)]);
-        await stopApplicationMediaClient(thirdClient);
+        console.info(
+          'stable meeting media revocation verification: ' +
+            JSON.stringify({
+              revokedParticipant: ready[2]!.participationId,
+              survivorsStayedConnected: true,
+              survivorAudioContinued: true,
+              staleTokenRejected: true,
+              credentialRefreshRejected: true,
+              cutoffMs: cutoff.cutoffMs,
+              cutoffDeadlineMs: 2000,
+              roomGenerationPreserved: initialActive.generation,
+            }),
+        );
 
         const thirdRejoiningEvent = waitForUpdate(
           2,
@@ -6852,11 +6929,83 @@ describe('fixed meeting media room continuity', () => {
         const reentryActive = (await Promise.all(reentryActiveEvents))[0]!;
         expect(reentryActive.generation).toBe(initialActive.generation);
         const rejoinedClient = await startClient(2, reentryActive);
+        const rejoinedGrant = await issueGrant(2, reentryActive);
+        const rejoinedVersion = await mediaVersionFor(rejoinedGrant);
+        expect(rejoinedVersion).not.toBe(staleThirdVersion);
+        expect((await fetch(staleReplayUrl, { headers: { Origin: fixture!.origin } })).status).toBe(
+          403,
+        );
+        console.info(
+          'stable meeting stale credential verification: ' +
+            JSON.stringify({
+              oldAttendanceVersion: staleThirdVersion,
+              reentryAttendanceVersion: rejoinedVersion,
+              oldTokenRejectedAfterReentry: true,
+            }),
+        );
         await Promise.all([
           expectAudioAdvancing(firstClient),
           expectAudioAdvancing(secondClient),
           expectAudioAdvancing(rejoinedClient),
         ]);
+
+        const accessEnded = nextSocketEvent<Record<string, unknown>>(
+          sockets[2]!,
+          'office:access-ended',
+        );
+        const membershipRevocationStartedAt = Date.now();
+        rejoinedClient.send({
+          kind: 'expect-server-cutoff',
+          startedAt: membershipRevocationStartedAt,
+        });
+        status(
+          await users[0]!.client.send(
+            'delete',
+            `/api/workspaces/${workspaceId}/members/${users[2]!.id}`,
+          ),
+          200,
+        );
+        await expect(accessEnded).resolves.toMatchObject({ reason: 'authorization_ended' });
+        await waitForInstalledPermits(
+          initialActive.generation,
+          2,
+          'workspace membership revocation removes the meeting permit',
+        );
+        const membershipCutoff = await waitForApplicationMediaMessage(
+          rejoinedClient,
+          (message) => message.kind === 'server-cutoff',
+          'the uncooperative member to lose media after workspace authorization ends',
+        );
+        expect(membershipCutoff.stable).toBe(true);
+        expect(membershipCutoff.cutoffMs as number).toBeLessThanOrEqual(2000);
+        expect((await fetch(staleReplayUrl, { headers: { Origin: fixture!.origin } })).status).toBe(
+          403,
+        );
+        status(
+          await users[2]!.client.send(
+            'post',
+            `/api/conversations/${reentryActive.conversationId}/media-token`,
+            {
+              participationId: ready[2]!.participationId,
+              conversationVersion: reentryActive.version,
+            },
+          ),
+          409,
+        );
+        await Promise.all([expectAudioAdvancing(firstClient), expectAudioAdvancing(secondClient)]);
+        console.info(
+          'stable meeting membership revocation verification: ' +
+            JSON.stringify({
+              authorizationEnded: true,
+              staleTokenRejected: true,
+              credentialRefreshRejected: true,
+              cutoffMs: membershipCutoff.cutoffMs,
+              cutoffDeadlineMs: 2000,
+              survivorsStayedConnected: true,
+              survivorAudioContinued: true,
+              roomGenerationPreserved: initialActive.generation,
+            }),
+        );
 
         console.info(
           'stable meeting media verification: ' +

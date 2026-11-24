@@ -160,21 +160,31 @@ test('stable meeting room roster changes install in place and retire only after 
   const { state } = fixture();
   const first = { ...permit, roomLifecycle: 'stable' };
   const second = { ...first, identity: 'u2' };
+  const reconciledRosters = [];
   let sequence = 1;
   const install = async (permits) => {
     const pull = state.beginPull('stable-' + sequence);
     const current = sequence++;
-    return state.installWithRetirement({ ...pull, sequence: current, permits }, async () => {
-      assert.fail('a non-empty stable meeting must not retire its room');
-    });
+    return state.installWithRetirement(
+      { ...pull, sequence: current, permits },
+      async () => assert.fail('a non-empty stable meeting must not retire its room'),
+      async (generation, meetingPermits) => {
+        assert.equal(generation, first.generation);
+        reconciledRosters.push(meetingPermits.map(({ identity }) => identity));
+        return true;
+      },
+    );
   };
 
   assert.equal(await install([first]), true);
+  assert.deepEqual(reconciledRosters, [['u1']]);
   assert.equal(await install([first, second]), true);
+  assert.deepEqual(reconciledRosters, [['u1'], ['u1', 'u2']]);
   assert.equal(state.allows({ ...first, source: 'microphone' }), true);
   assert.equal(state.allows({ ...second, source: 'microphone' }), true);
 
   assert.equal(await install([second]), true);
+  assert.deepEqual(reconciledRosters, [['u1'], ['u1', 'u2'], ['u2']]);
   assert.equal(state.allows({ ...first, source: 'microphone' }), false);
   assert.equal(state.allows({ ...second, source: 'microphone' }), true);
 
@@ -195,6 +205,91 @@ test('stable meeting room roster changes install in place and retire only after 
     ),
     false,
   );
+});
+
+test('stable roster reconciliation denies a removed identity while preserving survivors on failure', async () => {
+  const { state } = fixture();
+  const first = {
+    ...permit,
+    roomLifecycle: 'stable',
+    sources: ['microphone', 'screen_share'],
+  };
+  const second = { ...first, identity: 'u2' };
+  const install = async (sequence, permits, reconcile = async () => true) => {
+    const pull = state.beginPull('stable-revoke-' + sequence);
+    return state.installWithRetirement(
+      { ...pull, sequence, permits },
+      async () => assert.fail('a stable room roster update cannot retire the room'),
+      reconcile,
+    );
+  };
+
+  assert.equal(await install(1, [first, second]), true);
+  let confirmedIdentities;
+  assert.equal(
+    await install(2, [second], async (generation, meetingPermits) => {
+      assert.equal(generation, first.generation);
+      confirmedIdentities = meetingPermits.map(({ identity }) => identity);
+      assert.equal(state.allows({ ...first, source: 'microphone' }), false);
+      assert.equal(state.allows({ ...first, source: 'screen_share' }), false);
+      assert.equal(state.allows({ ...second, source: 'microphone' }), true);
+      assert.equal(state.allows({ ...second, source: 'screen_share' }), true);
+      return false;
+    }),
+    false,
+  );
+  assert.deepEqual(confirmedIdentities, ['u2']);
+  assert.equal(state.allows({ ...first, source: 'microphone' }), false);
+  assert.equal(state.allows({ ...first, source: 'screen_share' }), false);
+  assert.equal(state.allows({ ...second, source: 'microphone' }), true);
+  assert.equal(state.allows({ ...second, source: 'screen_share' }), true);
+
+  assert.equal(
+    await install(3, [second], async (_generation, meetingPermits) => {
+      assert.deepEqual(
+        meetingPermits.map(({ identity }) => identity),
+        ['u2'],
+      );
+      return true;
+    }),
+    true,
+  );
+  assert.equal(state.allows({ ...second, source: 'microphone' }), true);
+  assert.equal(state.allows({ ...second, source: 'screen_share' }), true);
+});
+
+test('stable meeting re-entry rotates only the returning participant credential', async () => {
+  const { state } = fixture();
+  const first = { ...permit, roomLifecycle: 'stable' };
+  const survivor = { ...first, identity: 'u2' };
+  const rejoined = { ...first, version: 2 };
+  const install = async (sequence, permits, reconcile = async () => true) => {
+    const pull = state.beginPull('stable-reentry-' + sequence);
+    return state.installWithRetirement(
+      { ...pull, sequence, permits },
+      async () => assert.fail('a stable meeting re-entry cannot retire the room'),
+      reconcile,
+    );
+  };
+
+  assert.equal(await install(1, [first, survivor]), true);
+  let targetPermits;
+  assert.equal(
+    await install(2, [rejoined, survivor], async (_generation, permits) => {
+      targetPermits = permits;
+      assert.equal(state.allows({ ...first, source: 'microphone' }), false);
+      assert.equal(state.allows({ ...survivor, source: 'microphone' }), true);
+      return true;
+    }),
+    true,
+  );
+  assert.deepEqual(targetPermits, [
+    { identity: 'u1', version: 2 },
+    { identity: 'u2', version: 1 },
+  ]);
+  assert.equal(state.allows({ ...first, source: 'microphone' }), false);
+  assert.equal(state.allows({ ...rejoined, source: 'microphone' }), true);
+  assert.equal(state.allows({ ...survivor, source: 'microphone' }), true);
 });
 
 test('stable meeting permits cannot move a live generation to a different room', async () => {

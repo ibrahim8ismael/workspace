@@ -2,6 +2,120 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PermitState } from '../permit-state.mjs';
 import { retireSfuGeneration } from '../sfu-generation-retirement.mjs';
+import { reconcileSfuStableRoster } from '../sfu-stable-roster-reconciliation.mjs';
+
+test('stable roster reconciliation removes only unauthorized participants and keeps the room open', async () => {
+  const participants = [
+    { identity: 'authorized-a', metadata: '{"gatherMediaVersion":1}' },
+    { identity: 'revoked', metadata: '{"gatherMediaVersion":2}' },
+  ];
+  let roomExists = true;
+  let now = 0;
+  let deleteRoomCalls = 0;
+  const result = await reconcileSfuStableRoster({
+    roomService: {
+      async listRooms() {
+        return roomExists ? [{ name: 'meeting', numParticipants: participants.length }] : [];
+      },
+      async listParticipants() {
+        return [...participants];
+      },
+      async removeParticipant(room, identity) {
+        assert.equal(room, 'meeting');
+        const index = participants.findIndex((participant) => participant.identity === identity);
+        if (index >= 0) participants.splice(index, 1);
+      },
+      async deleteRoom() {
+        deleteRoomCalls += 1;
+        roomExists = false;
+      },
+    },
+    generation: 'meeting',
+    permits: [{ identity: 'authorized-a', version: 1 }],
+    clock: () => now,
+    sleep: async (duration) => {
+      now += duration;
+    },
+  });
+
+  assert.equal(result.reconciled, true);
+  assert.equal(result.removed, 1);
+  assert.deepEqual(
+    participants.map(({ identity }) => identity),
+    ['authorized-a'],
+  );
+  assert.equal(roomExists, true);
+  assert.equal(deleteRoomCalls, 0);
+});
+
+test('stable roster reconciliation disconnects an old credential for a rejoined identity', async () => {
+  const participants = [{ identity: 'same-user', metadata: '{"gatherMediaVersion":7}' }];
+  const result = await reconcileSfuStableRoster({
+    roomService: {
+      async listRooms() {
+        return [{ name: 'meeting', numParticipants: participants.length }];
+      },
+      async listParticipants() {
+        return [...participants];
+      },
+      async removeParticipant(_room, identity) {
+        const index = participants.findIndex((participant) => participant.identity === identity);
+        if (index >= 0) participants.splice(index, 1);
+      },
+    },
+    generation: 'meeting',
+    permits: [{ identity: 'same-user', version: 8 }],
+    clock: (() => {
+      let now = 0;
+      return () => now++;
+    })(),
+    sleep: async () => {},
+  });
+
+  assert.equal(result.reconciled, true);
+  assert.equal(result.removed, 1);
+  assert.equal(participants.length, 0);
+});
+
+test('stable roster reconciliation fails closed when SFU participant observation fails', async () => {
+  const result = await reconcileSfuStableRoster({
+    roomService: {
+      async listRooms() {
+        return [{ name: 'meeting', numParticipants: 1 }];
+      },
+      async listParticipants() {
+        throw new Error('temporary SFU API failure');
+      },
+    },
+    generation: 'meeting',
+    permits: [{ identity: 'authorized-a', version: 1 }],
+  });
+  assert.equal(result.reconciled, false);
+});
+
+test('stable roster reconciliation trusts participant observations when LiveKit room counts lag', async () => {
+  const participants = [{ identity: 'authorized-a', metadata: '{"gatherMediaVersion":1}' }];
+  const result = await reconcileSfuStableRoster({
+    roomService: {
+      async listRooms() {
+        return [{ name: 'meeting', numParticipants: 2 }];
+      },
+      async listParticipants() {
+        return [...participants];
+      },
+    },
+    generation: 'meeting',
+    permits: [{ identity: 'authorized-a', version: 1 }],
+    clock: (() => {
+      let now = 0;
+      return () => now++;
+    })(),
+    sleep: async () => {},
+  });
+  assert.equal(result.reconciled, true);
+  assert.equal(result.removed, 0);
+  assert.equal(participants.length, 1);
+});
 
 test('generation retirement disconnects members and confirms a second empty observation', async () => {
   const participants = [{ identity: 'a' }, { identity: 'b' }];

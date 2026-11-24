@@ -7,6 +7,7 @@ const identity = 'participation-uuid';
 const room = 'generation-uuid';
 const microphoneToken = {
   sub: identity,
+  metadata: JSON.stringify({ gatherMediaVersion: 1 }),
   video: {
     room,
     roomJoin: true,
@@ -69,4 +70,40 @@ test('application guard rejects stale, substituted, retired and overbroad grants
   empty.beginPull('nonce');
   assert.equal(empty.install({ epoch: 'epoch', nonce: 'nonce', sequence: 1, permits: [] }), true);
   assert.equal(applicationTokenAllowed(microphoneToken, empty, new Set()), false);
+  assert.equal(
+    applicationTokenAllowed(
+      { ...microphoneToken, metadata: JSON.stringify({ gatherMediaVersion: 2 }) },
+      state,
+      new Set(),
+    ),
+    false,
+  );
+  assert.equal(
+    applicationTokenAllowed({ ...microphoneToken, metadata: undefined }, state, new Set()),
+    false,
+  );
+});
+
+test('meeting media authorization versions cover microphone and future screen-share grants', () => {
+  const state = new PermitState('epoch', () => 0);
+  state.beginPull('nonce');
+  const screenToken = {
+    ...microphoneToken,
+    metadata: JSON.stringify({ gatherMediaVersion: 3 }),
+    video: {
+      ...microphoneToken.video,
+      canPublishSources: ['microphone', 'screen_share'],
+    },
+  };
+  const screenPermit = {
+    ...permit,
+    version: 3,
+    sources: ['microphone', 'screen_share'],
+  };
+  assert.equal(
+    state.install({ epoch: 'epoch', nonce: 'nonce', sequence: 1, permits: [screenPermit] }),
+    true,
+  );
+  assert.equal(applicationTokenAllowed(screenToken, state, new Set()), true);
+  assert.equal(state.allows({ ...screenPermit, source: 'screen_share' }), true);
 });

@@ -110,7 +110,7 @@ export class MediaPolicyService {
     return { body, signature };
   }
 
-  hasInstalledPermit(generation: string, identity: string, source: 'microphone') {
+  hasInstalledPermit(generation: string, identity: string, source: 'microphone', version = 1) {
     const installed = this.installed;
     if (!installed || installed.expiresAt <= Date.now()) return false;
     return installed.permits.some(
@@ -118,7 +118,7 @@ export class MediaPolicyService {
         permit.generation === generation &&
         permit.identity === identity &&
         permit.room === generation &&
-        permit.version === 1 &&
+        permit.version === version &&
         permit.sources.includes(source),
     );
   }

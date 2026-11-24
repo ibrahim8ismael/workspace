@@ -1,5 +1,5 @@
 /** Verify the complete signed publication grant against the installed fixture permit. */
-export function sourceGrantsAllowed(claims, permits) {
+export function sourceGrantsAllowed(claims, permits, version = 1) {
   if (claims.video?.canPublish !== true) return true;
   const sources = claims.video.canPublishSources;
   if (
@@ -17,7 +17,7 @@ export function sourceGrantsAllowed(claims, permits) {
           generation: claims.video.room,
           identity: claims.sub,
           room: claims.video.room,
-          version: 1,
+          version,
           source,
         })),
   );

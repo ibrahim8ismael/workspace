@@ -84,7 +84,12 @@ export class MediaTokenService {
       'stale_version',
     );
     invariant(
-      this.policy.hasInstalledPermit(current.generation, current.participationId, 'microphone'),
+      this.policy.hasInstalledPermit(
+        current.generation,
+        current.participationId,
+        'microphone',
+        current.mediaVersion,
+      ),
       503,
       'media_unavailable',
     );
@@ -107,6 +112,7 @@ export class MediaTokenService {
       identity: current.participationId,
       name: current.displayName,
       ttl: ttlSeconds,
+      metadata: JSON.stringify({ gatherMediaVersion: current.mediaVersion }),
     });
     tokenGrant.addGrant({
       roomJoin: true,
@@ -135,10 +141,12 @@ export class MediaTokenService {
         stillCurrent.userId === actor.user._id &&
         stillCurrent.sessionId === actor.session._id &&
         stillCurrent.generation === current.generation &&
+        stillCurrent.mediaVersion === current.mediaVersion &&
         this.policy.hasInstalledPermit(
           stillCurrent.generation,
           stillCurrent.participationId,
           'microphone',
+          stillCurrent.mediaVersion,
         ),
       409,
       'stale_version',

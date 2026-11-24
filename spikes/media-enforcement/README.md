@@ -457,3 +457,31 @@ cutoff at 326ms and 12ms respectively. These measurements are specific to the
 local fixture. They do not establish public ICE/TURN reachability, production
 deployment identity, or production release readiness; see
 [`PROXIMITY_GROUP_ROLLOUT.md`](../../docs/planning/PROXIMITY_GROUP_ROLLOUT.md).
+
+## Issue #67 stable meeting revocation
+
+`pnpm test:media-meeting-revocation` runs the three-person stable-room scenario
+against the pinned LiveKit 1.13.11 Docker image and headless Chromium clients.
+The departing browser does not receive or honor an application disconnect; the
+test leaves its LiveKit client running until the server-side participant removal
+stops decoded audio. It checks that the meeting room generation and both
+survivors' audio continue, that the old token and a post-departure token refresh
+are rejected, and that workspace membership revocation cuts off a rejoined
+participant without interrupting the survivors.
+
+Meeting credentials include a per-attendance authorization version. Leaving and
+rejoining the same stable room rotates only that participant's version, so an
+old token remains denied after the participant is authorized again. Stable-room
+policy installation removes only SFU participants whose identity or attendance
+version is absent from the authoritative roster; it confirms removal before the
+policy ACK and leaves authorized participants connected. The same version-bound
+permit check covers every granted publication source, including `screen_share`;
+the source-level regression verifies those rights are revoked with the
+participant. Real screen capture and publication are validated by the later
+screen-sharing tickets.
+
+The latest recorded successful local run measured decoded-audio cutoff at 65ms
+after meeting departure and 1053ms after workspace membership revocation,
+against a 2000ms test deadline. The measurements include policy polling and
+LiveKit participant removal and are specific to the local Docker/browser
+environment; they do not establish public network or production latency.

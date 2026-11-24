@@ -45,6 +45,35 @@ Generate a single 32-byte outbox key and use the same canonical base64 value in 
 files. Keep the key stable while queued messages exist. `DB_AUTO_INDEX=false` is mandatory; the
 explicit one-shot `indexes` job provisions declared indexes after replica-set initialization.
 
+## Automatic deployment from `main`
+
+After the `CI` workflow succeeds for a push to `main`, `.github/workflows/release-images.yml` builds
+the API, worker, media guard, proximity-voice pilot web, and core web images. It pins each release in
+GHCR by digest, then deploys the tested commit over SSH. Pull requests and failed CI runs do not
+deploy. Add these repository Actions secrets:
+
+- `VPS_HOST`: the production VPS hostname or IP
+- `VPS_USER`: an account with Docker Compose access and permission to read the protected deployment
+  env and write `/var/backups/gather-lite`
+- `VPS_SSH_KEY`: that account's private SSH key
+
+The rollout uses the short-lived workflow token to pull the private GHCR images; it removes the
+temporary Docker credential file at exit. It discovers the active Compose file list from the running
+API container and requires project `gather-lite-pilot`, its API/Caddy/media-guard services, and one
+unambiguous mail worker (it refuses to proceed if both workers are running). The protected routing env remains at
+`/tmp/gather-main-deploy/infra/deploy/.env`. A missing env file, Compose file, or expected service
+stops the rollout before image references change.
+
+Before changing images, the host creates and gzip-validates a MongoDB archive. The workflow updates
+only the API, worker, media-guard, and web image references in the protected `.env`, preserving its
+permissions and all other settings. It recreates those application services, restarts the media
+guard after the API update, and checks API/Caddy/guard health plus the public HTTPS liveness route.
+On a failed pull or health check, it restores the prior image references and attempts to restart the
+same services from their previous local images. Database, Redis, LiveKit lease, media-retirement,
+Mailpit, and other persistent volumes are retained; no database reset, index job, migration, or
+`compose down` is performed. This is a code/image rollback only. A future schema migration must add
+its own backward-compatible rollout and recovery gate before being automated.
+
 ## Build and start
 
 Run from the repository root. Install `nginx-bootstrap.conf` as the temporary port-80 site, create

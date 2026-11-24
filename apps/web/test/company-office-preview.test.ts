@@ -5,6 +5,7 @@ import { createCommonsSceneCleanup } from '../commons-preview/scene-lifecycle';
 import type { OfficeWorkspaceDetail } from '../src/lib/api';
 import { canOpenOfficePreview } from '../src/features/workspaces/company-overview-view';
 import {
+  conversationMediaContextKey,
   latestMeetingConversation,
   latestProximityConversation,
 } from '../src/features/office/proximity-conversation';
@@ -91,7 +92,7 @@ describe('company office preview selection', () => {
     ).toBeNull();
   });
 
-  it('rejects ended-generation resurrection and accepts only a newer meeting generation', () => {
+  it('requires a newer meeting revision and current membership to accept re-entry', () => {
     const participationId = '8f34d8de-bddb-489d-9cde-f03f1a98b68e';
     const joining: ConversationUpdate = {
       officeEpoch: '668bde07-cc48-4623-a58c-2efbc8ac21d5',
@@ -133,22 +134,65 @@ describe('company office preview selection', () => {
       kind: 'meeting',
       zoneId: 'vivo-meeting-room',
       version: 4,
-      generation: '77017341-6b80-4051-b7fa-4bdc7709c5ee',
+      generation: ended.generation,
     };
-    expect(acceptsConversationUpdate(endedMarker, meetingRejoin, joining.officeEpoch)).toBe(true);
+    expect(
+      acceptsConversationUpdate(endedMarker, meetingRejoin, joining.officeEpoch, participationId),
+    ).toBe(true);
     expect(
       acceptsConversationUpdate(
         endedMarker,
-        { ...meetingRejoin, version: 5, generation: ended.generation },
+        {
+          ...meetingRejoin,
+          version: 5,
+          participants: [
+            { participationId: '41bbf5d6-37d7-4468-9892-9776ff19e008', displayName: 'Coworker' },
+          ],
+        },
         joining.officeEpoch,
+        participationId,
       ),
     ).toBe(false);
     expect(
-      acceptsConversationUpdate(endedMarker, { ...meetingRejoin, version: 3 }, joining.officeEpoch),
+      acceptsConversationUpdate(
+        endedMarker,
+        { ...meetingRejoin, version: 3 },
+        joining.officeEpoch,
+        participationId,
+      ),
     ).toBe(false);
+    expect(acceptsConversationUpdate(endedMarker, meetingRejoin, joining.officeEpoch)).toBe(false);
     expect(acceptsConversationUpdate(undefined, joining, 'old-office-epoch')).toBe(false);
     expect(acceptsConversationUpdate(marker, { ...active, version: 3 }, joining.officeEpoch)).toBe(
       true,
+    );
+  });
+
+  it('keeps meeting media sessions stable across roster revisions but preserves proximity rotations', () => {
+    const participationId = '8f34d8de-bddb-489d-9cde-f03f1a98b68e';
+    const meeting: ConversationUpdate = {
+      officeEpoch: '668bde07-cc48-4623-a58c-2efbc8ac21d5',
+      conversationId: 'd65d5a55-c917-448b-a203-1a226bc76319',
+      kind: 'meeting',
+      zoneId: 'vivo-meeting-room',
+      state: 'active',
+      version: 4,
+      generation: 'a371c42a-aa7d-4082-ad22-74e1816af053',
+      mediaReady: true,
+      participants: [{ participationId, displayName: 'Office Person' }],
+    };
+    expect(conversationMediaContextKey({ ...meeting, version: 5 }, participationId)).toBe(
+      conversationMediaContextKey(meeting, participationId),
+    );
+    expect(
+      conversationMediaContextKey(
+        { ...meeting, conversationId: 'another-meeting', generation: 'another-room' },
+        participationId,
+      ),
+    ).not.toBe(conversationMediaContextKey(meeting, participationId));
+    const proximity = { ...meeting, kind: 'proximity' as const };
+    expect(conversationMediaContextKey({ ...proximity, version: 5 }, participationId)).not.toBe(
+      conversationMediaContextKey(proximity, participationId),
     );
   });
 

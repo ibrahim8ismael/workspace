@@ -67,16 +67,18 @@ export function acceptsConversationUpdate(
   previous: ConversationVersionMarker | undefined,
   update: ConversationUpdate,
   officeEpoch: string | null,
+  participationId?: string,
 ) {
   if (officeEpoch && update.officeEpoch !== officeEpoch) return false;
+  if (!previous) return true;
+  if (previous.officeEpoch !== update.officeEpoch || update.version <= previous.version)
+    return false;
+  if (!previous.ended) return true;
   return (
-    !previous ||
-    (previous.officeEpoch === update.officeEpoch &&
-      (!previous.ended ||
-        (update.kind === 'meeting' &&
-          previous.generation !== undefined &&
-          update.generation !== previous.generation)) &&
-      update.version > previous.version)
+    update.kind === 'meeting' &&
+    update.state !== 'ended' &&
+    Boolean(participationId) &&
+    update.participants.some((participant) => participant.participationId === participationId)
   );
 }
 
@@ -277,6 +279,7 @@ export class OfficeClient {
             previous,
             update,
             this.state.ready?.snapshot.officeEpoch ?? null,
+            this.state.ready?.participationId,
           )
         )
           return;

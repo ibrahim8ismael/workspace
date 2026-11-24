@@ -125,6 +125,169 @@ describe('office runtime reservations', () => {
     expect(runtime.meetingZones(active.officeId)?.zones[0]?.admittedMembers).toEqual([]);
   });
 
+  it('keeps one meeting room identity through joins, departures, re-entry, and creates a new one after end', () => {
+    const runtime = new OfficeRuntimeService();
+    const actors = [ticket(1), ticket(2), ticket(3)];
+    const reservations = actors.map((actor, index) =>
+      runtime.reserve(actor, `meeting-socket-${index + 1}`),
+    );
+    const office = (
+      runtime as unknown as {
+        offices: Map<
+          string,
+          {
+            participants: Map<string, { publicState: { position: { x: number; y: number } } }>;
+          }
+        >;
+      }
+    ).offices.get(actors[0]!.officeId)!;
+    const roomPosition = {
+      x: 2 * COMMONS_GEOMETRY.tileSize + 16,
+      y: 4 * COMMONS_GEOMETRY.tileSize + 16,
+    };
+    for (const reservation of reservations)
+      office.participants.get(reservation.participationId)!.publicState.position = roomPosition;
+
+    const join = (index: number) =>
+      runtime.joinMeetingZone(
+        actors[index]!.officeId,
+        actors[index]!.workspaceId,
+        actors[index]!.userId,
+        `meeting-socket-${index + 1}`,
+        reservations[index]!.participationId,
+        actors[index]!.officeEpoch,
+        'commons-northwest-meeting',
+      );
+    const currentMeeting = () =>
+      runtime
+        .meetingZones(actors[0]!.officeId)!
+        .zones.find((zone) => zone.zoneId === 'commons-northwest-meeting')!.meeting!;
+    const permits = () => runtime.proximityMediaPermits();
+    const identitiesFor = (generation: string) =>
+      new Set(
+        permits()
+          .filter((permit) => permit.generation === generation)
+          .map((p) => p.identity),
+      );
+
+    expect(typeof join(0)).toBe('object');
+    runtime.reconcileProximity(actors[0]!.officeId);
+    const first = currentMeeting();
+    const firstGeneration = permits()[0]!.generation;
+    expect(
+      runtime.activateProximityGeneration(firstGeneration, identitiesFor(firstGeneration))[0]
+        ?.update.state,
+    ).toBe('active');
+
+    expect(typeof join(1)).toBe('object');
+    const secondJoinNotices = runtime.reconcileProximity(actors[0]!.officeId);
+    expect(secondJoinNotices).toHaveLength(1);
+    expect(secondJoinNotices[0]!.socketIds).toEqual(['meeting-socket-2']);
+    expect(secondJoinNotices[0]!.update).toMatchObject({
+      state: 'joining',
+      conversationId: first.conversationId,
+      generation: firstGeneration,
+    });
+    expect(secondJoinNotices[0]!.update.participants.map((p) => p.participationId).sort()).toEqual(
+      [reservations[0]!.participationId, reservations[1]!.participationId].sort(),
+    );
+    expect(currentMeeting()).toMatchObject({
+      conversationId: first.conversationId,
+      state: 'active',
+    });
+    expect(currentMeeting().version).toBeGreaterThan(first.version);
+    expect(
+      runtime.activateProximityGeneration(
+        firstGeneration,
+        new Set([reservations[0]!.participationId]),
+      ),
+    ).toEqual([]);
+    const afterJoinReady = runtime.activateProximityGeneration(
+      firstGeneration,
+      identitiesFor(firstGeneration),
+    )[0]!.update;
+    expect(afterJoinReady).toMatchObject({
+      state: 'active',
+      conversationId: first.conversationId,
+      generation: firstGeneration,
+    });
+    expect(afterJoinReady.participants.map((p) => p.participationId).sort()).toEqual(
+      [reservations[0]!.participationId, reservations[1]!.participationId].sort(),
+    );
+    expect(
+      runtime.conversationMediaParticipation(
+        reservations[0]!.participationId,
+        first.conversationId,
+        afterJoinReady.version,
+      )?.generation,
+    ).toBe(firstGeneration);
+
+    const leaveSecond = runtime.leaveProximityConversation(
+      actors[1]!.officeId,
+      actors[1]!.workspaceId,
+      actors[1]!.userId,
+      'meeting-socket-2',
+      reservations[1]!.participationId,
+      actors[1]!.officeEpoch,
+      first.conversationId,
+      afterJoinReady.version,
+    );
+    expect(typeof leaveSecond).toBe('object');
+    const departureNotices = runtime.reconcileProximity(actors[0]!.officeId);
+    expect(departureNotices.map((notice) => notice.update.state)).toEqual(['ended', 'active']);
+    const departureVersion = departureNotices[0]!.update.version;
+    expect(departureNotices[0]!.update.generation).toBe(firstGeneration);
+    expect(departureNotices[1]!.update.generation).toBe(firstGeneration);
+    expect(
+      runtime.conversationMediaParticipation(
+        reservations[1]!.participationId,
+        first.conversationId,
+        departureVersion,
+      ),
+    ).toBeNull();
+
+    expect(typeof join(1)).toBe('object');
+    const reentryNotice = runtime.reconcileProximity(actors[0]!.officeId)[0]!;
+    expect(reentryNotice.socketIds).toEqual(['meeting-socket-2']);
+    expect(reentryNotice.update).toMatchObject({
+      state: 'joining',
+      conversationId: first.conversationId,
+      generation: firstGeneration,
+      version: expect.any(Number),
+    });
+    expect(reentryNotice.update.version).toBeGreaterThan(departureVersion);
+    const reentryReady = runtime.activateProximityGeneration(
+      firstGeneration,
+      identitiesFor(firstGeneration),
+    )[0]!.update;
+    expect(reentryReady.participants).toHaveLength(2);
+    expect(reentryReady.generation).toBe(firstGeneration);
+
+    for (const index of [0, 1]) {
+      const activeMeeting = currentMeeting();
+      const leaving = runtime.leaveProximityConversation(
+        actors[index]!.officeId,
+        actors[index]!.workspaceId,
+        actors[index]!.userId,
+        `meeting-socket-${index + 1}`,
+        reservations[index]!.participationId,
+        actors[index]!.officeEpoch,
+        activeMeeting.conversationId,
+        activeMeeting.version,
+      );
+      expect(typeof leaving).toBe('object');
+      runtime.reconcileProximity(actors[0]!.officeId);
+    }
+    expect(currentMeeting()).toBeNull();
+
+    expect(typeof join(2)).toBe('object');
+    runtime.reconcileProximity(actors[0]!.officeId);
+    const newMeeting = currentMeeting();
+    const newGeneration = permits()[0]!.generation;
+    expect(newMeeting.conversationId).not.toBe(first.conversationId);
+    expect(newGeneration).not.toBe(firstGeneration);
+  });
+
   it('runs Vivo offices against the registered 52 by 50 map and its seat layout', () => {
     const runtime = new OfficeRuntimeService();
     const active = ticket(1, vivoManifest.mapVersion);

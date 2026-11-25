@@ -7,12 +7,14 @@ type Props = {
   presentation: MeetingScreenSharePresentation;
   presenterName: string;
   remoteScreenShares: readonly ProximityRemoteScreenShare[];
+  onFirstFrame: (shareId: string, elapsedMs: number) => void;
 };
 
 export function MeetingScreenShareViewer({
   presentation,
   presenterName,
   remoteScreenShares,
+  onFirstFrame,
 }: Props) {
   const containerRef = useRef<HTMLElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -41,14 +43,37 @@ export function MeetingScreenShareViewer({
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !screenTrack || presentation.status !== 'live') return;
+    const startedAt = performance.now();
+    let reported = false;
+    let cancelled = false;
+    let frameCallbackId: number | undefined;
+    const reportFrame = () => {
+      if (cancelled || reported || video.videoWidth <= 0 || video.videoHeight <= 0) return;
+      reported = true;
+      onFirstFrame(presentation.shareId, Math.max(0, Math.round(performance.now() - startedAt)));
+    };
+    const onLoadedData = () => reportFrame();
     screenTrack.attach(video);
     void video.play().catch(() => undefined);
+    if (typeof video.requestVideoFrameCallback === 'function')
+      frameCallbackId = video.requestVideoFrameCallback(() => reportFrame());
+    else video.addEventListener('loadeddata', onLoadedData);
     return () => {
+      cancelled = true;
+      if (frameCallbackId !== undefined && typeof video.cancelVideoFrameCallback === 'function')
+        video.cancelVideoFrameCallback(frameCallbackId);
+      video.removeEventListener('loadeddata', onLoadedData);
       screenTrack.detach(video);
       video.pause();
       video.srcObject = null;
     };
-  }, [screenTrack, presentation.presenterParticipationId, presentation.status]);
+  }, [
+    screenTrack,
+    presentation.presenterParticipationId,
+    presentation.shareId,
+    presentation.status,
+    onFirstFrame,
+  ]);
 
   async function toggleFullscreen() {
     const container = containerRef.current;

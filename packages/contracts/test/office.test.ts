@@ -25,6 +25,7 @@ import {
   meetingScreenShareStartEventSchema,
   meetingScreenShareConfirmEventSchema,
   meetingScreenShareStopEventSchema,
+  meetingScreenShareFirstFrameEventSchema,
   meetingScreenShareUpdateSchema,
   officeServerEventSchemas,
 } from '../dist/index.js';
@@ -78,7 +79,7 @@ describe('office protocol contracts (fixtures do not approve a map or grant acce
       officeEpoch: other,
       payload: { conversationId: id, conversationVersion: 3, shareId: other },
     };
-    expect(OFFICE_PROTOCOL_VERSION).toBe(6);
+    expect(OFFICE_PROTOCOL_VERSION).toBe(7);
     expect(meetingScreenShareStartEventSchema.safeParse(start).success).toBe(true);
     expect(
       meetingScreenShareStartEventSchema.safeParse({
@@ -93,6 +94,18 @@ describe('office protocol contracts (fixtures do not approve a map or grant acce
     };
     expect(meetingScreenShareConfirmEventSchema.safeParse(identity).success).toBe(true);
     expect(meetingScreenShareStopEventSchema.safeParse(identity).success).toBe(true);
+    expect(
+      meetingScreenShareFirstFrameEventSchema.safeParse({
+        ...identity,
+        payload: { ...identity.payload, elapsedMs: 245 },
+      }).success,
+    ).toBe(true);
+    expect(
+      meetingScreenShareFirstFrameEventSchema.safeParse({
+        ...identity,
+        payload: { ...identity.payload, elapsedMs: 600_001 },
+      }).success,
+    ).toBe(false);
     const update = {
       officeEpoch: other,
       conversationId: id,
@@ -342,7 +355,10 @@ describe('office protocol contracts (fixtures do not approve a map or grant acce
       participationId: id,
       snapshot,
     };
-    expect(officeReadySchema.safeParse(ready).success).toBe(true);
+    expect(officeReadySchema.parse(ready).features).toEqual({ screenSharing: false });
+    expect(
+      officeReadySchema.parse({ ...ready, features: { screenSharing: true } }).features,
+    ).toEqual({ screenSharing: true });
     expect(officeReadySchema.safeParse({ ...ready, participationId: other }).success).toBe(false);
     const delta = {
       officeEpoch: other,

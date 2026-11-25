@@ -214,6 +214,27 @@ describe('meeting screen-share controller', () => {
       ),
     ).toBe(false);
     expect(canPublishDesktopScreen('Mozilla/5.0 (X11; Linux x86_64)', false)).toBe(false);
-    expect(canPublishDesktopScreen('Mozilla/5.0 (X11; Linux x86_64)', true)).toBe(true);
+    const chrome =
+      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36';
+    expect(canPublishDesktopScreen(chrome, true)).toBe(true);
+    expect(canPublishDesktopScreen(`${chrome} Edg/131.0.0.0`, true)).toBe(true);
+    expect(
+      canPublishDesktopScreen(
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0',
+        true,
+      ),
+    ).toBe(false);
+    expect(
+      canPublishDesktopScreen(
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 Version/17.0 Safari/605.1.15',
+        true,
+      ),
+    ).toBe(false);
+    expect(
+      canPublishDesktopScreen(
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) CriOS/131.0.0.0 Mobile/15E148 Safari/604.1',
+        true,
+      ),
+    ).toBe(false);
   });
 });

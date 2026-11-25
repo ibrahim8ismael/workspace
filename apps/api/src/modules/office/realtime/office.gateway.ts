@@ -31,11 +31,13 @@ import {
   meetingScreenShareStartEventSchema,
   meetingScreenShareConfirmEventSchema,
   meetingScreenShareStopEventSchema,
+  meetingScreenShareFirstFrameEventSchema,
 } from '@gather/contracts';
 import { OfficeAdmissionService } from '../office-admission.service.js';
 import type { ConsumedOfficeTicket, OfficeReservation } from '../runtime/office-runtime.service.js';
 import { OfficeRuntimeService } from '../runtime/office-runtime.service.js';
 import { OfficeRoomEventPublisher } from '../office-room-event-publisher.js';
+import { MeetingScreenShareMetricsService } from '../meeting-screen-share-metrics.service.js';
 
 interface OfficeSocketData {
   officeAdmission?: ConsumedOfficeTicket;
@@ -81,6 +83,8 @@ export class OfficeGateway
     @Inject(OfficeAdmissionService) private readonly admission: OfficeAdmissionService,
     @Inject(OfficeRuntimeService) private readonly runtime: OfficeRuntimeService,
     @Inject(OfficeRoomEventPublisher) private readonly roomEvents: OfficeRoomEventPublisher,
+    @Inject(MeetingScreenShareMetricsService)
+    private readonly screenShareMetrics: MeetingScreenShareMetricsService,
   ) {}
 
   afterInit(namespace: Namespace) {
@@ -179,6 +183,9 @@ export class OfficeGateway
     if (!ticket || !reservation) return;
     delete socket.data.officeAdmission;
     delete socket.data.officeReservation;
+    const activePresentation = this.runtime.activeMeetingScreenShareForPresenter(
+      reservation.participationId,
+    );
     const released = this.runtime.release(
       ticket.officeId,
       ticket.workspaceId,
@@ -187,6 +194,7 @@ export class OfficeGateway
       reservation.participationId,
     );
     if (released) {
+      if (activePresentation) this.screenShareMetrics.unexpectedDisconnect();
       this.namespace
         .to(released.roomId)
         .emit('world:delta', worldDeltaSchema.parse(released.delta));
@@ -527,6 +535,10 @@ export class OfficeGateway
         parsed.data.payload.conversationVersion,
         parsed.data.payload.shareId,
       );
+      this.screenShareMetrics.startAttempt(
+        `${parsed.data.payload.conversationId}:${parsed.data.payload.shareId}`,
+        error,
+      );
       this.publishConversationState(ticket.workspaceId, ticket.officeId);
       this.reply(acknowledge, parsed.data.eventId, error);
     });
@@ -552,6 +564,10 @@ export class OfficeGateway
         parsed.data.officeEpoch,
         parsed.data.payload.conversationId,
         parsed.data.payload.shareId,
+      );
+      this.screenShareMetrics.startConfirmation(
+        `${parsed.data.payload.conversationId}:${parsed.data.payload.shareId}`,
+        error,
       );
       this.publishConversationState(ticket.workspaceId, ticket.officeId);
       this.reply(acknowledge, parsed.data.eventId, error);
@@ -579,8 +595,38 @@ export class OfficeGateway
         parsed.data.payload.conversationId,
         parsed.data.payload.shareId,
       );
+      if (!error)
+        this.screenShareMetrics.endShare(
+          `${parsed.data.payload.conversationId}:${parsed.data.payload.shareId}`,
+        );
       this.publishConversationState(ticket.workspaceId, ticket.officeId);
       this.reply(acknowledge, parsed.data.eventId, error);
+    });
+    socket.on('meeting:screen-share:first-frame', (raw: unknown, acknowledge?: unknown) => {
+      if (!this.allowOfficeCommand(socket)) {
+        this.reply(acknowledge, this.eventId(raw), 'rate_limited');
+        return;
+      }
+      const parsed = meetingScreenShareFirstFrameEventSchema.safeParse(raw);
+      if (!parsed.success) {
+        this.reply(acknowledge, this.eventId(raw), 'validation_failed');
+        return;
+      }
+      const ticket = socket.data.officeAdmission;
+      const reservation = socket.data.officeReservation;
+      if (!ticket || !reservation) return;
+      const accepted = this.runtime.recordMeetingScreenShareFirstFrame(
+        ticket.officeId,
+        ticket.workspaceId,
+        ticket.userId,
+        socket.id,
+        reservation.participationId,
+        parsed.data.officeEpoch,
+        parsed.data.payload.conversationId,
+        parsed.data.payload.shareId,
+      );
+      if (accepted) this.screenShareMetrics.firstFrame(parsed.data.payload.elapsedMs);
+      this.reply(acknowledge, parsed.data.eventId, accepted ? null : 'conflict');
     });
     socket.on('meeting:invite', (raw: unknown, acknowledge?: unknown) => {
       if (!this.allowOfficeCommand(socket)) {
@@ -1045,6 +1091,7 @@ export class OfficeGateway
       | 'seat_exit_blocked'
       | 'room_full'
       | 'zone_unavailable'
+      | 'media_unavailable'
       | 'conflict'
       | 'participation_conflict'
       | null,

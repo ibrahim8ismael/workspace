@@ -466,6 +466,7 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
             officeId,
             mapVersion,
             protocolVersion: OFFICE_PROTOCOL_VERSION,
+            features: { screenSharing: false },
             snapshot: {
               officeEpoch,
               stateVersion: 0,
@@ -1071,6 +1072,7 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await page.getByRole('button', { name: 'Join meeting' }).click();
   await expect(meetingGroup).toContainText('1/6 participants');
   await expect(meetingGroup).toContainText('E2E Person (you)');
+  await expect(page.getByRole('button', { name: 'Share screen' })).toHaveCount(0);
   await expect
     .poll(() => meetingMediaTokenRequests)
     .toEqual([{ participationId, conversationVersion: 2 }]);

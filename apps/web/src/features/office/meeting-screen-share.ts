@@ -25,7 +25,17 @@ export function canPublishDesktopScreen(
   maxTouchPoints = typeof navigator === 'undefined' ? 0 : navigator.maxTouchPoints,
 ) {
   const iPadDesktopMode = platform === 'MacIntel' && maxTouchPoints > 1;
-  return hasCapture && !iPadDesktopMode && !/(android|iphone|ipad|ipod|mobile)/i.test(userAgent);
+  const supportedDesktopBrowser = /(?:Chrome|Chromium|Edg)\/[\d.]+/i.test(userAgent);
+  const unsupportedChromiumVariant = /(?:CriOS|EdgiOS|EdgA|OPR|Opera|SamsungBrowser)\//i.test(
+    userAgent,
+  );
+  return (
+    hasCapture &&
+    supportedDesktopBrowser &&
+    !unsupportedChromiumVariant &&
+    !iPadDesktopMode &&
+    !/(android|iphone|ipad|ipod|mobile)/i.test(userAgent)
+  );
 }
 
 function defaultCapture(constraints: DisplayMediaStreamOptions) {

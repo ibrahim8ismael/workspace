@@ -92,6 +92,7 @@ function renderViewer() {
       presentation: viewerPresentation,
       presenterName: viewerPresenterName,
       remoteScreenShares: [...remoteScreens.values()],
+      onFirstFrame: () => undefined,
     }),
   );
 }

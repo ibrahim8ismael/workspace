@@ -17,6 +17,9 @@ import {
   meetingInvitationSchema,
   meetingJoinEventSchema,
   meetingLeaveEventSchema,
+  meetingScreenShareStartEventSchema,
+  meetingScreenShareConfirmEventSchema,
+  meetingScreenShareStopEventSchema,
   meetingZonesSchema,
   presenceUpdateEventSchema,
   proximityOptInEventSchema,
@@ -460,6 +463,28 @@ export class OfficeClient {
     return this.sendCommand('meeting:leave', meetingLeaveEventSchema, {
       conversationId,
       conversationVersion,
+    });
+  }
+
+  startMeetingScreenShare(conversationId: string, conversationVersion: number, shareId: string) {
+    return this.sendCommand('meeting:screen-share:start', meetingScreenShareStartEventSchema, {
+      conversationId,
+      conversationVersion,
+      shareId,
+    });
+  }
+
+  confirmMeetingScreenShare(conversationId: string, shareId: string) {
+    return this.sendCommand('meeting:screen-share:confirm', meetingScreenShareConfirmEventSchema, {
+      conversationId,
+      shareId,
+    });
+  }
+
+  stopMeetingScreenShare(conversationId: string, shareId: string) {
+    return this.sendCommand('meeting:screen-share:stop', meetingScreenShareStopEventSchema, {
+      conversationId,
+      shareId,
     });
   }
 

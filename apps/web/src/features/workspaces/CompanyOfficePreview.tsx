@@ -26,6 +26,7 @@ import {
   Volume2,
   PanelLeftClose,
   PanelLeftOpen,
+  MonitorUp,
 } from 'lucide-react';
 import type { AccountDto } from '@gather/contracts';
 import type { OfficeWorkspaceDetail } from '../../lib/api';
@@ -52,6 +53,10 @@ import {
   type ProximityAudioStatus,
 } from '../office/proximity-audio-session';
 import { RemoteAudioPlayback } from '../office/remote-audio-playback';
+import {
+  canPublishDesktopScreen,
+  MeetingScreenShareController,
+} from '../office/meeting-screen-share';
 import { effectsVolume } from '../../../footsteps';
 import { notifyReceivedWaves, WaveNotificationSound } from '../office/wave-notification';
 import { CompanyInvitationManager } from './CompanyInvitationManager';
@@ -228,6 +233,13 @@ export function CompanyOfficePreview({
   const audioParticipation = useRef(participationId);
   const proximityAudio = useRef<ProximityAudioSession | null>(null);
   const [proximityAudioStage, setProximityAudioStage] = useState('authorizing');
+  const [meetingScreenShare] = useState(() => new MeetingScreenShareController());
+  const meetingScreenShareState = useSyncExternalStore(
+    meetingScreenShare.subscribe,
+    meetingScreenShare.getSnapshot,
+    meetingScreenShare.getSnapshot,
+  );
+  const desktopScreenShareSupported = canPublishDesktopScreen();
   const proximityOptedIn = Boolean(
     connected && proximityOptIn?.participationId === participationId && proximityOptIn.enabled,
   );
@@ -368,6 +380,13 @@ export function CompanyOfficePreview({
 
   useEffect(() => () => client.close(), [client]);
 
+  useEffect(
+    () => () => {
+      void meetingScreenShare.stop();
+    },
+    [meetingScreenShare],
+  );
+
   useEffect(() => {
     let active = true;
     const session = new ProximityAudioSession(
@@ -400,9 +419,10 @@ export function CompanyOfficePreview({
       mediaContextKey.current = null;
       // Cut reception synchronously; the membership effect below decides whether microphone
       // intent belongs to the new conversation.
+      void meetingScreenShare.stop();
       void proximityAudio.current?.stop(true);
     };
-  }, [activeVoiceContextKey, voiceMembershipKey]);
+  }, [activeVoiceContextKey, voiceMembershipKey, meetingScreenShare]);
 
   useEffect(() => {
     if (!participationId) {
@@ -553,6 +573,7 @@ export function CompanyOfficePreview({
   async function leaveMeetingConversation() {
     setMicrophoneIntent(null);
     if (!activeMeetingConversation) return;
+    await meetingScreenShare.stop();
     await proximityAudio.current?.stop();
     await runOfficeAction(() =>
       client.leaveMeeting(
@@ -581,6 +602,24 @@ export function CompanyOfficePreview({
     } finally {
       setOfficeActionPending(false);
     }
+  }
+
+  function startMeetingScreenShare() {
+    const conversation = activeMeetingConversation;
+    const session = proximityAudio.current;
+    const contextKey = activeVoiceContextKey;
+    if (!conversation || !session || !contextKey || !desktopScreenShareSupported) return;
+    void meetingScreenShare.start({
+      reserve: (shareId) =>
+        client.startMeetingScreenShare(conversation.conversationId, conversation.version, shareId),
+      waitForPermission: (signal) => session.waitForScreenSharePermission(signal),
+      publish: (track) => session.publishScreenShare(track),
+      confirm: (shareId) => client.confirmMeetingScreenShare(conversation.conversationId, shareId),
+      unpublish: (track) => session.unpublishScreenShare(track),
+      release: (shareId) => client.stopMeetingScreenShare(conversation.conversationId, shareId),
+      isCurrent: () =>
+        mediaContextKey.current === contextKey && client.getSnapshot().status === 'connected',
+    });
   }
 
   function toggleConversationMicrophone() {
@@ -1267,6 +1306,51 @@ export function CompanyOfficePreview({
                     <p className="office-voice-members" aria-label="Meeting participants">
                       {meetingMemberNames.join(', ')}
                     </p>
+                    {desktopScreenShareSupported ? (
+                      <button
+                        className="dashboard-secondary"
+                        type="button"
+                        disabled={
+                          !['live', 'muted'].includes(proximityAudioStatus) ||
+                          !['idle', 'error'].includes(meetingScreenShareState.status)
+                        }
+                        onClick={startMeetingScreenShare}
+                      >
+                        <MonitorUp size={16} aria-hidden="true" />{' '}
+                        {meetingScreenShareState.status === 'error'
+                          ? 'Try sharing again'
+                          : 'Share screen'}
+                      </button>
+                    ) : (
+                      <p className="office-voice-help" role="status">
+                        Screen sharing can be started from a supported desktop browser.
+                      </p>
+                    )}
+                    {['capturing', 'authorizing', 'publishing'].includes(
+                      meetingScreenShareState.status,
+                    ) && (
+                      <p className="office-voice-status" role="status" aria-live="polite">
+                        {meetingScreenShareState.status === 'capturing'
+                          ? 'Choose a screen, window, or tab to share…'
+                          : meetingScreenShareState.status === 'authorizing'
+                            ? 'Securing screen-share permission…'
+                            : 'Starting screen video…'}
+                      </p>
+                    )}
+                    {meetingScreenShareState.status === 'live' && (
+                      <button
+                        className="dashboard-secondary"
+                        type="button"
+                        onClick={() => void meetingScreenShare.stop()}
+                      >
+                        Stop sharing
+                      </button>
+                    )}
+                    {meetingScreenShareState.message && (
+                      <p className="office-action-error" role="alert">
+                        {meetingScreenShareState.message}
+                      </p>
+                    )}
                     <button
                       className="dashboard-secondary"
                       type="button"
@@ -1766,10 +1850,13 @@ export function CompanyOfficePreview({
                       aria-label="Leave office"
                       title="Leave office"
                       onClick={() =>
-                        void proximityAudio.current?.stop().finally(() => {
-                          client.close();
-                          onNavigatePage?.('entry');
-                        })
+                        void meetingScreenShare
+                          .stop()
+                          .then(() => proximityAudio.current?.stop())
+                          .finally(() => {
+                            client.close();
+                            onNavigatePage?.('entry');
+                          })
                       }
                     >
                       <ArrowLeft size={19} />

@@ -14,6 +14,10 @@ export interface ProximityRoom {
   connect(serverUrl: string, token: string): Promise<void>;
   disconnect(): Promise<void>;
   setMicrophoneEnabled(enabled: boolean): Promise<void>;
+  canPublishScreenShare(): boolean;
+  onScreenSharePermissionChanged(listener: (allowed: boolean) => void): () => void;
+  publishScreenShare(track: MediaStreamTrack): Promise<void>;
+  unpublishScreenShare(track: MediaStreamTrack): Promise<void>;
   onActiveSpeakersChanged?(listener: (identities: string[]) => void): () => void;
   onTrackSubscribed(
     listener: (track: ProximityRemoteAudioTrack, identity: string) => void,
@@ -88,6 +92,39 @@ export async function createLiveKitProximityRoom(
         await room.localParticipant.setMicrophoneEnabled(enabled);
       }
     },
+    canPublishScreenShare: () =>
+      room.localParticipant.permissions?.canPublishSources?.some(
+        (source) => Track.sourceFromProto(source) === Track.Source.ScreenShare,
+      ) ?? false,
+    onScreenSharePermissionChanged: (listener) => {
+      const handler = (_previous: unknown, participant: import('livekit-client').Participant) => {
+        if (participant === room.localParticipant)
+          listener(
+            room.localParticipant.permissions?.canPublishSources?.some(
+              (source) => Track.sourceFromProto(source) === Track.Source.ScreenShare,
+            ) ?? false,
+          );
+      };
+      room.on(RoomEvent.ParticipantPermissionsChanged, handler);
+      return () => room.off(RoomEvent.ParticipantPermissionsChanged, handler);
+    },
+    publishScreenShare: async (track) => {
+      if (
+        !room.localParticipant.permissions?.canPublishSources?.some(
+          (source) => Track.sourceFromProto(source) === Track.Source.ScreenShare,
+        )
+      )
+        throw new Error('screen_share_permission_missing');
+      await room.localParticipant.publishTrack(track, {
+        source: Track.Source.ScreenShare,
+        name: 'meeting-screen-share',
+      });
+    },
+    unpublishScreenShare: async (track) => {
+      const publication = room.localParticipant.getTrackPublication(Track.Source.ScreenShare);
+      if (!publication?.track || publication.track.mediaStreamTrack !== track) return;
+      await room.localParticipant.unpublishTrack(publication.track, false);
+    },
     onActiveSpeakersChanged: (listener) => {
       const handler = (speakers: import('livekit-client').Participant[]) =>
         listener(
@@ -152,6 +189,7 @@ export class ProximityAudioSession {
   private listeners: Array<() => void> = [];
   private remoteTracks = new Map<ProximityRemoteAudioTrack, () => void>();
   private status: ProximityAudioStatus = 'off';
+  private screenShare: { room: ProximityRoom; track: MediaStreamTrack } | null = null;
 
   constructor(
     private readonly onState: StateListener,
@@ -257,6 +295,64 @@ export class ProximityAudioSession {
     await this.setMicrophoneEnabled(!this.microphoneDesired);
   }
 
+  isScreenSharePermitted() {
+    return this.room?.canPublishScreenShare() ?? false;
+  }
+
+  async waitForScreenSharePermission(signal: AbortSignal) {
+    const room = this.room;
+    if (!room || !['live', 'muted', 'reconnecting'].includes(this.status))
+      throw new Error('media_disconnected');
+    if (room.canPublishScreenShare()) return;
+    await new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const finish = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        unsubscribePermission();
+        unsubscribeDisconnect();
+        signal.removeEventListener('abort', onAbort);
+        if (error) reject(error);
+        else resolve();
+      };
+      const onAbort = () => {
+        const reason = signal.reason;
+        finish(reason instanceof Error ? reason : new Error('share_cancelled'));
+      };
+      const unsubscribePermission = room.onScreenSharePermissionChanged((allowed) => {
+        if (allowed) finish();
+      });
+      const unsubscribeDisconnect = room.onDisconnected(() =>
+        finish(new Error('media_disconnected')),
+      );
+      signal.addEventListener('abort', onAbort, { once: true });
+      if (signal.aborted) onAbort();
+      else if (room.canPublishScreenShare()) finish();
+    });
+    if (this.room !== room || !room.canPublishScreenShare())
+      throw new Error('screen_share_permission_missing');
+  }
+
+  async publishScreenShare(track: MediaStreamTrack) {
+    const room = this.room;
+    if (!room || !['live', 'muted'].includes(this.status)) throw new Error('media_disconnected');
+    if (this.screenShare) throw new Error('screen_share_already_published');
+    if (!room.canPublishScreenShare()) throw new Error('screen_share_permission_missing');
+    await room.publishScreenShare(track);
+    if (this.room !== room || !room.canPublishScreenShare()) {
+      await room.unpublishScreenShare(track).catch(() => undefined);
+      throw new Error('screen_share_permission_missing');
+    }
+    this.screenShare = { room, track };
+  }
+
+  async unpublishScreenShare(track: MediaStreamTrack) {
+    const active = this.screenShare;
+    if (!active || active.track !== track) return;
+    this.screenShare = null;
+    await active.room.unpublishScreenShare(track).catch(() => undefined);
+  }
+
   clearMicrophoneIntent() {
     this.microphoneDesired = false;
     this.microphoneEnabled = false;
@@ -342,6 +438,12 @@ export class ProximityAudioSession {
     this.onSpeakers([]);
     for (const unsubscribe of this.listeners.splice(0)) unsubscribe();
     for (const track of this.remoteTracks.keys()) this.detachRemoteTrack(track);
+    const screenShare = this.screenShare?.room === room ? this.screenShare : null;
+    if (screenShare) {
+      this.screenShare = null;
+      await room.unpublishScreenShare(screenShare.track).catch(() => undefined);
+      if (screenShare.track.readyState !== 'ended') screenShare.track.stop();
+    }
     this.microphoneEnabled = false;
     // Disconnect now: never wait for a mute RPC before cutting remote reception.
     const disconnected = room.disconnect().catch(() => undefined);

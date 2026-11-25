@@ -109,6 +109,18 @@ declare const window: {
     localMicrophonePublished: boolean;
     screenPublished: boolean;
   };
+  __meetingScreenPublishingFixture: {
+    status: string;
+    identity: string;
+    captureRequests: Array<{ audio?: boolean }>;
+    cancelNextCapture: boolean;
+    shareState: string;
+    screenPublished: boolean;
+    localMicrophonePublished: boolean;
+    remoteAudioSamples: number;
+    screenPublishAttempts: number;
+    shareId: string;
+  };
 };
 
 const origin = 'https://api.gather.test';
@@ -6651,7 +6663,9 @@ describe('meeting screen-share socket flow', () => {
 
       const mediaPolicy = app.get(MediaPolicyService);
       const policyChallenge = {
-        epoch: 'c'.repeat(64),
+        // The application service survives test cases, so reuse the active guard epoch instead
+        // of simulating a restart that is correctly rejected for five seconds.
+        epoch: 'a'.repeat(64),
         nonce: randomBytes(32).toString('hex'),
       };
       const startingPolicy = mediaPolicySnapshotSchema.parse(
@@ -6744,7 +6758,7 @@ describe('meeting screen-share socket flow', () => {
 
       await new Promise((resolve) => setTimeout(resolve, 120));
       const stalePolicyChallenge = {
-        epoch: 'c'.repeat(64),
+        epoch: 'a'.repeat(64),
         nonce: randomBytes(32).toString('hex'),
       };
       const stalePolicy = mediaPolicySnapshotSchema.parse(
@@ -6779,7 +6793,7 @@ describe('meeting screen-share socket flow', () => {
       ).toThrow();
       await new Promise((resolve) => setTimeout(resolve, 120));
       const revokedPolicyChallenge = {
-        epoch: 'c'.repeat(64),
+        epoch: 'a'.repeat(64),
         nonce: randomBytes(32).toString('hex'),
       };
       const revokedPolicy = mediaPolicySnapshotSchema.parse(
@@ -7309,6 +7323,434 @@ describe('fixed meeting media room continuity', () => {
         );
       } finally {
         await Promise.all(mediaClients.map(stopApplicationMediaClient));
+        if (guard) await stopApplicationGuard(guard);
+        if (fixture) await fixture.stop();
+        if (livekit) await livekit.stop();
+        if (retirementDirectory) await rm(retirementDirectory, { recursive: true, force: true });
+        for (const socket of sockets) socket.disconnect();
+      }
+    },
+    180000,
+  );
+
+  it.skipIf(!runLiveMediaFixture)(
+    'captures from the Share Screen action and publishes through the existing meeting connection',
+    async () => {
+      const users: Awaited<ReturnType<typeof account>>[] = [await account(), await account()];
+      const workspaceId = await workspace(users[0]!);
+      await join(users[0]!, workspaceId, users[1]!);
+      const tickets = await Promise.all(users.map((user) => issueTicket(user, workspaceId)));
+      const sockets = tickets.map(({ ticket }) =>
+        officeSocket({ ticket, protocolVersion: OFFICE_PROTOCOL_VERSION }),
+      );
+      const updateQueues = sockets.map((socket) => socketEventQueue(socket, 'conversation:update'));
+      const ready: ReturnType<typeof officeReadySchema.parse>[] = [];
+      let livekit: Awaited<ReturnType<typeof startLiveKitFixture>> | undefined;
+      let fixture: Awaited<ReturnType<typeof startViteMediaFixture>> | undefined;
+      let guard: ApplicationGuard | undefined;
+      let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
+      let retirementDirectory: string | undefined;
+      const pages: import('@playwright/test').Page[] = [];
+      const browserErrors: string[] = [];
+
+      const waitForUpdate = (
+        index: number,
+        predicate: (update: ReturnType<typeof conversationUpdateSchema.parse>) => boolean,
+      ) =>
+        updateQueues[index]!((raw) => {
+          const parsed = conversationUpdateSchema.safeParse(raw);
+          return parsed.success && predicate(parsed.data);
+        }).then((raw) => conversationUpdateSchema.parse(raw));
+
+      const command = async (index: number, event: string, payload: object) =>
+        officeCommandAckSchema.parse(
+          await new Promise<unknown>((resolve) =>
+            sockets[index]!.emit(
+              event,
+              { eventId: randomUUID(), officeEpoch: ready[0]!.snapshot.officeEpoch, payload },
+              resolve,
+            ),
+          ),
+        );
+
+      try {
+        for (const socket of sockets) {
+          const notice = nextSocketEvent<unknown>(socket, 'office:ready');
+          await connectSocket(socket);
+          ready.push(officeReadySchema.parse(await notice));
+        }
+
+        const runtime = app.get(OfficeRuntimeService);
+        const room = VIVO_GEOMETRY.zones.find((zone) => zone.kind === 'meeting')!;
+        const map = trustedOfficeMap(vivoManifest.mapVersion)!;
+        const roomTiles = Array.from(
+          { length: room.bounds.width * room.bounds.height },
+          (_, index) => ({
+            tx: room.bounds.tx + (index % room.bounds.width),
+            ty: room.bounds.ty + Math.floor(index / room.bounds.width),
+          }),
+        ).filter(
+          (tile) =>
+            map.validated.isReachable(tile) &&
+            !map.seats.some((seat) => seat.tile.tx === tile.tx && seat.tile.ty === tile.ty),
+        );
+        if (roomTiles.length < 2) throw new Error('Expected two free reachable meeting tiles');
+        const office = (
+          runtime as unknown as {
+            offices: Map<
+              string,
+              { participants: Map<string, { publicState: { position: { x: number; y: number } } }> }
+            >;
+          }
+        ).offices.get(ready[0]!.officeId)!;
+        ready.forEach((member, index) => {
+          const tile = roomTiles[index]!;
+          office.participants.get(member.participationId)!.publicState.position = {
+            x: tile.tx * 32 + 16,
+            y: tile.ty * 32 + 16,
+          };
+        });
+        const joiningEvents = [0, 1].map((index) =>
+          waitForUpdate(
+            index,
+            (update) => update.state === 'joining' && update.participants.length === 2,
+          ),
+        );
+        expect(await command(0, 'meeting:join', { zoneId: room.zoneId })).toMatchObject({
+          ok: true,
+        });
+        expect(await command(1, 'meeting:join', { zoneId: room.zoneId })).toMatchObject({
+          ok: true,
+        });
+        const joining = await Promise.all(joiningEvents);
+        expect(joining[0]!.generation).toBe(joining[1]!.generation);
+        const generation = joining[0]!.generation;
+
+        livekit = await startLiveKitFixture();
+        fixture = await startViteMediaFixture();
+        if (!liveMediaGuardPort) throw new Error('real media guard port is unavailable');
+        retirementDirectory = await mkdtemp(resolve(tmpdir(), 'gather-cp09-screen-publish-'));
+        const apiAddress = app.getHttpServer().address() as AddressInfo;
+        guard = startApplicationGuard({
+          apiBaseUrl: 'http://127.0.0.1:' + apiAddress.port,
+          epoch: randomBytes(32).toString('hex'),
+          host: '127.0.0.1',
+          port: liveMediaGuardPort,
+          retirementDirectory,
+          sfuUpstream: 'http://127.0.0.1:' + livekit.signalingPort,
+          origin: fixture.origin,
+        });
+
+        const mediaPolicy = app.get(MediaPolicyService) as unknown as {
+          installed?: {
+            permits: Array<{
+              generation: string;
+              identity: string;
+              version: number;
+              sources: string[];
+            }>;
+          };
+        };
+        await vi.waitFor(
+          () => {
+            const permits = mediaPolicy.installed?.permits.filter(
+              (permit) => permit.generation === generation,
+            );
+            expect(permits).toHaveLength(2);
+            for (const member of ready)
+              expect(
+                permits?.find((permit) => permit.identity === member.participationId)?.sources,
+              ).toEqual(['microphone']);
+          },
+          { timeout: 15000, interval: 50 },
+        );
+
+        const activeEvents = [0, 1].map((index) =>
+          waitForUpdate(
+            index,
+            (update) =>
+              update.state === 'active' && update.conversationId === joining[0]!.conversationId,
+          ),
+        );
+        const active = (await Promise.all(activeEvents))[0]!;
+
+        const mediaGrants = await Promise.all(
+          users.map(async (user, index) => {
+            const response = await user.client.send(
+              'post',
+              `/api/conversations/${active.conversationId}/media-token`,
+              {
+                participationId: ready[index]!.participationId,
+                conversationVersion: active.version,
+              },
+            );
+            status(response, 200);
+            return mediaTokenResponseSchema.parse(response.body);
+          }),
+        );
+        const roomService = new RoomServiceClient(
+          'http://127.0.0.1:' + livekit.signalingPort,
+          livekitApiKey,
+          livekitApiSecret,
+        );
+        browser = await chromium.launch({
+          headless: true,
+          args: [
+            '--use-fake-device-for-media-stream',
+            '--use-fake-ui-for-media-stream',
+            '--autoplay-policy=no-user-gesture-required',
+          ],
+        });
+
+        const presenterPage = await browser.newPage();
+        const viewerPage = await browser.newPage();
+        pages.push(presenterPage, viewerPage);
+        pages.forEach((page, index) => {
+          page.on('pageerror', (error) => browserErrors.push(`page ${index}: ${error.message}`));
+          page.on('requestfailed', (request) =>
+            browserErrors.push(
+              `page ${index} request ${request.url()}: ${request.failure()?.errorText}`,
+            ),
+          );
+          page.on('console', (message) => {
+            if (message.type() === 'error') browserErrors.push(`page ${index}: ${message.text()}`);
+          });
+        });
+        const commandMeetingShare = async (
+          event: 'start' | 'confirm' | 'stop',
+          shareId: string,
+        ) => {
+          const eventName = `meeting:screen-share:${event}`;
+          const payload =
+            event === 'start'
+              ? {
+                  conversationId: active.conversationId,
+                  conversationVersion: active.version,
+                  shareId,
+                }
+              : { conversationId: active.conversationId, shareId };
+          const ack = await command(0, eventName, payload);
+          if (!ack.ok) throw new Error(ack.error.code);
+        };
+        await presenterPage.exposeFunction('__reserveMeetingScreenShare', (shareId: string) =>
+          commandMeetingShare('start', shareId),
+        );
+        await presenterPage.exposeFunction('__confirmMeetingScreenShare', (shareId: string) =>
+          commandMeetingShare('confirm', shareId),
+        );
+        await presenterPage.exposeFunction('__releaseMeetingScreenShare', (shareId: string) =>
+          commandMeetingShare('stop', shareId),
+        );
+
+        await presenterPage.goto(
+          new URL('/test/screen-share-publishing-fixture.html', fixture.url).toString(),
+        );
+        await viewerPage.goto(
+          new URL('/test/screen-share-media-fixture.html', fixture.url).toString(),
+        );
+        await presenterPage.evaluate(
+          (value) => window.postMessage({ ...value, kind: 'start' }, location.origin),
+          {
+            grant: mediaGrants[0],
+            publishMicrophone: true,
+            identity: ready[0]!.participationId,
+          },
+        );
+        await viewerPage.evaluate(
+          (value) => window.postMessage({ ...value, kind: 'start' }, location.origin),
+          {
+            grant: { serverUrl: mediaGrants[1]!.serverUrl, token: mediaGrants[1]!.token },
+            publishMicrophone: true,
+          },
+        );
+        try {
+          await Promise.all([
+            presenterPage.waitForFunction(
+              () =>
+                ['connected', 'error'].includes(
+                  window.__meetingScreenPublishingFixture?.status ?? '',
+                ),
+              null,
+              { timeout: 25000 },
+            ),
+            viewerPage.waitForFunction(
+              () => ['connected', 'error'].includes(window.__meetingScreenFixture.status),
+              null,
+              { timeout: 25000 },
+            ),
+          ]);
+        } catch (error) {
+          const presenterBody = await presenterPage
+            .locator('body')
+            .innerText()
+            .catch(() => '');
+          throw new Error(
+            `screen-share fixture did not initialize: ${JSON.stringify({ browserErrors, presenterUrl: presenterPage.url(), presenterBody })}`,
+            { cause: error },
+          );
+        }
+        expect(
+          await presenterPage.evaluate(() => ({ ...window.__meetingScreenPublishingFixture })),
+        ).toMatchObject({ status: 'connected', identity: ready[0]!.participationId });
+        expect(
+          await viewerPage.evaluate(() => ({ ...window.__meetingScreenFixture })),
+        ).toMatchObject({ status: 'connected', identity: ready[1]!.participationId });
+        expect(
+          await presenterPage.evaluate(
+            () => window.__meetingScreenPublishingFixture.captureRequests,
+          ),
+        ).toEqual([]);
+
+        const beforeShare = await roomService.listParticipants(active.generation);
+        expect(beforeShare.map((participant) => participant.identity).sort()).toEqual(
+          ready.map((member) => member.participationId).sort(),
+        );
+        await presenterPage.waitForFunction(
+          () => window.__meetingScreenPublishingFixture.remoteAudioSamples > 0,
+          null,
+          { timeout: 10000 },
+        );
+        const audioSamplesBeforeCancelledCapture = await presenterPage.evaluate(
+          () => window.__meetingScreenPublishingFixture.remoteAudioSamples,
+        );
+        await presenterPage.evaluate(() => {
+          window.__meetingScreenPublishingFixture.cancelNextCapture = true;
+        });
+        await presenterPage.getByRole('button', { name: 'Share screen' }).click();
+        await presenterPage.waitForFunction(
+          () => window.__meetingScreenPublishingFixture.shareState === 'error',
+          null,
+          { timeout: 10000 },
+        );
+        const cancelledShareState = await presenterPage.evaluate(() => ({
+          ...window.__meetingScreenPublishingFixture,
+        }));
+        expect(cancelledShareState.captureRequests).toHaveLength(1);
+        expect(cancelledShareState.captureRequests[0]?.audio).toBe(false);
+        expect(cancelledShareState.shareId).toBe('');
+        expect(cancelledShareState.screenPublishAttempts).toBe(0);
+        expect(cancelledShareState.status).toBe('connected');
+        expect(
+          runtime
+            .meetingScreenShareState(ready[0]!.officeId, ready[0]!.participationId)
+            .map(({ update }) => update.presentation),
+        ).toEqual([null]);
+        expect(
+          runtime
+            .proximityMediaPermits()
+            .filter((permit) => permit.generation === generation)
+            .map((permit) => permit.sources),
+        ).toEqual([['microphone'], ['microphone']]);
+        await presenterPage.waitForFunction(
+          (samples) => window.__meetingScreenPublishingFixture.remoteAudioSamples > samples,
+          audioSamplesBeforeCancelledCapture,
+          { timeout: 10000 },
+        );
+
+        await presenterPage.getByRole('button', { name: 'Share screen' }).click();
+        await presenterPage.waitForFunction(
+          () => window.__meetingScreenPublishingFixture.shareState === 'live',
+          null,
+          { timeout: 30000 },
+        );
+        await viewerPage.waitForFunction(
+          (identity) => window.__meetingScreenFixture.remoteScreenOwners.includes(identity),
+          ready[0]!.participationId,
+          { timeout: 10000 },
+        );
+        const activeShareState = await presenterPage.evaluate(() => ({
+          ...window.__meetingScreenPublishingFixture,
+        }));
+        expect(activeShareState.captureRequests).toHaveLength(2);
+        expect(activeShareState.captureRequests.every(({ audio }) => audio === false)).toBe(true);
+        expect(activeShareState.screenPublished).toBe(true);
+        expect(activeShareState.localMicrophonePublished).toBe(true);
+        expect(browserErrors).toEqual([]);
+
+        const duringShare = await roomService.listParticipants(active.generation);
+        const presenterDuringShare = duringShare.find(
+          (participant) => participant.identity === ready[0]!.participationId,
+        );
+        expect(presenterDuringShare?.tracks.map(({ source }) => source).sort()).toEqual(
+          [TrackSource.MICROPHONE, TrackSource.SCREEN_SHARE].sort(),
+        );
+        expect(duringShare.map((participant) => participant.identity).sort()).toEqual(
+          beforeShare.map((participant) => participant.identity).sort(),
+        );
+        const samplesBeforeShare = await presenterPage.evaluate(
+          () => window.__meetingScreenPublishingFixture.remoteAudioSamples,
+        );
+        await presenterPage.waitForFunction(
+          (samples) => window.__meetingScreenPublishingFixture.remoteAudioSamples > samples,
+          samplesBeforeShare,
+          { timeout: 10000 },
+        );
+
+        await presenterPage.getByRole('button', { name: 'Stop sharing', exact: true }).click();
+        await presenterPage.waitForFunction(
+          () => window.__meetingScreenPublishingFixture.shareState === 'idle',
+          null,
+          { timeout: 10000 },
+        );
+        await viewerPage.waitForFunction(
+          (identity) => !window.__meetingScreenFixture.remoteScreenOwners.includes(identity),
+          ready[0]!.participationId,
+          { timeout: 10000 },
+        );
+        await vi.waitFor(
+          async () => {
+            const participants = await roomService.listParticipants(active.generation);
+            const presenter = participants.find(
+              (participant) => participant.identity === ready[0]!.participationId,
+            );
+            expect(presenter?.tracks.map(({ source }) => source)).toEqual([TrackSource.MICROPHONE]);
+          },
+          { timeout: 10000, interval: 50 },
+        );
+
+        await presenterPage.getByRole('button', { name: 'Share screen' }).click();
+        await presenterPage.waitForFunction(
+          () => window.__meetingScreenPublishingFixture.shareState === 'live',
+          null,
+          { timeout: 30000 },
+        );
+        await presenterPage.getByRole('button', { name: 'Native Stop Sharing' }).click();
+        await presenterPage.waitForFunction(
+          () => window.__meetingScreenPublishingFixture.shareState === 'idle',
+          null,
+          { timeout: 10000 },
+        );
+        await viewerPage.waitForFunction(
+          (identity) => !window.__meetingScreenFixture.remoteScreenOwners.includes(identity),
+          ready[0]!.participationId,
+          { timeout: 10000 },
+        );
+        let afterNativeStop: Awaited<ReturnType<typeof roomService.listParticipants>> = [];
+        await vi.waitFor(
+          async () => {
+            afterNativeStop = await roomService.listParticipants(active.generation);
+            const presenter = afterNativeStop.find(
+              (participant) => participant.identity === ready[0]!.participationId,
+            );
+            expect(presenter?.tracks.map(({ source }) => source)).toEqual([TrackSource.MICROPHONE]);
+          },
+          { timeout: 10000, interval: 50 },
+        );
+        expect(afterNativeStop.map((participant) => participant.identity).sort()).toEqual(
+          beforeShare.map((participant) => participant.identity).sort(),
+        );
+        expect(
+          await presenterPage.evaluate(() => window.__meetingScreenPublishingFixture.status),
+        ).toBe('connected');
+        expect(
+          await presenterPage.evaluate(
+            () => window.__meetingScreenPublishingFixture.localMicrophonePublished,
+          ),
+        ).toBe(true);
+        expect(browserErrors).toEqual([]);
+      } finally {
+        for (const page of pages) await page.close().catch(() => undefined);
+        if (browser) await browser.close();
         if (guard) await stopApplicationGuard(guard);
         if (fixture) await fixture.stop();
         if (livekit) await livekit.stop();

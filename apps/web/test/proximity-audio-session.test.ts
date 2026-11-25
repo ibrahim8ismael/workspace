@@ -15,6 +15,8 @@ const grant = {
 };
 
 function createRoom() {
+  let screenShareAllowed = false;
+  const permissionListeners = new Set<(allowed: boolean) => void>();
   const handlers = {
     subscribed: undefined as
       ((track: ProximityRemoteAudioTrack, identity: string) => void) | undefined,
@@ -27,6 +29,13 @@ function createRoom() {
     connect: vi.fn(async () => undefined),
     disconnect: vi.fn(async () => undefined),
     setMicrophoneEnabled: vi.fn(async () => undefined),
+    canPublishScreenShare: vi.fn(() => screenShareAllowed),
+    onScreenSharePermissionChanged: vi.fn((listener) => {
+      permissionListeners.add(listener);
+      return () => permissionListeners.delete(listener);
+    }),
+    publishScreenShare: vi.fn(async () => undefined),
+    unpublishScreenShare: vi.fn(async () => undefined),
     onTrackSubscribed: vi.fn((handler) => {
       handlers.subscribed = handler;
       return () => {
@@ -58,10 +67,65 @@ function createRoom() {
       };
     }),
   };
-  return { room, handlers };
+  return {
+    room,
+    handlers,
+    setScreenShareAllowed(allowed: boolean) {
+      screenShareAllowed = allowed;
+      for (const listener of permissionListeners) listener(allowed);
+    },
+  };
 }
 
 describe('session-bound proximity audio client', () => {
+  it('waits for server-installed screen permission and publishes only on the connected room', async () => {
+    const fake = createRoom();
+    const session = new ProximityAudioSession(
+      () => undefined,
+      () => vi.fn(),
+      async () => fake.room,
+    );
+    await session.start(
+      async () => grant,
+      () => true,
+      2,
+      grant.generation,
+    );
+    const controller = new AbortController();
+    const waiting = session.waitForScreenSharePermission(controller.signal);
+    expect(fake.room.onScreenSharePermissionChanged).toHaveBeenCalledOnce();
+    fake.setScreenShareAllowed(true);
+    await waiting;
+
+    const track = { readyState: 'live', stop: vi.fn() } as unknown as MediaStreamTrack;
+    await session.publishScreenShare(track);
+    expect(fake.room.publishScreenShare).toHaveBeenCalledWith(track);
+    await session.unpublishScreenShare(track);
+    expect(fake.room.unpublishScreenShare).toHaveBeenCalledWith(track);
+    await session.stop();
+  });
+
+  it('aborts the screen permission wait when the room changes or the start is cancelled', async () => {
+    const fake = createRoom();
+    const session = new ProximityAudioSession(
+      () => undefined,
+      () => vi.fn(),
+      async () => fake.room,
+    );
+    await session.start(
+      async () => grant,
+      () => true,
+      2,
+      grant.generation,
+    );
+    const controller = new AbortController();
+    const waiting = session.waitForScreenSharePermission(controller.signal);
+    controller.abort(new Error('share_cancelled'));
+    await expect(waiting).rejects.toThrow('share_cancelled');
+    expect(fake.room.publishScreenShare).not.toHaveBeenCalled();
+    await session.stop();
+  });
+
   it('forwards current speakers and clears them on reconnect and stop, ignoring stale callbacks', async () => {
     const fake = createRoom();
     let emit: ((identities: string[]) => void) | undefined;

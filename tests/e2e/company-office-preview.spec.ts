@@ -115,6 +115,7 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
       createdAt: '2026-11-10T17:00:00.000Z',
     },
   ];
+  let generalMessageHistoryRequests = 0;
   let finishDirectSend: (() => void) | undefined;
   const scopedHistory: Record<string, SpaceMessage[]> = {};
   let officeBootstrapRequests = 0;
@@ -246,13 +247,15 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
     if (
       method === 'GET' &&
       path === `/api/workspaces/${workspace.id}/offices/${officeId}/channels/general/messages`
-    )
+    ) {
+      generalMessageHistoryRequests += 1;
       return json({
         messages: officeHistory.map((message) => ({
           ...message,
           scope: { kind: 'channel', id: 'general' },
         })),
       });
+    }
     if (
       method === 'POST' &&
       path === `/api/workspaces/${workspace.id}/offices/${officeId}/channels/general/messages`
@@ -926,6 +929,7 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
     ),
   ).toBe(invitationMicrophoneRequests);
   await page.getByRole('link', { name: 'Invite people', exact: true }).click();
+  await expect(page).toHaveURL(`/companies/${workspace.id}/offices/${officeId}/invitations`);
   await expect(page.getByRole('heading', { name: 'Employee invitations' })).toBeVisible();
   await expect(page.getByText('No invitations have been created for this company.')).toBeVisible();
   await page.getByRole('textbox', { name: 'Employee email' }).fill(invitation.email);
@@ -1161,6 +1165,7 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   expect(busyFocusStyle).toBe('solid');
   await busyButton.click();
   await expect(busyButton).toHaveAttribute('aria-pressed', 'true');
+  const historyRequestsBeforeReconnect = generalMessageHistoryRequests;
   officeHistory.push({
     id: '7db151ba-fbf2-42a3-ad73-59bdad580f0e',
     senderId: '41bbf5d6-37d7-4468-9892-9776ff19e008',
@@ -1177,6 +1182,10 @@ test('mocked-API UI E2E: sign in, open the company preview, and return cleanly',
   await expect.poll(() => officeConnections).toBe(2);
   await expect(page.locator('.office-scene .office-map')).toHaveCount(1);
   await page.getByRole('link', { name: 'Messages' }).click();
+  await expect(page).toHaveURL(`/companies/${workspace.id}/offices/${officeId}/chat`);
+  await expect
+    .poll(() => generalMessageHistoryRequests)
+    .toBeGreaterThan(historyRequestsBeforeReconnect);
   await expect(page.getByText('This arrived during the reconnect')).toBeVisible();
   await page.getByRole('link', { name: 'Office', exact: true }).click();
   expect(officeBootstrapRequests).toBe(2);

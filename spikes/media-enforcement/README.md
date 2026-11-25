@@ -485,3 +485,17 @@ after meeting departure and 1053ms after workspace membership revocation,
 against a 2000ms test deadline. The measurements include policy polling and
 LiveKit participant removal and are specific to the local Docker/browser
 environment; they do not establish public network or production latency.
+
+## Issue #69 presenter-only screen-video policy
+
+`pnpm test:media-screen-share-policy` runs the application, authenticated policy
+guard, pinned LiveKit 1.13.11 SFU and headless Chromium clients. Meeting members
+receive microphone-only publish permits; the active presenter receives
+`microphone` and `screen_share`. LiveKit's effective participant permission is
+updated in place, so changing source permissions preserves subscription and
+other participant rights. Stop removes the screen track while retaining the
+microphone, old screen-capable tokens fail guard validation, and a viewer or
+revoked presenter cannot publish a screen track even when the browser SDK's
+local permission check is deliberately bypassed. The test measures decoded
+audio before/after source grant and revoke and confirms the stable room remains
+connected. This is local real-SFU evidence, not production rollout evidence.

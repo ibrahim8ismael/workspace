@@ -57,6 +57,7 @@ async function reconcileStableSfuRoom(generation, permits) {
       kind: result.reconciled ? 'stable_roster_reconciled' : 'stable_roster_pending',
       generation,
       participants: result.removed,
+      permissionsUpdated: result.permissionsUpdated,
       durationMs: result.durationMs,
     }) + '\n',
   );

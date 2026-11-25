@@ -863,6 +863,24 @@ describe('authoritative meeting screen-share state', () => {
     ]);
     const winningShare = startingNotice[0]!.update.presentation!.shareId;
     const winningPresenter = winningShare === firstShare ? 0 : 1;
+    const meetingMemberIds = fixture.reservations
+      .slice(0, 2)
+      .map(({ participationId }) => participationId);
+    const grantedPermits = fixture.runtime
+      .conversationMediaPermits()
+      .filter((permit) => meetingMemberIds.includes(permit.identity));
+    expect(
+      grantedPermits.find(
+        (permit) => permit.identity === fixture.reservations[winningPresenter]!.participationId,
+      )?.sources,
+    ).toEqual(['microphone', 'screen_share']);
+    expect(
+      grantedPermits
+        .filter(
+          (permit) => permit.identity !== fixture.reservations[winningPresenter]!.participationId,
+        )
+        .every((permit) => permit.sources.length === 1 && permit.sources[0] === 'microphone'),
+    ).toBe(true);
 
     expect(fixture.operate('start', winningPresenter, winningShare)).toBeNull();
     const retriedStart = fixture.runtime.drainMeetingScreenShareNotices();
@@ -885,6 +903,14 @@ describe('authoritative meeting screen-share state', () => {
     expect(stoppedNotices).toHaveLength(2);
     expect(stoppedNotices[0]!.update.version).toBe(stoppedNotices[1]!.update.version);
     expect(stoppedNotices[0]!.update.presentation).toBeNull();
+    expect(
+      fixture.runtime
+        .conversationMediaPermits()
+        .filter(
+          (permit) => permit.identity === fixture.reservations[winningPresenter]!.participationId,
+        )
+        .every((permit) => permit.sources.length === 1 && permit.sources[0] === 'microphone'),
+    ).toBe(true);
     expect(fixture.operate('start', winningPresenter, secondShare)).toBeNull();
     fixture.runtime.drainMeetingScreenShareNotices();
     expect(fixture.operate('stop', winningPresenter, winningShare)).toBe('conflict');
@@ -956,6 +982,11 @@ describe('authoritative meeting screen-share state', () => {
     const expired = fixture.runtime.drainMeetingScreenShareNotices();
     expect(expired).toHaveLength(1);
     expect(expired[0]!.update.presentation).toBeNull();
+    expect(
+      fixture.runtime
+        .conversationMediaPermits()
+        .every((permit) => permit.sources.length === 1 && permit.sources[0] === 'microphone'),
+    ).toBe(true);
     expect(fixture.operate('confirm', 0, shareId)).toBe('conflict');
     expect(fixture.operate('start', 0, shareId)).toBe('conflict');
   });

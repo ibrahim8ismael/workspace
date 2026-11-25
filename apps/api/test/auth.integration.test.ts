@@ -17,6 +17,7 @@ import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import type { Readable, Writable } from 'node:stream';
 import { promisify } from 'node:util';
+import { chromium } from '@playwright/test';
 import { decryptMail, type MailPayload } from '@gather/delivery';
 import commonsManifest from '@gather/assets/manifests/commons-map.json' with { type: 'json' };
 import vivoManifest from '@gather/assets/manifests/vivo-map.json' with { type: 'json' };
@@ -91,7 +92,24 @@ import { clientIp, validProxyIpList } from '../dist/platform/http/client-ip.js';
 import { io } from 'socket.io-client';
 import type { Socket } from 'socket.io-client';
 import type { AddressInfo } from 'node:net';
-import { AccessToken, RoomServiceClient, TokenVerifier } from 'livekit-server-sdk';
+import { AccessToken, RoomServiceClient, TokenVerifier, TrackSource } from 'livekit-server-sdk';
+
+declare const location: { readonly origin: string };
+declare const window: {
+  postMessage(message: unknown, targetOrigin: string): void;
+  __meetingScreenFixture: {
+    status: string;
+    permissions: string[];
+    screenPublishAttempts: number;
+    screenPublishResult: string;
+    screenPublishError: string;
+    remoteScreenOwners: string[];
+    remoteAudioOwners: string[];
+    remoteAudioSamples: number;
+    localMicrophonePublished: boolean;
+    screenPublished: boolean;
+  };
+};
 
 const origin = 'https://api.gather.test';
 const password = 'a quartz river beneath the lantern';
@@ -6631,6 +6649,73 @@ describe('meeting screen-share socket flow', () => {
           ).toBe(true);
       });
 
+      const mediaPolicy = app.get(MediaPolicyService);
+      const policyChallenge = {
+        epoch: 'c'.repeat(64),
+        nonce: randomBytes(32).toString('hex'),
+      };
+      const startingPolicy = mediaPolicySnapshotSchema.parse(
+        JSON.parse(mediaPolicy.issueSnapshot(policyChallenge).body),
+      );
+      const presenterPermit = startingPolicy.permits.find(
+        (permit) => permit.identity === ready[presenterIndex]!.participationId,
+      )!;
+      const viewerPermit = startingPolicy.permits.find(
+        (permit) => permit.identity === ready[viewerIndex]!.participationId,
+      )!;
+      expect(presenterPermit.sources).toEqual(['microphone', 'screen_share']);
+      expect(viewerPermit.sources).toEqual(['microphone']);
+      mediaPolicy.acknowledgeInstallation({
+        ...policyChallenge,
+        sequence: startingPolicy.sequence,
+      });
+      expect(
+        mediaPolicy.hasInstalledPermit(
+          presenterPermit.generation,
+          presenterPermit.identity,
+          'screen_share',
+          presenterPermit.version,
+        ),
+      ).toBe(true);
+      expect(
+        mediaPolicy.hasInstalledPermit(
+          viewerPermit.generation,
+          viewerPermit.identity,
+          'screen_share',
+          viewerPermit.version,
+        ),
+      ).toBe(false);
+      const presenterTokenResponse = await users[presenterIndex]!.client.send(
+        'post',
+        `/api/conversations/${meeting().conversationId}/media-token`,
+        {
+          participationId: ready[presenterIndex]!.participationId,
+          conversationVersion: meeting().version,
+        },
+      );
+      status(presenterTokenResponse, 200);
+      const presenterToken = mediaTokenResponseSchema.parse(presenterTokenResponse.body);
+      const presenterClaims = await new TokenVerifier(livekitApiKey, livekitApiSecret).verify(
+        presenterToken.token,
+        0,
+      );
+      expect(presenterClaims.video?.canPublishSources).toEqual(['microphone', 'screen_share']);
+      const viewerTokenResponse = await users[viewerIndex]!.client.send(
+        'post',
+        `/api/conversations/${meeting().conversationId}/media-token`,
+        {
+          participationId: ready[viewerIndex]!.participationId,
+          conversationVersion: meeting().version,
+        },
+      );
+      status(viewerTokenResponse, 200);
+      const viewerToken = mediaTokenResponseSchema.parse(viewerTokenResponse.body);
+      const viewerClaims = await new TokenVerifier(livekitApiKey, livekitApiSecret).verify(
+        viewerToken.token,
+        0,
+      );
+      expect(viewerClaims.video?.canPublishSources).toEqual(['microphone']);
+
       expect(
         await command(presenterIndex, 'meeting:screen-share:confirm', {
           conversationId: meeting().conversationId,
@@ -6657,6 +6742,21 @@ describe('meeting screen-share socket flow', () => {
         status: 'live',
       });
 
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      const stalePolicyChallenge = {
+        epoch: 'c'.repeat(64),
+        nonce: randomBytes(32).toString('hex'),
+      };
+      const stalePolicy = mediaPolicySnapshotSchema.parse(
+        JSON.parse(mediaPolicy.issueSnapshot(stalePolicyChallenge).body),
+      );
+      expect(
+        stalePolicy.permits.some(
+          (permit) =>
+            permit.identity === ready[presenterIndex]!.participationId &&
+            permit.sources.includes('screen_share'),
+        ),
+      ).toBe(true);
       const activeMeeting = meeting();
       const survivorIndices = [0, 1, 2].filter((index) => index !== presenterIndex);
       const clearedStates = survivorIndices.map((index) =>
@@ -6671,6 +6771,54 @@ describe('meeting screen-share socket flow', () => {
       const cleared = await Promise.all(clearedStates);
       for (const event of cleared)
         expect(meetingScreenShareUpdateSchema.parse(event).presentation).toBeNull();
+      expect(() =>
+        mediaPolicy.acknowledgeInstallation({
+          ...stalePolicyChallenge,
+          sequence: stalePolicy.sequence,
+        }),
+      ).toThrow();
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      const revokedPolicyChallenge = {
+        epoch: 'c'.repeat(64),
+        nonce: randomBytes(32).toString('hex'),
+      };
+      const revokedPolicy = mediaPolicySnapshotSchema.parse(
+        JSON.parse(mediaPolicy.issueSnapshot(revokedPolicyChallenge).body),
+      );
+      mediaPolicy.acknowledgeInstallation({
+        ...revokedPolicyChallenge,
+        sequence: revokedPolicy.sequence,
+      });
+      expect(
+        mediaPolicy.hasInstalledPermit(
+          presenterPermit.generation,
+          presenterPermit.identity,
+          'screen_share',
+          presenterPermit.version,
+        ),
+      ).toBe(false);
+      expect(
+        mediaPolicy.hasInstalledPermit(
+          viewerPermit.generation,
+          viewerPermit.identity,
+          'microphone',
+          viewerPermit.version,
+        ),
+      ).toBe(true);
+      const postRevocationTokenResponse = await users[viewerIndex]!.client.send(
+        'post',
+        `/api/conversations/${meeting().conversationId}/media-token`,
+        {
+          participationId: ready[viewerIndex]!.participationId,
+          conversationVersion: meeting().version,
+        },
+      );
+      status(postRevocationTokenResponse, 200);
+      const postRevocationClaims = await new TokenVerifier(livekitApiKey, livekitApiSecret).verify(
+        mediaTokenResponseSchema.parse(postRevocationTokenResponse.body).token,
+        0,
+      );
+      expect(postRevocationClaims.video?.canPublishSources).toEqual(['microphone']);
     } finally {
       for (const socket of sockets) socket.disconnect();
     }
@@ -7161,6 +7309,466 @@ describe('fixed meeting media room continuity', () => {
         );
       } finally {
         await Promise.all(mediaClients.map(stopApplicationMediaClient));
+        if (guard) await stopApplicationGuard(guard);
+        if (fixture) await fixture.stop();
+        if (livekit) await livekit.stop();
+        if (retirementDirectory) await rm(retirementDirectory, { recursive: true, force: true });
+        for (const socket of sockets) socket.disconnect();
+      }
+    },
+    180000,
+  );
+});
+
+describe('meeting screen-share media policy enforcement', () => {
+  it.skipIf(!runLiveMediaFixture)(
+    'enforces presenter-only screen video publication and revokes it without interrupting meeting audio',
+    async () => {
+      const users: Awaited<ReturnType<typeof account>>[] = [await account(), await account()];
+      const workspaceId = await workspace(users[0]!);
+      await join(users[0]!, workspaceId, users[1]!);
+      const tickets = await Promise.all(users.map((user) => issueTicket(user, workspaceId)));
+      const sockets = tickets.map(({ ticket }) =>
+        officeSocket({ ticket, protocolVersion: OFFICE_PROTOCOL_VERSION }),
+      );
+      const updateQueues = sockets.map((socket) => socketEventQueue(socket, 'conversation:update'));
+      const ready: ReturnType<typeof officeReadySchema.parse>[] = [];
+      let livekit: Awaited<ReturnType<typeof startLiveKitFixture>> | undefined;
+      let fixture: Awaited<ReturnType<typeof startViteMediaFixture>> | undefined;
+      let guard: ApplicationGuard | undefined;
+      let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
+      let retirementDirectory: string | undefined;
+      const pages: import('@playwright/test').Page[] = [];
+      const browserErrors: string[] = [];
+
+      const waitForUpdate = (
+        index: number,
+        predicate: (update: ReturnType<typeof conversationUpdateSchema.parse>) => boolean,
+      ) =>
+        updateQueues[index]!((raw) => {
+          const parsed = conversationUpdateSchema.safeParse(raw);
+          return parsed.success && predicate(parsed.data);
+        }).then((raw) => conversationUpdateSchema.parse(raw));
+
+      const command = async (index: number, event: string, payload: object) =>
+        officeCommandAckSchema.parse(
+          await new Promise<unknown>((resolve) =>
+            sockets[index]!.emit(
+              event,
+              { eventId: randomUUID(), officeEpoch: ready[0]!.snapshot.officeEpoch, payload },
+              resolve,
+            ),
+          ),
+        );
+
+      try {
+        for (const socket of sockets) {
+          const notice = nextSocketEvent<unknown>(socket, 'office:ready');
+          await connectSocket(socket);
+          ready.push(officeReadySchema.parse(await notice));
+        }
+
+        const runtime = app.get(OfficeRuntimeService);
+        const room = VIVO_GEOMETRY.zones.find((zone) => zone.kind === 'meeting')!;
+        const map = trustedOfficeMap(vivoManifest.mapVersion)!;
+        const roomTiles = Array.from(
+          { length: room.bounds.width * room.bounds.height },
+          (_, index) => ({
+            tx: room.bounds.tx + (index % room.bounds.width),
+            ty: room.bounds.ty + Math.floor(index / room.bounds.width),
+          }),
+        ).filter(
+          (tile) =>
+            map.validated.isReachable(tile) &&
+            !map.seats.some((seat) => seat.tile.tx === tile.tx && seat.tile.ty === tile.ty),
+        );
+        if (roomTiles.length < 2) throw new Error('Expected two free reachable meeting tiles');
+        const office = (
+          runtime as unknown as {
+            offices: Map<
+              string,
+              { participants: Map<string, { publicState: { position: { x: number; y: number } } }> }
+            >;
+          }
+        ).offices.get(ready[0]!.officeId)!;
+        ready.forEach((member, index) => {
+          const tile = roomTiles[index]!;
+          office.participants.get(member.participationId)!.publicState.position = {
+            x: tile.tx * 32 + 16,
+            y: tile.ty * 32 + 16,
+          };
+        });
+
+        const joiningEvents = [0, 1].map((index) =>
+          waitForUpdate(
+            index,
+            (update) => update.state === 'joining' && update.participants.length === 2,
+          ),
+        );
+        expect(await command(0, 'meeting:join', { zoneId: room.zoneId })).toMatchObject({
+          ok: true,
+        });
+        expect(await command(1, 'meeting:join', { zoneId: room.zoneId })).toMatchObject({
+          ok: true,
+        });
+        const joining = await Promise.all(joiningEvents);
+        expect(joining[0]!.generation).toBe(joining[1]!.generation);
+        expect(joining[0]!.mediaReady).toBe(false);
+
+        livekit = await startLiveKitFixture();
+        fixture = await startViteMediaFixture();
+        if (!liveMediaGuardPort) throw new Error('real media guard port is unavailable');
+        retirementDirectory = await mkdtemp(resolve(tmpdir(), 'gather-cp09-screen-policy-'));
+        const apiAddress = app.getHttpServer().address() as AddressInfo;
+        guard = startApplicationGuard({
+          apiBaseUrl: 'http://127.0.0.1:' + apiAddress.port,
+          epoch: randomBytes(32).toString('hex'),
+          host: '127.0.0.1',
+          port: liveMediaGuardPort,
+          retirementDirectory,
+          sfuUpstream: 'http://127.0.0.1:' + livekit.signalingPort,
+          origin: fixture.origin,
+        });
+
+        const policy = app.get(MediaPolicyService) as unknown as {
+          installed?: {
+            permits: Array<{
+              generation: string;
+              identity: string;
+              version: number;
+              sources: string[];
+            }>;
+          };
+        };
+        const installedPermit = (identity: string) =>
+          policy.installed?.permits.find(
+            (permit) =>
+              permit.generation === joining[0]!.generation && permit.identity === identity,
+          );
+        await vi.waitFor(
+          () => {
+            expect(
+              policy.installed?.permits.filter(
+                (permit) => permit.generation === joining[0]!.generation,
+              ),
+            ).toHaveLength(2);
+            for (const member of ready)
+              expect(installedPermit(member.participationId)?.sources).toEqual(['microphone']);
+          },
+          { timeout: 15000, interval: 50 },
+        );
+        const activeEvents = [0, 1].map((index) =>
+          waitForUpdate(
+            index,
+            (update) =>
+              update.state === 'active' && update.conversationId === joining[0]!.conversationId,
+          ),
+        );
+        const active = (await Promise.all(activeEvents))[0]!;
+
+        const issueGrant = async (index: number) => {
+          const response = await users[index]!.client.send(
+            'post',
+            `/api/conversations/${active.conversationId}/media-token`,
+            {
+              participationId: ready[index]!.participationId,
+              conversationVersion: active.version,
+            },
+          );
+          status(response, 200);
+          const grant = mediaTokenResponseSchema.parse(response.body);
+          const claims = await new TokenVerifier(livekitApiKey, livekitApiSecret).verify(
+            grant.token,
+            0,
+          );
+          expect(claims.video?.canPublishSources).toEqual(['microphone']);
+          return grant;
+        };
+        const grants = await Promise.all([issueGrant(0), issueGrant(1)]);
+        const roomService = new RoomServiceClient(
+          'http://127.0.0.1:' + livekit.signalingPort,
+          livekitApiKey,
+          livekitApiSecret,
+        );
+
+        browser = await chromium.launch({
+          headless: true,
+          args: [
+            '--use-fake-device-for-media-stream',
+            '--use-fake-ui-for-media-stream',
+            '--autoplay-policy=no-user-gesture-required',
+          ],
+        });
+        const screenFixtureUrl = new URL(
+          '/test/screen-share-media-fixture.html',
+          fixture.url,
+        ).toString();
+        for (const [index, grant] of grants.entries()) {
+          const page = await browser.newPage();
+          pages.push(page);
+          page.on('pageerror', (error) => browserErrors.push(`page ${index}: ${error.message}`));
+          page.on('console', (message) => {
+            if (message.type() === 'error') browserErrors.push(`page ${index}: ${message.text()}`);
+          });
+          await page.goto(screenFixtureUrl);
+          await page.evaluate(
+            (value) => window.postMessage({ ...value, kind: 'start' }, location.origin),
+            {
+              grant: { serverUrl: grant.serverUrl, token: grant.token },
+              publishMicrophone: index !== 0,
+            },
+          );
+          await page.waitForFunction(
+            () => ['connected', 'error'].includes(window.__meetingScreenFixture.status),
+            null,
+            { timeout: 25000 },
+          );
+          expect(
+            await page.evaluate(() => window.__meetingScreenFixture),
+            `meeting media client ${index} failed to connect`,
+          ).toMatchObject({ status: 'connected' });
+        }
+
+        const expectAudioAdvancing = async (audioPages = pages) => {
+          const prior = await Promise.all(
+            audioPages.map((page) =>
+              page.evaluate(() => window.__meetingScreenFixture.remoteAudioSamples),
+            ),
+          );
+          try {
+            await Promise.all(
+              audioPages.map((page, index) =>
+                page.waitForFunction(
+                  (samples) => window.__meetingScreenFixture.remoteAudioSamples > samples,
+                  prior[index]!,
+                  { timeout: 10000 },
+                ),
+              ),
+            );
+          } catch (error) {
+            const observations = await Promise.all(
+              audioPages.map((page) => page.evaluate(() => ({ ...window.__meetingScreenFixture }))),
+            );
+            const participants = await roomService.listParticipants(active.generation);
+            const mediaState = participants.map((participant) => ({
+              identity: participant.identity,
+              permission: participant.permission,
+              sources: participant.tracks.map(({ source }) => source),
+            }));
+            throw new Error(
+              `meeting audio did not continue: ${JSON.stringify({ observations, mediaState })}`,
+              {
+                cause: error,
+              },
+            );
+          }
+        };
+        await expectAudioAdvancing([pages[0]!]);
+
+        const attemptScreen = async (
+          page: import('@playwright/test').Page,
+          bypassClientPermissions: boolean,
+        ) => {
+          const prior = await page.evaluate(
+            () => window.__meetingScreenFixture.screenPublishAttempts,
+          );
+          await page.evaluate(
+            (bypass) =>
+              window.postMessage(
+                { kind: 'publish-screen', bypassClientPermissions: bypass },
+                location.origin,
+              ),
+            bypassClientPermissions,
+          );
+          await page.waitForFunction(
+            (attempt) => window.__meetingScreenFixture.screenPublishAttempts > attempt,
+            prior,
+            { timeout: 10000 },
+          );
+          return page.evaluate(() => ({
+            result: window.__meetingScreenFixture.screenPublishResult,
+            error: window.__meetingScreenFixture.screenPublishError,
+          }));
+        };
+
+        const expectServerRejectedScreen = async (
+          page: import('@playwright/test').Page,
+          identity: string,
+          audioPages = pages,
+        ) => {
+          const attempt = await attemptScreen(page, true);
+          expect(['attempted', 'rejected']).toContain(attempt.result);
+          for (let observation = 0; observation < 5; observation += 1) {
+            const participants = await roomService.listParticipants(active.generation);
+            const participant = participants.find((value) => value.identity === identity);
+            expect(participant, `LiveKit removed meeting participant ${identity}`).toBeDefined();
+            expect(participant!.tracks.map(({ source }) => source)).toEqual([
+              TrackSource.MICROPHONE,
+            ]);
+            await new Promise((resolve) => setTimeout(resolve, 200));
+          }
+          await expectAudioAdvancing(audioPages);
+        };
+
+        const shareId = randomUUID();
+        expect(
+          await command(0, 'meeting:screen-share:start', {
+            conversationId: active.conversationId,
+            conversationVersion: active.version,
+            shareId,
+          }),
+        ).toMatchObject({ ok: true });
+        await vi.waitFor(
+          () =>
+            expect(installedPermit(ready[0]!.participationId)?.sources).toContain('screen_share'),
+          { timeout: 15000, interval: 50 },
+        );
+        await pages[0]!.waitForFunction(
+          () => window.__meetingScreenFixture.permissions.includes('screen_share'),
+          null,
+          { timeout: 10000 },
+        );
+        await attemptScreen(pages[0]!, false);
+        await pages[0]!.waitForFunction(() => window.__meetingScreenFixture.screenPublished, null, {
+          timeout: 10000,
+        });
+        await pages[1]!.waitForFunction(
+          (identity) => window.__meetingScreenFixture.remoteScreenOwners.includes(identity),
+          ready[0]!.participationId,
+          { timeout: 10000 },
+        );
+        const presenterAfterPublish = (await roomService.listParticipants(active.generation)).find(
+          ({ identity }) => identity === ready[0]!.participationId,
+        );
+        expect(presenterAfterPublish?.tracks.map(({ source }) => source)).toEqual([
+          TrackSource.SCREEN_SHARE,
+        ]);
+        expect(presenterAfterPublish?.permission).toMatchObject({
+          canSubscribe: true,
+          canPublish: true,
+          canPublishSources: [TrackSource.MICROPHONE, TrackSource.SCREEN_SHARE],
+        });
+        expect(
+          await pages[0]!.evaluate(() => window.__meetingScreenFixture.localMicrophonePublished),
+        ).toBe(false);
+        await expectAudioAdvancing([pages[0]!]);
+        await expectServerRejectedScreen(pages[1]!, ready[1]!.participationId, [pages[0]!]);
+        expect(
+          await pages[1]!.evaluate(() => window.__meetingScreenFixture.remoteScreenOwners),
+        ).toContain(ready[0]!.participationId);
+
+        expect(
+          await command(0, 'meeting:screen-share:confirm', {
+            conversationId: active.conversationId,
+            shareId,
+          }),
+        ).toMatchObject({ ok: true });
+        const screenGrantResponse = await users[0]!.client.send(
+          'post',
+          `/api/conversations/${active.conversationId}/media-token`,
+          {
+            participationId: ready[0]!.participationId,
+            conversationVersion: active.version,
+          },
+        );
+        status(screenGrantResponse, 200);
+        const screenGrant = mediaTokenResponseSchema.parse(screenGrantResponse.body);
+        const screenClaims = await new TokenVerifier(livekitApiKey, livekitApiSecret).verify(
+          screenGrant.token,
+          0,
+        );
+        expect(screenClaims.video?.canPublishSources).toEqual(['microphone', 'screen_share']);
+
+        expect(
+          await command(0, 'meeting:screen-share:stop', {
+            conversationId: active.conversationId,
+            shareId,
+          }),
+        ).toMatchObject({ ok: true });
+        await vi.waitFor(
+          () => expect(installedPermit(ready[0]!.participationId)?.sources).toEqual(['microphone']),
+          { timeout: 15000, interval: 50 },
+        );
+        await pages[0]!.waitForFunction(
+          () => !window.__meetingScreenFixture.permissions.includes('screen_share'),
+          null,
+          { timeout: 10000 },
+        );
+        await pages[1]!.waitForFunction(
+          (identity) => !window.__meetingScreenFixture.remoteScreenOwners.includes(identity),
+          ready[0]!.participationId,
+          { timeout: 10000 },
+        );
+        await expectAudioAdvancing([pages[0]!]);
+        await vi.waitFor(
+          async () => {
+            const participants = await roomService.listParticipants(active.generation);
+            const presenter = participants.find(
+              ({ identity }) => identity === ready[0]!.participationId,
+            );
+            expect(presenter?.tracks.map(({ source }) => source)).toEqual([]);
+            expect(presenter?.permission?.canSubscribe).toBe(true);
+          },
+          { timeout: 10000, interval: 50 },
+        );
+
+        const validationUrl = new URL(`http://127.0.0.1:${liveMediaGuardPort}/rtc/v1/validate`);
+        validationUrl.searchParams.set('access_token', screenGrant.token);
+        validationUrl.searchParams.set(
+          'join_request',
+          Buffer.from(JSON.stringify({ protocol: 12 })).toString('base64url'),
+        );
+        expect((await fetch(validationUrl, { headers: { Origin: fixture.origin } })).status).toBe(
+          403,
+        );
+        const revokedGrantResponse = await users[0]!.client.send(
+          'post',
+          `/api/conversations/${active.conversationId}/media-token`,
+          {
+            participationId: ready[0]!.participationId,
+            conversationVersion: active.version,
+          },
+        );
+        status(revokedGrantResponse, 200);
+        expect(mediaTokenResponseSchema.parse(revokedGrantResponse.body).token).not.toBe(
+          screenGrant.token,
+        );
+        const revokedClaims = await new TokenVerifier(livekitApiKey, livekitApiSecret).verify(
+          mediaTokenResponseSchema.parse(revokedGrantResponse.body).token,
+          0,
+        );
+        expect(revokedClaims.video?.canPublishSources).toEqual(['microphone']);
+
+        expect(
+          await Promise.all(
+            pages.map((page) =>
+              page.evaluate(() => ({
+                status: window.__meetingScreenFixture.status,
+                permissions: window.__meetingScreenFixture.permissions,
+                screenPublished: window.__meetingScreenFixture.screenPublished,
+                localMicrophonePublished: window.__meetingScreenFixture.localMicrophonePublished,
+                remoteScreens: window.__meetingScreenFixture.remoteScreenOwners,
+              })),
+            ),
+          ),
+        ).toMatchObject([
+          {
+            status: 'connected',
+            permissions: ['microphone'],
+            screenPublished: false,
+            localMicrophonePublished: false,
+            remoteScreens: [],
+          },
+          {
+            status: 'connected',
+            permissions: ['microphone'],
+            localMicrophonePublished: true,
+            remoteScreens: [],
+          },
+        ]);
+      } finally {
+        for (const page of pages) await page.close().catch(() => undefined);
+        if (browser) await browser.close();
         if (guard) await stopApplicationGuard(guard);
         if (fixture) await fixture.stop();
         if (livekit) await livekit.stop();

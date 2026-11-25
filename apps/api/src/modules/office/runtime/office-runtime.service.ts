@@ -1243,7 +1243,10 @@ export class OfficeRuntimeService {
             room: group.generation,
             roomLifecycle: 'stable' as const,
             version: member.mediaVersion,
-            sources: ['microphone'] as const,
+            sources:
+              group.presentation?.presenterParticipationId === member.participationId
+                ? (['microphone', 'screen_share'] as const)
+                : (['microphone'] as const),
           })),
         ),
       ];

@@ -86,6 +86,11 @@ export class MediaPolicyService {
       409,
       'conflict',
     );
+    invariant(
+      this.samePermits(pending.snapshot.permits, this.runtime.conversationMediaPermits()),
+      409,
+      'conflict',
+    );
     const body = JSON.stringify({ acknowledged: true, sequence: acknowledgement.sequence });
     const signature = this.sign(body);
     this.pending.delete(acknowledgement.nonce);
@@ -110,7 +115,12 @@ export class MediaPolicyService {
     return { body, signature };
   }
 
-  hasInstalledPermit(generation: string, identity: string, source: 'microphone', version = 1) {
+  hasInstalledPermit(
+    generation: string,
+    identity: string,
+    source: 'microphone' | 'screen_share',
+    version = 1,
+  ) {
     const installed = this.installed;
     if (!installed || installed.expiresAt <= Date.now()) return false;
     return installed.permits.some(
@@ -121,6 +131,40 @@ export class MediaPolicyService {
         permit.version === version &&
         permit.sources.includes(source),
     );
+  }
+
+  private samePermits(
+    installed: readonly MediaPolicyPermit[],
+    current: readonly {
+      readonly generation: string;
+      readonly identity: string;
+      readonly room: string;
+      readonly roomLifecycle?: 'rotating' | 'stable';
+      readonly version: number;
+      readonly sources: readonly ('microphone' | 'camera' | 'screen_share')[];
+    }[],
+  ) {
+    if (installed.length !== current.length) return false;
+    const installedByKey = new Map(
+      installed.map((permit) => [`${permit.generation}:${permit.identity}`, permit] as const),
+    );
+    const currentByKey = new Map(
+      current.map((permit) => [`${permit.generation}:${permit.identity}`, permit] as const),
+    );
+    if (installedByKey.size !== currentByKey.size) return false;
+    for (const [key, permit] of installedByKey) {
+      const latest = currentByKey.get(key);
+      if (
+        !latest ||
+        permit.room !== latest.room ||
+        permit.roomLifecycle !== latest.roomLifecycle ||
+        permit.version !== latest.version ||
+        permit.sources.length !== latest.sources.length ||
+        permit.sources.some((source) => !latest.sources.includes(source))
+      )
+        return false;
+    }
+    return true;
   }
 
   private sign(value: string) {

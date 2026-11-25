@@ -1,12 +1,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { TrackSource } from '../../../apps/api/node_modules/livekit-server-sdk/dist/index.js';
 import { PermitState } from '../permit-state.mjs';
 import { retireSfuGeneration } from '../sfu-generation-retirement.mjs';
 import { reconcileSfuStableRoster } from '../sfu-stable-roster-reconciliation.mjs';
 
 test('stable roster reconciliation removes only unauthorized participants and keeps the room open', async () => {
   const participants = [
-    { identity: 'authorized-a', metadata: '{"gatherMediaVersion":1}' },
+    {
+      identity: 'authorized-a',
+      metadata: '{"gatherMediaVersion":1}',
+      permission: { canPublish: true, canPublishSources: [TrackSource.MICROPHONE] },
+      tracks: [],
+    },
     { identity: 'revoked', metadata: '{"gatherMediaVersion":2}' },
   ];
   let roomExists = true;
@@ -31,7 +37,7 @@ test('stable roster reconciliation removes only unauthorized participants and ke
       },
     },
     generation: 'meeting',
-    permits: [{ identity: 'authorized-a', version: 1 }],
+    permits: [{ identity: 'authorized-a', version: 1, sources: ['microphone'] }],
     clock: () => now,
     sleep: async (duration) => {
       now += duration;
@@ -49,7 +55,14 @@ test('stable roster reconciliation removes only unauthorized participants and ke
 });
 
 test('stable roster reconciliation disconnects an old credential for a rejoined identity', async () => {
-  const participants = [{ identity: 'same-user', metadata: '{"gatherMediaVersion":7}' }];
+  const participants = [
+    {
+      identity: 'same-user',
+      metadata: '{"gatherMediaVersion":7}',
+      permission: { canPublish: true, canPublishSources: [TrackSource.MICROPHONE] },
+      tracks: [],
+    },
+  ];
   const result = await reconcileSfuStableRoster({
     roomService: {
       async listRooms() {
@@ -64,7 +77,7 @@ test('stable roster reconciliation disconnects an old credential for a rejoined 
       },
     },
     generation: 'meeting',
-    permits: [{ identity: 'same-user', version: 8 }],
+    permits: [{ identity: 'same-user', version: 8, sources: ['microphone'] }],
     clock: (() => {
       let now = 0;
       return () => now++;
@@ -88,13 +101,20 @@ test('stable roster reconciliation fails closed when SFU participant observation
       },
     },
     generation: 'meeting',
-    permits: [{ identity: 'authorized-a', version: 1 }],
+    permits: [{ identity: 'authorized-a', version: 1, sources: ['microphone'] }],
   });
   assert.equal(result.reconciled, false);
 });
 
 test('stable roster reconciliation trusts participant observations when LiveKit room counts lag', async () => {
-  const participants = [{ identity: 'authorized-a', metadata: '{"gatherMediaVersion":1}' }];
+  const participants = [
+    {
+      identity: 'authorized-a',
+      metadata: '{"gatherMediaVersion":1}',
+      permission: { canPublish: true, canPublishSources: [TrackSource.MICROPHONE] },
+      tracks: [],
+    },
+  ];
   const result = await reconcileSfuStableRoster({
     roomService: {
       async listRooms() {
@@ -105,7 +125,7 @@ test('stable roster reconciliation trusts participant observations when LiveKit 
       },
     },
     generation: 'meeting',
-    permits: [{ identity: 'authorized-a', version: 1 }],
+    permits: [{ identity: 'authorized-a', version: 1, sources: ['microphone'] }],
     clock: (() => {
       let now = 0;
       return () => now++;

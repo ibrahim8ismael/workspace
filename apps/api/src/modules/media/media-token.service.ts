@@ -108,6 +108,25 @@ export class MediaTokenService {
     const ttlSeconds = Math.floor((tokenDeadline - now) / 1000);
     invariant(ttlSeconds >= 1, 401, 'unauthorized');
 
+    const currentMediaPermit = this.runtime
+      .conversationMediaPermits()
+      .find(
+        (permit) =>
+          permit.generation === current.generation &&
+          permit.identity === current.participationId &&
+          permit.version === current.mediaVersion,
+      );
+    const canPublishScreenShare =
+      currentMediaPermit?.sources.some((source) => source === 'screen_share') === true &&
+      this.policy.hasInstalledPermit(
+        current.generation,
+        current.participationId,
+        'screen_share',
+        current.mediaVersion,
+      );
+    const publishSources: TrackSource[] = [TrackSource.MICROPHONE];
+    if (canPublishScreenShare) publishSources.push(TrackSource.SCREEN_SHARE);
+
     const tokenGrant = new AccessToken(apiKey, apiSecret, {
       identity: current.participationId,
       name: current.displayName,
@@ -119,7 +138,7 @@ export class MediaTokenService {
       room: current.room,
       roomAdmin: false,
       canPublish: true,
-      canPublishSources: [TrackSource.MICROPHONE],
+      canPublishSources: publishSources,
       canSubscribe: true,
       canPublishData: false,
       canUpdateOwnMetadata: false,
@@ -151,6 +170,28 @@ export class MediaTokenService {
       409,
       'stale_version',
     );
+    if (canPublishScreenShare) {
+      const stillHasScreenPermit = this.runtime
+        .conversationMediaPermits()
+        .some(
+          (permit) =>
+            permit.generation === stillCurrent.generation &&
+            permit.identity === stillCurrent.participationId &&
+            permit.version === stillCurrent.mediaVersion &&
+            permit.sources.some((source) => source === 'screen_share'),
+        );
+      invariant(
+        stillHasScreenPermit &&
+          this.policy.hasInstalledPermit(
+            stillCurrent.generation,
+            stillCurrent.participationId,
+            'screen_share',
+            stillCurrent.mediaVersion,
+          ),
+        409,
+        'stale_version',
+      );
+    }
     const tokenPayload = token.split('.')[1];
     invariant(tokenPayload, 503, 'media_unavailable');
     let expiresAtSeconds: unknown;

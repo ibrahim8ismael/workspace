@@ -284,8 +284,8 @@ test('stable meeting re-entry rotates only the returning participant credential'
     true,
   );
   assert.deepEqual(targetPermits, [
-    { identity: 'u1', version: 2 },
-    { identity: 'u2', version: 1 },
+    { identity: 'u1', version: 2, sources: ['microphone'] },
+    { identity: 'u2', version: 1, sources: ['microphone'] },
   ]);
   assert.equal(state.allows({ ...first, source: 'microphone' }), false);
   assert.equal(state.allows({ ...rejoined, source: 'microphone' }), true);

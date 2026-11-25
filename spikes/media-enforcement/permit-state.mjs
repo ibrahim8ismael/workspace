@@ -9,6 +9,7 @@ export class PermitState {
   #denied = new Set();
   #pendingRetirements = new Set();
   #pendingStableRosters = new Map();
+  #pendingSourceDenials = new Set();
   constructor(epoch, clock, retirementStore = new Set()) {
     if (typeof epoch !== 'string' || !epoch || typeof clock !== 'function')
       throw new Error('invalid guard configuration');
@@ -75,10 +76,21 @@ export class PermitState {
           })
           .map((permit) => permit.identity);
         if (revokedIdentities.length) this.#denyParticipants(generation, revokedIdentities);
+        for (const permit of current) {
+          const updated = replacement.find((candidate) => candidate.identity === permit.identity);
+          if (!updated) continue;
+          for (const source of permit.sources)
+            if (!updated.sources.includes(source))
+              this.#pendingSourceDenials.add(JSON.stringify([generation, permit.identity, source]));
+        }
         this.#pendingStableRosters.set(generation, replacementStableRoom);
         stableRosters.push({
           generation,
-          permits: replacement.map(({ identity, version }) => ({ identity, version })),
+          permits: replacement.map(({ identity, version, sources }) => ({
+            identity,
+            version,
+            sources,
+          })),
         });
         continue;
       }
@@ -123,6 +135,7 @@ export class PermitState {
     if ([...next.values()].some((permit) => this.#denied.has(permit.generation))) return false;
     this.#sequence = snapshot.sequence;
     this.#permits = next;
+    this.#pendingSourceDenials.clear();
     return true;
   }
 
@@ -208,6 +221,7 @@ export class PermitState {
       permit &&
       !this.#denied.has(generation) &&
       !this.#retired.has(generation) &&
+      !this.#pendingSourceDenials.has(JSON.stringify([generation, identity, source])) &&
       this.#clock() < permit.deadline &&
       permit.room === room &&
       permit.version === version &&

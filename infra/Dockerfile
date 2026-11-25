@@ -55,6 +55,8 @@ COPY --from=build --chown=node:node /workspace/spikes/media-enforcement/permit-s
 COPY --from=build --chown=node:node /workspace/spikes/media-enforcement/policy-pull.mjs ./spikes/media-enforcement/policy-pull.mjs
 COPY --from=build --chown=node:node /workspace/spikes/media-enforcement/retirement-store.mjs ./spikes/media-enforcement/retirement-store.mjs
 COPY --from=build --chown=node:node /workspace/spikes/media-enforcement/sfu-generation-retirement.mjs ./spikes/media-enforcement/sfu-generation-retirement.mjs
+COPY --from=build --chown=node:node /workspace/spikes/media-enforcement/sfu-stable-roster-reconciliation.mjs ./spikes/media-enforcement/sfu-stable-roster-reconciliation.mjs
 COPY --chown=node:node infra/media/local-guard-entry.mjs ./infra/media/local-guard-entry.mjs
 USER node
+RUN node --input-type=module -e "import net from 'node:net'; process.env.CP07_KEY = 'build-smoke-key'; process.env.CP07_SECRET = 'build-smoke-secret'; process.env.CP07_ORIGIN = 'https://build-smoke.invalid'; process.env.CP07_RETIREMENTS = '/tmp/gather-media-guard-build-smoke'; process.env.CP07_GUARD_HOST = '127.0.0.1'; process.env.CP07_GUARD_PORT = '27885'; await import('./infra/media/local-guard-entry.mjs'); await new Promise((resolve, reject) => { const socket = net.connect(27885, '127.0.0.1'); socket.setTimeout(1000); socket.once('connect', () => { socket.end(); resolve(); }); socket.once('error', reject); socket.once('timeout', () => reject(new Error('media guard did not start'))); }); process.exit(0);"
 CMD ["node", "infra/media/local-guard-entry.mjs"]

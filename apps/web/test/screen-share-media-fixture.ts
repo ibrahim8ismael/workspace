@@ -1,4 +1,9 @@
 import { Room, RoomEvent, Track, TrackEvent } from 'livekit-client';
+import { createElement } from 'react';
+import { createRoot } from 'react-dom/client';
+import type { MeetingScreenSharePresentation } from '@gather/contracts';
+import { MeetingScreenShareViewer } from '../src/features/office/meeting-screen-share-viewer';
+import type { ProximityRemoteScreenShare } from '../src/features/office/proximity-audio-session';
 
 type StartMessage = {
   kind: 'start';
@@ -8,7 +13,13 @@ type StartMessage = {
 type PublishScreenMessage = { kind: 'publish-screen'; bypassClientPermissions?: boolean };
 type StopScreenMessage = { kind: 'stop-screen' };
 type StopMessage = { kind: 'stop' };
-type FixtureMessage = StartMessage | PublishScreenMessage | StopScreenMessage | StopMessage;
+type ViewerStateMessage = {
+  kind: 'viewer-state';
+  presentation: MeetingScreenSharePresentation | null;
+  presenterName: string;
+};
+type FixtureMessage =
+  StartMessage | PublishScreenMessage | StopScreenMessage | StopMessage | ViewerStateMessage;
 
 declare global {
   interface Window {
@@ -28,6 +39,8 @@ declare global {
       localMicrophonePublished: boolean;
       messageEvents: number;
       lastMessageKind: string;
+      viewerPresent: boolean;
+      fullscreen: boolean;
     };
   }
 }
@@ -48,6 +61,8 @@ window.__meetingScreenFixture = {
   localMicrophonePublished: false,
   messageEvents: 0,
   lastMessageKind: '',
+  viewerPresent: false,
+  fullscreen: false,
 };
 
 let room: Room | undefined;
@@ -57,8 +72,29 @@ let oscillator: OscillatorNode | undefined;
 let screenTrack: MediaStreamTrack | undefined;
 let screenCanvas: HTMLCanvasElement | undefined;
 let paintTimer: number | undefined;
-const remoteScreens = new Map<string, HTMLVideoElement>();
+const remoteScreens = new Map<string, ProximityRemoteScreenShare>();
 const remoteAudioContexts = new Set<AudioContext>();
+const viewerRoot = createRoot(document.getElementById('meeting-screen-share-viewer-root')!);
+let viewerPresentation: MeetingScreenSharePresentation | null = null;
+let viewerPresenterName = '';
+document.addEventListener('fullscreenchange', () => {
+  window.__meetingScreenFixture.fullscreen = document.fullscreenElement !== null;
+});
+
+function renderViewer() {
+  window.__meetingScreenFixture.viewerPresent = viewerPresentation !== null;
+  if (!viewerPresentation) {
+    viewerRoot.render(null);
+    return;
+  }
+  viewerRoot.render(
+    createElement(MeetingScreenShareViewer, {
+      presentation: viewerPresentation,
+      presenterName: viewerPresenterName,
+      remoteScreenShares: [...remoteScreens.values()],
+    }),
+  );
+}
 
 function updatePermissions() {
   const values = room?.localParticipant.permissions?.canPublishSources ?? [];
@@ -76,12 +112,12 @@ async function start(grant: StartMessage['grant'], publishMicrophone: boolean) {
   });
   room.on(RoomEvent.TrackSubscribed, (track, _publication, participant) => {
     if (track.kind === Track.Kind.Video && track.source === Track.Source.ScreenShare) {
-      const video = track.attach() as HTMLVideoElement;
-      video.autoplay = true;
-      video.muted = true;
-      document.body.append(video);
-      remoteScreens.set(participant.identity, video);
+      remoteScreens.set(participant.identity, {
+        track,
+        identity: participant.identity,
+      });
       window.__meetingScreenFixture.remoteScreenOwners = [...remoteScreens.keys()];
+      renderViewer();
       return;
     }
     if (track.kind !== Track.Kind.Audio) return;
@@ -121,13 +157,9 @@ async function start(grant: StartMessage['grant'], publishMicrophone: boolean) {
   });
   room.on(RoomEvent.TrackUnsubscribed, (track, _publication, participant) => {
     if (track.kind !== Track.Kind.Video || track.source !== Track.Source.ScreenShare) return;
-    const video = remoteScreens.get(participant.identity);
-    if (video) {
-      track.detach(video);
-      video.remove();
-      remoteScreens.delete(participant.identity);
-      window.__meetingScreenFixture.remoteScreenOwners = [...remoteScreens.keys()];
-    }
+    remoteScreens.delete(participant.identity);
+    window.__meetingScreenFixture.remoteScreenOwners = [...remoteScreens.keys()];
+    renderViewer();
   });
   room.on(RoomEvent.LocalTrackPublished, (publication, participant) => {
     if (participant === room?.localParticipant) {
@@ -235,6 +267,9 @@ async function stop() {
   remoteAudioContexts.clear();
   await room?.disconnect();
   room = undefined;
+  remoteScreens.clear();
+  viewerPresentation = null;
+  renderViewer();
   await audioContext?.close();
   audioContext = undefined;
   window.__meetingScreenFixture.status = 'off';
@@ -259,6 +294,10 @@ window.addEventListener('message', (event: MessageEvent<FixtureMessage>) => {
     });
   } else if (event.data?.kind === 'stop-screen') {
     void stopScreenTrack();
+  } else if (event.data?.kind === 'viewer-state') {
+    viewerPresentation = event.data.presentation;
+    viewerPresenterName = event.data.presenterName;
+    renderViewer();
   } else if (event.data?.kind === 'stop') {
     void stop();
   }

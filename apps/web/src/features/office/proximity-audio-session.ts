@@ -9,6 +9,16 @@ export type ProximityRemoteAudioTrack = {
   detach(element?: HTMLMediaElement): HTMLMediaElement[];
 };
 
+export type ProximityRemoteScreenTrack = {
+  attach(element?: HTMLVideoElement): HTMLMediaElement;
+  detach(element?: HTMLVideoElement): HTMLMediaElement[];
+};
+
+export type ProximityRemoteScreenShare = {
+  track: ProximityRemoteScreenTrack;
+  identity: string;
+};
+
 export interface ProximityRoom {
   prepareMicrophone?(): Promise<void>;
   connect(serverUrl: string, token: string): Promise<void>;
@@ -23,6 +33,10 @@ export interface ProximityRoom {
     listener: (track: ProximityRemoteAudioTrack, identity: string) => void,
   ): () => void;
   onTrackUnsubscribed(listener: (track: ProximityRemoteAudioTrack) => void): () => void;
+  onScreenShareTrackSubscribed(
+    listener: (track: ProximityRemoteScreenTrack, identity: string) => void,
+  ): () => void;
+  onScreenShareTrackUnsubscribed(listener: (track: ProximityRemoteScreenTrack) => void): () => void;
   onDisconnected(listener: () => void): () => void;
   onReconnecting(listener: () => void): () => void;
   onReconnected(listener: () => void): () => void;
@@ -160,6 +174,26 @@ export async function createLiveKitProximityRoom(
       room.on(RoomEvent.TrackUnsubscribed, handler);
       return () => room.off(RoomEvent.TrackUnsubscribed, handler);
     },
+    onScreenShareTrackSubscribed: (listener) => {
+      const handler = (
+        track: import('livekit-client').RemoteTrack,
+        _publication: unknown,
+        participant: { identity: string },
+      ) => {
+        if (track.kind === Track.Kind.Video && track.source === Track.Source.ScreenShare)
+          listener(track, participant.identity);
+      };
+      room.on(RoomEvent.TrackSubscribed, handler);
+      return () => room.off(RoomEvent.TrackSubscribed, handler);
+    },
+    onScreenShareTrackUnsubscribed: (listener) => {
+      const handler = (track: import('livekit-client').RemoteTrack) => {
+        if (track.kind === Track.Kind.Video && track.source === Track.Source.ScreenShare)
+          listener(track);
+      };
+      room.on(RoomEvent.TrackUnsubscribed, handler);
+      return () => room.off(RoomEvent.TrackUnsubscribed, handler);
+    },
     onDisconnected: (listener) => {
       const handler = (reason?: unknown) => {
         onDisconnectReason?.(reason);
@@ -188,6 +222,8 @@ export class ProximityAudioSession {
   private microphoneDesired = false;
   private listeners: Array<() => void> = [];
   private remoteTracks = new Map<ProximityRemoteAudioTrack, () => void>();
+  private remoteScreenTracks = new Map<ProximityRemoteScreenTrack, string>();
+  private readonly remoteScreenShareListeners = new Set<() => void>();
   private status: ProximityAudioStatus = 'off';
   private screenShare: { room: ProximityRoom; track: MediaStreamTrack } | null = null;
 
@@ -297,6 +333,17 @@ export class ProximityAudioSession {
 
   isScreenSharePermitted() {
     return this.room?.canPublishScreenShare() ?? false;
+  }
+
+  getRemoteScreenShares(): ProximityRemoteScreenShare[] {
+    return [...this.remoteScreenTracks].map(([track, identity]) => ({ track, identity }));
+  }
+
+  subscribeRemoteScreenShares(listener: () => void) {
+    this.remoteScreenShareListeners.add(listener);
+    return () => {
+      this.remoteScreenShareListeners.delete(listener);
+    };
   }
 
   async waitForScreenSharePermission(signal: AbortSignal) {
@@ -415,6 +462,13 @@ export class ProximityAudioSession {
         this.remoteTracks.set(track, this.bindRemoteTrack(track, identity));
       }),
       room.onTrackUnsubscribed((track) => this.detachRemoteTrack(track)),
+      room.onScreenShareTrackSubscribed((track, identity) => {
+        if (this.room !== room || attempt !== this.generation || this.remoteScreenTracks.has(track))
+          return;
+        this.remoteScreenTracks.set(track, identity);
+        this.notifyRemoteScreenShares();
+      }),
+      room.onScreenShareTrackUnsubscribed((track) => this.detachRemoteScreenTrack(track)),
       room.onDisconnected(() => {
         if (this.room !== room || attempt !== this.generation) return;
         void this.releaseRoom(room).finally(() => {
@@ -438,6 +492,7 @@ export class ProximityAudioSession {
     this.onSpeakers([]);
     for (const unsubscribe of this.listeners.splice(0)) unsubscribe();
     for (const track of this.remoteTracks.keys()) this.detachRemoteTrack(track);
+    for (const track of [...this.remoteScreenTracks.keys()]) this.detachRemoteScreenTrack(track);
     const screenShare = this.screenShare?.room === room ? this.screenShare : null;
     if (screenShare) {
       this.screenShare = null;
@@ -456,6 +511,16 @@ export class ProximityAudioSession {
     if (!detach) return;
     this.remoteTracks.delete(track);
     detach();
+  }
+
+  private detachRemoteScreenTrack(track: ProximityRemoteScreenTrack) {
+    if (!this.remoteScreenTracks.delete(track)) return;
+    track.detach();
+    this.notifyRemoteScreenShares();
+  }
+
+  private notifyRemoteScreenShares() {
+    for (const listener of this.remoteScreenShareListeners) listener();
   }
 
   private setState(status: ProximityAudioStatus, error?: string) {

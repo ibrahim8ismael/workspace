@@ -21,6 +21,17 @@ function createRoom() {
     subscribed: undefined as
       ((track: ProximityRemoteAudioTrack, identity: string) => void) | undefined,
     unsubscribed: undefined as ((track: ProximityRemoteAudioTrack) => void) | undefined,
+    screenSubscribed: undefined as
+      | ((
+          track: import('../src/features/office/proximity-audio-session').ProximityRemoteScreenTrack,
+          identity: string,
+        ) => void)
+      | undefined,
+    screenUnsubscribed: undefined as
+      | ((
+          track: import('../src/features/office/proximity-audio-session').ProximityRemoteScreenTrack,
+        ) => void)
+      | undefined,
     disconnected: undefined as (() => void) | undefined,
     reconnecting: undefined as (() => void) | undefined,
     reconnected: undefined as (() => void) | undefined,
@@ -46,6 +57,18 @@ function createRoom() {
       handlers.unsubscribed = handler;
       return () => {
         handlers.unsubscribed = undefined;
+      };
+    }),
+    onScreenShareTrackSubscribed: vi.fn((handler) => {
+      handlers.screenSubscribed = handler;
+      return () => {
+        handlers.screenSubscribed = undefined;
+      };
+    }),
+    onScreenShareTrackUnsubscribed: vi.fn((handler) => {
+      handlers.screenUnsubscribed = handler;
+      return () => {
+        handlers.screenUnsubscribed = undefined;
       };
     }),
     onDisconnected: vi.fn((handler) => {
@@ -78,6 +101,45 @@ function createRoom() {
 }
 
 describe('session-bound proximity audio client', () => {
+  it('exposes remote meeting screen shares and detaches them on unsubscribe and room release', async () => {
+    const fake = createRoom();
+    const session = new ProximityAudioSession(
+      () => undefined,
+      () => vi.fn(),
+      async () => fake.room,
+    );
+    const changed = vi.fn();
+    session.subscribeRemoteScreenShares(changed);
+    await session.start(
+      async () => grant,
+      () => true,
+      2,
+      grant.generation,
+    );
+    const track = {
+      attach: vi.fn(),
+      detach: vi.fn(() => []),
+    } as unknown as import('../src/features/office/proximity-audio-session').ProximityRemoteScreenTrack;
+
+    fake.handlers.screenSubscribed?.(track, 'presenter-participation');
+    expect(session.getRemoteScreenShares()).toEqual([
+      { track, identity: 'presenter-participation' },
+    ]);
+    expect(changed).toHaveBeenCalledOnce();
+
+    fake.handlers.screenUnsubscribed?.(track);
+    expect(track.detach).toHaveBeenCalledOnce();
+    expect(session.getRemoteScreenShares()).toEqual([]);
+    expect(changed).toHaveBeenCalledTimes(2);
+
+    fake.handlers.screenSubscribed?.(track, 'presenter-participation');
+    await session.stop();
+    expect(track.detach).toHaveBeenCalledTimes(2);
+    expect(session.getRemoteScreenShares()).toEqual([]);
+    expect(fake.handlers.screenSubscribed).toBeUndefined();
+    expect(changed).toHaveBeenCalledTimes(4);
+  });
+
   it('waits for server-installed screen permission and publishes only on the connected room', async () => {
     const fake = createRoom();
     const session = new ProximityAudioSession(

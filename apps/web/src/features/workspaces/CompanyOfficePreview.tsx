@@ -51,7 +51,9 @@ import {
 import {
   ProximityAudioSession,
   type ProximityAudioStatus,
+  type ProximityRemoteScreenShare,
 } from '../office/proximity-audio-session';
+import { MeetingScreenShareViewer } from '../office/meeting-screen-share-viewer';
 import { RemoteAudioPlayback } from '../office/remote-audio-playback';
 import {
   canPublishDesktopScreen,
@@ -172,6 +174,20 @@ export function CompanyOfficePreview({
   const latestMeeting = latestMeetingConversation(state.conversationUpdates, participationId);
   const activeMeetingConversation =
     latestMeeting?.state === 'active' && latestMeeting.mediaReady ? latestMeeting : null;
+  const activeMeetingPresentation = activeMeetingConversation
+    ? (state.meetingScreenShareUpdates.find(
+        (update) =>
+          update.officeEpoch === state.ready?.snapshot.officeEpoch &&
+          update.conversationId === activeMeetingConversation.conversationId &&
+          update.zoneId === activeMeetingConversation.zoneId,
+      )?.presentation ?? null)
+    : null;
+  const screenPresenterName = activeMeetingPresentation
+    ? (activeMeetingConversation?.participants.find(
+        (participant) =>
+          participant.participationId === activeMeetingPresentation.presenterParticipationId,
+      )?.displayName ?? 'A meeting participant')
+    : '';
   const voiceMembership = latestMeeting ?? latestConversation;
   const voiceMembershipKey = voiceMembership
     ? `${voiceMembership.kind}:${voiceMembership.conversationId}:${participationId}`
@@ -232,6 +248,7 @@ export function CompanyOfficePreview({
   const microphoneMembershipKey = useRef(voiceMembershipKey);
   const audioParticipation = useRef(participationId);
   const proximityAudio = useRef<ProximityAudioSession | null>(null);
+  const [remoteScreenShares, setRemoteScreenShares] = useState<ProximityRemoteScreenShare[]>([]);
   const [proximityAudioStage, setProximityAudioStage] = useState('authorizing');
   const [meetingScreenShare] = useState(() => new MeetingScreenShareController());
   const meetingScreenShareState = useSyncExternalStore(
@@ -406,8 +423,13 @@ export function CompanyOfficePreview({
       },
     );
     proximityAudio.current = session;
+    const unsubscribeScreenShares = session.subscribeRemoteScreenShares(() =>
+      setRemoteScreenShares(session.getRemoteScreenShares()),
+    );
+    setRemoteScreenShares(session.getRemoteScreenShares());
     return () => {
       active = false;
+      unsubscribeScreenShares();
       void session.stop();
       proximityAudio.current = null;
     };
@@ -1306,13 +1328,21 @@ export function CompanyOfficePreview({
                     <p className="office-voice-members" aria-label="Meeting participants">
                       {meetingMemberNames.join(', ')}
                     </p>
+                    {activeMeetingPresentation && (
+                      <MeetingScreenShareViewer
+                        presentation={activeMeetingPresentation}
+                        presenterName={screenPresenterName}
+                        remoteScreenShares={remoteScreenShares}
+                      />
+                    )}
                     {desktopScreenShareSupported ? (
                       <button
                         className="dashboard-secondary"
                         type="button"
                         disabled={
                           !['live', 'muted'].includes(proximityAudioStatus) ||
-                          !['idle', 'error'].includes(meetingScreenShareState.status)
+                          !['idle', 'error'].includes(meetingScreenShareState.status) ||
+                          activeMeetingPresentation !== null
                         }
                         onClick={startMeetingScreenShare}
                       >
@@ -1337,15 +1367,16 @@ export function CompanyOfficePreview({
                             : 'Starting screen video…'}
                       </p>
                     )}
-                    {meetingScreenShareState.status === 'live' && (
-                      <button
-                        className="dashboard-secondary"
-                        type="button"
-                        onClick={() => void meetingScreenShare.stop()}
-                      >
-                        Stop sharing
-                      </button>
-                    )}
+                    {meetingScreenShareState.status === 'live' &&
+                      activeMeetingPresentation?.presenterParticipationId === participationId && (
+                        <button
+                          className="dashboard-secondary"
+                          type="button"
+                          onClick={() => void meetingScreenShare.stop()}
+                        >
+                          Stop sharing
+                        </button>
+                      )}
                     {meetingScreenShareState.message && (
                       <p className="office-action-error" role="alert">
                         {meetingScreenShareState.message}

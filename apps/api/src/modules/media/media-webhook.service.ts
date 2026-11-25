@@ -4,6 +4,7 @@ import { WebhookReceiver } from 'livekit-server-sdk';
 import type { ApiEnvironment } from '../../platform/config/environment.js';
 import { DatabaseService } from '../../platform/database/database.service.js';
 import { fail, invariant } from '../../platform/http/errors.js';
+import { MediaMeetingScreenShareLifecycleService } from './media-meeting-screen-share-lifecycle.service.js';
 import type { MediaWebhookDisposition } from './media-webhook.models.js';
 import { MediaWebhookModels } from './media-webhook.models.js';
 
@@ -23,7 +24,8 @@ interface VerifiedLiveKitEvent {
   event?: unknown;
   createdAt?: unknown;
   room?: { name?: unknown } | null;
-  participant?: { identity?: unknown } | null;
+  participant?: { identity?: unknown; sid?: unknown } | null;
+  track?: { name?: unknown; source?: unknown } | null;
 }
 
 function isDuplicateKeyError(error: unknown) {
@@ -35,6 +37,8 @@ export class MediaWebhookService {
   constructor(
     @Inject(MediaWebhookModels) private readonly observations: MediaWebhookModels,
     @Inject(DatabaseService) private readonly db: DatabaseService,
+    @Inject(MediaMeetingScreenShareLifecycleService)
+    private readonly screenShareLifecycle: MediaMeetingScreenShareLifecycleService,
     private readonly config: ConfigService<ApiEnvironment, true>,
   ) {}
 
@@ -82,6 +86,43 @@ export class MediaWebhookService {
       400,
       'validation_failed',
     );
+    invariant(
+      event.participant?.sid === undefined ||
+        (typeof event.participant.sid === 'string' && event.participant.sid.length <= 256),
+      400,
+      'validation_failed',
+    );
+    invariant(
+      event.track === undefined ||
+        event.track === null ||
+        ((event.track.name === undefined ||
+          (typeof event.track.name === 'string' && event.track.name.length <= 256)) &&
+          (event.track.source === undefined ||
+            typeof event.track.source === 'number' ||
+            typeof event.track.source === 'string')),
+      400,
+      'validation_failed',
+    );
+
+    await this.screenShareLifecycle.reconcileWebhook({
+      eventName: event.event,
+      roomName: event.room.name as string,
+      occurredAt: occurredAt.getTime(),
+      ...(typeof event.participant?.identity === 'string'
+        ? { participantIdentity: event.participant.identity }
+        : {}),
+      ...(typeof event.participant?.sid === 'string' && event.participant.sid.length > 0
+        ? { participantSid: event.participant.sid }
+        : {}),
+      ...(event.track && typeof event.track.name === 'string'
+        ? {
+            track: {
+              name: event.track.name,
+              ...(event.track.source !== undefined ? { source: event.track.source } : {}),
+            },
+          }
+        : {}),
+    });
 
     const now = new Date();
     const expiresAt = new Date(now.getTime() + DEDUPLICATION_RETENTION_DAYS * 24 * 60 * 60 * 1000);

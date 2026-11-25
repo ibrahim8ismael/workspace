@@ -162,13 +162,13 @@ function createShareActions(conversationId: string): MeetingScreenShareActions {
       await window.__reserveMeetingScreenShare(shareId);
     },
     waitForPermission: (signal) => session!.waitForScreenSharePermission(signal),
-    publish: async (track) => {
+    publish: async (track, shareId) => {
       window.__meetingScreenPublishingFixture.screenPublishAttempts += 1;
       window.__meetingScreenPublishingFixture.screenPublishResult = 'attempted';
       window.__meetingScreenPublishingFixture.permissions = session!.isScreenSharePermitted()
         ? ['microphone', 'screen_share']
         : ['microphone'];
-      await session!.publishScreenShare(track);
+      await session!.publishScreenShare(track, shareId);
       window.__meetingScreenPublishingFixture.screenPublished = true;
       window.__meetingScreenPublishingFixture.screenPublishResult = 'published';
     },

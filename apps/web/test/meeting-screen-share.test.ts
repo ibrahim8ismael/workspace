@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { OFFICE_LIMITS } from '@gather/contracts';
 import {
   canPublishDesktopScreen,
   MeetingScreenShareController,
@@ -67,6 +68,7 @@ describe('meeting screen-share controller', () => {
     expect(capture).toHaveBeenCalledOnce();
     expect(controller.getSnapshot()).toEqual({ status: 'live', message: '' });
     expect(actions.reserve).toHaveBeenCalledWith('share-id');
+    expect(actions.publish).toHaveBeenCalledWith(track, 'share-id');
     expect(actions.confirm).toHaveBeenCalledWith('share-id');
     await controller.stop();
     expect(order.slice(-2)).toEqual(['unpublish', 'release']);
@@ -150,6 +152,53 @@ describe('meeting screen-share controller', () => {
 
     expect(actions.unpublish).toHaveBeenCalledWith(track);
     expect(actions.release).toHaveBeenCalledWith('share-id');
+  });
+
+  it('refreshes the presenter lease while live and clears its timer on stop', async () => {
+    vi.useFakeTimers();
+    try {
+      const track = makeTrack();
+      const actions = makeActions();
+      const controller = new MeetingScreenShareController(
+        async () => makeStream(track),
+        () => 'share-id',
+      );
+      await controller.start(actions);
+      expect(actions.confirm).toHaveBeenCalledOnce();
+
+      await vi.advanceTimersByTimeAsync(Math.floor(OFFICE_LIMITS.meetingScreenShareLeaseMs / 3));
+      expect(actions.confirm).toHaveBeenCalledTimes(2);
+      await controller.stop();
+      expect(controller.getSnapshot().status).toBe('idle');
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('cleans up capture and reservation when a lease refresh is rejected', async () => {
+    vi.useFakeTimers();
+    try {
+      const track = makeTrack();
+      const actions = makeActions();
+      vi.mocked(actions.confirm)
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValueOnce(new Error('server_unavailable'));
+      const controller = new MeetingScreenShareController(
+        async () => makeStream(track),
+        () => 'share-id',
+      );
+      await controller.start(actions);
+      await vi.advanceTimersByTimeAsync(Math.floor(OFFICE_LIMITS.meetingScreenShareLeaseMs / 3));
+
+      expect(controller.getSnapshot().status).toBe('idle');
+      expect(actions.unpublish).toHaveBeenCalledWith(track);
+      expect(actions.release).toHaveBeenCalledWith('share-id');
+      expect(track.stop).toHaveBeenCalledOnce();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('does not offer screen publishing from mobile user agents or unsupported browsers', () => {

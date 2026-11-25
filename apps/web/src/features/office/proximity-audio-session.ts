@@ -1,4 +1,5 @@
 import type { MediaTokenResponse } from '@gather/contracts';
+import { meetingScreenShareTrackName } from '@gather/contracts';
 
 export type ProximityAudioStatus =
   'off' | 'connecting' | 'live' | 'muted' | 'reconnecting' | 'error';
@@ -26,7 +27,7 @@ export interface ProximityRoom {
   setMicrophoneEnabled(enabled: boolean): Promise<void>;
   canPublishScreenShare(): boolean;
   onScreenSharePermissionChanged(listener: (allowed: boolean) => void): () => void;
-  publishScreenShare(track: MediaStreamTrack): Promise<void>;
+  publishScreenShare(track: MediaStreamTrack, shareId: string): Promise<void>;
   unpublishScreenShare(track: MediaStreamTrack): Promise<void>;
   onActiveSpeakersChanged?(listener: (identities: string[]) => void): () => void;
   onTrackSubscribed(
@@ -122,7 +123,7 @@ export async function createLiveKitProximityRoom(
       room.on(RoomEvent.ParticipantPermissionsChanged, handler);
       return () => room.off(RoomEvent.ParticipantPermissionsChanged, handler);
     },
-    publishScreenShare: async (track) => {
+    publishScreenShare: async (track, shareId) => {
       if (
         !room.localParticipant.permissions?.canPublishSources?.some(
           (source) => Track.sourceFromProto(source) === Track.Source.ScreenShare,
@@ -131,7 +132,7 @@ export async function createLiveKitProximityRoom(
         throw new Error('screen_share_permission_missing');
       await room.localParticipant.publishTrack(track, {
         source: Track.Source.ScreenShare,
-        name: 'meeting-screen-share',
+        name: meetingScreenShareTrackName(shareId),
       });
     },
     unpublishScreenShare: async (track) => {
@@ -380,12 +381,12 @@ export class ProximityAudioSession {
       throw new Error('screen_share_permission_missing');
   }
 
-  async publishScreenShare(track: MediaStreamTrack) {
+  async publishScreenShare(track: MediaStreamTrack, shareId: string) {
     const room = this.room;
     if (!room || !['live', 'muted'].includes(this.status)) throw new Error('media_disconnected');
     if (this.screenShare) throw new Error('screen_share_already_published');
     if (!room.canPublishScreenShare()) throw new Error('screen_share_permission_missing');
-    await room.publishScreenShare(track);
+    await room.publishScreenShare(track, shareId);
     if (this.room !== room || !room.canPublishScreenShare()) {
       await room.unpublishScreenShare(track).catch(() => undefined);
       throw new Error('screen_share_permission_missing');

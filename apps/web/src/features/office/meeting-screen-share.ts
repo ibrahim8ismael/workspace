@@ -8,7 +8,7 @@ export type MeetingScreenShareState = {
 export type MeetingScreenShareActions = {
   reserve(shareId: string): Promise<void>;
   waitForPermission(signal: AbortSignal): Promise<void>;
-  publish(track: MediaStreamTrack): Promise<void>;
+  publish(track: MediaStreamTrack, shareId: string): Promise<void>;
   confirm(shareId: string): Promise<void>;
   unpublish(track: MediaStreamTrack): Promise<void>;
   release(shareId: string): Promise<void>;
@@ -63,6 +63,7 @@ export class MeetingScreenShareController {
   private pending: Promise<void> | null = null;
   private cleanup: Promise<void> | null = null;
   private expiryTimer: ReturnType<typeof setTimeout> | null = null;
+  private leaseTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     private readonly capture: ScreenCapture = defaultCapture,
@@ -83,6 +84,8 @@ export class MeetingScreenShareController {
     const cancellation = new AbortController();
     this.actions = actions;
     this.shareId = shareId;
+    if (this.leaseTimer) clearInterval(this.leaseTimer);
+    this.leaseTimer = null;
     this.cancellation = cancellation;
     this.reservationRequested = false;
     this.reserved = false;
@@ -117,6 +120,8 @@ export class MeetingScreenShareController {
     if (this.state.status === 'idle') return;
     const attempt = ++this.generation;
     this.setState('stopping');
+    if (this.leaseTimer) clearInterval(this.leaseTimer);
+    this.leaseTimer = null;
     this.cancellation?.abort();
     if (this.expiryTimer) clearTimeout(this.expiryTimer);
     this.expiryTimer = null;
@@ -157,7 +162,7 @@ export class MeetingScreenShareController {
       if (!this.isCurrent(attempt, actions)) throw new Error('share_cancelled');
 
       this.setState('publishing');
-      await actions.publish(track);
+      await actions.publish(track, shareId);
       this.published = true;
       if (!this.isCurrent(attempt, actions)) throw new Error('share_cancelled');
       await actions.confirm(shareId);
@@ -166,6 +171,7 @@ export class MeetingScreenShareController {
       if (this.expiryTimer) clearTimeout(this.expiryTimer);
       this.expiryTimer = null;
       this.setState('live');
+      this.startLeaseRefresh(attempt, shareId, actions);
     } catch (error) {
       await this.releaseResources();
       if (attempt === this.generation) {
@@ -190,6 +196,20 @@ export class MeetingScreenShareController {
     void this.stop();
   };
 
+  private startLeaseRefresh(attempt: number, shareId: string, actions: MeetingScreenShareActions) {
+    if (this.leaseTimer) clearInterval(this.leaseTimer);
+    this.leaseTimer = setInterval(
+      () => {
+        if (!this.isCurrent(attempt, actions)) {
+          void this.stop();
+          return;
+        }
+        void actions.confirm(shareId).catch(() => this.stop());
+      },
+      Math.max(1000, Math.floor(OFFICE_LIMITS.meetingScreenShareLeaseMs / 3)),
+    );
+  }
+
   private releaseResources() {
     if (this.cleanup) return this.cleanup;
     const track = this.track;
@@ -199,6 +219,8 @@ export class MeetingScreenShareController {
     const cleanup = (async () => {
       if (this.expiryTimer) clearTimeout(this.expiryTimer);
       this.expiryTimer = null;
+      if (this.leaseTimer) clearInterval(this.leaseTimer);
+      this.leaseTimer = null;
       if (this.reservationRequested && this.reservation) {
         try {
           await this.reservation;

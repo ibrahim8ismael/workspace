@@ -80,7 +80,12 @@ interface MeetingGroupState {
   pendingMemberIds: Set<string>;
   active: boolean;
   presentationVersion: number;
-  presentation: (MeetingScreenSharePresentation & { deadlineMonotonic: number }) | null;
+  presentation:
+    | (MeetingScreenSharePresentation & {
+        deadlineMonotonic: number;
+        livekitParticipantSid?: string;
+      })
+    | null;
   usedShareIds: Map<string, { presenterParticipationId: string; usedAt: number }>;
 }
 interface MeetingScreenShareNotice {
@@ -1158,10 +1163,17 @@ export class OfficeRuntimeService {
     )
       return 'conflict';
     if (presentation.status === 'live') {
-      this.queueMeetingScreenShareNotice(office, group);
+      group.presentation = {
+        ...presentation,
+        deadlineMonotonic: nowMonotonic + OFFICE_LIMITS.meetingScreenShareLeaseMs,
+      };
       return null;
     }
-    group.presentation = { ...presentation, status: 'live' };
+    group.presentation = {
+      ...presentation,
+      status: 'live',
+      deadlineMonotonic: nowMonotonic + OFFICE_LIMITS.meetingScreenShareLeaseMs,
+    };
     group.presentationVersion += 1;
     this.queueMeetingScreenShareNotice(office, group);
     return null;
@@ -1225,6 +1237,69 @@ export class OfficeRuntimeService {
           ]
         : [],
     );
+  }
+
+  activeMeetingScreenShare(room: string) {
+    for (const office of this.offices.values()) {
+      const group = [...office.meetingGroups.values()].find(
+        (candidate) => candidate.generation === room,
+      );
+      if (group?.presentation)
+        return {
+          room: group.generation,
+          shareId: group.presentation.shareId,
+          presenterParticipationId: group.presentation.presenterParticipationId,
+          status: group.presentation.status,
+          startedAt: group.presentation.startedAt,
+          ...(group.presentation.livekitParticipantSid
+            ? { livekitParticipantSid: group.presentation.livekitParticipantSid }
+            : {}),
+        } as const;
+    }
+    return null;
+  }
+
+  observeMeetingScreenSharePublication(
+    room: string,
+    presenterParticipationId: string,
+    shareId: string,
+    livekitParticipantSid: string,
+  ) {
+    for (const office of this.offices.values()) {
+      const group = [...office.meetingGroups.values()].find(
+        (candidate) => candidate.generation === room,
+      );
+      if (
+        !group?.presentation ||
+        group.presentation.presenterParticipationId !== presenterParticipationId ||
+        group.presentation.shareId !== shareId
+      )
+        continue;
+      group.presentation = { ...group.presentation, livekitParticipantSid };
+      return true;
+    }
+    return false;
+  }
+
+  clearMeetingScreenShareFromMediaObservation(
+    room: string,
+    presenterParticipationId: string,
+    shareId: string,
+  ) {
+    for (const office of this.offices.values()) {
+      const group = [...office.meetingGroups.values()].find(
+        (candidate) => candidate.generation === room,
+      );
+      if (
+        !group?.presentation ||
+        group.presentation.presenterParticipationId !== presenterParticipationId ||
+        group.presentation.shareId !== shareId
+      )
+        continue;
+      this.clearMeetingScreenShare(office, group);
+      return true;
+    }
+    return false;
   }
 
   conversationAreas(officeId: string) {
@@ -1994,7 +2069,7 @@ export class OfficeRuntimeService {
 
   private reconcileMeetingState(office: OfficeRuntime, now: number) {
     for (const [zoneId, group] of [...office.meetingGroups]) {
-      if (group.presentation?.status === 'starting' && group.presentation.deadlineMonotonic <= now)
+      if (group.presentation && group.presentation.deadlineMonotonic <= now)
         this.clearMeetingScreenShare(office, group);
       for (const member of [...group.members]) {
         const participant = office.participants.get(member.participationId);

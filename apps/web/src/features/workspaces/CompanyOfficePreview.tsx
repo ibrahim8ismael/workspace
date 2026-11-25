@@ -635,7 +635,7 @@ export function CompanyOfficePreview({
       reserve: (shareId) =>
         client.startMeetingScreenShare(conversation.conversationId, conversation.version, shareId),
       waitForPermission: (signal) => session.waitForScreenSharePermission(signal),
-      publish: (track) => session.publishScreenShare(track),
+      publish: (track, shareId) => session.publishScreenShare(track, shareId),
       confirm: (shareId) => client.confirmMeetingScreenShare(conversation.conversationId, shareId),
       unpublish: (track) => session.unpublishScreenShare(track),
       release: (shareId) => client.stopMeetingScreenShare(conversation.conversationId, shareId),

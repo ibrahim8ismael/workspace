@@ -44,6 +44,7 @@ import {
   officeCommandAckSchema,
   officeWaveSchema,
   meetingInvitationSchema,
+  meetingScreenShareTrackName,
   meetingScreenShareUpdateSchema,
   meetingZonesSchema,
   worldDeltaSchema,
@@ -506,7 +507,7 @@ async function stopApplicationMediaClient(client: ApplicationMediaClient) {
 }
 
 function status(response: HttpResponse, expected: number) {
-  expect(response.status, response.body?.error?.code).toBe(expected);
+  expect(response.status, JSON.stringify(response.body)).toBe(expected);
   if (response.status >= 400) apiErrorResponseSchema.parse(response.body);
 }
 
@@ -6479,7 +6480,7 @@ describe('meeting invitation socket flow', () => {
         await new Promise((resolve) => setTimeout(resolve, 120));
         const challenge = { epoch: 'a'.repeat(64), nonce: randomBytes(32).toString('hex') };
         const snapshot = mediaPolicySnapshotSchema.parse(
-          JSON.parse(policy.issueSnapshot(challenge).body),
+          JSON.parse((await policy.issueSnapshot(challenge)).body),
         );
         policy.acknowledgeInstallation({ ...challenge, sequence: snapshot.sequence });
         return snapshot;
@@ -6676,7 +6677,7 @@ describe('meeting screen-share socket flow', () => {
         nonce: randomBytes(32).toString('hex'),
       };
       const startingPolicy = mediaPolicySnapshotSchema.parse(
-        JSON.parse(mediaPolicy.issueSnapshot(policyChallenge).body),
+        JSON.parse((await mediaPolicy.issueSnapshot(policyChallenge)).body),
       );
       const presenterPermit = startingPolicy.permits.find(
         (permit) => permit.identity === ready[presenterIndex]!.participationId,
@@ -6763,13 +6764,69 @@ describe('meeting screen-share socket flow', () => {
         status: 'live',
       });
 
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+      const webhookEndedStates = [0, 1, 2].map((index) =>
+        nextSocketEvent<unknown>(sockets[index]!, 'meeting:screen-share:update'),
+      );
+      const endedEvent = {
+        id: randomUUID(),
+        event: 'track_unpublished',
+        createdAt: String(Math.floor(Date.now() / 1000)),
+        room: { name: presenterPermit.generation },
+        participant: { identity: ready[presenterIndex]!.participationId },
+        track: {
+          name: meetingScreenShareTrackName(shareId),
+          source: TrackSource.SCREEN_SHARE,
+        },
+      };
+      const endedEventBody = JSON.stringify(endedEvent);
+      status(
+        await postLiveKitWebhook(endedEventBody, await liveKitWebhookAuthorization(endedEventBody)),
+        204,
+      );
+      for (const event of await Promise.all(webhookEndedStates))
+        expect(meetingScreenShareUpdateSchema.parse(event).presentation).toBeNull();
+      expect(runtime.activeMeetingScreenShare(presenterPermit.generation)).toBeNull();
+
+      const nextShareId = randomUUID();
+      const nextShareStarted = [0, 1, 2].map((index) =>
+        nextSocketEvent<unknown>(sockets[index]!, 'meeting:screen-share:update'),
+      );
+      expect(
+        await command(presenterIndex, 'meeting:screen-share:start', {
+          conversationId: meeting().conversationId,
+          conversationVersion: meeting().version,
+          shareId: nextShareId,
+        }),
+      ).toMatchObject({ ok: true });
+      await Promise.all(nextShareStarted);
+      expect(
+        await command(presenterIndex, 'meeting:screen-share:confirm', {
+          conversationId: meeting().conversationId,
+          shareId: nextShareId,
+        }),
+      ).toMatchObject({ ok: true });
+
+      const lateEventBody = JSON.stringify({
+        ...endedEvent,
+        id: randomUUID(),
+        createdAt: String(Math.floor(Date.now() / 1000) + 1),
+      });
+      status(
+        await postLiveKitWebhook(lateEventBody, await liveKitWebhookAuthorization(lateEventBody)),
+        204,
+      );
+      expect(runtime.activeMeetingScreenShare(presenterPermit.generation)?.shareId).toBe(
+        nextShareId,
+      );
+
       await new Promise((resolve) => setTimeout(resolve, 120));
       const stalePolicyChallenge = {
         epoch: 'a'.repeat(64),
         nonce: randomBytes(32).toString('hex'),
       };
       const stalePolicy = mediaPolicySnapshotSchema.parse(
-        JSON.parse(mediaPolicy.issueSnapshot(stalePolicyChallenge).body),
+        JSON.parse((await mediaPolicy.issueSnapshot(stalePolicyChallenge)).body),
       );
       expect(
         stalePolicy.permits.some(
@@ -6804,7 +6861,7 @@ describe('meeting screen-share socket flow', () => {
         nonce: randomBytes(32).toString('hex'),
       };
       const revokedPolicy = mediaPolicySnapshotSchema.parse(
-        JSON.parse(mediaPolicy.issueSnapshot(revokedPolicyChallenge).body),
+        JSON.parse((await mediaPolicy.issueSnapshot(revokedPolicyChallenge)).body),
       );
       mediaPolicy.acknowledgeInstallation({
         ...revokedPolicyChallenge,
@@ -7681,6 +7738,10 @@ describe('fixed meeting media room continuity', () => {
         expect(presenterDuringShare?.tracks.map(({ source }) => source).sort()).toEqual(
           [TrackSource.MICROPHONE, TrackSource.SCREEN_SHARE].sort(),
         );
+        expect(
+          presenterDuringShare?.tracks.find((track) => track.source === TrackSource.SCREEN_SHARE)
+            ?.name,
+        ).toBe(meetingScreenShareTrackName(activeShareState.shareId));
         expect(duringShare.map((participant) => participant.identity).sort()).toEqual(
           beforeShare.map((participant) => participant.identity).sort(),
         );

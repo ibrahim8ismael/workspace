@@ -23,8 +23,8 @@ function ticket(userNumber: number, mapVersion = commonsManifest.mapVersion): Co
   };
 }
 
-function meetingFixture(count = 3) {
-  const runtime = new OfficeRuntimeService();
+function meetingFixture(count = 3, screenSharingEnabled = true) {
+  const runtime = new OfficeRuntimeService(screenSharingEnabled);
   const actors = Array.from({ length: count }, (_, index) => ticket(index + 1));
   const reservations = actors.map((actor, index) =>
     runtime.reserve(actor, `screen-share-socket-${index + 1}`),
@@ -842,6 +842,77 @@ describe('office runtime reservations', () => {
 });
 
 describe('authoritative meeting screen-share state', () => {
+  it('denies reservations and publish permits while screen sharing is disabled', () => {
+    const fixture = meetingFixture(1, false);
+    fixture.join(0);
+    fixture.runtime.drainMeetingScreenShareNotices();
+    const actor = fixture.actors[0]!;
+    const participationId = fixture.reservations[0]!.participationId;
+    const conversation = fixture.currentMeeting();
+    const shareId = '30000000-0000-4000-8000-000000000099';
+
+    expect(
+      fixture.runtime.startMeetingScreenShare(
+        actor.officeId,
+        actor.workspaceId,
+        actor.userId,
+        'screen-share-socket-1',
+        participationId,
+        actor.officeEpoch,
+        conversation.conversationId,
+        conversation.version,
+        shareId,
+      ),
+    ).toBe('media_unavailable');
+    expect(
+      fixture.runtime.confirmMeetingScreenShare(
+        actor.officeId,
+        actor.workspaceId,
+        actor.userId,
+        'screen-share-socket-1',
+        participationId,
+        actor.officeEpoch,
+        conversation.conversationId,
+        shareId,
+      ),
+    ).toBe('media_unavailable');
+    const permits = fixture.runtime.conversationMediaPermits();
+    expect(fixture.runtime.activeMeetingScreenShare(permits[0]!.generation)).toBeNull();
+    expect(permits).toMatchObject([{ identity: participationId, sources: ['microphone'] }]);
+  });
+
+  it('records a first frame only once for an admitted viewer of the current live share', () => {
+    const fixture = meetingFixture(2);
+    fixture.join(0);
+    fixture.join(1);
+    fixture.runtime.drainMeetingScreenShareNotices();
+    const conversation = fixture.currentMeeting();
+    const shareId = '30000000-0000-4000-8000-000000000098';
+    expect(fixture.operate('start', 0, shareId)).toBeNull();
+    expect(fixture.operate('confirm', 0, shareId)).toBeNull();
+
+    const viewer = fixture.actors[1]!;
+    const viewerParticipationId = fixture.reservations[1]!.participationId;
+    const recordFrame = (participationId: string, socketId: string, id = shareId) =>
+      fixture.runtime.recordMeetingScreenShareFirstFrame(
+        viewer.officeId,
+        viewer.workspaceId,
+        viewer.userId,
+        socketId,
+        participationId,
+        viewer.officeEpoch,
+        conversation.conversationId,
+        id,
+      );
+
+    expect(recordFrame(viewerParticipationId, 'screen-share-socket-2')).toBe(true);
+    expect(recordFrame(viewerParticipationId, 'screen-share-socket-2')).toBe(false);
+    expect(recordFrame(fixture.reservations[0]!.participationId, 'screen-share-socket-1')).toBe(
+      false,
+    );
+    expect(recordFrame(viewerParticipationId, 'screen-share-socket-2', 'stale-share')).toBe(false);
+  });
+
   it('serializes competing presenters and makes start, confirm, and stop retries idempotent', async () => {
     const fixture = meetingFixture();
     fixture.join(0);

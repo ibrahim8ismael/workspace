@@ -126,6 +126,7 @@ export const officeReadySchema = z
     officeId: idSchema,
     mapVersion: mapVersionSchema,
     protocolVersion: protocolVersionSchema,
+    features: z.object({ screenSharing: z.boolean() }).strict().default({ screenSharing: false }),
     snapshot: worldSnapshotSchema,
   })
   .strict()

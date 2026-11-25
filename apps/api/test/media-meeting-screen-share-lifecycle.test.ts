@@ -5,6 +5,7 @@ import { MediaMeetingScreenShareLifecycleService } from '../dist/modules/media/m
 
 const activeShare = {
   room: 'meeting-generation',
+  conversationId: '20000000-0000-4000-8000-000000000001',
   shareId: '30000000-0000-4000-8000-000000000001',
   presenterParticipationId: '40000000-0000-4000-8000-000000000001',
   livekitParticipantSid: 'LK_PRESENTATION_SESSION_1',
@@ -35,11 +36,13 @@ function createFixture() {
     },
   };
   const roomEvents = { publishMeetingScreenShareNotices: vi.fn() };
+  const metrics = { unexpectedDisconnect: vi.fn() };
   const lifecycle = new MediaMeetingScreenShareLifecycleService(
     runtime as never,
     roomEvents as never,
+    metrics as never,
   );
-  return { lifecycle, runtime, roomEvents };
+  return { lifecycle, runtime, roomEvents, metrics };
 }
 
 describe('meeting screen-share lifecycle reconciliation', () => {
@@ -193,5 +196,6 @@ describe('meeting screen-share lifecycle reconciliation', () => {
       activeShare.presenterParticipationId,
       activeShare.shareId,
     );
+    expect(fixture.metrics.unexpectedDisconnect).toHaveBeenCalledWith();
   });
 });

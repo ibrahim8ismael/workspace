@@ -197,6 +197,11 @@ export const meetingScreenShareConfirmEventSchema = officeCommandSchema(
 export const meetingScreenShareStopEventSchema = officeCommandSchema(
   meetingScreenShareIdentitySchema.strict(),
 );
+export const meetingScreenShareFirstFrameEventSchema = officeCommandSchema(
+  meetingScreenShareIdentitySchema
+    .extend({ elapsedMs: z.number().int().min(0).max(600_000) })
+    .strict(),
+);
 
 export const meetingScreenSharePresentationSchema = z
   .object({

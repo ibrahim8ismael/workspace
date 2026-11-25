@@ -124,6 +124,45 @@ window.setInterval(() => {
 }, 100);
 
 const relayOnly = new URLSearchParams(location.search).get('ice') === 'relay';
+const remoteAudioSources = new Map<string, MediaStreamAudioSourceNode>();
+let remoteAudioContext: AudioContext | null = null;
+let remoteAudioAnalyser: AnalyserNode | null = null;
+let remoteAudioMeterTimer: number | undefined;
+
+function attachAudioMeterTrack(identity: string, track: MediaStreamTrack) {
+  if (!remoteAudioContext || !remoteAudioAnalyser) {
+    remoteAudioContext = new AudioContext();
+    remoteAudioAnalyser = remoteAudioContext.createAnalyser();
+    const silentOutput = remoteAudioContext.createGain();
+    silentOutput.gain.value = 0;
+    remoteAudioAnalyser.connect(silentOutput);
+    silentOutput.connect(remoteAudioContext.destination);
+    const samples = new Float32Array(remoteAudioAnalyser.fftSize);
+    remoteAudioMeterTimer = window.setInterval(() => {
+      remoteAudioAnalyser?.getFloatTimeDomainData(samples);
+      if (samples.some((sample) => Math.abs(sample) > 0.01)) {
+        window.__mediaFixture.activeAudioSamples += 1;
+        window.__mediaFixture.lastActiveAudioAt = Date.now();
+      }
+    }, 20);
+  }
+  remoteAudioSources.get(identity)?.disconnect();
+  const source = remoteAudioContext.createMediaStreamSource(new MediaStream([track]));
+  source.connect(remoteAudioAnalyser);
+  remoteAudioSources.set(identity, source);
+  void remoteAudioContext.resume().catch(() => undefined);
+}
+
+function detachAudioMeterTrack(identity: string) {
+  remoteAudioSources.get(identity)?.disconnect();
+  remoteAudioSources.delete(identity);
+  if (remoteAudioSources.size > 0 || !remoteAudioContext) return;
+  if (remoteAudioMeterTimer !== undefined) window.clearInterval(remoteAudioMeterTimer);
+  remoteAudioMeterTimer = undefined;
+  remoteAudioAnalyser = null;
+  void remoteAudioContext.close();
+  remoteAudioContext = null;
+}
 
 const session = new ProximityAudioSession(
   (status, error) => {
@@ -145,23 +184,10 @@ const session = new ProximityAudioSession(
 
     const audioTrack = (track as ProximityRemoteAudioTrack & { mediaStreamTrack: MediaStreamTrack })
       .mediaStreamTrack;
-    const context = new AudioContext();
-    const analyser = context.createAnalyser();
-    const source = context.createMediaStreamSource(new MediaStream([audioTrack]));
-    source.connect(analyser);
-    analyser.connect(context.destination);
-    void context.resume();
-    const samples = new Float32Array(analyser.fftSize);
-    const timer = window.setInterval(() => {
-      analyser.getFloatTimeDomainData(samples);
-      if (samples.some((sample) => Math.abs(sample) > 0.01)) {
-        window.__mediaFixture.activeAudioSamples += 1;
-        window.__mediaFixture.lastActiveAudioAt = Date.now();
-      }
-    }, 20);
+    attachAudioMeterTrack(identity, audioTrack);
 
     return () => {
-      window.clearInterval(timer);
+      detachAudioMeterTrack(identity);
       track.detach(element);
       element.remove();
       window.__mediaFixture.remoteIdentities = window.__mediaFixture.remoteIdentities.filter(
@@ -169,7 +195,6 @@ const session = new ProximityAudioSession(
       );
       const trackIndex = window.__mediaFixture.remoteTrackIdentities.indexOf(identity);
       if (trackIndex >= 0) window.__mediaFixture.remoteTrackIdentities.splice(trackIndex, 1);
-      void context.close();
     };
   },
   () =>

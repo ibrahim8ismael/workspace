@@ -145,6 +145,7 @@ const runMediaPermissionDenied = process.env['CP08_MEDIA_PERMISSION_DENIED'] ===
 const runMediaTurnOnly = process.env['CP08_MEDIA_TURN_ONLY'] === '1';
 const runMediaWeakNetwork = process.env['CP08_MEDIA_WEAK_NETWORK'] === '1';
 const runMediaCrossCompany = process.env['CP08_MEDIA_CROSS_COMPANY'] === '1';
+const runMeetingReadiness = process.env['CP08_MEETING_READINESS'] === '1';
 const configuredMediaEnd = process.env['CP08_MEDIA_END'] ?? 'leave';
 const mediaEndScenario = runLiveMediaFixture
   ? ['opt-out', 'away', 'session-revoke', 'membership-revoke'].includes(configuredMediaEnd)
@@ -424,6 +425,7 @@ function startApplicationMediaClient(config: {
   fixtureUrl: string;
   denyMicrophoneIndex?: 0 | 1;
   forceRelay?: boolean;
+  deferPeerReadiness?: boolean;
   grants: Array<{
     serverUrl: string;
     token: string;
@@ -784,19 +786,31 @@ async function mailCode(
   if (!record?.payload) throw new Error('Expected an encrypted pending mail record');
   return decryptMail(record._id, record.payload, encryption).token;
 }
-async function account(email = `person-${randomUUID()}@example.com`) {
+async function account(email = `person-${randomUUID()}@example.com`, forwardedFor?: string) {
   const client = new Client();
   await client.bootstrap();
   status(
-    await client.send('post', '/api/auth/register', {
-      email,
-      password,
-      displayName: 'Test Person',
-    }),
+    await client.send(
+      'post',
+      '/api/auth/register',
+      {
+        email,
+        password,
+        displayName: 'Test Person',
+      },
+      randomUUID(),
+      forwardedFor,
+    ),
     202,
   );
   const token = await mailCode(email, 'verify-email');
-  const verified = await client.send('post', '/api/auth/verify-email', { email, token });
+  const verified = await client.send(
+    'post',
+    '/api/auth/verify-email',
+    { email, token },
+    randomUUID(),
+    forwardedFor,
+  );
   status(verified, 200);
   return { client, email, id: String(verified.body.account.id) };
 }
@@ -851,6 +865,7 @@ beforeAll(async () => {
   }
   process.env['LIVEKIT_API_KEY'] = livekitApiKey;
   process.env['LIVEKIT_API_SECRET'] = livekitApiSecret;
+  process.env['SCREEN_SHARE_ENABLED'] = 'true';
   process.env['MONGOMS_DOWNLOAD_DIR'] = resolve(process.cwd(), '../../.cache/mongodb-binaries');
   mongo = await MongoMemoryReplSet.create({
     binary: { version: '8.2.6' },
@@ -3758,6 +3773,35 @@ describe('office socket admission', () => {
           createHmac('sha256', mediaMachineKey).update(signedPull.text).digest('hex'),
         );
 
+        const unsignedMetrics = await request(app.getHttpServer())
+          .post('/api/media/internal/metrics/meeting-screen-share')
+          .set('Content-Type', 'application/json')
+          .send('{}');
+        status(unsignedMetrics, 401);
+        const metricsBody = '{}';
+        const signedMetrics = await request(app.getHttpServer())
+          .post('/api/media/internal/metrics/meeting-screen-share')
+          .set(
+            'X-CP07-Signature',
+            createHmac('sha256', mediaMachineKey).update(metricsBody).digest('hex'),
+          )
+          .set('Content-Type', 'application/json')
+          .send(metricsBody);
+        status(signedMetrics, 200);
+        expect(signedMetrics.body).toMatchObject({
+          screenSharingEnabled: true,
+          starts: {
+            attempts: expect.any(Number),
+            succeeded: expect.any(Number),
+            failed: expect.any(Number),
+          },
+          shares: { active: expect.any(Number), starting: expect.any(Number) },
+          viewerTimeToFirstFrameMs: { samples: expect.any(Number) },
+          apiProcess: { rssBytes: expect.any(Number), heapUsedBytes: expect.any(Number) },
+          livekit: { available: expect.any(Boolean) },
+        });
+        expect(JSON.stringify(signedMetrics.body)).not.toContain(firstReady.participationId);
+
         status(
           await first.client.send(
             'post',
@@ -6602,6 +6646,7 @@ describe('meeting screen-share socket flow', () => {
         await connectSocket(socket);
         ready.push(officeReadySchema.parse(await readyEvent));
       }
+      expect(ready.every((session) => session.features.screenSharing)).toBe(true);
       const firstReady = ready[0]!;
       const runtime = app.get(OfficeRuntimeService);
       const room = VIVO_GEOMETRY.zones.find((zone) => zone.kind === 'meeting')!;
@@ -6763,6 +6808,17 @@ describe('meeting screen-share socket flow', () => {
         shareId,
         status: 'live',
       });
+      const frameReport = {
+        conversationId: meeting().conversationId,
+        shareId,
+        elapsedMs: 183,
+      };
+      expect(
+        await command(viewerIndex, 'meeting:screen-share:first-frame', frameReport),
+      ).toMatchObject({ ok: true });
+      expect(
+        await command(viewerIndex, 'meeting:screen-share:first-frame', frameReport),
+      ).toMatchObject({ ok: false, error: { code: 'conflict' } });
 
       await new Promise((resolve) => setTimeout(resolve, 1100));
       const webhookEndedStates = [0, 1, 2].map((index) =>
@@ -7827,6 +7883,314 @@ describe('fixed meeting media room continuity', () => {
       }
     },
     180000,
+  );
+});
+
+describe('meeting media release readiness load profile', () => {
+  it.skipIf(!runLiveMediaFixture || !runMeetingReadiness)(
+    'keeps a 20-member meeting usable beside an isolated simultaneous huddle',
+    async () => {
+      const users: Awaited<ReturnType<typeof account>>[] = [];
+      for (let offset = 0; offset < 22; offset += 3) {
+        const batchSize = Math.min(3, 22 - offset);
+        users.push(
+          ...(await Promise.all(
+            Array.from({ length: batchSize }, (_, index) =>
+              account(undefined, `198.51.100.${offset + index + 1}`),
+            ),
+          )),
+        );
+      }
+      const primaryWorkspaceId = await workspace(users[0]!);
+      await Promise.all(
+        users.slice(1, 20).map((member) => join(users[0]!, primaryWorkspaceId, member)),
+      );
+      const secondaryWorkspaceId = await workspace(users[20]!);
+      await join(users[20]!, secondaryWorkspaceId, users[21]!);
+      const tickets = await Promise.all([
+        ...users.slice(0, 20).map((user) => issueTicket(user, primaryWorkspaceId)),
+        ...users.slice(20).map((user) => issueTicket(user, secondaryWorkspaceId)),
+      ]);
+      const sockets = tickets.map(({ ticket }) =>
+        officeSocket({ ticket, protocolVersion: OFFICE_PROTOCOL_VERSION }),
+      );
+      const mediaClients: ApplicationMediaClient[] = [];
+      const ready: ReturnType<typeof officeReadySchema.parse>[] = [];
+      let livekit: Awaited<ReturnType<typeof startLiveKitFixture>> | undefined;
+      let fixture: Awaited<ReturnType<typeof startViteMediaFixture>> | undefined;
+      let guard: ApplicationGuard | undefined;
+      let retirementDirectory: string | undefined;
+      const updateQueues = sockets.map((socket) => socketEventQueue(socket, 'conversation:update'));
+
+      const waitForUpdate = (
+        index: number,
+        predicate: (update: ReturnType<typeof conversationUpdateSchema.parse>) => boolean,
+      ) =>
+        updateQueues[index]!((raw) => {
+          const parsed = conversationUpdateSchema.safeParse(raw);
+          return parsed.success && predicate(parsed.data);
+        }).then((raw) => conversationUpdateSchema.parse(raw));
+      const command = async (index: number, event: string, payload: object) =>
+        officeCommandAckSchema.parse(
+          await new Promise<unknown>((resolve) =>
+            sockets[index]!.emit(
+              event,
+              { eventId: randomUUID(), officeEpoch: ready[index]!.snapshot.officeEpoch, payload },
+              resolve,
+            ),
+          ),
+        );
+
+      try {
+        const readyNotices = sockets.map((socket) =>
+          nextSocketEvent<unknown>(socket, 'office:ready'),
+        );
+        await Promise.all(sockets.map((socket) => connectSocket(socket)));
+        ready.push(
+          ...(await Promise.all(readyNotices)).map((notice) => officeReadySchema.parse(notice)),
+        );
+        expect(ready).toHaveLength(22);
+        expect(ready.every(({ features }) => features.screenSharing)).toBe(true);
+
+        const zones = VIVO_GEOMETRY.zones.filter((zone) => zone.kind === 'meeting');
+        const primaryZone = zones[0]!;
+        const secondaryZone = zones[1]!;
+        const runtime = app.get(OfficeRuntimeService);
+        const map = trustedOfficeMap(vivoManifest.mapVersion)!;
+        const freeTilesFor = (zone: (typeof zones)[number]) =>
+          Array.from({ length: zone.bounds.width * zone.bounds.height }, (_, index) => ({
+            tx: zone.bounds.tx + (index % zone.bounds.width),
+            ty: zone.bounds.ty + Math.floor(index / zone.bounds.width),
+          })).filter(
+            (tile) =>
+              map.validated.isReachable(tile) &&
+              !map.seats.some((seat) => seat.tile.tx === tile.tx && seat.tile.ty === tile.ty),
+          );
+        const primaryTiles = freeTilesFor(primaryZone);
+        const secondaryTiles = freeTilesFor(secondaryZone);
+        expect(primaryTiles.length).toBeGreaterThanOrEqual(20);
+        expect(secondaryTiles.length).toBeGreaterThanOrEqual(2);
+        const offices = (
+          runtime as unknown as {
+            offices: Map<
+              string,
+              { participants: Map<string, { publicState: { position: { x: number; y: number } } }> }
+            >;
+          }
+        ).offices;
+        const primaryOffice = offices.get(ready[0]!.officeId)!;
+        const secondaryOffice = offices.get(ready[20]!.officeId)!;
+        for (let index = 0; index < 20; index += 1) {
+          const tile = primaryTiles[index]!;
+          primaryOffice.participants.get(ready[index]!.participationId)!.publicState.position = {
+            x: tile.tx * 32 + 16,
+            y: tile.ty * 32 + 16,
+          };
+        }
+        for (let index = 20; index < 22; index += 1) {
+          const tile = secondaryTiles[index - 20]!;
+          secondaryOffice.participants.get(ready[index]!.participationId)!.publicState.position = {
+            x: tile.tx * 32 + 16,
+            y: tile.ty * 32 + 16,
+          };
+        }
+
+        const groups = [
+          { indices: Array.from({ length: 20 }, (_, index) => index), zoneId: primaryZone.zoneId },
+          { indices: [20, 21], zoneId: secondaryZone.zoneId },
+        ];
+        const joiningWaiters = groups.flatMap(({ indices, zoneId }) =>
+          indices.map((index) =>
+            waitForUpdate(
+              index,
+              (update) =>
+                update.kind === 'meeting' &&
+                update.zoneId === zoneId &&
+                update.state === 'joining' &&
+                update.participants.length === indices.length,
+            ),
+          ),
+        );
+        const joinAcks = await Promise.all(
+          groups.flatMap(({ indices, zoneId }) =>
+            indices.map((index) => command(index, 'meeting:join', { zoneId })),
+          ),
+        );
+        expect(joinAcks.every(({ ok }) => ok)).toBe(true);
+        const joining = await Promise.all(joiningWaiters);
+        let joiningOffset = 0;
+        const joiningByGroup = groups.map(({ indices }) => {
+          const groupNotices = joining.slice(joiningOffset, joiningOffset + indices.length);
+          joiningOffset += indices.length;
+          expect(new Set(groupNotices.map((update) => update.generation)).size).toBe(1);
+          return groupNotices[0]!;
+        });
+        expect(joiningByGroup[0]!.generation).not.toBe(joiningByGroup[1]!.generation);
+
+        livekit = await startLiveKitFixture();
+        if (runMediaWeakNetwork) await livekit.applyWeakNetwork();
+        fixture = await startViteMediaFixture();
+        if (!liveMediaGuardPort) throw new Error('real media guard port is unavailable');
+        retirementDirectory = await mkdtemp(resolve(tmpdir(), 'gather-cp09-meeting-readiness-'));
+        const apiAddress = app.getHttpServer().address() as AddressInfo;
+        guard = startApplicationGuard({
+          apiBaseUrl: `http://127.0.0.1:${apiAddress.port}`,
+          epoch: randomBytes(32).toString('hex'),
+          host: '127.0.0.1',
+          port: liveMediaGuardPort,
+          retirementDirectory,
+          sfuUpstream: `http://127.0.0.1:${livekit.signalingPort}`,
+          origin: fixture.origin,
+        });
+
+        const activeWaiters = groups.flatMap(({ indices }, groupIndex) => {
+          const generation = joiningByGroup[groupIndex]!.generation;
+          return indices.map((index) =>
+            waitForUpdate(
+              index,
+              (update) =>
+                update.state === 'active' &&
+                update.generation === generation &&
+                update.participants.length === indices.length,
+            ),
+          );
+        });
+        const policy = app.get(MediaPolicyService) as unknown as {
+          installed?: { permits: Array<{ generation: string }> };
+        };
+        for (const update of joiningByGroup)
+          await vi.waitFor(
+            () =>
+              expect(
+                policy.installed?.permits.filter(
+                  (permit) => permit.generation === update.generation,
+                ),
+              ).toHaveLength(update.participants.length),
+            { timeout: 30000, interval: 50 },
+          );
+        const active = await Promise.all(activeWaiters);
+        let activeOffset = 0;
+        const activeByGroup = groups.map(({ indices }) => {
+          const groupNotices = active.slice(activeOffset, activeOffset + indices.length);
+          activeOffset += indices.length;
+          expect(new Set(groupNotices.map((update) => update.generation)).size).toBe(1);
+          return groupNotices[0]!;
+        });
+
+        const issueGrant = async (index: number, conversation: (typeof active)[number]) => {
+          const response = await users[index]!.client.send(
+            'post',
+            `/api/conversations/${conversation.conversationId}/media-token`,
+            {
+              participationId: ready[index]!.participationId,
+              conversationVersion: conversation.version,
+            },
+          );
+          status(response, 200);
+          const grant = mediaTokenResponseSchema.parse(response.body);
+          return {
+            ...grant,
+            conversationVersion: conversation.version,
+            generation: conversation.generation,
+            identity: ready[index]!.participationId,
+          };
+        };
+        const grants = await Promise.all(
+          groups.flatMap(({ indices }, groupIndex) =>
+            indices.map(async (index) => ({
+              index,
+              grant: await issueGrant(index, activeByGroup[groupIndex]!),
+            })),
+          ),
+        );
+        const loadStartedAt = performance.now();
+        const loadCpuStartedAt = process.cpuUsage();
+        const batchDescriptors: Array<{ indices: number[]; client: ApplicationMediaClient }> = [];
+        for (const group of groups)
+          for (let offset = 0; offset < group.indices.length; offset += 5) {
+            const indices = group.indices.slice(offset, offset + 5);
+            const client = startApplicationMediaClient({
+              fixtureUrl: fixture.url,
+              deferPeerReadiness: true,
+              grants: indices.map((index) => grants.find((entry) => entry.index === index)!.grant),
+            });
+            mediaClients.push(client);
+            batchDescriptors.push({ indices, client });
+          }
+        await Promise.all(
+          mediaClients.map((client) =>
+            waitForApplicationMediaMessage(
+              client,
+              (message) => message.kind === 'connected',
+              'a media participant to connect',
+            ),
+          ),
+        );
+        const identitiesByGroup = groups.map(({ indices }) =>
+          indices.map((index) => ready[index]!.participationId),
+        );
+        for (const { indices, client } of batchDescriptors) {
+          const groupIndex = indices[0]! < 20 ? 0 : 1;
+          client.send({ kind: 'expect-room-peers', peerIdentities: identitiesByGroup[groupIndex] });
+        }
+        const peerReady = await Promise.all(
+          mediaClients.map((client) =>
+            waitForApplicationMediaMessage(
+              client,
+              (message) => message.kind === 'room-peer-set-ready',
+              'every room peer and active decoded audio',
+            ),
+          ),
+        );
+        const roomService = new RoomServiceClient(
+          `http://127.0.0.1:${livekit.signalingPort}`,
+          livekitApiKey,
+          livekitApiSecret,
+        );
+        for (const [groupIndex, identities] of identitiesByGroup.entries()) {
+          const conversation = activeByGroup[groupIndex]!;
+          await vi.waitFor(
+            async () => {
+              const participants = await roomService.listParticipants(conversation.generation);
+              expect(participants.map(({ identity }) => identity).sort()).toEqual(
+                [...identities].sort(),
+              );
+            },
+            { timeout: 30000, interval: 100 },
+          );
+        }
+
+        const loadDurationMs = Math.round(performance.now() - loadStartedAt);
+        const cpuUsage = process.cpuUsage(loadCpuStartedAt);
+        const memory = process.memoryUsage();
+        console.info(
+          'meeting release-readiness profile: ' +
+            JSON.stringify({
+              primaryMeetingParticipants: identitiesByGroup[0]!.length,
+              simultaneousHuddleParticipants: identitiesByGroup[1]!.length,
+              networkProfile: runMediaWeakNetwork ? '120ms ±40ms, 3% loss' : 'loopback baseline',
+              loadDurationMs,
+              remotePeerAudioReports: peerReady.length,
+              apiProcess: {
+                rssBytes: memory.rss,
+                heapUsedBytes: memory.heapUsed,
+                cpuUserMicros: cpuUsage.user,
+                cpuSystemMicros: cpuUsage.system,
+              },
+              livekitRooms: 2,
+              livekitParticipants: 22,
+            }),
+        );
+      } finally {
+        await Promise.all(mediaClients.map(stopApplicationMediaClient));
+        if (guard) await stopApplicationGuard(guard);
+        if (fixture) await fixture.stop();
+        if (livekit) await livekit.stop();
+        if (retirementDirectory) await rm(retirementDirectory, { recursive: true, force: true });
+        for (const socket of sockets) socket.disconnect();
+      }
+    },
+    600000,
   );
 });
 

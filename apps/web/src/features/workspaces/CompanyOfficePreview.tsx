@@ -257,6 +257,7 @@ export function CompanyOfficePreview({
     meetingScreenShare.getSnapshot,
   );
   const desktopScreenShareSupported = canPublishDesktopScreen();
+  const screenSharingEnabled = state.ready?.features.screenSharing === true;
   const proximityOptedIn = Boolean(
     connected && proximityOptIn?.participationId === participationId && proximityOptIn.enabled,
   );
@@ -630,7 +631,14 @@ export function CompanyOfficePreview({
     const conversation = activeMeetingConversation;
     const session = proximityAudio.current;
     const contextKey = activeVoiceContextKey;
-    if (!conversation || !session || !contextKey || !desktopScreenShareSupported) return;
+    if (
+      !screenSharingEnabled ||
+      !conversation ||
+      !session ||
+      !contextKey ||
+      !desktopScreenShareSupported
+    )
+      return;
     void meetingScreenShare.start({
       reserve: (shareId) =>
         client.startMeetingScreenShare(conversation.conversationId, conversation.version, shareId),
@@ -643,6 +651,17 @@ export function CompanyOfficePreview({
         mediaContextKey.current === contextKey && client.getSnapshot().status === 'connected',
     });
   }
+
+  const reportMeetingScreenShareFirstFrame = useCallback(
+    (shareId: string, elapsedMs: number) => {
+      const conversation = activeMeetingConversation;
+      if (!conversation) return;
+      void client
+        .reportMeetingScreenShareFirstFrame(conversation.conversationId, shareId, elapsedMs)
+        .catch(() => undefined);
+    },
+    [activeMeetingConversation, client],
+  );
 
   function toggleConversationMicrophone() {
     const session = proximityAudio.current;
@@ -1333,9 +1352,10 @@ export function CompanyOfficePreview({
                         presentation={activeMeetingPresentation}
                         presenterName={screenPresenterName}
                         remoteScreenShares={remoteScreenShares}
+                        onFirstFrame={reportMeetingScreenShareFirstFrame}
                       />
                     )}
-                    {desktopScreenShareSupported ? (
+                    {screenSharingEnabled && desktopScreenShareSupported ? (
                       <button
                         className="dashboard-secondary"
                         type="button"
@@ -1351,11 +1371,11 @@ export function CompanyOfficePreview({
                           ? 'Try sharing again'
                           : 'Share screen'}
                       </button>
-                    ) : (
+                    ) : screenSharingEnabled ? (
                       <p className="office-voice-help" role="status">
                         Screen sharing can be started from a supported desktop browser.
                       </p>
-                    )}
+                    ) : null}
                     {['capturing', 'authorizing', 'publishing'].includes(
                       meetingScreenShareState.status,
                     ) && (

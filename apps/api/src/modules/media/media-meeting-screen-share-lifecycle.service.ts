@@ -3,6 +3,7 @@ import { TrackSource } from 'livekit-server-sdk';
 import { meetingScreenShareTrackName } from '@gather/contracts';
 import { OfficeRoomEventPublisher } from '../office/office-room-event-publisher.js';
 import { OfficeRuntimeService } from '../office/runtime/office-runtime.service.js';
+import { MeetingScreenShareMetricsService } from '../office/meeting-screen-share-metrics.service.js';
 
 export interface MeetingScreenShareMediaEvent {
   readonly eventName: string;
@@ -30,6 +31,8 @@ export class MediaMeetingScreenShareLifecycleService {
   constructor(
     @Inject(OfficeRuntimeService) private readonly runtime: OfficeRuntimeService,
     @Inject(OfficeRoomEventPublisher) private readonly roomEvents: OfficeRoomEventPublisher,
+    @Inject(MeetingScreenShareMetricsService)
+    private readonly screenShareMetrics: MeetingScreenShareMetricsService,
   ) {}
 
   reconcileWebhook(event: MeetingScreenShareMediaEvent) {
@@ -87,6 +90,12 @@ export class MediaMeetingScreenShareLifecycleService {
       active.shareId,
     );
     if (cleared) {
+      if (
+        ['participant_left', 'participant_connection_aborted', 'room_finished'].includes(
+          event.eventName,
+        )
+      )
+        this.screenShareMetrics.unexpectedDisconnect();
       this.roomEvents.publishMeetingScreenShareNotices(
         this.runtime.drainMeetingScreenShareNotices(),
       );

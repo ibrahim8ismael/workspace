@@ -20,6 +20,7 @@ import {
   meetingScreenShareStartEventSchema,
   meetingScreenShareConfirmEventSchema,
   meetingScreenShareStopEventSchema,
+  meetingScreenShareFirstFrameEventSchema,
   meetingZonesSchema,
   meetingScreenShareUpdateSchema,
   presenceUpdateEventSchema,
@@ -558,6 +559,18 @@ export class OfficeClient {
       conversationId,
       shareId,
     });
+  }
+
+  reportMeetingScreenShareFirstFrame(conversationId: string, shareId: string, elapsedMs: number) {
+    return this.sendCommand(
+      'meeting:screen-share:first-frame',
+      meetingScreenShareFirstFrameEventSchema,
+      {
+        conversationId,
+        shareId,
+        elapsedMs,
+      },
+    );
   }
 
   inviteToMeeting(targetParticipationId: string, zoneId: string) {

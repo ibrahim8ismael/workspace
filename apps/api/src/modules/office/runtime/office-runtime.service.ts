@@ -84,6 +84,7 @@ interface MeetingGroupState {
     | (MeetingScreenSharePresentation & {
         deadlineMonotonic: number;
         livekitParticipantSid?: string;
+        firstFrameParticipationIds: Set<string>;
       })
     | null;
   usedShareIds: Map<string, { presenterParticipationId: string; usedAt: number }>;
@@ -223,6 +224,8 @@ export class OfficeRuntimeService {
   private readonly takeoverReferences = new Map<string, StoredTakeoverReference>();
   private readonly reconfiguringOffices = new Set<string>();
   private mediaAuthorizationVersion = 0;
+
+  constructor(private readonly screenSharingEnabled = false) {}
 
   async withOfficeReconfiguration<T>(officeId: string, action: () => Promise<T>): Promise<T> {
     invariant(!this.reconfiguringOffices.has(officeId), 409, 'office_in_use');
@@ -448,6 +451,7 @@ export class OfficeRuntimeService {
       officeId: ticket.officeId,
       mapVersion: ticket.mapVersion,
       protocolVersion: ticket.protocolVersion,
+      features: { screenSharing: this.screenSharingEnabled },
       snapshot,
     });
     const joined = worldDeltaSchema.parse({
@@ -1091,7 +1095,7 @@ export class OfficeRuntimeService {
     shareId: string,
     nowMonotonic = performance.now(),
     startedAt = Date.now(),
-  ): 'stale_epoch' | 'unauthorized' | 'stale_version' | 'conflict' | null {
+  ): 'stale_epoch' | 'unauthorized' | 'stale_version' | 'conflict' | 'media_unavailable' | null {
     const office = this.offices.get(officeId);
     if (!office || office.workspaceId !== workspaceId || office.officeEpoch !== officeEpoch)
       return 'stale_epoch';
@@ -1104,6 +1108,7 @@ export class OfficeRuntimeService {
     );
     if (!group?.members.some((member) => member.participationId === participationId))
       return 'unauthorized';
+    if (!this.screenSharingEnabled) return 'media_unavailable';
     if (group.presentation) {
       if (
         group.presentation.shareId !== shareId ||
@@ -1126,6 +1131,7 @@ export class OfficeRuntimeService {
       status: 'starting',
       startedAt,
       deadlineMonotonic: nowMonotonic + OFFICE_LIMITS.meetingScreenShareStartTimeoutMs,
+      firstFrameParticipationIds: new Set(),
     };
     group.presentationVersion += 1;
     this.queueMeetingScreenShareNotice(office, group);
@@ -1142,7 +1148,7 @@ export class OfficeRuntimeService {
     conversationId: string,
     shareId: string,
     nowMonotonic = performance.now(),
-  ): 'stale_epoch' | 'unauthorized' | 'conflict' | null {
+  ): 'stale_epoch' | 'unauthorized' | 'conflict' | 'media_unavailable' | null {
     const office = this.offices.get(officeId);
     if (!office || office.workspaceId !== workspaceId || office.officeEpoch !== officeEpoch)
       return 'stale_epoch';
@@ -1155,6 +1161,7 @@ export class OfficeRuntimeService {
     );
     if (!group?.members.some((member) => member.participationId === participationId))
       return 'unauthorized';
+    if (!this.screenSharingEnabled) return 'media_unavailable';
     const presentation = group.presentation;
     if (
       !presentation ||
@@ -1247,6 +1254,7 @@ export class OfficeRuntimeService {
       if (group?.presentation)
         return {
           room: group.generation,
+          conversationId: group.conversationId,
           shareId: group.presentation.shareId,
           presenterParticipationId: group.presentation.presenterParticipationId,
           status: group.presentation.status,
@@ -1257,6 +1265,69 @@ export class OfficeRuntimeService {
         } as const;
     }
     return null;
+  }
+
+  activeMeetingScreenShareForPresenter(participationId: string) {
+    for (const office of this.offices.values()) {
+      for (const group of office.meetingGroups.values()) {
+        if (group.presentation?.presenterParticipationId === participationId)
+          return {
+            room: group.generation,
+            conversationId: group.conversationId,
+            shareId: group.presentation.shareId,
+          } as const;
+      }
+    }
+    return null;
+  }
+
+  meetingScreenShareMetricCounts() {
+    let active = 0;
+    let starting = 0;
+    for (const office of this.offices.values())
+      for (const group of office.meetingGroups.values()) {
+        if (group.presentation?.status === 'live') active += 1;
+        else if (group.presentation?.status === 'starting') starting += 1;
+      }
+    return { active, starting };
+  }
+
+  recordMeetingScreenShareFirstFrame(
+    officeId: string,
+    workspaceId: string,
+    userId: string,
+    socketId: string,
+    participationId: string,
+    officeEpoch: string,
+    conversationId: string,
+    shareId: string,
+  ) {
+    const office = this.offices.get(officeId);
+    if (
+      !this.screenSharingEnabled ||
+      !office ||
+      office.workspaceId !== workspaceId ||
+      office.officeEpoch !== officeEpoch
+    )
+      return false;
+    const participant = office.participants.get(participationId);
+    if (!participant || participant.userId !== userId || participant.socketId !== socketId)
+      return false;
+    const group = [...office.meetingGroups.values()].find(
+      (candidate) => candidate.conversationId === conversationId,
+    );
+    const presentation = group?.presentation;
+    if (
+      !group?.members.some((member) => member.participationId === participationId) ||
+      !presentation ||
+      presentation.status !== 'live' ||
+      presentation.shareId !== shareId ||
+      presentation.presenterParticipationId === participationId
+    )
+      return false;
+    if (presentation.firstFrameParticipationIds.has(participationId)) return false;
+    presentation.firstFrameParticipationIds.add(participationId);
+    return true;
   }
 
   observeMeetingScreenSharePublication(
@@ -1319,6 +1390,7 @@ export class OfficeRuntimeService {
             roomLifecycle: 'stable' as const,
             version: member.mediaVersion,
             sources:
+              this.screenSharingEnabled &&
               group.presentation?.presenterParticipationId === member.participationId
                 ? (['microphone', 'screen_share'] as const)
                 : (['microphone'] as const),

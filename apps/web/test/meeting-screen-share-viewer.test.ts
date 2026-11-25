@@ -26,6 +26,7 @@ describe('meeting screen-share viewer', () => {
         presentation,
         presenterName: 'Office Teammate',
         remoteScreenShares: [other, matching],
+        onFirstFrame: () => undefined,
       }),
     );
 
@@ -42,6 +43,7 @@ describe('meeting screen-share viewer', () => {
         presentation: { ...presentation, status: 'starting' },
         presenterName: 'Office Teammate',
         remoteScreenShares: [],
+        onFirstFrame: () => undefined,
       }),
     );
     expect(html).toContain('is preparing a screen share');

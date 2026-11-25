@@ -409,23 +409,37 @@ describe('meeting invitation review regressions', () => {
       f.runtime.proximityMediaPermits().filter((permit) => permit.identity === f.recipient.id),
     ).toHaveLength(1);
   });
-  it('retires roster generations without ending the meeting for retained members', () => {
+  it('keeps a meeting room stable while an invited attendee joins and leaves', () => {
     const f = fixture(true);
     const invite = f.invite();
     if (typeof invite === 'string') throw new Error(invite);
     f.respond(invite.invitationId, 'accept');
     f.tick();
     const notices = f.runtime.drainMeetingNotices();
-    expect(
-      notices
-        .filter((notice) => notice.socketIds.includes(f.sender.socketId))
-        .map((notice) => notice.update.state),
-    ).toEqual(['retiring', 'joining']);
     const generation = f.runtime
       .proximityMediaPermits()
       .find((permit) => permit.identity === f.sender.id)!.generation;
-    const active = f.runtime.activateProximityGeneration(generation)[0]!.update;
+    expect(notices.filter((notice) => notice.socketIds.includes(f.sender.socketId))).toEqual([]);
+    const inviteeJoining = notices.find((notice) =>
+      notice.socketIds.includes(f.recipient.socketId),
+    )!;
+    expect(inviteeJoining.update).toMatchObject({
+      state: 'joining',
+      conversationId: f.meetingActive.conversationId,
+      generation: f.meetingActive.generation,
+    });
+    const generationPermits = f.runtime
+      .proximityMediaPermits()
+      .filter((permit) => permit.generation === generation);
+    expect(generationPermits.map((permit) => permit.identity).sort()).toEqual(
+      [f.sender.id, f.recipient.id].sort(),
+    );
+    const active = f.runtime.activateProximityGeneration(
+      generation,
+      new Set(generationPermits.map((permit) => permit.identity)),
+    )[0]!.update;
     expect(active.participants).toHaveLength(2);
+    expect(active.generation).toBe(generation);
     f.runtime.leaveProximityConversation(
       officeId,
       workspaceId,
@@ -446,7 +460,10 @@ describe('meeting invitation review regressions', () => {
       departed
         .filter((notice) => notice.socketIds.includes(f.sender.socketId))
         .map((notice) => notice.update.state),
-    ).toEqual(['retiring', 'joining']);
+    ).toEqual(['active']);
+    expect(
+      departed.find((notice) => notice.socketIds.includes(f.sender.socketId))?.update.generation,
+    ).toBe(generation);
   });
   it('restores a prior nearby-voice preference after leaving a meeting', () => {
     const f = fixture(false, true);

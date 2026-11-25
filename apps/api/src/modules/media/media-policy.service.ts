@@ -98,8 +98,13 @@ export class MediaPolicyService {
 
     const generations = new Set(pending.snapshot.permits.map((permit) => permit.generation));
     for (const generation of generations) {
+      const installedIdentities = new Set(
+        pending.snapshot.permits
+          .filter((permit) => permit.generation === generation)
+          .map((permit) => permit.identity),
+      );
       this.roomEvents.publishConversationNotices(
-        this.runtime.activateProximityGeneration(generation),
+        this.runtime.activateProximityGeneration(generation, installedIdentities),
       );
     }
     return { body, signature };

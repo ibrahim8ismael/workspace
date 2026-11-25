@@ -65,6 +65,7 @@ interface MeetingGroupState {
   generation: string;
   version: number;
   members: { participationId: string; socketId: string; displayName: string }[];
+  pendingMemberIds: Set<string>;
   active: boolean;
 }
 interface MeetingInvitationNotice {
@@ -712,23 +713,16 @@ export class OfficeRuntimeService {
       generation: randomUUID(),
       version: 0,
       members: [],
+      pendingMemberIds: new Set<string>(),
       active: false,
     };
     if (group.members.length >= OFFICE_LIMITS.maxMeetingParticipants) return 'room_full' as const;
-    if (group.members.length)
-      office.meetingNotices.push(
-        this.meetingNotice(office, group, 'retiring', group.generation, group.version + 1),
-      );
-    group.members = [
-      ...group.members,
-      { participationId, socketId, displayName: participant.publicState.displayName },
-    ];
-    group.members.sort((left, right) => left.participationId.localeCompare(right.participationId));
-    group.generation = randomUUID();
-    group.version += 2;
-    group.active = false;
     office.meetingGroups.set(zoneId, group);
-    office.meetingNotices.push(this.meetingNotice(office, group, 'joining'));
+    this.addMeetingMember(office, group, {
+      participationId,
+      socketId,
+      displayName: participant.publicState.displayName,
+    });
     const notices = office.proximity.reconcile(this.proximityCandidates(office));
     return { notices };
   }
@@ -1169,15 +1163,24 @@ export class OfficeRuntimeService {
     office.meetingNotices.push(...office.proximity.reconcile(this.proximityCandidates(office)));
   }
 
-  activateProximityGeneration(generation: string): PrivateConversationNotice[] {
+  activateProximityGeneration(
+    generation: string,
+    installedIdentities?: ReadonlySet<string>,
+  ): PrivateConversationNotice[] {
     for (const office of this.offices.values()) {
       const notices = office.proximity.activateGeneration(generation);
       if (notices.length > 0) return notices;
       const group = [...office.meetingGroups.values()].find(
         (candidate) => candidate.generation === generation,
       );
-      if (group && !group.active) {
+      if (
+        group &&
+        (installedIdentities === undefined ||
+          group.members.every((member) => installedIdentities.has(member.participationId))) &&
+        (!group.active || group.pendingMemberIds.size > 0)
+      ) {
         group.active = true;
+        group.pendingMemberIds.clear();
         group.version += 1;
         const notice = this.meetingNotice(office, group, 'active');
         return [{ socketIds: notice.socketIds, update: notice.update }];
@@ -1247,9 +1250,10 @@ export class OfficeRuntimeService {
     generation = group.generation,
     version = group.version,
     members = group.members,
+    recipients = members.map((member) => member.socketId),
   ): PrivateConversationNotice {
     return {
-      socketIds: members.map((member) => member.socketId),
+      socketIds: recipients,
       update: conversationUpdateSchema.parse({
         officeEpoch: office.officeEpoch,
         conversationId: group.conversationId,
@@ -1517,24 +1521,11 @@ export class OfficeRuntimeService {
           group.conversationId === invite.conversationId &&
           group.members.some((member) => member.participationId === invite.senderParticipationId)
         ) {
-          office.meetingNotices.push(
-            this.meetingNotice(office, group, 'retiring', group.generation, group.version + 1),
-          );
-          group.members = [
-            ...group.members,
-            {
-              participationId,
-              socketId: participant.socketId,
-              displayName: participant.publicState.displayName,
-            },
-          ];
-          group.members.sort((left, right) =>
-            left.participationId.localeCompare(right.participationId),
-          );
-          group.generation = randomUUID();
-          group.version += 2;
-          group.active = false;
-          office.meetingNotices.push(this.meetingNotice(office, group, 'joining'));
+          this.addMeetingMember(office, group, {
+            participationId,
+            socketId: participant.socketId,
+            displayName: participant.publicState.displayName,
+          });
           invite.status = 'joined';
           this.queueMeetingInvitationNotice(
             office,
@@ -1677,30 +1668,89 @@ export class OfficeRuntimeService {
       const departing = group.members.filter(
         (member) => member.participationId === participationId,
       );
-      office.meetingNotices.push(
-        this.meetingNotice(office, group, 'ended', group.generation, group.version + 1, departing),
-      );
       const retained = group.members.filter((member) => member.participationId !== participationId);
-      if (retained.length)
-        office.meetingNotices.push(
-          this.meetingNotice(
-            office,
-            group,
-            'retiring',
-            group.generation,
-            group.version + 1,
-            retained,
-          ),
-        );
-      group.members = group.members.filter((member) => member.participationId !== participationId);
+      group.members = retained;
+      group.pendingMemberIds.delete(participationId);
+      group.version += 1;
+      office.meetingNotices.push(
+        this.meetingNotice(
+          office,
+          group,
+          'ended',
+          group.generation,
+          group.version,
+          departing,
+          departing.map((member) => member.socketId),
+        ),
+      );
       if (!group.members.length) office.meetingGroups.delete(zoneId);
-      else {
-        group.generation = randomUUID();
-        group.version += 2;
-        group.active = false;
-        office.meetingNotices.push(this.meetingNotice(office, group, 'joining'));
-      }
+      else office.meetingNotices.push(...this.meetingRosterNotices(office, group));
     }
+  }
+
+  private addMeetingMember(
+    office: OfficeRuntime,
+    group: MeetingGroupState,
+    member: MeetingGroupState['members'][number],
+  ) {
+    group.members = [...group.members, member].sort((left, right) =>
+      left.participationId.localeCompare(right.participationId),
+    );
+    group.pendingMemberIds.add(member.participationId);
+    group.version += 1;
+    const recipients = group.active
+      ? [member.socketId]
+      : group.members.map((current) => current.socketId);
+    office.meetingNotices.push(
+      this.meetingNotice(
+        office,
+        group,
+        'joining',
+        group.generation,
+        group.version,
+        group.members,
+        recipients,
+      ),
+    );
+  }
+
+  private meetingRosterNotices(office: OfficeRuntime, group: MeetingGroupState) {
+    if (!group.active)
+      return [this.meetingNotice(office, group, 'joining', group.generation, group.version)];
+    const pending = group.members.filter((member) =>
+      group.pendingMemberIds.has(member.participationId),
+    );
+    const installed = group.members.filter(
+      (member) => !group.pendingMemberIds.has(member.participationId),
+    );
+    return [
+      ...(installed.length
+        ? [
+            this.meetingNotice(
+              office,
+              group,
+              'active',
+              group.generation,
+              group.version,
+              group.members,
+              installed.map((member) => member.socketId),
+            ),
+          ]
+        : []),
+      ...(pending.length
+        ? [
+            this.meetingNotice(
+              office,
+              group,
+              'joining',
+              group.generation,
+              group.version,
+              group.members,
+              pending.map((member) => member.socketId),
+            ),
+          ]
+        : []),
+    ];
   }
 
   private reconcileMeetingState(office: OfficeRuntime, now: number) {

@@ -17,6 +17,7 @@ interface MeetingConversation {
   version: number;
   state: 'joining' | 'active';
   members: MeetingMember[];
+  pendingMemberIds: Set<string>;
 }
 
 export type MeetingJoinResult =
@@ -61,16 +62,16 @@ export class MeetingConversations {
         zoneId,
         conversationId: randomUUID(),
         generation: randomUUID(),
-        version: 1,
+        version: 0,
         state: 'joining',
-        members: [member],
+        members: [],
+        pendingMemberIds: new Set(),
       };
       this.byZone.set(zoneId, conversation);
-      this.byParticipant.set(participant.participationId, zoneId);
-      return { notices: [this.notice(conversation)] };
+      return { notices: this.addMember(conversation, member) };
     }
 
-    return { notices: this.reconfigure(current, [...current.members, member]) };
+    return { notices: this.addMember(current, member) };
   }
 
   leave(
@@ -93,12 +94,14 @@ export class MeetingConversations {
     const remaining = conversation.members.filter(
       (candidate) => candidate.participationId !== participationId,
     );
-    if (remaining.length === 0) {
-      this.byZone.delete(zoneId!);
-      this.byParticipant.delete(participationId);
-      return { notices: [this.endNotice(conversation, [member])] };
-    }
-    return { notices: this.reconfigure(conversation, remaining, [member]) };
+    conversation.members = remaining;
+    conversation.pendingMemberIds.delete(participationId);
+    this.byParticipant.delete(participationId);
+    conversation.version += 1;
+    const notices = [this.endNotice(conversation, [member], conversation.version)];
+    if (remaining.length === 0) this.byZone.delete(zoneId!);
+    else notices.push(...this.rosterNotices(conversation));
+    return { notices };
   }
 
   reconcile(candidates: readonly ProximityCandidate[]): PrivateConversationNotice[] {
@@ -115,13 +118,15 @@ export class MeetingConversations {
         const removed = conversation.members.filter(
           (member) => !retained.some((keep) => keep.participationId === member.participationId),
         );
-        if (retained.length === 0) {
-          this.byZone.delete(conversation.zoneId);
-          for (const member of removed) this.byParticipant.delete(member.participationId);
-          notices.push(this.endNotice(conversation, removed));
-        } else {
-          notices.push(...this.reconfigure(conversation, retained, removed));
+        conversation.members = retained;
+        conversation.version += 1;
+        for (const member of removed) {
+          this.byParticipant.delete(member.participationId);
+          conversation.pendingMemberIds.delete(member.participationId);
         }
+        notices.push(this.endNotice(conversation, removed, conversation.version));
+        if (retained.length === 0) this.byZone.delete(conversation.zoneId);
+        else notices.push(...this.rosterNotices(conversation));
       } else {
         conversation.members = conversation.members.map((member) => {
           const current = byId.get(member.participationId)!;
@@ -176,6 +181,7 @@ export class MeetingConversations {
     if (
       !conversation ||
       conversation.state !== 'active' ||
+      conversation.pendingMemberIds.has(participationId) ||
       conversation.conversationId !== conversationId ||
       conversation.version !== version ||
       !participant ||
@@ -194,55 +200,86 @@ export class MeetingConversations {
     };
   }
 
-  activateGeneration(generation: string): PrivateConversationNotice[] {
+  activateGeneration(
+    generation: string,
+    installedIdentities?: ReadonlySet<string>,
+  ): PrivateConversationNotice[] {
     const conversation = [...this.byZone.values()].find(
       (candidate) => candidate.generation === generation,
     );
-    if (!conversation || conversation.state === 'active') return [];
+    if (
+      !conversation ||
+      (installedIdentities !== undefined &&
+        !conversation.members.every((member) => installedIdentities.has(member.participationId))) ||
+      (conversation.state === 'active' && conversation.pendingMemberIds.size === 0)
+    )
+      return [];
     conversation.state = 'active';
+    conversation.pendingMemberIds.clear();
     conversation.version += 1;
     return [this.notice(conversation)];
   }
 
-  private reconfigure(
-    conversation: MeetingConversation,
-    members: readonly MeetingMember[],
-    removed: readonly MeetingMember[] = [],
-  ) {
-    const previousGeneration = conversation.generation;
-    for (const member of conversation.members) this.byParticipant.delete(member.participationId);
-    conversation.members = [...members].sort((a, b) =>
+  private addMember(conversation: MeetingConversation, member: MeetingMember) {
+    conversation.members = [...conversation.members, member].sort((a, b) =>
       a.participationId.localeCompare(b.participationId),
     );
-    conversation.generation = randomUUID();
+    this.byParticipant.set(member.participationId, conversation.zoneId);
+    conversation.pendingMemberIds.add(member.participationId);
     conversation.version += 1;
-    conversation.state = 'joining';
-    for (const member of conversation.members)
-      this.byParticipant.set(member.participationId, conversation.zoneId);
-    const notices = [this.notice(conversation)];
-    if (removed.length > 0)
-      notices.push(
-        this.endNotice(
-          { ...conversation, generation: previousGeneration },
-          removed,
-          conversation.version,
-        ),
-      );
-    return notices;
+    const recipients =
+      conversation.state === 'active'
+        ? [member.socketId]
+        : conversation.members.map((candidate) => candidate.socketId);
+    return [this.notice(conversation, recipients, 'joining')];
   }
 
-  private notice(conversation: MeetingConversation): PrivateConversationNotice {
+  private rosterNotices(conversation: MeetingConversation) {
+    if (conversation.state === 'joining') return [this.notice(conversation)];
+    const pending = conversation.members.filter((member) =>
+      conversation.pendingMemberIds.has(member.participationId),
+    );
+    const installed = conversation.members.filter(
+      (member) => !conversation.pendingMemberIds.has(member.participationId),
+    );
+    return [
+      ...(installed.length
+        ? [
+            this.notice(
+              conversation,
+              installed.map((member) => member.socketId),
+              'active',
+            ),
+          ]
+        : []),
+      ...(pending.length
+        ? [
+            this.notice(
+              conversation,
+              pending.map((member) => member.socketId),
+              'joining',
+            ),
+          ]
+        : []),
+    ];
+  }
+
+  private notice(
+    conversation: MeetingConversation,
+    socketIds = conversation.members.map((member) => member.socketId),
+    state: MeetingConversation['state'] = conversation.state,
+  ): PrivateConversationNotice {
     return {
-      socketIds: conversation.members.map((member) => member.socketId),
+      socketIds,
       update: conversationUpdateSchema.parse({
         officeEpoch: this.officeEpoch,
         conversationId: conversation.conversationId,
         kind: 'meeting',
         zoneId: conversation.zoneId,
-        state: conversation.state,
+        state,
         version: conversation.version,
         generation: conversation.generation,
-        mediaReady: conversation.state === 'active',
+        mediaReady: state === 'active',
         participants: conversation.members.map(({ participationId, displayName }) => ({
           participationId,
           displayName,

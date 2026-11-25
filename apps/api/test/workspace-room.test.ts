@@ -11,6 +11,8 @@ const epoch = '98ff100b-f4f2-4896-81ef-11106d315b9e';
 
 describe('private voice boundaries for generated workspaces', () => {
   it.each([
+    ['repo-campus-hall', 16],
+    ['repo-campus', 16],
     ['studio-orthogonal', 8],
     ['studio', 8],
     ['startup', 10],
@@ -21,7 +23,11 @@ describe('private voice boundaries for generated workspaces', () => {
     expect(offices).toHaveLength(count);
 
     for (const placement of offices) {
-      const { width, height } = getWorkspaceLayoutTemplate(placement.templateId, preset);
+      const { width, height } = getWorkspaceLayoutTemplate(
+        placement.templateId,
+        preset,
+        placement.origin,
+      );
       const position = {
         x: (placement.origin.tx + Math.floor(width / 2) + 0.5) * TILE_SIZE_PX,
         y: (placement.origin.ty + Math.floor(height / 2) + 0.5) * TILE_SIZE_PX,
@@ -45,22 +51,29 @@ describe('private voice boundaries for generated workspaces', () => {
   });
 
   it.each([
+    ['repo-campus-hall', 16],
+    ['repo-campus', 16],
     ['studio-orthogonal', 8],
     ['studio', 8],
     ['startup', 10],
     ['corporate', 12],
   ] as const)('prevents nearby voice from crossing an office doorway in %s', (preset, count) => {
     const layout = generateWorkspaceLayoutPreset(preset, count);
-    const office = layout.find(({ templateId }) => templateId === 'private-office')!;
-    const template = getWorkspaceLayoutTemplate(office.templateId, preset);
+    const office = layout.find(
+      ({ id, templateId }) =>
+        templateId === 'private-office' &&
+        (preset !== 'repo-campus-hall' || id === 'private-office-2'),
+    )!;
+    const template = getWorkspaceLayoutTemplate(office.templateId, preset, office.origin);
     const doorX = office.origin.tx + template.door.offset;
+    const north = template.door.side === 'north';
     const inside = {
       x: (doorX + 0.5) * TILE_SIZE_PX,
-      y: (office.origin.ty + template.height - 0.5) * TILE_SIZE_PX,
+      y: (office.origin.ty + (north ? 0.5 : template.height - 0.5)) * TILE_SIZE_PX,
     };
     const corridor = {
       x: inside.x,
-      y: (office.origin.ty + template.height + 0.5) * TILE_SIZE_PX,
+      y: (office.origin.ty + (north ? -0.5 : template.height + 0.5)) * TILE_SIZE_PX,
     };
     const insideRoomId = enclosedWorkspaceRoomAt(layout, preset, inside);
     const corridorRoomId = enclosedWorkspaceRoomAt(layout, preset, corridor);

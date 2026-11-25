@@ -49,7 +49,7 @@ export function workspaceRoomVisuals(
   localParticipationId: string,
 ): WorkspaceRoomVisuals {
   const doors = placements.map((placement): WorkspaceRoomDoorVisual => {
-    const template = getWorkspaceLayoutTemplate(placement.templateId, preset);
+    const template = getWorkspaceLayoutTemplate(placement.templateId, preset, placement.origin);
     const bounds = {
       ...placement.origin,
       width: template.width,

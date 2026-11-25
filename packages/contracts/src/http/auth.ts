@@ -47,6 +47,9 @@ export const workspaceMemberRoleSchema = z.enum(['admin', 'member']);
 export type WorkspaceRole = z.infer<typeof workspaceRoleSchema>;
 export type WorkspaceMemberRole = z.infer<typeof workspaceMemberRoleSchema>;
 export const workspaceLayoutPresetSchema = z.enum([
+  'repo-campus-hall',
+  'repo-campus',
+  'studio-expandable',
   'studio-orthogonal',
   'studio',
   'startup',
@@ -75,6 +78,10 @@ export const createWorkspaceSchema = z
       privateOfficeCount === undefined ||
       ((officeTemplate === 'studio' || officeTemplate === 'studio-orthogonal') &&
         privateOfficeCount <= 8) ||
+      ((officeTemplate === 'repo-campus-hall' ||
+        officeTemplate === 'repo-campus' ||
+        officeTemplate === 'studio-expandable') &&
+        privateOfficeCount <= 16) ||
       (officeTemplate === 'startup' && privateOfficeCount <= 13) ||
       officeTemplate === 'corporate',
     {

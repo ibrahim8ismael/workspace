@@ -9,8 +9,11 @@ import type {
 import {
   createTileCollision,
   getWorkspaceLayoutProfile,
+  usesSquareStudioOffices,
   pixelToTile,
   WORKSPACE_STUDIO_OPEN_AREA,
+  WORKSPACE_REPO_CAMPUS_COURTYARD,
+  WORKSPACE_REPO_CAMPUS_HALL_COURTYARD,
   getWorkspaceLayoutTemplate,
   WORKSPACE_STUDIO_LANDSCAPE,
 } from '@gather/world';
@@ -23,6 +26,11 @@ import { readPreview } from './data';
 import {
   workspaceLayoutArt,
   workspaceArtFor,
+  workspaceFurnitureFor,
+  workspaceStudioCourtyard,
+  campusCourtyard,
+  campusOfficeNorth,
+  campusAvatar,
   workspaceOrthogonalOpenArea,
   workspaceStudioAvatar,
   workspaceStudioLandscape,
@@ -36,6 +44,7 @@ type ObjectFrame = Assets['objectFrames'][number];
 type Direction = 'north' | 'east' | 'south' | 'west';
 const avatarRows = { north: 0, east: 1, south: 2, west: 3 };
 const avatarTexture = 'workspace-studio-avatar';
+const northOfficeTexture = 'workspace-art-private-office-north';
 const speechBarHeights = [
   [6, 12, 8],
   [10, 6, 12],
@@ -72,6 +81,8 @@ type AvatarView = {
 type MountedScene = {
   cleanup: () => void;
   setFollow: (follow: boolean) => void;
+  zoomBy: (factor: number) => void;
+  showOverview: () => void;
   navigate: (target: NavigationTarget | undefined) => void;
   updateSnapshot: (snapshot: WorldSnapshot) => void;
   updateSpeakers: (ids: readonly string[]) => void;
@@ -126,6 +137,8 @@ function mountScene(
     return {
       cleanup: () => parent.remove(),
       setFollow: () => undefined,
+      zoomBy: () => undefined,
+      showOverview: () => undefined,
       navigate: () => undefined,
       updateSnapshot: () => undefined,
       updateSpeakers: () => undefined,
@@ -137,13 +150,29 @@ function mountScene(
   const geometry = bootstrap.geometry ?? assets.geometry;
   const svgLayout = bootstrap.layout;
   const classicStudio = bootstrap.layoutPreset === 'studio';
-  const orthogonalStudio = bootstrap.layoutPreset === 'studio-orthogonal';
+  const compactHall = bootstrap.layoutPreset === 'repo-campus-hall';
+  const worldBounds = bootstrap.manifest.bounds;
+  let renderScale = 1;
+  let viewportWidth = worldBounds.width;
+  let viewportHeight = worldBounds.height;
+  const campus = compactHall || bootstrap.layoutPreset === 'repo-campus';
+  const expandableStudio = bootstrap.layoutPreset === 'studio-expandable';
+  const orthogonalStudio = usesSquareStudioOffices(bootstrap.layoutPreset);
+  const furniture = new Map(
+    (svgLayout ?? []).flatMap((placement) =>
+      workspaceFurnitureFor(placement.templateId, bootstrap.layoutPreset).map(
+        ({ key, url }) => [key, url] as const,
+      ),
+    ),
+  );
   const studio = classicStudio || orthogonalStudio;
   const { catalog } = assets;
   const frames: Array<Frame | ObjectFrame> = [...assets.avatarFrames, ...assets.objectFrames];
   let disposed = false;
   let applyNavigation: MountedScene['navigate'] = () => undefined;
   let applyFollow: (follow: boolean) => void = () => undefined;
+  let applyZoom: MountedScene['zoomBy'] = () => undefined;
+  let applyOverview: MountedScene['showOverview'] = () => undefined;
   let applySnapshot: (snapshot: WorldSnapshot) => void = () => undefined;
   let applySpeakers: MountedScene['updateSpeakers'] = () => undefined;
   let applyAreas: (areas: ConversationAreas['areas']) => void = () => undefined;
@@ -153,8 +182,8 @@ function mountScene(
   const game = new Phaser.Game({
     type: Phaser.CANVAS,
     parent,
-    width: bootstrap.manifest.bounds.width,
-    height: bootstrap.manifest.bounds.height,
+    width: viewportWidth,
+    height: viewportHeight,
     backgroundColor: '#d7e5dc',
     pixelArt: true,
     roundPixels: true,
@@ -167,15 +196,25 @@ function mountScene(
       preload(this: Phaser.Scene) {
         for (const frame of frames) this.load.image(frame.key, frame.url);
         if (studio) {
-          this.load.spritesheet(avatarTexture, workspaceStudioAvatar, {
+          this.load.spritesheet(avatarTexture, campus ? campusAvatar : workspaceStudioAvatar, {
             frameWidth: 48,
             frameHeight: 48,
           });
           if (classicStudio) this.load.image(landscapeTexture, workspaceStudioLandscape);
-          if (orthogonalStudio)
-            this.load.image(orthogonalOpenAreaTexture, workspaceOrthogonalOpenArea);
+          if (orthogonalStudio) {
+            this.load.image(
+              orthogonalOpenAreaTexture,
+              campus
+                ? campusCourtyard
+                : expandableStudio
+                  ? workspaceStudioCourtyard
+                  : workspaceOrthogonalOpenArea,
+            );
+            for (const [key, url] of furniture) this.load.image(key, url);
+          }
         }
         if (svgLayout) {
+          if (compactHall) this.load.image(northOfficeTexture, campusOfficeNorth);
           for (const type of Object.keys(
             workspaceLayoutArt,
           ) as (keyof typeof workspaceLayoutArt)[]) {
@@ -193,8 +232,11 @@ function mountScene(
         if (
           (studio && !this.textures.exists(avatarTexture)) ||
           (classicStudio && !this.textures.exists(landscapeTexture)) ||
-          (orthogonalStudio && !this.textures.exists(orthogonalOpenAreaTexture)) ||
+          (orthogonalStudio &&
+            (!this.textures.exists(orthogonalOpenAreaTexture) ||
+              [...furniture.keys()].some((key) => !this.textures.exists(key)))) ||
           missingLayoutArt ||
+          (compactHall && !this.textures.exists(northOfficeTexture)) ||
           frames.some((frame) => !this.textures.exists(frame.key))
         ) {
           failed();
@@ -207,6 +249,19 @@ function mountScene(
         const tileSize = geometry.tileSize;
         const mapWidth = geometry.widthTiles * tileSize;
         const mapHeight = geometry.heightTiles * tileSize;
+        if (compactHall) {
+          // FIT has applied the CSS display size by scene creation. Match that
+          // size with a uniform scale so world coordinates stay square.
+          const canvas = this.game.canvas;
+          const { width, height } = canvas.getBoundingClientRect();
+          const fittedScale = Math.min(width / mapWidth, height / mapHeight);
+          if (fittedScale > 0 && fittedScale < 1) {
+            renderScale = Math.ceil(fittedScale * tileSize) / tileSize;
+            viewportWidth = mapWidth * renderScale;
+            viewportHeight = mapHeight * renderScale;
+            this.scale.setGameSize(viewportWidth, viewportHeight);
+          }
+        }
         let paintPending = true;
         let followUntil = 0;
         const invalidate = () => {
@@ -314,7 +369,11 @@ function mountScene(
           );
         }
         const lighting = this.add.graphics().setDepth(10_000_000);
+        let displayedRoomId: string | null | undefined;
         const drawLighting = (zone: WorkspaceRoomLight | null) => {
+          const nextRoomId = zone?.roomId ?? null;
+          if (displayedRoomId === nextRoomId) return;
+          displayedRoomId = nextRoomId;
           invalidate();
           lighting.clear();
           if (!zone) {
@@ -344,15 +403,34 @@ function mountScene(
           dim(right, y, mapWidth - right, roomHeight);
           dim(0, bottom, mapWidth, mapHeight - bottom);
         };
+        let roomTilesByParticipant = new Map<string, number>();
+        let displayedDoors: boolean[] = [];
         const drawWorkspaceRoomVisuals = (snapshot: WorldSnapshot) => {
           if (!svgLayout) return;
+          let changed = roomTilesByParticipant.size !== snapshot.participants.length;
+          const tiles = new Map<string, number>();
+          for (const { participationId, position } of snapshot.participants) {
+            const { tx, ty } = pixelToTile(position);
+            const tile = ty * geometry.widthTiles + tx;
+            tiles.set(participationId, tile);
+            if (roomTilesByParticipant.get(participationId) !== tile) changed = true;
+          }
+          if (!changed && displayedDoors.length) return;
+          roomTilesByParticipant = tiles;
           const state = workspaceRoomVisuals(
             svgLayout,
             bootstrap.layoutPreset,
             snapshot.participants,
             localParticipationId,
           );
-          drawDoorStates(state.doors);
+          const closed = state.doors.map((door) => door.closed);
+          if (
+            closed.length !== displayedDoors.length ||
+            closed.some((door, index) => door !== displayedDoors[index])
+          ) {
+            displayedDoors = closed;
+            drawDoorStates(state.doors);
+          }
           drawLighting(state.activeRoom);
         };
         const meetingRoomLight = (zone: MeetingZones['zones'][number] | null) =>
@@ -364,11 +442,7 @@ function mountScene(
                 tileSize: zone.tileSize,
               }
             : null;
-        if (svgLayout) {
-          drawWorkspaceRoomVisuals(initialSnapshot);
-          applyMeetingZones = () => drawWorkspaceRoomVisuals(latest);
-          applyCurrentMeetingZone = () => drawWorkspaceRoomVisuals(latest);
-        } else {
+        if (!svgLayout) {
           drawMeetingDoors(initialMeetingZones);
           drawLighting(meetingRoomLight(initialCurrentMeetingZone));
           applyMeetingZones = drawMeetingDoors;
@@ -384,7 +458,7 @@ function mountScene(
           }
           const context = floor.getContext();
           context.imageSmoothingEnabled = false;
-          context.fillStyle = '#e4eae1';
+          context.fillStyle = campus ? '#343f4c' : '#e4eae1';
           context.fillRect(0, 0, mapWidth, mapHeight);
           // All floor sources come from Phaser's image loader.
           const texture = (key: string) =>
@@ -392,7 +466,8 @@ function mountScene(
           const corridor = context.createPattern(texture('workspace-art-corridor'), 'repeat');
           if (corridor) {
             context.fillStyle = corridor;
-            for (const segment of getWorkspaceLayoutProfile(bootstrap.layoutPreset).corridors) {
+            for (const segment of getWorkspaceLayoutProfile(bootstrap.layoutPreset, svgLayout)
+              .corridors) {
               context.save();
               context.translate(segment.tx * tileSize, segment.ty * tileSize);
               context.fillRect(0, 0, segment.width * tileSize, segment.height * tileSize);
@@ -406,33 +481,70 @@ function mountScene(
               WORKSPACE_STUDIO_LANDSCAPE.ty * tileSize,
             );
           }
-          if (studio) this.game.canvas?.setAttribute('data-avatar-style', 'studio');
-          if (orthogonalStudio) {
-            const { tx, ty, width } = WORKSPACE_STUDIO_OPEN_AREA;
-            context.drawImage(
-              texture(orthogonalOpenAreaTexture),
-              tx * tileSize,
-              (ty - 1) * tileSize,
-            );
+          if (studio)
+            this.game.canvas?.setAttribute('data-avatar-style', campus ? 'campus-robot' : 'studio');
+          if (campus) {
+            const { tx, ty } = compactHall
+              ? WORKSPACE_REPO_CAMPUS_HALL_COURTYARD
+              : WORKSPACE_REPO_CAMPUS_COURTYARD;
+            context.drawImage(texture(orthogonalOpenAreaTexture), tx * tileSize, ty * tileSize);
+          } else if (orthogonalStudio) {
+            const { tx, ty, width, height } = WORKSPACE_STUDIO_OPEN_AREA;
+            const areaTexture = texture(orthogonalOpenAreaTexture);
+            if (expandableStudio) {
+              const pattern = context.createPattern(areaTexture, 'repeat');
+              if (pattern) {
+                context.fillStyle = pattern;
+                context.fillRect(tx * tileSize, ty * tileSize, width * tileSize, height * tileSize);
+              }
+              context.strokeStyle = '#668572';
+              context.lineWidth = 6;
+              context.strokeRect(tx * tileSize, ty * tileSize, width * tileSize, height * tileSize);
+            } else {
+              context.drawImage(areaTexture, tx * tileSize, (ty - 1) * tileSize);
+            }
             context.fillStyle = '#344a41';
             context.font = '20px Arial, sans-serif';
             context.textAlign = 'center';
-            context.fillText('Open area', (tx + width / 2) * tileSize, (ty + 1.875) * tileSize);
+            context.fillText(
+              expandableStudio ? 'Courtyard' : 'Open area',
+              (tx + width / 2) * tileSize,
+              (ty + 1.875) * tileSize,
+            );
           }
           for (const placement of svgLayout) {
             const template = getWorkspaceLayoutTemplate(
               placement.templateId,
               bootstrap.layoutPreset,
+              placement.origin,
             );
             const x = placement.origin.tx * tileSize;
             const y = placement.origin.ty * tileSize;
             context.drawImage(
-              texture(`workspace-art-${placement.templateId}`),
+              texture(
+                compactHall &&
+                  placement.templateId === 'private-office' &&
+                  template.door.side === 'north'
+                  ? northOfficeTexture
+                  : `workspace-art-${placement.templateId}`,
+              ),
               x,
               y,
               template.width * tileSize,
               template.height * tileSize,
             );
+            for (const sprite of workspaceFurnitureFor(
+              placement.templateId,
+              bootstrap.layoutPreset,
+            )) {
+              context.drawImage(
+                texture(sprite.key),
+                x + sprite.x,
+                y + sprite.y,
+                sprite.width,
+                sprite.height,
+              );
+            }
             if (placement.templateId !== 'reception') continue;
             this.add
               .text(
@@ -453,6 +565,7 @@ function mountScene(
               .setDepth(-80);
           }
           floor.refresh();
+          floor.setFilter(Phaser.Textures.FilterMode.NEAREST);
           this.add.image(0, 0, 'workspace-floor').setOrigin(0).setDepth(-100);
         } else {
           const ground = this.add.graphics().setDepth(-100);
@@ -630,7 +743,22 @@ function mountScene(
         };
         let follow = !svgLayout;
         const camera = this.cameras.main;
+        if (renderScale !== 1) camera.setSize(viewportWidth, viewportHeight);
+        camera.setZoom(renderScale);
         if (svgLayout) camera.setBounds(0, 0, mapWidth, mapHeight);
+        const { dataset } = this.game.canvas;
+        dataset.worldWidth = String(mapWidth);
+        dataset.worldHeight = String(mapHeight);
+        dataset.renderScale = String(renderScale);
+        const cameraZoom = () => camera.zoom / renderScale;
+        const setCameraZoom = (zoom: number) => camera.setZoom(zoom * renderScale);
+        const cameraChanged = () => {
+          invalidate();
+          dataset.cameraZoom = cameraZoom().toFixed(2);
+          const x = Math.round(camera.scrollX + (viewportWidth - mapWidth) / 2);
+          const y = Math.round(camera.scrollY + (viewportHeight - mapHeight) / 2);
+          dataset.cameraPan = `${x},${y}`;
+        };
         const updateCamera = () => {
           const image = avatars.get(localParticipationId)?.image;
           if (follow && image) {
@@ -647,11 +775,10 @@ function mountScene(
           invalidate();
           followUntil = next ? performance.now() + 800 : 0;
           follow = next;
-          camera.setZoom(next ? 1.85 : 1);
+          setCameraZoom(next ? 1.85 : 1);
           updateCamera();
           if (!next) camera.centerOn(mapWidth / 2, mapHeight / 2);
-          this.game.canvas.dataset.cameraZoom = camera.zoom.toFixed(2);
-          this.game.canvas.dataset.cameraPan = `${Math.round(camera.scrollX)},${Math.round(camera.scrollY)}`;
+          cameraChanged();
         };
         applyNavigation = (target) => {
           if (!target) {
@@ -677,11 +804,6 @@ function mountScene(
           };
           let dragStart: { x: number; y: number } | undefined;
           let dragged = false;
-          const cameraChanged = () => {
-            invalidate();
-            this.game.canvas.dataset.cameraZoom = camera.zoom.toFixed(2);
-            this.game.canvas.dataset.cameraPan = `${Math.round(camera.scrollX)},${Math.round(camera.scrollY)}`;
-          };
           const stopFollowing = () => {
             if (!follow) return;
             follow = false;
@@ -690,8 +812,8 @@ function mountScene(
             actions.onManualCamera?.();
           };
           const pan = (dx: number, dy: number) => {
-            const scaledWidth = mapWidth / camera.zoom;
-            const scaledHeight = mapHeight / camera.zoom;
+            const scaledWidth = mapWidth / cameraZoom();
+            const scaledHeight = mapHeight / cameraZoom();
             camera.centerOn(
               Phaser.Math.Clamp(
                 camera.midPoint.x + dx,
@@ -706,41 +828,74 @@ function mountScene(
             );
             cameraChanged();
           };
-          this.input.on(
-            'wheel',
-            (pointer: Phaser.Input.Pointer, _objects: unknown, dx: number, dy: number) => {
+          const zoomAt = (factor: number, point: { x: number; y: number }) => {
+            stopFollowing();
+            const oldZoom = cameraZoom();
+            const zoom = Phaser.Math.Clamp(oldZoom * factor, 1, 5);
+            const offsetX = (point.x - viewportWidth / 2) / renderScale;
+            const offsetY = (point.y - viewportHeight / 2) / renderScale;
+            const centerX = camera.scrollX + viewportWidth / 2 + offsetX * (1 / oldZoom - 1 / zoom);
+            const centerY =
+              camera.scrollY + viewportHeight / 2 + offsetY * (1 / oldZoom - 1 / zoom);
+            setCameraZoom(zoom);
+            const halfWidth = mapWidth / (2 * zoom);
+            const halfHeight = mapHeight / (2 * zoom);
+            camera.centerOn(
+              Phaser.Math.Clamp(centerX, halfWidth, mapWidth - halfWidth),
+              Phaser.Math.Clamp(centerY, halfHeight, mapHeight - halfHeight),
+            );
+            cameraChanged();
+          };
+          const canvas = this.game.canvas;
+          const wheel = (event: WheelEvent) => {
+            const rect = canvas.getBoundingClientRect();
+            if (!rect.width || !rect.height) return;
+            event.preventDefault();
+            const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? rect.height : 1;
+            const dx = event.deltaX * unit;
+            const dy = event.deltaY * unit;
+            if (event.shiftKey || (Math.abs(dx) > Math.abs(dy) && !event.ctrlKey)) {
               stopFollowing();
-              if (dx || pointer.event?.shiftKey) {
-                pan(dx || dy, dx ? dy : 0);
-                return;
-              }
-              const point = pointerOnCanvas(pointer);
-              const before = camera.getWorldPoint(point.x, point.y);
-              const zoom = Phaser.Math.Clamp(camera.zoom * Math.exp(-dy * 0.0015), 1, 3);
-              camera.setZoom(zoom);
-              const halfWidth = mapWidth / (2 * zoom);
-              const halfHeight = mapHeight / (2 * zoom);
-              camera.centerOn(
-                Phaser.Math.Clamp(
-                  before.x - (point.x - mapWidth / 2) / zoom,
-                  halfWidth,
-                  mapWidth - halfWidth,
-                ),
-                Phaser.Math.Clamp(
-                  before.y - (point.y - mapHeight / 2) / zoom,
-                  halfHeight,
-                  mapHeight - halfHeight,
-                ),
-              );
-              cameraChanged();
-            },
+              pan(((dx || dy) * viewportWidth) / rect.width / camera.zoom, 0);
+              return;
+            }
+            zoomAt(Math.exp(Phaser.Math.Clamp(-dy / 280, -1, 1)), {
+              x: ((event.clientX - rect.left) * viewportWidth) / rect.width,
+              y: ((event.clientY - rect.top) * viewportHeight) / rect.height,
+            });
+          };
+          canvas.addEventListener('wheel', wheel, { passive: false });
+          this.events.once(Phaser.Scenes.Events.SHUTDOWN, () =>
+            canvas.removeEventListener('wheel', wheel),
           );
+          applyZoom = (factor) => zoomAt(factor, { x: viewportWidth / 2, y: viewportHeight / 2 });
+          applyOverview = () => {
+            stopFollowing();
+            setCameraZoom(1);
+            camera.centerOn(mapWidth / 2, mapHeight / 2);
+            cameraChanged();
+          };
+          if (compactHall) {
+            const spawn = initialSnapshot.participants.find(
+              ({ participationId }) => participationId === localParticipationId,
+            )?.position;
+            const width = Math.max(1, canvas.getBoundingClientRect().width);
+            const zoom = Phaser.Math.Clamp((24 * mapWidth) / (tileSize * width), 1.25, 3);
+            setCameraZoom(zoom);
+            const halfWidth = mapWidth / (2 * zoom);
+            const halfHeight = mapHeight / (2 * zoom);
+            camera.centerOn(
+              Phaser.Math.Clamp(spawn?.x ?? mapWidth / 2, halfWidth, mapWidth - halfWidth),
+              Phaser.Math.Clamp(spawn?.y ?? mapHeight / 2, halfHeight, mapHeight - halfHeight),
+            );
+            cameraChanged();
+          }
           this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
             dragStart = pointerOnCanvas(pointer);
             dragged = false;
           });
           this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
-            if (!dragStart || !pointer.isDown || camera.zoom <= 1) return;
+            if (!dragStart || !pointer.isDown || cameraZoom() <= 1) return;
             const point = pointerOnCanvas(pointer);
             const dx = dragStart.x - point.x;
             const dy = dragStart.y - point.y;
@@ -759,8 +914,14 @@ function mountScene(
             if (!startedInside || dragged || pointer.button !== 0) return;
             parent.parentElement?.focus({ preventScroll: true });
             const point = pointerOnCanvas(pointer);
-            if (point.x < 0 || point.y < 0 || point.x >= mapWidth || point.y >= mapHeight) return;
-            const target = camera.getWorldPoint(point.x, point.y);
+            if (point.x < 0 || point.y < 0 || point.x >= viewportWidth || point.y >= viewportHeight)
+              return;
+            // Camera matrices commit on the next Phaser frame. Use the current
+            // axis-aligned camera for clicks immediately after Fit or wheel zoom.
+            const target = {
+              x: camera.scrollX + viewportWidth / 2 + (point.x - viewportWidth / 2) / camera.zoom,
+              y: camera.scrollY + viewportHeight / 2 + (point.y - viewportHeight / 2) / camera.zoom,
+            };
             for (const [id, view] of avatars) {
               if (
                 id !== localParticipationId &&
@@ -858,7 +1019,10 @@ function mountScene(
           invalidate();
           if (follow && id === localParticipationId) followUntil = performance.now() + 800;
         };
+        let displayedSnapshot: WorldSnapshot | undefined;
         const drawSnapshot = (snapshot: WorldSnapshot) => {
+          if (snapshot === displayedSnapshot) return;
+          displayedSnapshot = snapshot;
           const receivedAt = performance.now();
           latest = snapshot;
           if (route?.memberId) {
@@ -911,7 +1075,7 @@ function mountScene(
                   participant.displayName,
                   {
                     fontFamily: 'Arial, sans-serif',
-                    fontSize: '10px',
+                    fontSize: compactHall ? '14px' : '10px',
                     color: '#26352e',
                     backgroundColor: '#fffdf0',
                     padding: { x: 3, y: 2 },
@@ -985,10 +1149,10 @@ function mountScene(
           );
           if (svgLayout) drawWorkspaceRoomVisuals(snapshot);
           if (local && bootstrap.layoutPreset) {
-            this.game.canvas?.setAttribute(
-              'data-local-tile',
-              `${Math.floor(local.position.x / tileSize)},${Math.floor(local.position.y / tileSize)}`,
-            );
+            const canvas = this.game.canvas;
+            const { tx, ty } = pixelToTile(local.position);
+            const tile = `${tx},${ty}`;
+            if (canvas.dataset.localTile !== tile) canvas.dataset.localTile = tile;
           }
           updateCamera();
         };
@@ -1125,6 +1289,8 @@ function mountScene(
       cleanup();
     },
     setFollow: (follow) => applyFollow(follow),
+    zoomBy: (factor) => applyZoom(factor),
+    showOverview: () => applyOverview(),
     navigate: (target) => applyNavigation(target),
     updateSnapshot,
     updateSpeakers: (ids) => applySpeakers(ids),
@@ -1261,18 +1427,43 @@ export function LiveCommonsScene({
               : 'Live office map. Use arrow keys or WASD to move.'}
       </p>
       {bootstrap.layoutPreset && status === 'ready' && (
-        <button
-          type="button"
-          className="dashboard-secondary workspace-camera-control"
-          aria-pressed={follow}
-          onClick={() => {
-            renderer.current?.setFollow(!follow);
-            setFollow(!follow);
-            host.current?.focus();
-          }}
-        >
-          {follow ? 'Show overview' : 'Follow me'}
-        </button>
+        <div className="workspace-camera-toolbar" role="group" aria-label="Map view">
+          <button
+            type="button"
+            className="dashboard-secondary workspace-camera-control"
+            aria-pressed={follow}
+            onClick={() => {
+              renderer.current?.setFollow(!follow);
+              setFollow(!follow);
+              host.current?.focus();
+            }}
+          >
+            {follow ? 'Show overview' : 'Follow me'}
+          </button>
+          <button
+            type="button"
+            className="dashboard-secondary"
+            aria-label="Zoom out"
+            onClick={() => renderer.current?.zoomBy(1 / 1.25)}
+          >
+            −
+          </button>
+          <button
+            type="button"
+            className="dashboard-secondary"
+            aria-label="Zoom in"
+            onClick={() => renderer.current?.zoomBy(1.25)}
+          >
+            +
+          </button>
+          <button
+            type="button"
+            className="dashboard-secondary"
+            onClick={() => renderer.current?.showOverview()}
+          >
+            Fit map
+          </button>
+        </div>
       )}
       <div
         className="commons-scene-host"

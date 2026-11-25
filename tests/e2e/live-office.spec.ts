@@ -1097,8 +1097,8 @@ async function studioClick(page: Page, tx: number, ty: number) {
   const rectangle = await map.boundingBox();
   if (!rectangle) throw new Error('Studio canvas must be visible.');
   const { width, height } = await map.evaluate((canvas: HTMLCanvasElement) => ({
-    width: canvas.width,
-    height: canvas.height,
+    width: Number(canvas.dataset.worldWidth ?? canvas.width),
+    height: Number(canvas.dataset.worldHeight ?? canvas.height),
   }));
   await page.mouse.click(
     rectangle.x + (rectangle.width * ((tx + 0.5) * 32)) / width,
@@ -1106,9 +1106,9 @@ async function studioClick(page: Page, tx: number, ty: number) {
   );
 }
 
-async function enterStudio(page: Page, count = 6) {
+async function enterStudio(page: Page, count = 6, avatarStyle = 'studio') {
   await page.getByRole('button', { name: 'Join', exact: true }).click();
-  await expect(studioMap(page)).toHaveAttribute('data-avatar-style', 'studio');
+  await expect(studioMap(page)).toHaveAttribute('data-avatar-style', avatarStyle);
   await expect(studioMap(page)).toHaveAttribute('data-private-office-count', String(count));
 }
 
@@ -1303,6 +1303,224 @@ test('Orthogonal Studio publishes eight offices and keeps the open floor bounded
     await expect(live).not.toHaveAttribute('data-camera-pan', pan!);
     await expect(live).toHaveAttribute('data-local-tile', '21,2');
     await page.screenshot({ path: testInfo.outputPath('orthogonal-zoom-pan.png') });
+  } finally {
+    await context.close();
+    await owner.client.dispose();
+  }
+});
+
+test('Campus Hall is the default and connects both office rows through the live shared floor', async ({
+  browser,
+}, testInfo) => {
+  test.skip(!enabled, 'Set LIVE_OFFICE_E2E=1 to use the local Docker stack.');
+  test.setTimeout(130_000);
+  const stamp = randomUUID().slice(0, 8);
+  const owner = await createAccount(`office-campus-${stamp}@example.test`);
+  const context = await browser.newContext({
+    storageState: await owner.client.storageState(),
+    ignoreHTTPSErrors: true,
+    viewport: { width: 1440, height: 1050 },
+  });
+  try {
+    const page = await context.newPage();
+    await page.goto(appOrigin);
+    await page.getByRole('button', { name: 'Create company', exact: true }).first().click();
+    const dialog = page.getByRole('dialog', { name: 'Create a company' });
+    await expect(dialog.getByLabel('Office floor plan')).toHaveValue('repo-campus-hall');
+    await expect(dialog.getByLabel('Private offices')).toHaveValue('4');
+    await expect(dialog.locator('option[value="studio-expandable"]')).toHaveCount(0);
+    await expect(dialog.getByRole('img', { name: 'Workspace floor plan preview' })).toHaveAttribute(
+      'viewBox',
+      '0 0 832 1344',
+    );
+    await dialog.getByLabel('Company name').fill(`Office Campus ${stamp}`);
+    const created = page.waitForResponse(
+      (response) =>
+        response.url().endsWith('/api/workspaces') && response.request().method() === 'POST',
+    );
+    await dialog.getByRole('button', { name: 'Create company', exact: true }).click();
+    const response = await created;
+    expect(response.status()).toBe(201);
+    const { workspace } = (await response.json()) as { workspace: { id: string } };
+    const workspacePath = `/api/workspaces/${workspace.id}`;
+    const { officeId } = (await json(await owner.client.get(workspacePath))).workspace as {
+      officeId: string;
+    };
+    const officePath = `${workspacePath}/offices/${officeId}`;
+    const initial = await json(await owner.client.get(officePath));
+    expect(initial.layoutPreset).toBe('repo-campus-hall');
+    await page.goto(`${appOrigin}/companies/${workspace.id}/offices/${officeId}/entry`);
+    await enterStudio(page, 4, 'campus-robot');
+    await expect(studioMap(page)).not.toHaveAttribute('data-camera-zoom', '1.00');
+    await page.screenshot({ path: testInfo.outputPath('campus-hall-close.png') });
+    await page.getByRole('button', { name: 'Fit map', exact: true }).click();
+    await expect(studioMap(page)).toHaveAttribute('data-camera-zoom', '1.00');
+    await page.screenshot({ path: testInfo.outputPath('campus-hall-live-4.png') });
+
+    await page.goto(`${appOrigin}/companies/${workspace.id}/settings`);
+    await page.getByRole('button', { name: 'Edit office map' }).click();
+    const editor = page.getByRole('region', { name: 'Office map editor' });
+    const map = editor.getByRole('group', { name: 'Editable office floor plan' });
+    const rooms = map.locator('[data-template-id="private-office"]');
+    await expect(rooms).toHaveCount(4);
+    await editor.getByLabel('Private offices', { exact: true }).fill('16');
+    await editor.getByRole('button', { name: 'Apply count' }).click();
+    await expect(rooms).toHaveCount(16);
+    await expect(map).toHaveAttribute('viewBox', '0 0 1856 1344');
+    await editor.getByRole('button', { name: 'Save draft' }).click();
+    await expect(editor.getByRole('status')).toHaveText('Draft saved.');
+    expect((await json(await owner.client.get(officePath))).mapVersion).toBe(initial.mapVersion);
+
+    await editor.getByRole('button', { name: 'Publish map' }).click();
+    await expect(editor.getByRole('status')).toContainText('Map published.');
+    const published = await json(await owner.client.get(officePath));
+    const original = initial.layout as WorkspaceLayoutPlacement[];
+    expect((published.layout as WorkspaceLayoutPlacement[]).slice(0, original.length)).toEqual(
+      original,
+    );
+    expect(published.mapVersion).not.toBe(initial.mapVersion);
+    await page.screenshot({ path: testInfo.outputPath('campus-hall-editor.png') });
+
+    await page.goto(`${appOrigin}/companies/${workspace.id}/offices/${officeId}/entry`);
+    await enterStudio(page, 16, 'campus-robot');
+    const live = studioMap(page);
+    await expect(live).toHaveAttribute('data-map-version', String(published.mapVersion));
+    await expect(live).toHaveAttribute('data-world-width', '1856');
+    const backing = await live.evaluate((element: HTMLCanvasElement) => ({
+      width: element.width,
+      height: element.height,
+      cssWidth: element.getBoundingClientRect().width,
+      cssHeight: element.getBoundingClientRect().height,
+    }));
+    expect(backing.width).toBeLessThan(1856);
+    expect(backing.height).toBeLessThan(1344);
+    expect(backing.width).toBeGreaterThanOrEqual(Math.floor(backing.cssWidth));
+    expect(backing.height).toBeGreaterThanOrEqual(Math.floor(backing.cssHeight));
+    const fitMap = page.getByRole('button', { name: 'Fit map', exact: true });
+    await fitMap.click();
+    await expect(live).toHaveAttribute('data-camera-zoom', '1.00');
+    await page.screenshot({ path: testInfo.outputPath('campus-hall-live-16.png') });
+    await page.getByRole('button', { name: 'Zoom in', exact: true }).click();
+    await expect(live).not.toHaveAttribute('data-camera-zoom', '1.00');
+    await page.getByRole('button', { name: 'Zoom out', exact: true }).click();
+    await expect(live).toHaveAttribute('data-camera-zoom', '1.00');
+    const pointer = { x: 220, y: 150 };
+    const box = (await live.boundingBox())!;
+    await live.hover({ position: pointer });
+    await page.mouse.wheel(0, -220);
+    await expect(live).not.toHaveAttribute('data-camera-zoom', '1.00');
+    const firstZoom = (await live.getAttribute('data-camera-zoom'))!;
+    const cameraScroll = (await live.getAttribute('data-camera-pan'))!.split(',').map(Number);
+    const worldCoords = [(pointer.x / box.width) * 1856, (pointer.y / box.height) * 1344];
+    for (const [axis, center] of [928, 672].entries()) {
+      const before = worldCoords[axis]!;
+      const after = cameraScroll[axis]! + center + (before - center) / Number(firstZoom);
+      expect(Math.abs(after - before)).toBeLessThan(8);
+    }
+    await page.mouse.wheel(18, -220);
+    await expect(live).not.toHaveAttribute('data-camera-zoom', firstZoom);
+    await fitMap.click();
+    await expect(live).toHaveAttribute('data-camera-zoom', '1.00');
+
+    await studioClick(page, 53, 12);
+    await expect(live).toHaveAttribute('data-local-tile', '53,12', { timeout: 30_000 });
+    await studioClick(page, 53, 38);
+    await expect(live).toHaveAttribute('data-local-tile', '53,38', { timeout: 30_000 });
+    await studioClick(page, 9, 0);
+    await expect(live).toHaveAttribute('data-local-tile', '9,0', { timeout: 30_000 });
+    await page.keyboard.down('ArrowUp');
+    try {
+      await page.waitForTimeout(650);
+      await expect(live).toHaveAttribute('data-local-tile', '9,0');
+    } finally {
+      await page.keyboard.up('ArrowUp');
+    }
+  } finally {
+    await context.close();
+    await owner.client.dispose();
+  }
+});
+
+test('Expandable Studio grows its live bound from four to sixteen offices', async ({
+  browser,
+}, testInfo) => {
+  test.skip(!enabled, 'Set LIVE_OFFICE_E2E=1 to use the local Docker stack.');
+  test.setTimeout(120_000);
+  const stamp = randomUUID().slice(0, 8);
+  const owner = await createAccount(`expandable-studio-${stamp}@example.test`);
+  const context = await browser.newContext({
+    storageState: await owner.client.storageState(),
+    ignoreHTTPSErrors: true,
+    viewport: { width: 1440, height: 1050 },
+  });
+  try {
+    const response = await postJson(
+      owner.client,
+      '/api/workspaces',
+      {
+        name: 'Expandable Studio test',
+        slug: `expandable-studio-${stamp}`,
+        officeTemplate: 'studio-expandable',
+        privateOfficeCount: 4,
+      },
+      owner.csrf,
+      true,
+    );
+    expect(response.status()).toBe(201);
+    const { workspace } = (await response.json()) as { workspace: { id: string } };
+    const workspacePath = `/api/workspaces/${workspace.id}`;
+    const { officeId } = (await json(await owner.client.get(workspacePath))).workspace as {
+      officeId: string;
+    };
+    const officePath = `${workspacePath}/offices/${officeId}`;
+    const initial = await json(await owner.client.get(officePath));
+
+    const page = await context.newPage();
+    await page.goto(`${appOrigin}/companies/${workspace.id}/settings`);
+    await page.getByRole('button', { name: 'Edit office map' }).click();
+    const editor = page.getByRole('region', { name: 'Office map editor' });
+    const map = editor.getByRole('group', { name: 'Editable office floor plan' });
+    const rooms = map.locator('[data-template-id="private-office"]');
+    await expect(rooms).toHaveCount(4);
+    await expect(map).toHaveAttribute('viewBox', '0 0 1344 1088');
+    await expect(rooms.first().locator('image')).toHaveCount(4);
+
+    await editor.getByLabel('Private offices', { exact: true }).fill('16');
+    await editor.getByRole('button', { name: 'Apply count' }).click();
+    await expect(rooms).toHaveCount(16);
+    await expect(map).toHaveAttribute('viewBox', '0 0 1344 1696');
+    await editor.getByRole('button', { name: 'Save draft' }).click();
+    await expect(editor.getByRole('status')).toHaveText('Draft saved.');
+    expect((await json(await owner.client.get(officePath))).mapVersion).toBe(initial.mapVersion);
+
+    await editor.getByRole('button', { name: 'Publish map' }).click();
+    await expect(editor.getByRole('status')).toContainText('Map published.');
+    const published = await json(await owner.client.get(officePath));
+    const original = (initial.layout as WorkspaceLayoutPlacement[]).filter(
+      ({ id }) => id !== 'reception',
+    );
+    expect((published.layout as WorkspaceLayoutPlacement[]).slice(1, original.length + 1)).toEqual(
+      original,
+    );
+    await page.screenshot({ path: testInfo.outputPath('expandable-studio-editor.png') });
+
+    await page.goto(`${appOrigin}/companies/${workspace.id}/offices/${officeId}/entry`);
+    await enterStudio(page, 16);
+    const live = studioMap(page);
+    await expect(live).toHaveAttribute('data-map-version', String(published.mapVersion));
+    await expect(live).toHaveAttribute('height', '1696');
+    await page.screenshot({ path: testInfo.outputPath('expandable-studio-live.png') });
+    await studioClick(page, 38, 39);
+    await expect(live).toHaveAttribute('data-local-tile', '38,39', { timeout: 20_000 });
+    await studioClick(page, 21, 2);
+    await expect(live).toHaveAttribute('data-local-tile', '21,2', { timeout: 25_000 });
+    await page.keyboard.down('ArrowUp');
+    try {
+      await page.waitForTimeout(650);
+      await expect(live).toHaveAttribute('data-local-tile', '21,2');
+    } finally {
+      await page.keyboard.up('ArrowUp');
+    }
   } finally {
     await context.close();
     await owner.client.dispose();
@@ -1754,7 +1972,7 @@ test('Studio carries decoded LiveKit audio and cuts it off at room boundaries', 
   }
 });
 
-test('Studio eight-office load converges for twenty and isolates three decoded audio pairs', async ({
+test('Published office load converges for twenty and isolates three decoded audio pairs', async ({
   browser,
 }, testInfo) => {
   test.skip(!enabled || !mediaEnabled, 'Requires disposable loopback LiveKit test stack.');
@@ -1864,31 +2082,46 @@ test('Studio eight-office load converges for twenty and isolates three decoded a
         };
       }),
     );
-  const orthogonal = process.env['LIVE_OFFICE_LOAD_PRESET'] === 'studio-orthogonal';
-  const preset = orthogonal ? 'studio-orthogonal' : 'studio';
+  const requestedPreset = process.env['LIVE_OFFICE_LOAD_PRESET'];
+  const campusHall = requestedPreset === 'repo-campus-hall';
+  const orthogonal = requestedPreset === 'studio-orthogonal';
+  const preset = campusHall ? 'repo-campus-hall' : orthogonal ? 'studio-orthogonal' : 'studio';
+  const initialOfficeCount = campusHall ? 4 : 6;
+  const finalOfficeCount = campusHall ? 16 : 8;
   report.layoutPreset = preset;
-  const meetingCount = orthogonal ? 2 : 4;
-  const goals = orthogonal
+  const meetingCount = campusHall || orthogonal ? 2 : 4;
+  const goals = campusHall
     ? [
-        { zone: 'Large meeting', tx: 20, ty: 21, partner: 1 },
-        { zone: 'Large meeting', tx: 21, ty: 21, partner: 0 },
-        { zone: 'Private office 1', tx: 3, ty: 16, partner: 3 },
-        { zone: 'Private office 1', tx: 4, ty: 16, partner: 2 },
-        { zone: 'Private office 2', tx: 31, ty: 16, partner: 5 },
-        { zone: 'Private office 2', tx: 32, ty: 16, partner: 4 },
-        { zone: 'Private office 5', tx: 3, ty: 24, partner: null },
-        { zone: 'Corridor', tx: 4, ty: 25, partner: null },
+        { zone: 'Large meeting', tx: 17, ty: 24, partner: 1 },
+        { zone: 'Large meeting', tx: 18, ty: 24, partner: 0 },
+        { zone: 'Lower private office 2', tx: 4, ty: 34, partner: 3 },
+        { zone: 'Lower private office 2', tx: 5, ty: 35, partner: 2 },
+        { zone: 'Shared hall at office 2 doorway', tx: 4, ty: 33, partner: 5 },
+        { zone: 'Shared hall at office 2 doorway', tx: 5, ty: 33, partner: 4 },
+        { zone: 'Upper private office 5', tx: 22, ty: 13, partner: null },
+        { zone: 'Shared hall at office 5 doorway', tx: 23, ty: 14, partner: null },
       ]
-    : [
-        { zone: 'Small meeting', tx: 12, ty: 20, partner: 1 },
-        { zone: 'Small meeting', tx: 13, ty: 20, partner: 0 },
-        { zone: 'Large meeting', tx: 42, ty: 20, partner: 3 },
-        { zone: 'Large meeting', tx: 43, ty: 20, partner: 2 },
-        { zone: 'Team Studio', tx: 26, ty: 13, partner: 5 },
-        { zone: 'Team Studio', tx: 27, ty: 13, partner: 4 },
-        { zone: 'Private office', tx: 4, ty: 20, partner: null },
-        { zone: 'Corridor', tx: 5, ty: 21, partner: null },
-      ];
+    : orthogonal
+      ? [
+          { zone: 'Large meeting', tx: 20, ty: 21, partner: 1 },
+          { zone: 'Large meeting', tx: 21, ty: 21, partner: 0 },
+          { zone: 'Private office 1', tx: 3, ty: 16, partner: 3 },
+          { zone: 'Private office 1', tx: 4, ty: 16, partner: 2 },
+          { zone: 'Private office 2', tx: 31, ty: 16, partner: 5 },
+          { zone: 'Private office 2', tx: 32, ty: 16, partner: 4 },
+          { zone: 'Private office 5', tx: 3, ty: 24, partner: null },
+          { zone: 'Corridor', tx: 4, ty: 25, partner: null },
+        ]
+      : [
+          { zone: 'Small meeting', tx: 12, ty: 20, partner: 1 },
+          { zone: 'Small meeting', tx: 13, ty: 20, partner: 0 },
+          { zone: 'Large meeting', tx: 42, ty: 20, partner: 3 },
+          { zone: 'Large meeting', tx: 43, ty: 20, partner: 2 },
+          { zone: 'Team Studio', tx: 26, ty: 13, partner: 5 },
+          { zone: 'Team Studio', tx: 27, ty: 13, partner: 4 },
+          { zone: 'Private office', tx: 4, ty: 20, partner: null },
+          { zone: 'Corridor', tx: 5, ty: 21, partner: null },
+        ];
   try {
     let workspace: { id: string };
     let officePath: string;
@@ -1939,7 +2172,12 @@ test('Studio eight-office load converges for twenty and isolates three decoded a
       const response = await postJson(
         owner.client,
         '/api/workspaces',
-        { name: 'Disposable Studio load', slug: `studio-load-${stamp}`, officeTemplate: preset },
+        {
+          name: campusHall ? 'Disposable Campus Hall load' : 'Disposable Studio load',
+          slug: `studio-load-${stamp}`,
+          officeTemplate: preset,
+          privateOfficeCount: initialOfficeCount,
+        },
         owner.csrf,
         true,
       );
@@ -1968,7 +2206,7 @@ test('Studio eight-office load converges for twenty and isolates three decoded a
       const original = await bootstrap();
       expect(
         (original.layout as Placement[]).filter((row) => row.templateId === 'private-office'),
-      ).toHaveLength(6);
+      ).toHaveLength(initialOfficeCount);
       const editorContext = await browser.newContext({
         storageState: await owner.client.storageState(),
         ignoreHTTPSErrors: true,
@@ -1987,7 +2225,7 @@ test('Studio eight-office load converges for twenty and isolates three decoded a
       await editor.getByRole('button', { name: 'Publish map' }).click();
       await expect(editor.getByRole('status')).toContainText('Map published.');
       const named = await bootstrap();
-      await editor.getByLabel('Private offices', { exact: true }).fill('8');
+      await editor.getByLabel('Private offices', { exact: true }).fill(String(finalOfficeCount));
       await editor.getByRole('button', { name: 'Apply count' }).click();
       await editor.getByRole('button', { name: 'Save draft' }).click();
       await expect(editor.getByRole('status')).toHaveText('Draft saved.');
@@ -2001,20 +2239,30 @@ test('Studio eight-office load converges for twenty and isolates three decoded a
         'Load test sketchbook',
       );
       expect(expanded.slice(0, previous.length)).toEqual(previous);
-      expect(expanded.slice(previous.length).map(({ id }) => id)).toEqual([
-        'private-office-7',
-        'private-office-8',
-      ]);
+      expect(expanded.slice(previous.length).map(({ id }) => id)).toEqual(
+        Array.from(
+          { length: finalOfficeCount - initialOfficeCount },
+          (_, index) => `private-office-${initialOfficeCount + index + 1}`,
+        ),
+      );
+      if (campusHall) {
+        expect(named.geometry).toMatchObject({ widthTiles: 26, heightTiles: 42 });
+        expect(published.geometry).toMatchObject({ widthTiles: 58, heightTiles: 42 });
+      }
       expect(published.mapVersion).not.toBe(named.mapVersion);
       report.publish = {
         before: named.mapVersion,
         after: published.mapVersion,
         previous,
         expanded,
+        beforeBounds: (named.manifest as { bounds: { width: number; height: number } }).bounds,
+        afterBounds: (published.manifest as { bounds: { width: number; height: number } }).bounds,
       };
       await editorPage.screenshot({ path: testInfo.outputPath('studio-load-editor.png') });
       await editorContext.close();
-      console.log('Published 8 offices with every prior placement retained.');
+      console.log(
+        `Published ${initialOfficeCount}→${finalOfficeCount} offices with every prior placement retained.`,
+      );
 
       for (let offset = 1; offset < 20; offset += 3) {
         const batch = await Promise.all(
@@ -2148,6 +2396,7 @@ test('Studio eight-office load converges for twenty and isolates three decoded a
         const draws: CanvasSample[] = [];
         let frame: CanvasSample | undefined;
         let endScheduled = false;
+        let renderScale: number | undefined;
         const original = CanvasRenderingContext2D.prototype.drawImage;
         const target = window as CanvasWindow;
         target.studioDraws = draws;
@@ -2191,7 +2440,8 @@ test('Studio eight-office load converges for twenty and isolates three decoded a
               new DOMPoint(coordinates[4]! + 24, coordinates[5]! + 43),
             );
             frame ??= { at: Date.now(), points: [] };
-            frame.points.push({ x: foot.x, y: foot.y });
+            renderScale ??= Number(this.canvas.dataset.renderScale ?? 1);
+            frame.points.push({ x: foot.x / renderScale, y: foot.y / renderScale });
             if (!endScheduled) {
               endScheduled = true;
               queueMicrotask(() => {
@@ -2209,10 +2459,21 @@ test('Studio eight-office load converges for twenty and isolates three decoded a
     for (const [index, page] of pages.entries()) {
       const joinStartedAt = Date.now();
       await page.getByRole('button', { name: 'Join', exact: true }).click({ timeout: 25_000 });
-      await expect(studioMap(page)).toHaveAttribute('data-avatar-style', 'studio', {
-        timeout: 35_000,
-      });
-      await expect(studioMap(page)).toHaveAttribute('data-private-office-count', '8');
+      await expect(studioMap(page)).toHaveAttribute(
+        'data-avatar-style',
+        campusHall ? 'campus-robot' : 'studio',
+        {
+          timeout: 35_000,
+        },
+      );
+      await expect(studioMap(page)).toHaveAttribute(
+        'data-private-office-count',
+        String(finalOfficeCount),
+      );
+      if (campusHall) {
+        await page.getByRole('button', { name: 'Fit map', exact: true }).click();
+        await expect(studioMap(page)).toHaveAttribute('data-camera-zoom', '1.00');
+      }
       browserJoinTimes.push(Date.now() - joinStartedAt);
       console.log('Authenticated browser joined:', index + 1, 'in', browserJoinTimes.at(-1), 'ms.');
       await expect(studioMap(page)).toHaveAttribute(
@@ -2289,35 +2550,50 @@ test('Studio eight-office load converges for twenty and isolates three decoded a
         payload: { sequence, dx: 0, dy: 0, ...(waypoint && { waypoint }) },
       });
     };
-    const rawGoals = orthogonal
+    const rawGoals = campusHall
       ? [
-          { zone: 'Private office 3', tx: 9, ty: 16 },
-          { zone: 'Private office 4', tx: 37, ty: 16 },
-          { zone: 'Private office 5', tx: 5, ty: 23 },
-          { zone: 'Private office 6', tx: 37, ty: 24 },
-          { zone: 'Private office 7 (new)', tx: 9, ty: 24 },
-          { zone: 'Private office 8 (new)', tx: 31, ty: 24 },
-          { zone: 'Open area north west', tx: 6, ty: 4 },
-          { zone: 'Open area north center', tx: 21, ty: 5 },
-          { zone: 'Open area north east', tx: 36, ty: 4 },
-          { zone: 'East connector', tx: 27, ty: 15 },
-          { zone: 'Reception', tx: 20, ty: 34 },
-          { zone: 'Reception', tx: 21, ty: 34 },
-        ]
-      : [
-          { zone: 'Private office 1', tx: 11, ty: 7 },
-          { zone: 'Private office 2', tx: 17, ty: 7 },
-          { zone: 'Private office 3', tx: 35, ty: 7 },
-          { zone: 'Private office 4', tx: 41, ty: 7 },
-          { zone: 'Private office 6', tx: 51, ty: 19 },
-          { zone: 'Private office 7 (new)', tx: 23, ty: 7 },
-          { zone: 'Private office 8 (new)', tx: 29, ty: 7 },
-          { zone: 'Garden', tx: 4, ty: 7 },
-          { zone: 'Lounge', tx: 50, ty: 7 },
-          { zone: 'Desks', tx: 20, ty: 25 },
+          { zone: 'Private office 3', tx: 11, ty: 12 },
+          { zone: 'Private office 4', tx: 11, ty: 38 },
+          { zone: 'Private office 5 (new)', tx: 23, ty: 12 },
+          { zone: 'Private office 6 (new)', tx: 23, ty: 38 },
+          { zone: 'Private office 7 (new)', tx: 29, ty: 12 },
+          { zone: 'Private office 8 (new)', tx: 29, ty: 38 },
+          { zone: 'Private office 9 (new)', tx: 35, ty: 12 },
+          { zone: 'Private office 10 (new)', tx: 35, ty: 38 },
+          { zone: 'Private office 15 (new)', tx: 53, ty: 12 },
+          { zone: 'Private office 16 (new)', tx: 53, ty: 38 },
+          { zone: 'Courtyard', tx: 9, ty: 0 },
           { zone: 'Reception', tx: 7, ty: 30 },
-          { zone: 'Reception', tx: 8, ty: 30 },
-        ];
+        ]
+      : orthogonal
+        ? [
+            { zone: 'Private office 3', tx: 9, ty: 16 },
+            { zone: 'Private office 4', tx: 37, ty: 16 },
+            { zone: 'Private office 5', tx: 5, ty: 23 },
+            { zone: 'Private office 6', tx: 37, ty: 24 },
+            { zone: 'Private office 7 (new)', tx: 9, ty: 24 },
+            { zone: 'Private office 8 (new)', tx: 31, ty: 24 },
+            { zone: 'Open area north west', tx: 6, ty: 4 },
+            { zone: 'Open area north center', tx: 21, ty: 5 },
+            { zone: 'Open area north east', tx: 36, ty: 4 },
+            { zone: 'East connector', tx: 27, ty: 15 },
+            { zone: 'Reception', tx: 20, ty: 34 },
+            { zone: 'Reception', tx: 21, ty: 34 },
+          ]
+        : [
+            { zone: 'Private office 1', tx: 11, ty: 7 },
+            { zone: 'Private office 2', tx: 17, ty: 7 },
+            { zone: 'Private office 3', tx: 35, ty: 7 },
+            { zone: 'Private office 4', tx: 41, ty: 7 },
+            { zone: 'Private office 6', tx: 51, ty: 19 },
+            { zone: 'Private office 7 (new)', tx: 23, ty: 7 },
+            { zone: 'Private office 8 (new)', tx: 29, ty: 7 },
+            { zone: 'Garden', tx: 4, ty: 7 },
+            { zone: 'Lounge', tx: 50, ty: 7 },
+            { zone: 'Desks', tx: 20, ty: 25 },
+            { zone: 'Reception', tx: 7, ty: 30 },
+            { zone: 'Reception', tx: 8, ty: 30 },
+          ];
     const geometry =
       published.geometry as import('../../packages/world/dist/index.js').OfficeGeometry;
     const bounds = { width: geometry.widthTiles * 32, height: geometry.heightTiles * 32 };
@@ -2342,6 +2618,10 @@ test('Studio eight-office load converges for twenty and isolates three decoded a
       if (!route) throw new Error(`No route to ${goal.zone}.`);
       let sequence = 0;
       let sentWaypoint: (typeof route)[number] | undefined;
+      let lastSent = 0;
+      let lastProgress = Date.now();
+      let lastObserved: Point | undefined;
+      let retries = 0;
       const deadline = Date.now() + 55_000;
       while (route.length && Date.now() < deadline) {
         const next = route[0]!;
@@ -2357,8 +2637,15 @@ test('Studio eight-office load converges for twenty and isolates three decoded a
           route.shift();
           continue;
         }
-        if (next !== sentWaypoint) {
+        const current = Date.now();
+        if (lastObserved?.x !== x || lastObserved?.y !== y) {
+          lastObserved = observerPosition;
+          lastProgress = current;
+        }
+        if (next !== sentWaypoint || current - Math.max(lastSent, lastProgress) >= 650) {
+          if (next === sentWaypoint) retries++;
           sentWaypoint = next;
+          lastSent = current;
           send(index, ++sequence, next);
         }
         await sleep(40);
@@ -2370,6 +2657,7 @@ test('Studio eight-office load converges for twenty and isolates three decoded a
         tile: tile(stream.participants.get(id)!.position),
         remainingWaypoints: route.length,
         sentWaypoints: sequence,
+        retries,
       });
       if (route.length)
         throw new Error(
@@ -2452,14 +2740,14 @@ test('Studio eight-office load converges for twenty and isolates three decoded a
       expect([...stream.participants.entries()].sort()).toEqual([...settled.entries()].sort());
     const expectedTiles = [...goals, ...rawGoals].map(({ tx, ty }) => [tx, ty]);
     const actualTiles = ids.map((id) => tile(settled.get(id)!.position));
-    const areaIds = orthogonal
+    const areaIds = campusHall
       ? [
           'large',
           'large',
-          'private-office-1',
-          'private-office-1',
           'private-office-2',
           'private-office-2',
+          null,
+          null,
           'private-office-5',
           null,
           'private-office-3',
@@ -2468,35 +2756,58 @@ test('Studio eight-office load converges for twenty and isolates three decoded a
           'private-office-6',
           'private-office-7',
           'private-office-8',
+          'private-office-9',
+          'private-office-10',
+          'private-office-15',
+          'private-office-16',
           null,
-          null,
-          null,
-          null,
-          'reception',
           'reception',
         ]
-      : [
-          'small',
-          'small',
-          'large',
-          'large',
-          'team-studio',
-          'team-studio',
-          'private-office-5',
-          null,
-          'private-office-1',
-          'private-office-2',
-          'private-office-3',
-          'private-office-4',
-          'private-office-6',
-          'private-office-7',
-          'private-office-8',
-          'garden',
-          'lounge',
-          'desks',
-          'reception',
-          'reception',
-        ];
+      : orthogonal
+        ? [
+            'large',
+            'large',
+            'private-office-1',
+            'private-office-1',
+            'private-office-2',
+            'private-office-2',
+            'private-office-5',
+            null,
+            'private-office-3',
+            'private-office-4',
+            'private-office-5',
+            'private-office-6',
+            'private-office-7',
+            'private-office-8',
+            null,
+            null,
+            null,
+            null,
+            'reception',
+            'reception',
+          ]
+        : [
+            'small',
+            'small',
+            'large',
+            'large',
+            'team-studio',
+            'team-studio',
+            'private-office-5',
+            null,
+            'private-office-1',
+            'private-office-2',
+            'private-office-3',
+            'private-office-4',
+            'private-office-6',
+            'private-office-7',
+            'private-office-8',
+            'garden',
+            'lounge',
+            'desks',
+            'reception',
+            'reception',
+          ];
     const placements = published.layout as WorkspaceLayoutPlacement[];
     const inside = (
       [tx, ty]: readonly [number, number],
@@ -2515,11 +2826,17 @@ test('Studio eight-office load converges for twenty and isolates three decoded a
       const actual = actualTiles[index]!;
       if (areaId === null) {
         expect(
-          getWorkspaceLayoutProfile(preset).corridors.some((region) => inside(actual, region)),
+          getWorkspaceLayoutProfile(preset, placements).corridors.some((region) =>
+            inside(actual, region),
+          ),
         ).toBe(true);
       } else {
         const placement = placements.find(({ id }) => id === areaId)!;
-        const { width, height } = getWorkspaceLayoutTemplate(placement.templateId, preset);
+        const { width, height } = getWorkspaceLayoutTemplate(
+          placement.templateId,
+          preset,
+          placement.origin,
+        );
         expect(inside(actual, { ...placement.origin, width, height })).toBe(true);
       }
       if (index < pages.length) expect(actual).toEqual(expectedTiles[index]);
@@ -2531,9 +2848,43 @@ test('Studio eight-office load converges for twenty and isolates three decoded a
         : [{ index, expected, actual }];
     });
     report.tileDeviations = tileDeviations;
+    if (campusHall) {
+      const expectedPositions = [...goals, ...rawGoals].map(({ tx, ty }) => ({
+        x: (tx + 0.5) * 32,
+        y: (ty + 0.5) * 32,
+      }));
+      report.positionMatrix = {
+        participants: ids,
+        expectedPositions,
+        viewers: streams.map(({ participants }, viewerIndex) => ({
+          viewerIndex,
+          viewerId: ids[viewerIndex],
+          positions: ids.map((id) => participants.get(id)!.position),
+        })),
+      };
+      for (const [viewerIndex, stream] of streams.entries()) {
+        expect
+          .soft(
+            ids.map((id) => stream.participants.get(id)!.position),
+            `Exact tile-center positions as seen by viewer ${viewerIndex + 1}`,
+          )
+          .toEqual(expectedPositions);
+      }
+    }
     if (tileDeviations.length)
       console.log('Final tile deviations within expected areas:', tileDeviations);
 
+    const canvasTolerance = campusHall
+      ? Math.max(
+          1,
+          ...(await Promise.all(
+            pages.map(
+              async (page) =>
+                0.5 / Number((await studioMap(page).getAttribute('data-render-scale')) ?? 1),
+            ),
+          )),
+        ) + 0.01
+      : 1.01;
     const canvas: Array<{
       matching: number;
       frames: number;
@@ -2543,6 +2894,7 @@ test('Studio eight-office load converges for twenty and isolates three decoded a
       drawCount: number;
       worstAxisErrorPx: number;
       finalFeet: Point[];
+      backing: { width: number; height: number; scale: number };
     }> = [];
     const positions = [...settled.values()].map(({ position }) => position);
     const frameTimelines: { actorId: string; draws: CanvasSample[]; raf: number[] }[] = [];
@@ -2565,7 +2917,8 @@ test('Studio eight-office load converges for twenty and isolates three decoded a
       let worstAxisErrorPx = 0;
       for (const position of positions) {
         const index = unmatched.findIndex(
-          ({ x, y }) => Math.max(Math.abs(x - position.x), Math.abs(y - position.y)) <= 1.01,
+          ({ x, y }) =>
+            Math.max(Math.abs(x - position.x), Math.abs(y - position.y)) <= canvasTolerance,
         );
         if (index >= 0) {
           matching++;
@@ -2584,6 +2937,11 @@ test('Studio eight-office load converges for twenty and isolates three decoded a
         drawCount: last.length,
         worstAxisErrorPx,
         finalFeet: last,
+        backing: await studioMap(page).evaluate((element: HTMLCanvasElement) => ({
+          width: element.width,
+          height: element.height,
+          scale: Number(element.dataset.renderScale ?? 1),
+        })),
         visibility,
         frames: duringMovement.length,
         changedPositionFrames: duringMovement.slice(1).filter(({ points }, index) => {
@@ -2650,7 +3008,7 @@ test('Studio eight-office load converges for twenty and isolates three decoded a
       ),
       motion,
       canvas,
-      renderer: { browser: browser.version(), toleranceWorldPxPerAxis: 1.01 },
+      renderer: { browser: browser.version(), toleranceWorldPxPerAxis: canvasTolerance },
     };
     if (traceMotion) {
       const timeline = testInfo.outputPath('studio-motion-timeline.json');
@@ -2764,7 +3122,11 @@ test('Studio eight-office load converges for twenty and isolates three decoded a
       }
     }
     const decoded = audioBefore.at(-1)!.decoded;
-    decoded.forEach(({ activeSamples }) => expect(activeSamples).toBeGreaterThan(8));
+    decoded.forEach(({ activeSamples }, index) => {
+      expect(activeSamples).toBeGreaterThan(8);
+      if (campusHall)
+        expect(activeSamples - audioBefore[0]!.decoded[index]!.activeSamples).toBeGreaterThan(8);
+    });
     for (const page of pages.slice(6)) {
       await expect(page.locator('.office-voice-status')).not.toContainText(
         'In a 2-person conversation',
@@ -2796,7 +3158,11 @@ test('Studio eight-office load converges for twenty and isolates three decoded a
     await pages[0]!.screenshot({ path: testInfo.outputPath('studio-load-small.png') });
     await pages[4]!.screenshot({ path: testInfo.outputPath('studio-load-team.png') });
     const meetingListener = pages[0]!;
-    const exit = orthogonal ? { tx: 21, ty: 22 } : { tx: 13, ty: 21 };
+    const exit = campusHall
+      ? { tx: 18, ty: 25 }
+      : orthogonal
+        ? { tx: 21, ty: 22 }
+        : { tx: 13, ty: 21 };
     await studioClick(pages[1]!, exit.tx, exit.ty);
     await expect(studioMap(pages[1]!)).toHaveAttribute('data-local-tile', `${exit.tx},${exit.ty}`);
     await expect(audio(meetingListener)).toHaveCount(0);
@@ -2820,6 +3186,32 @@ test('Studio eight-office load converges for twenty and isolates three decoded a
         playing: expect.any(Boolean),
       },
     ]);
+    if (campusHall) {
+      const privateListener = pages[2]!;
+      const privateTalker = pages[3]!;
+      const exitStartedAt = Date.now();
+      await studioClick(privateTalker, 7, 33);
+      await expect(studioMap(privateTalker)).toHaveAttribute('data-local-tile', '7,33');
+      await expect(audio(privateListener)).toHaveCount(0);
+      await expect
+        .poll(async () => (await readRemoteAudioProbe(privateListener)).currentSilentMs, {
+          timeout: 10_000,
+        })
+        .toBeGreaterThan(450);
+      expect((await identities(privateTalker)).map(({ identity }) => identity)).not.toContain(
+        ids[2],
+      );
+      audioReport.privateExit = {
+        elapsedMs: Date.now() - exitStartedAt,
+        listener: await readRemoteAudioProbe(privateListener),
+        listenerSubscriptions: await identities(privateListener),
+        exitedSubscriptions: await identities(privateTalker),
+        activeWorldReceivers: streams.filter(
+          ({ participants, lifecycle }) => participants.size === 20 && lifecycle.length === 0,
+        ).length,
+      };
+      expect(audioReport.privateExit).toMatchObject({ activeWorldReceivers: 20 });
+    }
     expect(streams.every(({ participants }) => participants.size === 20)).toBe(true);
     expect(sockets.every(({ connected }) => connected)).toBe(true);
     await Promise.all(
@@ -2840,13 +3232,17 @@ test('Studio eight-office load converges for twenty and isolates three decoded a
     expect(canvas.map(({ matching }) => matching)).toEqual(Array(8).fill(20));
     const walker = pages[4]!;
     await walker.getByRole('button', { name: 'Opt out of nearby voice' }).click();
-    const collisionProbe = orthogonal
-      ? { tx: 32, ty: 14, arrow: 'ArrowUp' }
-      : { tx: 26, ty: 15, arrow: 'ArrowLeft' };
+    const collisionProbe = campusHall
+      ? { tx: 3, ty: 33, arrow: 'ArrowDown' }
+      : orthogonal
+        ? { tx: 32, ty: 14, arrow: 'ArrowUp' }
+        : { tx: 26, ty: 15, arrow: 'ArrowLeft' };
     const collisionTile = `${collisionProbe.tx},${collisionProbe.ty}`;
-    const chair = orthogonal
-      ? { tx: 31, ty: 14, seatId: 'private-office-2-furniture:0' }
-      : { tx: 22, ty: 17, seatId: 'team-studio-furniture:0' };
+    const chair = campusHall
+      ? { tx: 4, ty: 37, seatId: 'private-office-2-furniture:0' }
+      : orthogonal
+        ? { tx: 31, ty: 14, seatId: 'private-office-2-furniture:0' }
+        : { tx: 22, ty: 17, seatId: 'team-studio-furniture:0' };
     await studioClick(walker, collisionProbe.tx, collisionProbe.ty);
     await expect(studioMap(walker)).toHaveAttribute('data-local-tile', collisionTile, {
       timeout: 12_000,
@@ -2873,7 +3269,11 @@ test('Studio eight-office load converges for twenty and isolates three decoded a
       .getByRole('button', { name: new RegExp(accounts[1]!.account.displayName) })
       .click();
     await walker.getByRole('button', { name: 'Go to', exact: true }).click();
-    const destination = orthogonal ? { tx: 18, ty: 25 } : { tx: 10, ty: 22 };
+    const destination = campusHall
+      ? { tx: 16, ty: 28 }
+      : orthogonal
+        ? { tx: 18, ty: 25 }
+        : { tx: 10, ty: 22 };
     await studioClick(pages[1]!, destination.tx, destination.ty);
     await expect(studioMap(pages[1]!)).toHaveAttribute(
       'data-local-tile',
@@ -2891,7 +3291,11 @@ test('Studio eight-office load converges for twenty and isolates three decoded a
     });
     await expect(studioMap(walker)).toHaveAttribute(
       'data-local-tile',
-      orthogonal ? /^(17,25|19,25|18,24|18,26)$/ : /^(9,22|11,22|10,21|10,23)$/,
+      campusHall
+        ? /^(15,28|17,28|16,27|16,29)$/
+        : orthogonal
+          ? /^(17,25|19,25|18,24|18,26)$/
+          : /^(9,22|11,22|10,21|10,23)$/,
     );
     if (orthogonal) {
       await walker.getByRole('button', { name: 'Follow me', exact: true }).click();

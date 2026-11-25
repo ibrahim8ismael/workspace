@@ -8,6 +8,7 @@ import {
   generateWorkspaceLayoutPreset,
   getWorkspaceLayoutTemplate,
   getWorkspaceLayoutProfile,
+  usesSquareStudioOffices,
   moveWorkspaceLayoutPlacement,
   resizeWorkspaceLayoutPrivateOffices,
   validWorkspaceLayoutOrigins,
@@ -43,7 +44,7 @@ export function WorkspaceMapEditor({ api, workspace, onPublished }: Props) {
   const [placements, setPlacements] = useState<readonly Placement[]>([]);
   const [selectedId, setSelectedId] = useState('');
   const [preset, setPreset] = useState<WorkspaceLayoutPresetId>();
-  const [presetChoice, setPresetChoice] = useState<WorkspaceLayoutPresetId>('studio-orthogonal');
+  const [presetChoice, setPresetChoice] = useState<WorkspaceLayoutPresetId>('repo-campus-hall');
   const [countInput, setCountInput] = useState('');
   const [moduleName, setModuleName] = useState<string>();
   const [confirmReplacement, setConfirmReplacement] = useState(false);
@@ -66,12 +67,17 @@ export function WorkspaceMapEditor({ api, workspace, onPublished }: Props) {
   const { id, officeId } = workspace;
   const selected = placements.find((placement) => placement.id === selectedId);
   const visiblePreset = replacement?.preset ?? preset;
-  const { size } = getWorkspaceLayoutProfile(visiblePreset);
+  const { size } = getWorkspaceLayoutProfile(visiblePreset, replacement?.placements ?? placements);
   const width = size.width * tileSize;
   const height = size.height * tileSize;
   const officeCount = placements.filter(({ templateId }) => templateId === 'private-office').length;
-  const editableTemplates = preset ? presetTemplates : compactTemplates;
-  const selectedFixed = preset === 'studio-orthogonal' && selected?.id === 'large';
+  const editableTemplates =
+    preset === 'studio-expandable' || preset === 'repo-campus' || preset === 'repo-campus-hall'
+      ? (['private-office'] as const)
+      : preset
+        ? presetTemplates
+        : compactTemplates;
+  const selectedFixed = usesSquareStudioOffices(preset) && selected?.id === 'large';
   const moving =
     cursor &&
     selected &&
@@ -110,7 +116,7 @@ export function WorkspaceMapEditor({ api, workspace, onPublished }: Props) {
         setSnapshot(next);
         setPlacements(next.placements);
         setPreset(next.preset);
-        setPresetChoice(next.preset ?? 'studio-orthogonal');
+        setPresetChoice('repo-campus-hall');
         setCountInput('');
         setModuleName(undefined);
         setReplacement(null);
@@ -141,6 +147,15 @@ export function WorkspaceMapEditor({ api, workspace, onPublished }: Props) {
   }
 
   function add(templateId: EditableTemplate) {
+    if (
+      (preset === 'studio-expandable' ||
+        preset === 'repo-campus' ||
+        preset === 'repo-campus-hall') &&
+      templateId === 'private-office'
+    ) {
+      changeCount(officeCount + 1);
+      return;
+    }
     const [origin] = validWorkspaceLayoutOrigins(placements, templateId, undefined, preset);
     if (!origin) {
       setError('There is no open space for that module along the corridor.');
@@ -163,7 +178,7 @@ export function WorkspaceMapEditor({ api, workspace, onPublished }: Props) {
       setStatus('The module stayed in its current position.');
       return;
     }
-    apply(moveWorkspaceLayoutPlacement(placements, selected.id, origin), selected, 'moved');
+    apply(moveWorkspaceLayoutPlacement(placements, selected.id, origin, preset), selected, 'moved');
   }
 
   function tileAt(event: MouseEvent<SVGSVGElement>) {
@@ -220,9 +235,8 @@ export function WorkspaceMapEditor({ api, workspace, onPublished }: Props) {
     });
   }
 
-  function changeCount() {
+  function changeCount(count = Number(countInput || officeCount)) {
     if (!preset) return;
-    const count = Number(countInput || officeCount);
     if (count === officeCount) return;
     const candidate = resizeWorkspaceLayoutPrivateOffices(placements, count, preset);
     if (!candidate) {
@@ -364,7 +378,10 @@ export function WorkspaceMapEditor({ api, workspace, onPublished }: Props) {
                 disabled={busy}
                 onChange={(event) => setPresetChoice(event.target.value as WorkspaceLayoutPresetId)}
               >
-                <option value="studio-orthogonal">Studio · central meeting room</option>
+                <option value="repo-campus-hall">Office Campus · open hall</option>
+                <option value="repo-campus">Office Campus · original layout</option>
+                <option value="studio-expandable">Studio · expandable floor plan</option>
+                <option value="studio-orthogonal">Studio · fixed floor plan</option>
                 <option value="studio">Classic Studio · central team office</option>
                 <option value="startup">Startup · two wings</option>
                 <option value="corporate">Corporate · three wings</option>
@@ -395,7 +412,7 @@ export function WorkspaceMapEditor({ api, workspace, onPublished }: Props) {
                   type="button"
                   className="dashboard-secondary"
                   disabled={busy || !countInput || Number(countInput) === officeCount}
-                  onClick={changeCount}
+                  onClick={() => changeCount()}
                 >
                   Apply count
                 </button>

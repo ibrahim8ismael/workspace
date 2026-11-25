@@ -81,10 +81,10 @@ export function WorkspaceHome({
   const [companyName, setCompanyName] = useState('');
   const [slug, setSlug] = useState('');
   const [officeTemplate, setOfficeTemplate] = useState<WorkspaceLayoutPreset | 'svg'>(
-    'studio-orthogonal',
+    'repo-campus-hall',
   );
   const [privateOfficeCount, setPrivateOfficeCount] = useState<number>(
-    WORKSPACE_LAYOUT_PRESETS['studio-orthogonal'].defaultPrivateOffices,
+    WORKSPACE_LAYOUT_PRESETS['repo-campus-hall'].defaultPrivateOffices,
   );
   const [inviteCode, setInviteCode] = useState(invitationToken);
   const [companyQuery, setCompanyQuery] = useState('');
@@ -158,7 +158,7 @@ export function WorkspaceHome({
           )
         : DEFAULT_WORKSPACE_LAYOUT
       : [];
-  const previewSize = getWorkspaceLayoutProfile(preset).size;
+  const previewSize = getWorkspaceLayoutProfile(preset, pilotPreview).size;
 
   async function createCompany(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -185,8 +185,8 @@ export function WorkspaceHome({
       setCreateUncertain(false);
       setCompanyName('');
       setSlug('');
-      setOfficeTemplate('studio-orthogonal');
-      setPrivateOfficeCount(WORKSPACE_LAYOUT_PRESETS['studio-orthogonal'].defaultPrivateOffices);
+      setOfficeTemplate('repo-campus-hall');
+      setPrivateOfficeCount(WORKSPACE_LAYOUT_PRESETS['repo-campus-hall'].defaultPrivateOffices);
       closeDialog();
       onWorkspaces((rows) => [
         result.workspace,
@@ -530,8 +530,7 @@ export function WorkspaceHome({
                         setCreateUncertain(false);
                       }}
                     >
-                      <option value="studio-orthogonal">Studio · central meeting room</option>
-                      <option value="studio">Classic Studio · central team office</option>
+                      <option value="repo-campus-hall">Office Campus · open hall</option>
                       <option value="startup">Startup · two wings</option>
                       <option value="corporate">Corporate · three wings</option>
                       <option value="svg">Compact · four modules</option>

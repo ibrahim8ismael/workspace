@@ -43,7 +43,6 @@ interface OfficeSocketData {
   officeLeaseTimer?: ReturnType<typeof setTimeout>;
   officeLeaseExpiryTimer?: ReturnType<typeof setTimeout>;
   officeLeaseDeadline?: number;
-  officeLeaseOffsetMs?: number;
   officeLeaseTimings?: SocketPolicyTimings;
   officeMovementAttemptTimestamps?: number[];
   officeCommandAttemptTimestamps?: number[];
@@ -241,17 +240,23 @@ export class OfficeGateway
     socket: OfficeSocket,
     ticket: ConsumedOfficeTicket,
     leaseDeadline: number,
+    lastRequestStarted?: number,
   ) {
     if (socket.data.officeLeaseTimer) clearTimeout(socket.data.officeLeaseTimer);
     if (socket.data.officeLeaseExpiryTimer) clearTimeout(socket.data.officeLeaseExpiryTimer);
     socket.data.officeLeaseDeadline = leaseDeadline;
-    // Socket IDs are independent, so join bursts do not send every renewal query at once.
-    // Shorten the first interval to distribute the phase without extending any lease.
-    const offset = socket.data.officeLeaseOffsetMs;
-    socket.data.officeLeaseOffsetMs = 0;
-    const phase =
-      offset ??
-      Array.from(socket.id).reduce((hash, char) => (hash * 31 + char.charCodeAt(0)) % 400, 0);
+    const now = performance.now();
+    const policyInterval = OFFICE_LIMITS.socketPolicyCheckIntervalMs;
+    // Distribute fresh joins across the interval. A slow successful check must not
+    // spend its full duration and then wait another full interval before renewing.
+    const phase = Array.from(socket.id).reduce(
+      (hash, char) => (hash * 31 + char.charCodeAt(0)) % policyInterval,
+      0,
+    );
+    const delay =
+      lastRequestStarted === undefined
+        ? Math.max(100, phase)
+        : Math.max(500, lastRequestStarted + policyInterval - now);
     socket.data.officeLeaseExpiryTimer = setTimeout(
       () => {
         if (socket.connected && socket.data.officeLeaseDeadline === leaseDeadline) {
@@ -268,10 +273,7 @@ export class OfficeGateway
       () => {
         void this.checkAuthorizationLease(socket, ticket, leaseDeadline);
       },
-      Math.min(
-        OFFICE_LIMITS.socketPolicyCheckIntervalMs - phase,
-        Math.max(0, leaseDeadline - performance.now()),
-      ),
+      Math.min(delay, Math.max(0, leaseDeadline - now)),
     );
   }
 
@@ -310,13 +312,14 @@ export class OfficeGateway
         socket,
         ticket,
         requestStarted + OFFICE_LIMITS.maxAuthorizationLeaseMs,
+        requestStarted,
       );
     } catch {
       if (!socket.connected) return;
       if (performance.now() >= leaseDeadline) {
         this.endUnavailable(socket, 'authorization-renewal-query-error', requestStarted);
       } else {
-        this.scheduleAuthorizationCheck(socket, ticket, leaseDeadline);
+        this.scheduleAuthorizationCheck(socket, ticket, leaseDeadline, requestStarted);
       }
     }
   }
@@ -1061,10 +1064,9 @@ export class OfficeGateway
     const timer = setInterval(() => {
       const update = this.runtime.tick(officeId);
       if (update) {
-        this.namespace.to(update.roomId).emit('world:delta', worldDeltaSchema.parse(update.delta));
+        this.namespace.to(update.roomId).emit('world:delta', update.delta);
       }
       this.publishConversationState(workspaceId, officeId);
-      this.publishMeetingInvitationNotices();
       if (!this.runtime.hasOffice(officeId)) {
         this.stopSimulation(officeId);
         this.roomEvents.forgetOffice(workspaceId, officeId);

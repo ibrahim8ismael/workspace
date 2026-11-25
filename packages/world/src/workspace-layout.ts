@@ -183,10 +183,24 @@ export const WORKSPACE_LAYOUT_CORRIDORS: readonly TileRect[] = [
   { tx: 2, ty: 9, width: 45, height: 4 },
   { tx: 13, ty: 13, width: 4, height: 3 },
 ];
-export type WorkspaceLayoutPresetId = 'studio-orthogonal' | 'studio' | 'startup' | 'corporate';
+export type WorkspaceLayoutPresetId =
+  | 'repo-campus-hall'
+  | 'repo-campus'
+  | 'studio-expandable'
+  | 'studio-orthogonal'
+  | 'studio'
+  | 'startup'
+  | 'corporate';
 
 export const WORKSPACE_LAYOUT_PRESETS = {
-  'studio-orthogonal': { label: 'Studio', defaultPrivateOffices: 6, maxPrivateOffices: 8 },
+  'repo-campus-hall': { label: 'Campus Hall', defaultPrivateOffices: 4, maxPrivateOffices: 16 },
+  'repo-campus': { label: 'Office Campus', defaultPrivateOffices: 4, maxPrivateOffices: 16 },
+  'studio-expandable': { label: 'Studio', defaultPrivateOffices: 4, maxPrivateOffices: 16 },
+  'studio-orthogonal': {
+    label: 'Studio (fixed floor)',
+    defaultPrivateOffices: 6,
+    maxPrivateOffices: 8,
+  },
   studio: { label: 'Classic Studio', defaultPrivateOffices: 6, maxPrivateOffices: 8 },
   startup: { label: 'Startup', defaultPrivateOffices: 10, maxPrivateOffices: 13 },
   corporate: { label: 'Corporate', defaultPrivateOffices: 12, maxPrivateOffices: 21 },
@@ -250,6 +264,147 @@ const orthogonalSlots = [
   { tx: 7, ty: 19 },
   { tx: 29, ty: 19 },
 ];
+const expandableSlots = Array.from({ length: 4 }, (_, row) =>
+  [1, 29, 7, 35].map((tx) => ({ tx, ty: 11 + row * 8 })),
+).flat();
+
+export const WORKSPACE_REPO_CAMPUS_COURTYARD: TileRect = {
+  tx: 2,
+  ty: 2,
+  width: 16,
+  height: 8,
+};
+const campusCourtyardFurniture: readonly TileRect[] = [
+  { tx: 0, ty: 0, width: 3, height: 3 }, // Northwest trees
+  { tx: 13, ty: 0, width: 3, height: 3 }, // Northeast trees
+  { tx: 3, ty: 0, width: 4, height: 1 }, // West hedge
+  { tx: 9, ty: 0, width: 4, height: 1 }, // East hedge
+  { tx: 6, ty: 2, width: 4, height: 4 }, // Fountain
+  { tx: 3, ty: 5, width: 2, height: 2 }, // West bench
+  { tx: 11, ty: 5, width: 2, height: 2 }, // East bench
+];
+const campusMeeting = { tx: 20, ty: 6 };
+const campusReception = { tx: 3, ty: 26 };
+const campusSlots = Array.from({ length: 8 }, (_, column) =>
+  [8, 22].map((ty) => ({ tx: 35 + column * 6, ty })),
+).flat();
+
+export const WORKSPACE_REPO_CAMPUS_HALL_COURTYARD: TileRect = {
+  tx: 2,
+  ty: 0,
+  width: 16,
+  height: 8,
+};
+export const WORKSPACE_REPO_CAMPUS_HALL_SOUTH_OFFICE_ROW = 34;
+const campusHallReception = { tx: 2, ty: 25 };
+const campusHallMeeting = { tx: 12, ty: 17 };
+const campusHallSlots = [2, 8, 20, 26, 32, 38, 44, 50].flatMap((tx) =>
+  [8, WORKSPACE_REPO_CAMPUS_HALL_SOUTH_OFFICE_ROW].map((ty) => ({ tx, ty })),
+);
+
+function campusHallProfile(placements?: readonly WorkspaceLayoutPlacement[]) {
+  const width = Math.max(
+    26,
+    ...(placements ?? []).flatMap(({ origin, templateId }) =>
+      templateId === 'private-office' &&
+      campusHallSlots.some((slot) => tileKey(slot) === tileKey(origin))
+        ? [origin.tx + 8]
+        : [],
+    ),
+  );
+  return {
+    size: { width, height: 42 },
+    receptionOrigin: campusHallReception,
+    corridors: [
+      WORKSPACE_REPO_CAMPUS_HALL_COURTYARD,
+      { tx: 14, ty: 8, width: 6, height: 6 },
+      { tx: 1, ty: 14, width: width - 2, height: 3 },
+      { tx: 1, ty: 17, width: 11, height: 8 },
+      { tx: 24, ty: 17, width: width - 25, height: 8 },
+      { tx: 1, ty: 25, width: 1, height: 8 },
+      { tx: 12, ty: 25, width: width - 13, height: 8 },
+      { tx: 1, ty: 33, width: width - 2, height: 1 },
+    ],
+  };
+}
+
+export function usesSquareStudioOffices(preset?: WorkspaceLayoutPresetId) {
+  return (
+    preset === 'studio-orthogonal' ||
+    preset === 'studio-expandable' ||
+    preset === 'repo-campus' ||
+    preset === 'repo-campus-hall'
+  );
+}
+
+function growingOfficeSlots(preset?: WorkspaceLayoutPresetId) {
+  if (preset === 'repo-campus-hall') return campusHallSlots;
+  if (preset === 'repo-campus') return campusSlots;
+  if (preset === 'studio-expandable') return expandableSlots;
+  return null;
+}
+
+function campusProfile(placements?: readonly WorkspaceLayoutPlacement[]) {
+  const width = Math.max(
+    43,
+    ...(placements ?? [])
+      .filter(({ templateId }) => templateId === 'private-office')
+      .map(({ origin }) => {
+        const slot = campusSlots.find(({ tx, ty }) => tx === origin.tx && ty === origin.ty);
+        return slot ? slot.tx + 8 : 0;
+      }),
+  );
+  return {
+    size: { width, height: 35 },
+    receptionOrigin: campusReception,
+    corridors: [
+      WORKSPACE_REPO_CAMPUS_COURTYARD,
+      { tx: 7, ty: 10, width: 4, height: 4 },
+      { tx: 1, ty: 14, width: width - 2, height: 4 },
+      { tx: 6, ty: 18, width: 5, height: 8 },
+      { tx: 32, ty: 18, width: 3, height: 10 },
+      { tx: 32, ty: 28, width: width - 33, height: 3 },
+    ],
+  };
+}
+
+function expandableStudioProfile(placements?: readonly WorkspaceLayoutPlacement[]) {
+  const rows = Math.max(
+    1,
+    ...(placements ?? []).map(({ origin, templateId }) => {
+      if (templateId !== 'private-office') return 0;
+      const index = expandableSlots.findIndex(({ tx, ty }) => tx === origin.tx && ty === origin.ty);
+      return Math.ceil((index + 1) / 4);
+    }),
+  );
+  const receptionY = Math.max(25, 12 + rows * 8);
+  const corridors: TileRect[] = [
+    WORKSPACE_STUDIO_OPEN_AREA,
+    { tx: 2, ty: 8, width: 38, height: 3 },
+    { tx: 13, ty: 11, width: 2, height: receptionY - 11 },
+    { tx: 27, ty: 11, width: 2, height: receptionY - 11 },
+    { tx: 15, ty: 22, width: 12, height: receptionY - 22 },
+  ];
+  for (let row = 0; row < rows; row += 1) {
+    const ty = 17 + 8 * row;
+    corridors.push({ tx: 1, ty, width: 12, height: 2 }, { tx: 29, ty, width: 12, height: 2 });
+  }
+  return {
+    size: { width: 42, height: receptionY + 9 },
+    corridors,
+    receptionOrigin: { tx: 16, ty: receptionY },
+  };
+}
+
+function fitExpandableReception(placements: WorkspaceLayoutPlacement[]) {
+  const { receptionOrigin } = expandableStudioProfile(placements);
+  return placements.map((room) =>
+    room.templateId === 'reception' && tileKey(room.origin) !== tileKey(receptionOrigin)
+      ? { ...room, origin: receptionOrigin }
+      : room,
+  );
+}
+
 const squareOffice: WorkspaceLayoutTemplate = {
   ...WORKSPACE_LAYOUT_TEMPLATES['private-office'],
   width: 6,
@@ -262,10 +417,14 @@ const squareOffice: WorkspaceLayoutTemplate = {
 export function getWorkspaceLayoutTemplate(
   id: WorkspaceLayoutTemplateId,
   preset?: WorkspaceLayoutPresetId,
+  origin?: TilePoint,
 ): WorkspaceLayoutTemplate {
-  return id === 'private-office' && preset === 'studio-orthogonal'
-    ? squareOffice
-    : WORKSPACE_LAYOUT_TEMPLATES[id];
+  if (id !== 'private-office' || !usesSquareStudioOffices(preset))
+    return WORKSPACE_LAYOUT_TEMPLATES[id];
+  if (preset === 'repo-campus-hall' && origin?.ty === WORKSPACE_REPO_CAMPUS_HALL_SOUTH_OFFICE_ROW) {
+    return { ...squareOffice, door: { side: 'north', offset: 2 } };
+  }
+  return squareOffice;
 }
 
 const workspaceLayoutProfiles = {
@@ -280,7 +439,20 @@ const workspaceLayoutProfiles = {
   },
 };
 
-export function getWorkspaceLayoutProfile(preset?: WorkspaceLayoutPresetId) {
+type WorkspaceLayoutProfile = {
+  size: { width: number; height: number };
+  corridors: readonly TileRect[];
+  receptionOrigin: TilePoint;
+  landscape?: TileRect;
+};
+
+export function getWorkspaceLayoutProfile(
+  preset?: WorkspaceLayoutPresetId,
+  placements?: readonly WorkspaceLayoutPlacement[],
+): WorkspaceLayoutProfile {
+  if (preset === 'repo-campus-hall') return campusHallProfile(placements);
+  if (preset === 'repo-campus') return campusProfile(placements);
+  if (preset === 'studio-expandable') return expandableStudioProfile(placements);
   return workspaceLayoutProfiles[preset ?? 'legacy'];
 }
 
@@ -294,6 +466,43 @@ export function generateWorkspaceLayoutPreset(
     count > WORKSPACE_LAYOUT_PRESETS[preset].maxPrivateOffices
   ) {
     throw new RangeError('Choose a private office count within the preset capacity.');
+  }
+  if (preset === 'repo-campus-hall') {
+    return [
+      { id: 'reception', templateId: 'reception', origin: campusHallReception },
+      { id: 'large', templateId: 'large', origin: campusHallMeeting },
+      ...campusHallSlots.slice(0, count).map((origin, index) => ({
+        id: `private-office-${index + 1}`,
+        templateId: 'private-office' as const,
+        origin,
+      })),
+    ];
+  }
+  if (preset === 'repo-campus') {
+    return [
+      { id: 'reception', templateId: 'reception', origin: campusReception },
+      { id: 'large', templateId: 'large', origin: campusMeeting },
+      ...campusSlots.slice(0, count).map((origin, index) => ({
+        id: `private-office-${index + 1}`,
+        templateId: 'private-office' as const,
+        origin,
+      })),
+    ];
+  }
+  if (preset === 'studio-expandable') {
+    return fitExpandableReception([
+      {
+        id: 'reception',
+        templateId: 'reception',
+        origin: expandableStudioProfile().receptionOrigin,
+      },
+      { id: 'large', templateId: 'large', origin: orthogonalMeeting },
+      ...expandableSlots.slice(0, count).map((origin, index) => ({
+        id: `private-office-${index + 1}`,
+        templateId: 'private-office' as const,
+        origin,
+      })),
+    ]);
   }
   if (preset === 'studio-orthogonal') {
     return [
@@ -389,7 +598,7 @@ function roomBounds(
   { origin, templateId }: WorkspaceLayoutPlacement,
   preset?: WorkspaceLayoutPresetId,
 ): TileRect {
-  const { width, height } = getWorkspaceLayoutTemplate(templateId, preset);
+  const { width, height } = getWorkspaceLayoutTemplate(templateId, preset, origin);
   return { ...origin, width, height };
 }
 
@@ -427,7 +636,7 @@ function roomPlacementError(
     return 'The room must fit inside the plot.';
   }
   const bounds = { tx, ty, width, height };
-  if ('landscape' in profile && overlaps(bounds, profile.landscape)) {
+  if (profile.landscape && overlaps(bounds, profile.landscape)) {
     return 'The room cannot cover the garden landscaping.';
   }
   if (profile.corridors.some((segment) => overlaps(bounds, segment))) {
@@ -456,10 +665,23 @@ export function validWorkspaceLayoutOrigins(
   preset?: WorkspaceLayoutPresetId,
 ): TilePoint[] {
   const template = getWorkspaceLayoutTemplate(templateId, preset);
-  const profile = getWorkspaceLayoutProfile(preset);
+  const profile = getWorkspaceLayoutProfile(preset, placements);
   const occupied = placements
     .filter(({ id }) => id !== moveId)
     .map((room) => roomBounds(room, preset));
+  const growingSlots = growingOfficeSlots(preset);
+  if (growingSlots) {
+    if (templateId !== 'private-office') return [];
+    return growingSlots.filter(
+      (origin) =>
+        !roomPlacementError(
+          getWorkspaceLayoutTemplate(templateId, preset, origin),
+          origin,
+          occupied,
+          profile,
+        ),
+    );
+  }
   const valid: TilePoint[] = [];
   for (let ty = 0; ty <= profile.size.height - template.height; ty += 1) {
     for (let tx = 0; tx <= profile.size.width - template.width; tx += 1) {
@@ -489,12 +711,14 @@ export function moveWorkspaceLayoutPlacement(
   placements: readonly WorkspaceLayoutPlacement[],
   id: string,
   origin: TilePoint,
+  preset?: WorkspaceLayoutPresetId,
 ): WorkspaceLayoutPlacement[] {
-  return placements.map((room) =>
+  const moved = placements.map((room) =>
     id !== 'reception' && id !== 'team-studio' && room.id === id
       ? { ...room, origin: { ...origin } }
       : room,
   );
+  return preset === 'studio-expandable' ? fitExpandableReception(moved) : moved;
 }
 
 export function resizeWorkspaceLayoutPrivateOffices(
@@ -511,12 +735,22 @@ export function resizeWorkspaceLayoutPrivateOffices(
   const offices = placements.filter(({ templateId }) => templateId === 'private-office');
   if (count <= offices.length) {
     const retained = new Set(offices.slice(0, count).map(({ id }) => id));
-    return placements.filter(
+    const filtered = placements.filter(
       ({ id, templateId }) => templateId !== 'private-office' || retained.has(id),
     );
+    return preset === 'studio-expandable' ? fitExpandableReception(filtered) : filtered;
   }
 
   let result = [...placements];
+  const growingSlots = growingOfficeSlots(preset);
+  if (growingSlots) {
+    const used = new Set(offices.map(({ origin }) => tileKey(origin)));
+    const free = growingSlots.filter((origin) => !used.has(tileKey(origin)));
+    for (const origin of free.slice(0, count - offices.length)) {
+      result = addWorkspaceLayoutPlacement(result, 'private-office', origin);
+    }
+    return preset === 'studio-expandable' ? fitExpandableReception(result) : result;
+  }
   const presetSlots = generateWorkspaceLayoutPreset(
     preset,
     WORKSPACE_LAYOUT_PRESETS[preset].maxPrivateOffices,
@@ -545,10 +779,16 @@ function assertWorkspaceLayout(
   ) {
     throw new RangeError('Reception must remain in its original position.');
   }
-  if (preset === 'studio-orthogonal') {
+  if (usesSquareStudioOffices(preset)) {
     const meeting = placements.find(({ id }) => id === 'large');
-    if (meeting?.templateId !== 'large' || tileKey(meeting.origin) !== tileKey(orthogonalMeeting))
-      throw new RangeError('Keep the large meeting room at the center of the floor.');
+    const meetingOrigin =
+      preset === 'repo-campus-hall'
+        ? campusHallMeeting
+        : preset === 'repo-campus'
+          ? campusMeeting
+          : orthogonalMeeting;
+    if (meeting?.templateId !== 'large' || tileKey(meeting.origin) !== tileKey(meetingOrigin))
+      throw new RangeError('Keep the large meeting room in its original position.');
   }
   const studio = placements.find(({ templateId }) => templateId === 'team-studio');
   if (
@@ -578,6 +818,7 @@ function assertWorkspaceLayout(
   }
   const occupied: TileRect[] = [];
   const seen = new Set<string>();
+  const growingSlots = growingOfficeSlots(preset);
   for (const placement of placements) {
     const { id, origin, templateId } = placement;
     const validNumberedId =
@@ -592,8 +833,16 @@ function assertWorkspaceLayout(
       throw new RangeError('The layout contains an invalid or duplicate room.');
     }
     seen.add(id);
+    if (growingSlots && id !== 'reception' && id !== 'large') {
+      if (
+        templateId !== 'private-office' ||
+        !growingSlots.some((slot) => tileKey(slot) === tileKey(origin))
+      ) {
+        throw new RangeError('Place private offices in the reserved wing slots.');
+      }
+    }
     const error = roomPlacementError(
-      getWorkspaceLayoutTemplate(templateId, preset),
+      getWorkspaceLayoutTemplate(templateId, preset, origin),
       origin,
       occupied,
       profile,
@@ -610,7 +859,7 @@ function roomEdges(
   bounds: { width: number; height: number },
   preset?: WorkspaceLayoutPresetId,
 ) {
-  const template = getWorkspaceLayoutTemplate(room.templateId, preset);
+  const template = getWorkspaceLayoutTemplate(room.templateId, preset, room.origin);
   const { width, height, door, additionalDoor } = template;
   const doors = additionalDoor ? [door, additionalDoor] : [door];
   const addEdge = (from: TilePoint, to: TilePoint) => {
@@ -644,7 +893,7 @@ export function compileWorkspaceLayout(
   placements: readonly WorkspaceLayoutPlacement[],
   preset?: WorkspaceLayoutPresetId,
 ) {
-  const profile = getWorkspaceLayoutProfile(preset);
+  const profile = getWorkspaceLayoutProfile(preset, placements);
   const bounds = {
     width: profile.size.width * TILE_SIZE_PX,
     height: profile.size.height * TILE_SIZE_PX,
@@ -658,16 +907,27 @@ export function compileWorkspaceLayout(
   const blockedTiles = rectTiles({ tx: 0, ty: 0, ...profile.size }).filter(
     (tile) => !floor.has(tileKey(tile)),
   );
+  if (preset === 'repo-campus' || preset === 'repo-campus-hall') {
+    const courtyard =
+      preset === 'repo-campus-hall'
+        ? WORKSPACE_REPO_CAMPUS_HALL_COURTYARD
+        : WORKSPACE_REPO_CAMPUS_COURTYARD;
+    blockedTiles.push(
+      ...campusCourtyardFurniture.flatMap(rectTiles).map((tile) => offset(courtyard, tile)),
+    );
+  }
   const edges = new Map<string, readonly [TilePoint, TilePoint]>();
   for (const placement of placements) roomEdges(placement, blockedTiles, edges, bounds, preset);
   const blockedEdges = [...edges.values()];
   const furniture = placements.map(({ id, templateId, origin }) => ({
     id,
     label: WORKSPACE_LAYOUT_TEMPLATES[templateId].label,
-    tiles: getWorkspaceLayoutTemplate(templateId, preset)
+    tiles: getWorkspaceLayoutTemplate(templateId, preset, origin)
       .furniture.flatMap(rectTiles)
       .map((tile) => offset(origin, tile)),
-    seats: getWorkspaceLayoutTemplate(templateId, preset).seats.map((tile) => offset(origin, tile)),
+    seats: getWorkspaceLayoutTemplate(templateId, preset, origin).seats.map((tile) =>
+      offset(origin, tile),
+    ),
   }));
   const collision = createTileCollision({
     blockedEdges,
@@ -714,7 +974,7 @@ export function compileWorkspaceLayout(
     placements.some(
       ({ origin, templateId }) =>
         !validated.isReachable(
-          offset(origin, getWorkspaceLayoutTemplate(templateId, preset).arrival),
+          offset(origin, getWorkspaceLayoutTemplate(templateId, preset, origin).arrival),
         ),
     )
   ) {

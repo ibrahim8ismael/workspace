@@ -1,0 +1,180 @@
+.workspace-map-entry {
+  margin-top: 12px;
+}
+
+.workspace-map-editor {
+  margin-top: 16px;
+  border-top: 1px solid #d9e2d9;
+  padding-top: 16px;
+}
+
+.workspace-map-header,
+.workspace-map-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.workspace-map-header {
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.workspace-map-editor .workspace-map-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(148px, 24%);
+  gap: 12px;
+  align-items: start;
+}
+
+.workspace-map-viewport {
+  min-width: 0;
+  max-height: 620px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.workspace-map-canvas {
+  display: block;
+  width: 100%;
+  background: #e4eae1;
+  border: 1px solid #d1ded2;
+  border-radius: 8px;
+  cursor: crosshair;
+}
+
+.workspace-map-canvas:focus-visible {
+  outline: 2px solid #2b7762;
+  outline-offset: 2px;
+}
+
+.workspace-map-canvas text {
+  fill: #344a41;
+  font-size: 16px;
+  font-weight: 650;
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+.workspace-map-canvas text.workspace-preset-label {
+  font-size: 21px;
+}
+
+.workspace-map-selection,
+.workspace-map-invalid,
+.workspace-map-anchor {
+  stroke-width: 1.5px;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.workspace-map-selection {
+  fill: #33967330;
+  stroke: #23705d;
+}
+
+.workspace-map-invalid {
+  fill: #bd5d442f;
+  stroke: #9d432f;
+  stroke-dasharray: 5 4;
+}
+
+.workspace-map-anchor {
+  fill: #9ccd9f;
+  fill-opacity: 0.75;
+  stroke: #126249;
+}
+
+.workspace-map-tools {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.workspace-map-tools h3 {
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+
+.workspace-map-tools button {
+  justify-content: flex-start;
+  min-height: 38px;
+  text-align: left;
+}
+
+.workspace-map-tools label {
+  margin-top: 8px;
+}
+
+.workspace-map-tools select {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid #d1ded2;
+  border-radius: 6px;
+  padding: 4px 6px;
+  font: inherit;
+  background: #fff;
+  color: #344a41;
+}
+
+.workspace-map-editor > .space-settings-note {
+  margin: 10px 0;
+}
+
+@media (max-width: 640px) {
+  .workspace-map-editor .workspace-map-body {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-map-tools button {
+    min-height: 44px;
+  }
+}
+
+.workspace-map-config,
+.workspace-map-confirmation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: end;
+  margin-bottom: 12px;
+}
+
+.workspace-map-config label {
+  min-width: 140px;
+}
+
+.workspace-map-config input,
+.workspace-map-config select,
+.workspace-map-tools input,
+.dashboard-company-form select {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid #d1ded2;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font: inherit;
+  background: #fff;
+  color: #344a41;
+}
+
+.workspace-map-confirmation {
+  padding: 12px;
+  background: #f7ede1;
+}
+
+.workspace-map-confirmation p {
+  width: 100%;
+  margin: 0;
+}
+
+.workspace-map-creation-preview {
+  display: block;
+  width: 100%;
+  max-height: 180px;
+  border: 1px solid #d1ded2;
+  border-radius: 6px;
+  background: #e4eae1;
+}

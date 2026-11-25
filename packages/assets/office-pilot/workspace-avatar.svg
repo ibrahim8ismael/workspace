@@ -1,0 +1,134 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192" shape-rendering="crispEdges">
+  <title>Cartoon courier avatar, four directions with idle, two strides and seated poses</title>
+  <defs>
+    <g id="south-head">
+      <path fill="#2e3638" d="M17 3h14v2h4v4h3v11h-3v6h-5v2H18v-2h-5v-6h-3V10h3V6h4z"/>
+      <path fill="#53615a" d="M13 13h22v7h-3v5h-4v1h-9v-2h-4v-4h-2z"/>
+      <path fill="#ca8e6d" d="M13 16h22v5h-2v3h-4v2H19v-2h-4v-3h-2z"/>
+      <path fill="#f4c297" d="M15 15h18v6h-2v3H18v-2h-3z"/>
+      <path fill="#ffd0a1" d="M18 16h12v5H18z"/>
+      <path fill="#9c6956" d="M15 20h3v1h-3zm15 0h3v1h-3z"/>
+      <path fill="#473d3d" d="M16 16h5v1h-5zm11 0h5v1h-5z"/>
+      <path fill="#fff3dd" d="M17 17h4v3h-4zm10 0h4v3h-4z"/>
+      <path fill="#293e42" d="M19 17h2v3h-2zm8 0h2v3h-2z"/>
+      <path fill="#b9755a" d="M23 20h2v2h-2zm-1 3h4v1h-4z"/>
+      <path fill="#367370" d="M17 5h14v2h4v4h2v4H11v-4h3V7h3z"/>
+      <path fill="#509887" d="M18 5h12v2h4v4H15V8h3z"/>
+      <path fill="#7cb4a0" d="M19 6h8v2h-8zm-3 3h3v1h-3z"/>
+      <path fill="#285556" d="M12 12h25v3H12z"/>
+      <path fill="#e5bc78" d="M17 13h17v2h-3v1H16v-2h1z"/>
+      <path fill="#f3d39a" d="M18 13h10v1H18z"/>
+      <path fill="#e9c787" d="M23 8h4v3h-4z"/>
+      <path fill="#fff0c0" d="M24 8h2v1h-2z"/>
+    </g>
+    <g id="north-head">
+      <path fill="#2e3638" d="M17 3h14v2h4v4h3v11h-3v5h-5v3H18v-3h-5v-5h-3V10h3V6h4z"/>
+      <path fill="#594946" d="M13 14h22v7h-4v4H17v-4h-4z"/>
+      <path fill="#cd906f" d="M12 16h3v5h-2v-2h-1zm21 0h3v3h-1v2h-2zm-14 8h10v3H19z"/>
+      <path fill="#33706e" d="M17 5h14v2h4v4h2v6h-4v2H15v-2h-4v-6h3V7h3z"/>
+      <path fill="#539889" d="M17 6h13v2h4v5H14V9h3z"/>
+      <path fill="#83b6a1" d="M19 7h9v2h-9zm-3 3h3v2h-3z"/>
+      <path fill="#2c5557" d="M14 15h20v3H14z"/>
+      <path fill="#c8b487" d="M20 14h8v4h-8z"/>
+      <path fill="#729287" d="M21 15h6v2h-6z"/>
+      <path fill="#423b39" d="M16 18h3v4h4v2h-5v-2h-2zm13 0h3v4h-2v2h-5v-2h4z"/>
+    </g>
+    <g id="east-head">
+      <path fill="#2e3638" d="M15 3h14v2h5v4h3v5h3v4h-3v3h-3v4h-6v3H18v-2h-4v-4h-3V10h2V6h2z"/>
+      <path fill="#644f48" d="M13 13h15v12H17v-3h-4z"/>
+      <path fill="#cb916e" d="M22 14h12v4h3v2h-4v4h-4v2h-8v-4h-2v-5h3z"/>
+      <path fill="#f4c297" d="M26 14h8v4h2v1h-5v3h-6v-2h-4v-3h5z"/>
+      <path fill="#ffe5bf" d="M30 16h4v3h-4z"/>
+      <path fill="#304548" d="M32 16h2v3h-2z"/>
+      <path fill="#a76957" d="M28 21h5v1h-5z"/>
+      <path fill="#35716e" d="M16 5h13v2h5v4h2v4H12v-4h3V7h1z"/>
+      <path fill="#579c89" d="M17 6h11v2h4v3H14V9h3z"/>
+      <path fill="#8dbfa2" d="M18 7h8v1h-8zm-3 2h5v1h-5z"/>
+      <path fill="#285759" d="M13 12h20v3H13z"/>
+      <path fill="#e3ba7b" d="M25 13h13v2H25z"/>
+      <path fill="#efd299" d="M27 13h8v1h-8z"/>
+    </g>
+    <g id="south-body">
+      <path fill="#30393b" d="M17 25h14v2h4v4h2v6h-5v-2H16v2h-5v-6h2v-4h4z"/>
+      <path fill="#9e583f" d="M16 27h16v2h3v6h-4v1H17v-1h-4v-6h3z"/>
+      <path fill="#d98a55" d="M16 28h7v7h-7zm9 0h7v7h-7z"/>
+      <path fill="#efac71" d="M16 28h5v2h-5zm11 0h5v2h-5z"/>
+      <path fill="#f4ddbb" d="M22 27h4v7h-4z"/>
+      <path fill="#545951" d="M22 33h4v3h-4z"/>
+      <path fill="#db9c72" d="M12 34h4v3h-4zm20 0h4v3h-4z"/>
+      <path fill="#a36045" d="M18 32h3v2h-3zm9 0h3v2h-3z"/>
+    </g>
+    <g id="north-body">
+      <path fill="#30393b" d="M17 25h14v2h4v4h2v6h-5v-2H16v2h-5v-6h2v-4h4z"/>
+      <path fill="#a15c44" d="M16 27h16v2h3v6h-4v1H17v-1h-4v-6h3z"/>
+      <path fill="#d18452" d="M16 28h16v6H16z"/>
+      <path fill="#df9560" d="M17 28h14v2H17z"/>
+      <path fill="#f3b579" d="M17 28h2v6h-2zm12 0h2v6h-2z"/>
+      <path fill="#95583f" d="M22 30h4v4h-4z"/>
+      <path fill="#e7b38a" d="M12 34h4v3h-4zm20 0h4v3h-4z"/>
+    </g>
+    <g id="east-body">
+      <path fill="#30393b" d="M17 25h13v2h4v3h3v6h-5v-1H15v-2h-3v-5h5z"/>
+      <path fill="#a55d42" d="M16 27h15v3h4v5h-5v1H17v-3h-3v-4h2z"/>
+      <path fill="#d58251" d="M19 28h12v6H19z"/>
+      <path fill="#ebb17e" d="M19 27h6v2h-6zm11 1h2v5h-2z"/>
+      <path fill="#e6ab7f" d="M32 33h4v3h-4z"/>
+      <path fill="#a46247" d="M21 30h3v4h-3z"/>
+    </g>
+    <g id="legs">
+      <path fill="#323b40" d="M16 35h16v5h1v3H25v-5h-2v5h-8v-3h1z"/>
+      <path fill="#526168" d="M17 36h6v4h-6zm8 0h6v4h-6z"/>
+      <path fill="#dad3aa" d="M16 41h6v1h-6zm10 0h6v1h-6z"/>
+    </g>
+    <g id="stride">
+      <path fill="#323b40" d="M16 34h15v4h-3v2h-2v3h-7v-3h2v-2h-4v2h-6v-3h4z"/>
+      <path fill="#586972" d="M17 35h5v3h-6v1h-3v-1h3zm7 0h5v3h-2v2h-4v-2h1z"/>
+      <path fill="#d7ceae" d="M12 38h5v1h-5zm8 3h6v1h-6z"/>
+    </g>
+    <g id="side-stride">
+      <path fill="#303940" d="M17 34h13v3h3v2h3v4h-8v-3h-2v-2h-3v2h-5v1h-7v-4h4v-1h2z"/>
+      <path fill="#54656c" d="M18 35h6v2h-3v2h-5v-1h-3v-1h4zm8 0h4v3h3v3h-4v-1h-2v-2h-1z"/>
+      <path fill="#d7ceae" d="M12 39h6v1h-6zm17 2h6v1h-6z"/>
+    </g>
+    <g id="seat-legs">
+      <path fill="#303940" d="M15 35h18v3h2v5H25v-3h-2v3H13v-5h2z"/>
+      <path fill="#526167" d="M16 36h7v4h-8v-1h1zm9 0h7v3h1v1h-8z"/>
+      <path fill="#d7ceae" d="M14 41h8v1h-8zm12 0h8v1h-8z"/>
+    </g>
+    <g id="east-seat-legs">
+      <path fill="#303940" d="M16 35h16v2h5v6H25v-3h-9z"/>
+      <path fill="#526167" d="M18 36h13v2h5v3H27v-2h-9z"/>
+      <path fill="#d7ceae" d="M28 41h8v1h-8z"/>
+    </g>
+    <path id="shadow" fill="#293839" opacity=".2" d="M15 41h18v1h3v2h-3v1H15v-1h-3v-2h3z"/>
+
+    <g id="north-idle"><use href="#shadow"/><use href="#legs"/><use href="#north-body"/><use href="#north-head"/></g>
+    <g id="north-step-a"><use href="#shadow"/><use href="#stride"/><use href="#north-body" transform="translate(0 1)"/><use href="#north-head" transform="translate(0 1)"/></g>
+    <g id="north-step-b"><use href="#north-step-a" transform="translate(48 0) scale(-1 1)"/></g>
+    <g id="north-seat"><use href="#shadow"/><use href="#seat-legs"/><use href="#north-body" transform="translate(0 4)"/><use href="#north-head" transform="translate(0 5)"/></g>
+    <g id="east-idle"><use href="#shadow"/><use href="#legs" transform="translate(1 0)"/><use href="#east-body"/><use href="#east-head"/></g>
+    <g id="east-step-a"><use href="#shadow"/><use href="#side-stride"/><use href="#east-body" transform="translate(0 1)"/><use href="#east-head" transform="translate(0 1)"/></g>
+    <g id="east-step-b"><use href="#shadow"/><use href="#side-stride" transform="translate(48 0) scale(-1 1)"/><use href="#east-body"/><use href="#east-head"/></g>
+    <g id="east-seat"><use href="#shadow"/><use href="#east-seat-legs"/><use href="#east-body" transform="translate(0 4)"/><use href="#east-head" transform="translate(0 5)"/></g>
+    <g id="south-idle"><use href="#shadow"/><use href="#legs"/><use href="#south-body"/><use href="#south-head"/></g>
+    <g id="south-step-a"><use href="#shadow"/><use href="#stride"/><use href="#south-body" transform="translate(0 1)"/><use href="#south-head" transform="translate(0 1)"/></g>
+    <g id="south-step-b"><use href="#south-step-a" transform="translate(48 0) scale(-1 1)"/></g>
+    <g id="south-seat"><use href="#shadow"/><use href="#seat-legs"/><use href="#south-body" transform="translate(0 4)"/><use href="#south-head" transform="translate(0 5)"/></g>
+  </defs>
+  <use href="#north-idle" x="0" y="0"/>
+  <use href="#north-step-a" x="48" y="0"/>
+  <use href="#north-step-b" x="96" y="0"/>
+  <use href="#north-seat" x="144" y="0"/>
+  <use href="#east-idle" x="0" y="48"/>
+  <use href="#east-step-a" x="48" y="48"/>
+  <use href="#east-step-b" x="96" y="48"/>
+  <use href="#east-seat" x="144" y="48"/>
+  <use href="#south-idle" x="0" y="96"/>
+  <use href="#south-step-a" x="48" y="96"/>
+  <use href="#south-step-b" x="96" y="96"/>
+  <use href="#south-seat" x="144" y="96"/>
+  <use href="#east-idle" transform="translate(48 144) scale(-1 1)"/>
+  <use href="#east-step-a" transform="translate(96 144) scale(-1 1)"/>
+  <use href="#east-step-b" transform="translate(144 144) scale(-1 1)"/>
+  <use href="#east-seat" transform="translate(192 144) scale(-1 1)"/>
+</svg>

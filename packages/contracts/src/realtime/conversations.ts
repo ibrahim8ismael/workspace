@@ -139,7 +139,7 @@ export const meetingZonesSchema = z
           })
           .strict(),
       )
-      .max(32),
+      .max(OFFICE_LIMITS.maxWorkspaceRooms),
   })
   .strict()
   .superRefine((value, ctx) => {

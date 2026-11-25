@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1216" height="224" viewBox="0 0 1216 224" shape-rendering="crispEdges">
+  <title>Open area with a planted north boundary and a mosaic floor</title>
+  <defs>
+    <pattern id="pavers" width="64" height="32" patternUnits="userSpaceOnUse">
+      <rect width="64" height="32" fill="#d9e1cf"/>
+      <path fill="#d0dac9" d="M0 0h64v1H0zM0 16h64v1H0zM16 0h1v16h-1zM48 16h1v16h-1z"/>
+      <path fill="#e0e7d7" d="M1 2h12v3H1zM52 18h7v3h-7z"/>
+    </pattern>
+    <g id="planter">
+      <rect x="2" y="10" width="104" height="20" fill="#405e56"/>
+      <rect y="6" width="105" height="19" fill="#729084"/>
+      <rect x="3" y="8" width="99" height="13" fill="#516657"/>
+      <rect x="7" y="10" width="91" height="10" fill="#405647"/>
+      <path fill="#456e52" d="M9 8h6V4h9v3h8v11H9zm30 1h5V4h10v3h8v11H39zm34 0h4V4h9v3h10v11H73z"/>
+      <path fill="#79a06c" d="M13 9h6V5h6v4h5v5H13zm30 1h6V5h6v4h5v5H43zm34 0h5V6h7v5h5v4H77z"/>
+      <path fill="#aeb47a" d="M21 6h4v4h-4zm30-1h4v4h-4zm34 2h4v4h-4z"/>
+      <path fill="#9db3a5" d="M0 20h105v4H0z"/>
+    </g>
+  </defs>
+  <path fill="#779386" d="M0 23h1216v9H0z"/>
+  <path fill="#57716a" d="M0 27h1216v5H0z"/>
+  <use href="#planter" x="36"/><use href="#planter" x="1080"/>
+  <rect y="32" width="1216" height="192" fill="url(#pavers)"/>
+  <path fill="#769082" d="M0 32h4v192H0zm1212 0h4v192h-4z"/>
+  <path fill="#cad7c2" d="M510 72h196v123H510z"/>
+  <path fill="#b3c5ac" d="M506 76h204v116h-4V80H510v112h-4z"/>
+  <path fill="#c3d1b7" d="M559 103h98v61h-98z"/>
+  <path fill="#b6c8ae" d="M605 101h6v11h-6zm0 54h6v11h-6zm-35-24h13v6h-13zm63 0h13v6h-13z"/>
+  <path fill="#a7bfa6" d="M603 123h10v5h5v13h-5v5h-10v-5h-5v-13h5z"/>
+  <path fill="#e3ead7" d="M605 129h6v4h4v3h-4v4h-6v-4h-4v-3h4z"/>
+  <path fill="#b7c7ad" d="M15 205h66v3H15zm1120 0h66v3h-66z"/>
+</svg>

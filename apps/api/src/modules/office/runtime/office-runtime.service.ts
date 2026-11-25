@@ -10,7 +10,12 @@ import {
   worldDeltaSchema,
   worldSnapshotSchema,
 } from '@gather/contracts';
-import type { WorldDelta, WorldSnapshot } from '@gather/contracts';
+import type {
+  WorkspaceLayoutPlacementDto,
+  WorkspaceLayoutPreset,
+  WorldDelta,
+  WorldSnapshot,
+} from '@gather/contracts';
 import { canStep, pixelToTile } from '@gather/world';
 import { invariant } from '../../../platform/http/errors.js';
 import { digest, newSecret } from '../../identity/security/secrets.js';
@@ -18,6 +23,7 @@ import { trustedOfficeMap } from '../office-map-registry.js';
 import type { TrustedOfficeMap } from '../office-map-registry.js';
 import { ProximityPairing } from './proximity-pairing.js';
 import type { PrivateConversationNotice, ProximityCandidate } from './proximity-pairing.js';
+import { enclosedWorkspaceRoomAt } from './workspace-room.js';
 
 export interface ConsumedOfficeTicket {
   userId: string;
@@ -28,6 +34,8 @@ export interface ConsumedOfficeTicket {
   officeId: string;
   officeEpoch: string;
   mapVersion: string;
+  publishedLayout?: WorkspaceLayoutPlacementDto[];
+  publishedPreset?: WorkspaceLayoutPreset;
   protocolVersion: number;
   takeoverParticipationId?: string;
   takeoverOfficeEpoch?: string;
@@ -42,7 +50,7 @@ interface RuntimeParticipant {
   lastAcceptedInputSequence: number;
   hasAcceptedInput: boolean;
   inputTimestamps: number[];
-  inputIntent: { dx: number; dy: number; expiresAt: number };
+  inputIntent: { dx: number; dy: number; expiresAt: number; waypoint?: { tx: number; ty: number } };
   meetingRoute?: { tx: number; ty: number }[];
   meetingInvitationId?: string;
 }
@@ -176,6 +184,7 @@ export interface MovementIntent {
   readonly sequence: number;
   readonly dx: -1 | 0 | 1;
   readonly dy: -1 | 0 | 1;
+  readonly waypoint?: { tx: number; ty: number } | undefined;
 }
 
 export interface TakeoverReferenceBinding {
@@ -303,7 +312,7 @@ export class OfficeRuntimeService {
 
   reserve(ticket: ConsumedOfficeTicket, socketId: string): OfficeReservation {
     invariant(!this.reconfiguringOffices.has(ticket.officeId), 409, 'office_in_use');
-    const map = trustedOfficeMap(ticket.mapVersion);
+    const map = trustedOfficeMap(ticket.mapVersion, ticket.publishedLayout, ticket.publishedPreset);
     invariant(map, 409, 'office_not_ready');
     const current = this.offices.get(ticket.officeId);
     let retiredOfficeEpoch: string | null = null;
@@ -529,6 +538,15 @@ export class OfficeRuntimeService {
     if (!participant || participant.userId !== userId || participant.socketId !== socketId)
       return 'unauthorized';
     if (participant.publicState.seatId !== null) return 'conflict';
+    if (input.waypoint) {
+      const from = pixelToTile(participant.publicState.position);
+      const to = input.waypoint;
+      if (
+        (from.tx !== to.tx || from.ty !== to.ty) &&
+        !canStep(from, to, office.map.validated.bounds, office.map.validated.collision)
+      )
+        return 'conflict';
+    }
     if (participant.hasAcceptedInput && input.sequence <= participant.lastAcceptedInputSequence)
       return 'stale_version';
 
@@ -538,16 +556,22 @@ export class OfficeRuntimeService {
     participant.inputTimestamps.push(now);
     participant.lastAcceptedInputSequence = input.sequence;
     participant.hasAcceptedInput = true;
-    if (participant.meetingRoute && input.dx === 0 && input.dy === 0) return null;
+    if (participant.meetingRoute && !input.waypoint && input.dx === 0 && input.dy === 0)
+      return null;
     participant.inputIntent = {
       dx: input.dx,
       dy: input.dy,
-      expiresAt: now + OFFICE_LIMITS.movementIntentTimeoutMs,
+      expiresAt:
+        now +
+        (input.waypoint
+          ? OFFICE_LIMITS.movementWaypointTimeoutMs
+          : OFFICE_LIMITS.movementIntentTimeoutMs),
+      ...(input.waypoint && { waypoint: input.waypoint }),
     };
     if (participant.meetingRoute) {
       const invitationId = participant.meetingInvitationId;
       const invite = invitationId ? office.meetingInvitations.get(invitationId) : undefined;
-      if (invite && (input.dx !== 0 || input.dy !== 0)) {
+      if (invite && (input.dx !== 0 || input.dy !== 0 || input.waypoint)) {
         invite.status = 'cancelled';
         this.queueMeetingInvitationNotice(
           office,
@@ -1079,38 +1103,36 @@ export class OfficeRuntimeService {
       officeId: office.officeId,
       officeEpoch: office.officeEpoch,
       mapVersion: office.mapVersion,
-      zones: meetingRoomsFor(office.map).map(({ zone, entrances }) => ({
-        zoneId: zone.zoneId,
-        label: zone.label,
-        bounds: zone.bounds,
-        tileSize: office.map.geometry.tileSize,
-        capacity: OFFICE_LIMITS.maxMeetingParticipants,
-        accessPolicy: 'explicit-admission' as const,
-        occupancy: [...office.participants.entries()]
+      zones: meetingRoomsFor(office.map).map(({ zone, entrances }) => {
+        const occupancy = [...office.participants.entries()]
           .filter(([, participant]) => this.isInMeetingZone(office, zone.zoneId, participant))
           .map(([id]) => id)
-          .sort(),
-        admittedMembers: [...(office.meetingGroups.get(zone.zoneId)?.members ?? [])]
-          .map((member) => member.participationId)
-          .sort(),
-        meeting: office.meetingGroups.get(zone.zoneId)
-          ? {
-              conversationId: office.meetingGroups.get(zone.zoneId)!.conversationId,
-              version: office.meetingGroups.get(zone.zoneId)!.version,
-              state: office.meetingGroups.get(zone.zoneId)!.active
-                ? ('active' as const)
-                : ('joining' as const),
-            }
-          : null,
-        entrances: entrances.map((entrance) => ({
-          ...entrance,
-          state: [...office.participants.values()].some((participant) =>
-            this.isInMeetingZone(office, zone.zoneId, participant),
-          )
-            ? ('occupied' as const)
-            : ('open' as const),
-        })),
-      })),
+          .sort();
+        const group = office.meetingGroups.get(zone.zoneId);
+        return {
+          zoneId: zone.zoneId,
+          label: zone.label,
+          bounds: zone.bounds,
+          tileSize: office.map.geometry.tileSize,
+          capacity: OFFICE_LIMITS.maxMeetingParticipants,
+          accessPolicy: 'explicit-admission' as const,
+          occupancy,
+          admittedMembers: (group?.members ?? [])
+            .map(({ participationId }) => participationId)
+            .sort(),
+          meeting: group
+            ? {
+                conversationId: group.conversationId,
+                version: group.version,
+                state: group.active ? ('active' as const) : ('joining' as const),
+              }
+            : null,
+          entrances: entrances.map((entrance) => ({
+            ...entrance,
+            state: occupancy.length > 0 ? ('occupied' as const) : ('open' as const),
+          })),
+        };
+      }),
     });
   }
 
@@ -1563,7 +1585,27 @@ export class OfficeRuntimeService {
         dy = 0;
         participant.inputIntent = { dx: 0, dy: 0, expiresAt: 0 };
       }
-      if (seconds > 0 && (dx !== 0 || dy !== 0)) {
+      const waypoint = participant.inputIntent.waypoint;
+      if (waypoint && pixels > 0) {
+        const here = pixelToTile(previous);
+        const x = (waypoint.tx + 0.5) * office.map.geometry.tileSize;
+        const y = (waypoint.ty + 0.5) * office.map.geometry.tileSize;
+        // Align with the corridor before crossing an edge, then stop at the server-owned center.
+        const moveAlongX = here.tx === waypoint.tx ? previous.x !== x : previous.y === y;
+        const offset = moveAlongX ? x - previous.x : y - previous.y;
+        const arrivesOnAxis = Math.abs(offset) <= pixels;
+        const step = arrivesOnAxis ? offset : Math.sign(offset) * pixels;
+        const candidate = moveAlongX
+          ? { x: arrivesOnAxis ? x : previous.x + step, y: previous.y }
+          : { x: previous.x, y: arrivesOnAxis ? y : previous.y + step };
+        if (this.canMoveBetween(office, participationId, previous, candidate)) {
+          nextPosition = candidate;
+          dx = moveAlongX ? step : 0;
+          dy = moveAlongX ? 0 : step;
+          if (candidate.x === x && candidate.y === y)
+            participant.inputIntent = { dx: 0, dy: 0, expiresAt: 0 };
+        }
+      } else if (seconds > 0 && (dx !== 0 || dy !== 0)) {
         const magnitude = Math.hypot(dx, dy);
         const stepX = (dx / magnitude) * pixels;
         const stepY = (dy / magnitude) * pixels;
@@ -1836,16 +1878,24 @@ export class OfficeRuntimeService {
     return new Map(map.seats.map((seat) => [seat.seatId, null] as const));
   }
 
+  private proximityRoomId(office: OfficeRuntime, participant: RuntimeParticipant) {
+    const meeting = office.map.geometry.zones.find(
+      (zone) => zone.kind === 'meeting' && this.isInMeetingZone(office, zone.zoneId, participant),
+    );
+    if (meeting) return meeting.zoneId;
+    return enclosedWorkspaceRoomAt(
+      office.map.layout,
+      office.map.layoutPreset,
+      participant.publicState.position,
+    );
+  }
+
   private proximityCandidates(office: OfficeRuntime): ProximityCandidate[] {
     return [...office.participants.entries()].map(([participationId, participant]) => ({
       participationId,
       socketId: participant.socketId,
       displayName: participant.publicState.displayName,
-      roomId:
-        office.map.geometry.zones.find(
-          (zone) =>
-            zone.kind === 'meeting' && this.isInMeetingZone(office, zone.zoneId, participant),
-        )?.zoneId ?? null,
+      roomId: this.proximityRoomId(office, participant),
       availability:
         participant.meetingInvitationId ||
         [...office.meetingGroups.values()].some((group) =>

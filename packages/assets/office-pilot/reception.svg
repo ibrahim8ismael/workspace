@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="256" viewBox="0 0 320 256">
+  <title>Reception with a windowed entry, bench, and counter</title>
+  <defs>
+    <pattern id="parquet" width="96" height="48" patternUnits="userSpaceOnUse">
+      <path fill="#efddc1" d="M0 0h96v48H0z"/>
+      <path fill="#ead5b7" d="M0 0h36v12H0zm68 0h28v12H68zM20 12h43v12H20zM0 24h48v12H0zm79 0h17v12H79zM26 36h43v12H26z"/>
+      <path fill="#f3e4cd" d="M36 0h32v12H36zM63 12h33v12H63zM48 24h31v12H48zM0 36h26v12H0zm69 0h27v12H69z"/>
+      <path fill="none" stroke="#bc956e" stroke-opacity=".29" stroke-width=".7" d="M0 0h96M0 12h96M0 24h96M0 36h96M36 0v12M68 0v12M20 12v12m43-12v12M48 24v12m31-12v12M26 36v12m43-12v12"/>
+      <path fill="none" stroke="#fff3dd" stroke-opacity=".72" d="M5 3h15m24 0h20m9 3h16M26 15h27m20 2h17M4 28h22m26 0h17M6 40h16m14-1h20m23 4h11"/>
+    </pattern>
+    <g id="window">
+      <path fill="#92775f" d="M0 2h42v30H0z"/>
+      <path fill="#768382" d="M1 0h40v30H1z"/>
+      <path fill="#52696e" d="M3 2h36v25H3z"/>
+      <path fill="#8fbbbc" d="M5 4h14v21H5zm16 0h16v21H21z"/>
+      <path fill="#729ca6" d="M5 4h14v3H5zm16 0h16v3H21z"/>
+      <path fill="#b8d7d2" d="M7 8h2v16H7zm17 0h3v16h-3zm5 4h1v8h-1z"/>
+      <path fill="#779ba1" d="M5 18h14v1H5zm16 0h16v1H21z"/>
+      <path fill="#e3d5b8" d="M0 28h42v3H0z"/>
+      <path fill="#c2a080" d="M1 31h40v2H1z"/>
+    </g>
+    <pattern id="rug" patternUnits="userSpaceOnUse" width="8" height="8">
+      <path fill="#f5e3c8" opacity=".13" d="M0 0h8v1H0zm0 4h8v1H0z"/>
+      <path fill="#344c48" opacity=".12" d="M0 2h2v1H0zm4 4h2v1H4z"/>
+    </pattern>
+    <g id="plant">
+      <path fill="#593f33" opacity=".22" d="M1 17h15v5H2v-2H1z"/>
+      <path fill="#896b59" d="M2 13h13v5h-2v2H4v-2H2z"/>
+      <path fill="#ba917a" d="M2 13h13v2H2z"/>
+      <path fill="#527656" d="M7 1h4v3h3v3h2v4h-3v2H5v-2H2V7h2V4h3z"/>
+      <path fill="#88a674" d="M7 1h4v3h2v4h-3v5H7V9H4V6h3z"/>
+      <path fill="#aac28b" d="M8 2h2v3H8zm3 3h2v2h-2zM5 7h2v2H5z"/>
+    </g>
+  </defs>
+
+  <rect x="0" y="0" width="320" height="256" fill="url(#parquet)"/>
+  <!-- Rear wall and low cutaway perimeter. -->
+  <rect x="0" y="0" width="128" height="32" fill="#caab8d"/>
+  <rect x="0" y="0" width="128" height="4" fill="#f5e1c3"/>
+  <rect x="0" y="4" width="128" height="2" fill="#dcb893"/>
+  <rect x="0" y="28" width="128" height="4" fill="#aa8568"/>
+  <rect x="192" y="0" width="128" height="32" fill="#caab8d"/>
+  <rect x="192" y="0" width="128" height="4" fill="#f5e1c3"/>
+  <rect x="192" y="4" width="128" height="2" fill="#dcb893"/>
+  <rect x="192" y="28" width="128" height="4" fill="#aa8568"/>
+  <rect x="0" y="250" width="320" height="6" fill="#9c8068"/>
+  <rect x="0" y="250" width="320" height="2" fill="#edd2ae"/>
+  <rect x="0" y="0" width="4" height="256" fill="#9c8068"/>
+  <rect x="316" y="0" width="4" height="256" fill="#9c8068"/>
+  <rect x="4" y="34" width="1" height="216" fill="#f8e6ce"/>
+  <rect x="315" y="34" width="1" height="216" fill="#f8e6ce"/>
+  <rect x="128" y="0" width="64" height="5" fill="#bda286"/>
+  <rect x="128" y="1" width="64" height="2" fill="#f5ddbb"/>
+  <use href="#window" x="14" y="2"/>
+  <use href="#window" x="61" y="2"/>
+  <use href="#window" x="214" y="2"/>
+  <use href="#window" x="261" y="2"/>
+  <rect x="106" y="64" width="108" height="117" fill="#798d80"/>
+  <rect x="109" y="67" width="102" height="111" fill="#aeb8a0"/>
+  <rect x="110" y="68" width="100" height="109" fill="url(#rug)"/>
+  <rect x="113" y="72" width="94" height="2" fill="#ddd4ae"/>
+  <rect x="113" y="171" width="94" height="2" fill="#ddd4ae"/>
+  <path fill="none" d="m160 105 18 18-18 18-18-18zm0 8 10 10-10 10-10-10z" stroke="#e5debd" stroke-width="2"/>
+  <!-- Bench within x32–96, y32–96. -->
+  <path fill="#665447" d="M34 42h62v50h-4v4H35v-4h-1z" opacity=".24"/>
+  <path fill="#8a6456" d="M38 36h50v3h5v49h-4v4h-6v-4H44v4h-6v-4h-4V40h4z"/>
+  <rect x="38" y="40" width="50" height="37" fill="#ab7665"/>
+  <path fill="#bf8974" d="M40 42h46v13H40zm0 17h22v16H40zm24 0h22v16H64z"/>
+  <path fill="#c8977e" d="M36 53h6v26h-6zm49 0h6v26h-6z"/>
+  <rect x="40" y="77" width="46" height="6" fill="#9e6e5e"/>
+  <rect x="45" y="46" width="11" height="11" fill="#e1ba82"/>
+  <rect x="71" y="44" width="10" height="12" fill="#9bb295"/>
+  <rect x="46" y="47" width="8" height="2" fill="#f0cb92"/>
+  <rect x="72" y="45" width="8" height="2" fill="#b8c79e"/>
+  <!-- Walnut counter within x192–288, y32–96. -->
+  <path fill="#655142" d="M195 41h93v49h-5v6h-88z" opacity=".25"/>
+  <path fill="#805b48" d="M198 38h82v4h5v45h-5v5h-82v-5h-5V42h5z"/>
+  <path fill="#aa7658" d="M198 37h81v4h5v37h-5v4h-81v-4h-4V41h4z"/>
+  <path fill="#d2a078" d="M198 37h81v4h5v29h-5v4h-81v-4h-4V41h4z"/>
+  <rect x="199" y="38" width="79" height="3" fill="#e9bb8e"/>
+  <rect x="200" y="84" width="78" height="3" fill="#a77657"/>
+  <path fill="#ad775b" d="M211 82h1v5h-1zm7 0h1v5h-1zm7 0h1v5h-1zm7 0h1v5h-1zm7 0h1v5h-1zm7 0h1v5h-1zm7 0h1v5h-1zm7 0h1v5h-1z"/>
+  <path fill="#566c68" d="M205 47h23v14h-23zm8 14h7v4h-7z"/>
+  <rect x="207" y="49" width="19" height="9" fill="#aad1bf"/>
+  <use href="#plant" x="261" y="44"/>
+  <rect x="239" y="54" width="15" height="11" fill="#f2e3c9"/>
+  <rect x="241" y="57" width="10" height="1" fill="#b5a086"/>
+  <rect x="241" y="60" width="7" height="1" fill="#b5a086"/>
+  <path fill="none" d="M11 196v48h298v-48M14 196v45h292v-45" stroke="#d5b99b" stroke-width="1.5"/>
+  <path fill="#e7ceb0" d="M127 224h66v2h-66zm14 5h38v2h-38z"/>
+</svg>

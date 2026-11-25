@@ -417,7 +417,7 @@ export class OfficeClient {
     });
   }
 
-  move(dx: -1 | 0 | 1, dy: -1 | 0 | 1) {
+  move(dx: -1 | 0 | 1, dy: -1 | 0 | 1, waypoint?: { tx: number; ty: number }) {
     const socket = this.socket;
     const ready = this.state.ready;
     const snapshot = this.state.snapshot;
@@ -430,7 +430,7 @@ export class OfficeClient {
     const event = worldInputEventSchema.parse({
       eventId: crypto.randomUUID(),
       officeEpoch: ready.snapshot.officeEpoch,
-      payload: { sequence: this.inputSequence, dx, dy },
+      payload: { sequence: this.inputSequence, dx, dy, ...(waypoint && { waypoint }) },
     });
     socket.emit('world:input', event);
   }

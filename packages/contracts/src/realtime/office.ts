@@ -149,8 +149,16 @@ export const worldInputEventSchema = officeCommandSchema(
       sequence: sequenceSchema,
       dx: z.union([z.literal(-1), z.literal(0), z.literal(1)]),
       dy: z.union([z.literal(-1), z.literal(0), z.literal(1)]),
+      waypoint: z
+        .object({
+          tx: z.number().int().min(0).max(OFFICE_LIMITS.maxWorldDimension),
+          ty: z.number().int().min(0).max(OFFICE_LIMITS.maxWorldDimension),
+        })
+        .strict()
+        .optional(),
     })
-    .strict(),
+    .strict()
+    .refine(({ dx, dy, waypoint }) => !waypoint || (dx === 0 && dy === 0)),
 );
 export const presenceUpdateEventSchema = officeCommandSchema(
   z.object({ availability: availabilitySchema }).strict(),

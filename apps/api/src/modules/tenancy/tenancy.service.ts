@@ -1,10 +1,27 @@
 import { Injectable, Inject } from '@nestjs/common';
 import type { ClientSession } from 'mongoose';
 import { randomUUID } from 'node:crypto';
-import type { WorkspaceDto, WorkspaceMemberRole, WorkspaceRole } from '@gather/contracts';
-import { officeWorkspaceDetailResponseSchema } from '@gather/contracts';
+import { isDeepStrictEqual } from 'node:util';
+import type {
+  CreateWorkspaceInput,
+  PublishWorkspaceLayoutInput,
+  SaveWorkspaceLayoutInput,
+  WorkspaceDto,
+  WorkspaceMemberRole,
+  WorkspaceRole,
+  WorkspaceLayoutSnapshot,
+} from '@gather/contracts';
+import {
+  officeWorkspaceDetailResponseSchema,
+  workspaceLayoutSnapshotSchema,
+} from '@gather/contracts';
+import {
+  DEFAULT_WORKSPACE_LAYOUT,
+  generateWorkspaceLayoutPreset,
+  validateWorkspaceLayout,
+} from '@gather/world';
 import { TenancyModels } from './tenancy.models.js';
-import type { WorkspaceRecord, MembershipRecord } from './tenancy.models.js';
+import type { OfficeRecord, WorkspaceRecord, MembershipRecord } from './tenancy.models.js';
 import { IdentityModels } from '../identity/identity.models.js';
 import { SessionService } from '../identity/sessions/session.service.js';
 import type { ActorContext } from '../identity/sessions/session.service.js';
@@ -17,7 +34,11 @@ import {
   APPROVED_OFFICE_MAP_VERSION,
   trustedOfficeMap,
   workspaceOfficeMapVersion,
+  workspaceLayoutOfficeMap,
 } from '../office/office-map-registry.js';
+
+const starterLayout = [...DEFAULT_WORKSPACE_LAYOUT];
+const starterMapVersion = workspaceLayoutOfficeMap(starterLayout).manifest.mapVersion;
 
 function dto(workspace: WorkspaceRecord, role: MembershipRecord['role']): WorkspaceDto {
   return {
@@ -28,6 +49,19 @@ function dto(workspace: WorkspaceRecord, role: MembershipRecord['role']): Worksp
     memberCount: workspace.memberCount,
   };
 }
+function layoutSnapshot(office: OfficeRecord): WorkspaceLayoutSnapshot {
+  const placements = office.draftLayout ?? office.publishedLayout ?? DEFAULT_WORKSPACE_LAYOUT;
+  return workspaceLayoutSnapshotSchema.parse({
+    placements,
+    revision: office.layoutRevision ?? 0,
+    preset: office.draftPreset ?? office.publishedPreset,
+    publishedMapVersion: office.mapVersion,
+    hasUnpublishedChanges:
+      (office.draftPreset ?? office.publishedPreset) !== office.publishedPreset ||
+      !isDeepStrictEqual(placements, office.publishedLayout),
+  });
+}
+
 export async function retryInvitationTokenCollision<T>(work: () => Promise<T>): Promise<T> {
   for (let attempt = 0; attempt < 4; attempt += 1) {
     try {
@@ -152,11 +186,7 @@ export class TenancyService {
     });
     return result;
   }
-  async create(
-    context: ActorContext,
-    input: { name: string; slug: string; roomCount?: number },
-    key: string,
-  ) {
+  async create(context: ActorContext, input: CreateWorkspaceInput, key: string) {
     return this.db.transaction(async (tx) => {
       await this.sessions.lockActor(context, tx);
       return this.operation(context, 'workspace.create', key, input, tx, async () => {
@@ -192,18 +222,25 @@ export class TenancyService {
           ],
           { session: tx },
         );
+        const preset = input.officeTemplate === 'svg' ? undefined : input.officeTemplate;
+        const presetLayout =
+          preset && generateWorkspaceLayoutPreset(preset, input.privateOfficeCount);
+        const initialMap = presetLayout
+          ? {
+              mapVersion: workspaceLayoutOfficeMap(presetLayout, preset).manifest.mapVersion,
+              publishedLayout: presetLayout,
+              publishedPreset: preset,
+            }
+          : input.officeTemplate === 'svg'
+            ? { mapVersion: starterMapVersion, publishedLayout: starterLayout }
+            : {
+                mapVersion:
+                  input.roomCount === undefined
+                    ? APPROVED_OFFICE_MAP_VERSION
+                    : workspaceOfficeMapVersion(input.roomCount),
+              };
         await this.models.offices.create(
-          [
-            {
-              _id: randomUUID(),
-              workspaceId: workspace._id,
-              mapVersion:
-                input.roomCount === undefined
-                  ? APPROVED_OFFICE_MAP_VERSION
-                  : workspaceOfficeMapVersion(input.roomCount),
-              createdAt: new Date(),
-            },
-          ],
+          [{ _id: randomUUID(), workspaceId: workspace._id, ...initialMap, createdAt: new Date() }],
           { session: tx },
         );
         await this.audit.record(
@@ -237,13 +274,18 @@ export class TenancyService {
       const { workspace, member } = await this.lockAccess(context, id, tx);
       const office = await this.models.offices.findOne({ workspaceId: id }).session(tx).lean();
       invariant(office, 404, 'not_found');
-      const map = trustedOfficeMap(office.mapVersion);
+      const map = trustedOfficeMap(
+        office.mapVersion,
+        office.publishedLayout,
+        office.publishedPreset,
+      );
       invariant(map, 409, 'office_not_ready');
       return officeWorkspaceDetailResponseSchema.parse({
         workspace: {
           ...dto(workspace, member.role),
           officeId: office._id,
           revision: workspace.revision ?? 0,
+          ...(office.publishedLayout && { usesMapEditor: true }),
           roomCount:
             map.manifest.roomCount ??
             map.geometry.zones.filter((zone) => zone.kind === 'meeting').length,
@@ -299,6 +341,7 @@ export class TenancyService {
           .session(tx)
           .lean();
         invariant(office, 404, 'not_found');
+        invariant(!office.publishedLayout, 409, 'office_layout_managed');
         const mapVersion = workspaceOfficeMapVersion(input.roomCount);
         const updatedWorkspace = await this.models.workspaces.updateOne(
           {
@@ -328,6 +371,166 @@ export class TenancyService {
       });
     });
   }
+  async getWorkspaceLayout(context: ActorContext, workspaceId: string, officeId: string) {
+    return this.db.transaction(async (tx) => {
+      await this.lockAccess(context, workspaceId, tx, ['owner']);
+      return layoutSnapshot(await this.findOfficeForLayout(workspaceId, officeId, tx));
+    });
+  }
+
+  async saveWorkspaceLayout(
+    context: ActorContext,
+    workspaceId: string,
+    officeId: string,
+    input: SaveWorkspaceLayoutInput,
+    key: string,
+  ) {
+    return this.db.transaction(async (tx) => {
+      await this.lockAccess(context, workspaceId, tx, ['owner']);
+      return this.operation(
+        context,
+        `workspace.layout.save:${workspaceId}:${officeId}`,
+        key,
+        input,
+        tx,
+        async () => {
+          const office = await this.findOfficeForLayout(workspaceId, officeId, tx);
+          const revision = office.layoutRevision ?? 0;
+          invariant(revision === input.expectedRevision, 409, 'revision_conflict');
+          const current = layoutSnapshot(office);
+          const preset = input.preset ?? current.preset;
+          invariant(
+            !validateWorkspaceLayout(input.placements, preset),
+            400,
+            'invalid_office_layout',
+          );
+          const replacesModules =
+            current.preset !== preset ||
+            current.placements.some(
+              (room) =>
+                !input.placements.some(
+                  (next) => next.id === room.id && next.templateId === room.templateId,
+                ),
+            );
+          invariant(
+            !replacesModules || input.confirmReplacement === true,
+            409,
+            'office_layout_confirmation_required',
+          );
+          if (current.preset === preset && isDeepStrictEqual(input.placements, current.placements))
+            return current;
+          const updated = await this.models.offices
+            .findOneAndUpdate(
+              { _id: officeId, workspaceId },
+              {
+                $set: {
+                  draftLayout: input.placements,
+                  ...(preset && { draftPreset: preset }),
+                  layoutRevision: revision + 1,
+                },
+              },
+              { session: tx, returnDocument: 'after' },
+            )
+            .lean();
+          invariant(updated, 409, 'revision_conflict');
+          await this.audit.record(
+            context.user._id,
+            'workspace.layout_saved',
+            officeId,
+            tx,
+            workspaceId,
+          );
+          return layoutSnapshot(updated);
+        },
+      );
+    });
+  }
+
+  async publishWorkspaceLayout(
+    context: ActorContext,
+    workspaceId: string,
+    officeId: string,
+    input: PublishWorkspaceLayoutInput,
+    key: string,
+  ) {
+    return this.db.transaction(async (tx) => {
+      await this.lockAccess(context, workspaceId, tx, ['owner']);
+      let mapChanged = false;
+      const snapshot = await this.operation(
+        context,
+        `workspace.layout.publish:${workspaceId}:${officeId}`,
+        key,
+        input,
+        tx,
+        async () => {
+          const office = await this.findOfficeForLayout(workspaceId, officeId, tx);
+          const current = layoutSnapshot(office);
+          invariant(current.revision === input.expectedRevision, 409, 'revision_conflict');
+          if (!current.hasUnpublishedChanges) return current;
+          const nextMap = workspaceLayoutOfficeMap(current.placements, current.preset);
+          const updated = await this.models.offices
+            .findOneAndUpdate(
+              { _id: officeId, workspaceId },
+              {
+                $set: {
+                  publishedLayout: current.placements,
+                  ...(current.preset && { publishedPreset: current.preset }),
+                  mapVersion: nextMap.manifest.mapVersion,
+                  layoutRevision: current.revision + 1,
+                },
+                $unset: { draftLayout: '', draftPreset: '' },
+              },
+              { session: tx, returnDocument: 'after' },
+            )
+            .lean();
+          invariant(updated, 409, 'revision_conflict');
+          await this.audit.record(
+            context.user._id,
+            'workspace.layout_published',
+            officeId,
+            tx,
+            workspaceId,
+          );
+          mapChanged = true;
+          return layoutSnapshot(updated);
+        },
+      );
+      return { snapshot, mapChanged };
+    });
+  }
+
+  async replayPublishedWorkspaceLayout(
+    context: ActorContext,
+    workspaceId: string,
+    officeId: string,
+    input: PublishWorkspaceLayoutInput,
+    key: string,
+  ): Promise<WorkspaceLayoutSnapshot | null> {
+    return this.db.transaction(async (tx) => {
+      await this.lockAccess(context, workspaceId, tx, ['owner']);
+      await this.findOfficeForLayout(workspaceId, officeId, tx);
+      const scope = `workspace.layout.publish:${workspaceId}:${officeId}`;
+      const id = digest(`${context.user._id}:${scope}:${key}`);
+      const existing = await this.models.operations.findById(id).session(tx).lean();
+      if (!existing) return null;
+      invariant(
+        existing.fingerprint === digest(JSON.stringify(input)),
+        409,
+        'idempotency_conflict',
+      );
+      return workspaceLayoutSnapshotSchema.parse(existing.result);
+    });
+  }
+
+  private async findOfficeForLayout(workspaceId: string, officeId: string, tx: ClientSession) {
+    const office = await this.models.offices
+      .findOne({ _id: officeId, workspaceId })
+      .session(tx)
+      .lean();
+    invariant(office, 404, 'not_found');
+    return office;
+  }
+
   async getOffice(context: ActorContext, workspaceId: string, officeId: string) {
     return this.db.transaction(async (tx) => {
       await this.lockAccess(context, workspaceId, tx);

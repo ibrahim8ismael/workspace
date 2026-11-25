@@ -38,6 +38,7 @@ import {
   extendSessionResponseSchema,
   officeWorkspaceDetailResponseSchema,
   officeBootstrapResponseSchema,
+  workspaceLayoutSnapshotSchema,
   joinTicketResponseSchema,
   officeReadySchema,
   officeCommandAckSchema,
@@ -72,7 +73,15 @@ import { MediaWebhookModels } from '../dist/modules/media/media-webhook.models.j
 import { OfficeRuntimeService } from '../dist/modules/office/runtime/office-runtime.service.js';
 import { trustedOfficeMap } from '../dist/modules/office/office-map-registry.js';
 import { MediaPolicyService } from '../dist/modules/media/media-policy.service.js';
-import { VIVO_GEOMETRY, canStep } from '@gather/world';
+import {
+  VIVO_GEOMETRY,
+  canStep,
+  pixelToTile,
+  addWorkspaceLayoutPlacement,
+  moveWorkspaceLayoutPlacement,
+  generateWorkspaceLayoutPreset,
+  resizeWorkspaceLayoutPrivateOffices,
+} from '@gather/world';
 import type { WorldSnapshot } from '@gather/contracts';
 import { OutboxService } from '../dist/modules/identity/delivery/outbox.service.js';
 import { AuditService } from '../dist/modules/audit/audit.service.js';
@@ -1827,6 +1836,419 @@ describe('company roles and isolation', () => {
       zoneId: 'workspace-room-020',
       bounds: initialMap.body.geometry.zones[19].bounds,
     });
+  });
+
+  it('creates distinct workspace presets and requires confirmation before replacing or reducing a layout', async () => {
+    const owner = await account();
+    const create = async (officeTemplate: 'startup' | 'corporate', privateOfficeCount: number) => {
+      const response = await owner.client.send('post', '/api/workspaces', {
+        name: officeTemplate,
+        slug: `preset-${randomUUID()}`,
+        officeTemplate,
+        privateOfficeCount,
+      });
+      status(response, 201);
+      const workspaceId = workspaceResponseSchema.parse(response.body).workspace.id;
+      const office = await tenancy.offices.findOne({ workspaceId }).lean();
+      if (!office) throw new Error('Office missing');
+      return `/api/workspaces/${workspaceId}/offices/${office._id}`;
+    };
+    const startupPath = await create('startup', 10);
+    const corporatePath = await create('corporate', 12);
+    const read = async (path: string) => {
+      const response = await owner.client.get(path);
+      status(response, 200);
+      return officeBootstrapResponseSchema.parse(response.body);
+    };
+    const startup = await read(startupPath);
+    const corporate = await read(corporatePath);
+    expect(startup.layoutPreset).toBe('startup');
+    expect(corporate.layoutPreset).toBe('corporate');
+    expect(
+      startup.layout?.filter(({ templateId }) => templateId === 'private-office'),
+    ).toHaveLength(10);
+    expect(
+      corporate.layout?.filter(({ templateId }) => templateId === 'private-office'),
+    ).toHaveLength(12);
+    expect([startup.manifest.roomCount, corporate.manifest.roomCount]).toEqual([2, 3]);
+    const statusPath = `${startupPath}/layout`;
+    for (const replacement of [
+      {
+        placements: resizeWorkspaceLayoutPrivateOffices(startup.layout!, 9, 'startup'),
+        preset: 'startup',
+      },
+      { placements: generateWorkspaceLayoutPreset('corporate', 12), preset: 'corporate' },
+    ]) {
+      const blocked = await owner.client.send('patch', statusPath, {
+        ...replacement,
+        expectedRevision: 0,
+      });
+      status(blocked, 409);
+      expect(blocked.body.error.code).toBe('office_layout_confirmation_required');
+    }
+    const named = startup.layout!.map((placement) =>
+      placement.id === 'private-office-1' ? { ...placement, name: 'North Star Studio' } : placement,
+    );
+    const grown = resizeWorkspaceLayoutPrivateOffices(named, 12, 'startup');
+    status(
+      await owner.client.send('patch', statusPath, {
+        placements: grown,
+        preset: 'startup',
+        expectedRevision: 0,
+      }),
+      200,
+    );
+    expect(await read(startupPath)).toEqual(startup);
+    status(await owner.client.send('post', `${statusPath}/publish`, { expectedRevision: 1 }), 200);
+    const published = await read(startupPath);
+    expect(published.layout).toEqual(grown);
+    expect(await read(corporatePath)).toEqual(corporate);
+    const shrunk = resizeWorkspaceLayoutPrivateOffices(grown!, 9, 'startup');
+    status(
+      await owner.client.send('patch', statusPath, {
+        placements: shrunk,
+        preset: 'startup',
+        expectedRevision: 2,
+        confirmReplacement: true,
+      }),
+      200,
+    );
+    expect(await read(startupPath)).toEqual(published);
+  });
+
+  it('admits twenty real Studio sockets and enforces capacity on the next member', async () => {
+    const owner = await account();
+    const response = await owner.client.send('post', '/api/workspaces', {
+      name: 'Studio capacity',
+      slug: `studio-capacity-${randomUUID()}`,
+      officeTemplate: 'studio',
+      privateOfficeCount: 8,
+    });
+    status(response, 201);
+    const workspaceId = workspaceResponseSchema.parse(response.body).workspace.id;
+    const office = await tenancy.offices.findOne({ workspaceId }).lean();
+    if (!office) throw new Error('Studio office missing');
+    const ticketPath = `/api/workspaces/${workspaceId}/offices/${office._id}/join-ticket`;
+    const protocolVersion = OFFICE_PROTOCOL_VERSION;
+    const sockets: Socket[] = [];
+    try {
+      for (let index = 0; index <= OFFICE_LIMITS.maxParticipants; index += 1) {
+        const user = index === 0 ? owner : await account();
+        if (index > 0) await join(owner, workspaceId, user);
+        const response = await user.client.send('post', ticketPath, {
+          mapVersion: office.mapVersion,
+          protocolVersion,
+        });
+        status(response, 201);
+        const { ticket } = joinTicketResponseSchema.parse(response.body);
+        const socket = officeSocket({ ticket, protocolVersion });
+        sockets.push(socket);
+        if (index === OFFICE_LIMITS.maxParticipants) {
+          const denied = nextSocketEvent<Error>(socket, 'connect_error');
+          socket.connect();
+          await expect(denied).resolves.toHaveProperty('message', 'room_full');
+        } else {
+          const ready = nextSocketEvent(socket, 'office:ready');
+          await connectSocket(socket);
+          const state = officeReadySchema.parse(await ready);
+          expect(state.mapVersion).toBe(office.mapVersion);
+          expect(state.snapshot.participants).toHaveLength(index + 1);
+          expect(state.snapshot.seats).toHaveLength(34);
+        }
+      }
+    } finally {
+      sockets.forEach((socket) => socket.disconnect());
+    }
+  }, 160_000);
+
+  it('keeps saved SVG layout drafts private and publishes one authoritative layout for two members', async () => {
+    const owner = await account();
+    const member = await account();
+    const workspaceId = await workspace(owner);
+    await join(owner, workspaceId, member);
+    const office = await tenancy.offices.findOne({ workspaceId }).lean();
+    if (!office) throw new Error('Expected workspace office');
+    const officePath = `/api/workspaces/${workspaceId}/offices/${office._id}`;
+    const layoutPath = `${officePath}/layout`;
+    const readLayout = async () => {
+      const response = await owner.client.get(layoutPath);
+      status(response, 200);
+      return workspaceLayoutSnapshotSchema.parse(response.body);
+    };
+    const bootstrap = async (user: typeof owner) => {
+      const response = await user.client.get(officePath);
+      status(response, 200);
+      return officeBootstrapResponseSchema.parse(response.body);
+    };
+    const issue = async (user: typeof owner, mapVersion: string) => {
+      const response = await user.client.send('post', `${officePath}/join-ticket`, {
+        mapVersion,
+        protocolVersion: OFFICE_PROTOCOL_VERSION,
+      });
+      status(response, 201);
+      return joinTicketResponseSchema.parse(response.body).ticket;
+    };
+
+    const original = await bootstrap(member);
+    const initial = await readLayout();
+    expect(initial).toMatchObject({
+      revision: 0,
+      publishedMapVersion: original.mapVersion,
+      hasUnpublishedChanges: true,
+    });
+    status(await member.client.get(layoutPath), 403);
+    const placements = addWorkspaceLayoutPlacement(initial.placements, 'small', { tx: 28, ty: 3 });
+    status(await member.client.send('patch', layoutPath, { placements, expectedRevision: 0 }), 403);
+    status(await member.client.send('post', `${layoutPath}/publish`, { expectedRevision: 0 }), 403);
+    const invalid = await owner.client.send('patch', layoutPath, {
+      placements: addWorkspaceLayoutPlacement(initial.placements, 'small', { tx: 2, ty: 3 }),
+      expectedRevision: 0,
+    });
+    status(invalid, 400);
+    expect(invalid.body.error.code).toBe('invalid_office_layout');
+
+    const oldOwnerTicket = await issue(owner, original.mapVersion);
+    const occupied = officeSocket({
+      ticket: await issue(member, original.mapVersion),
+      protocolVersion: OFFICE_PROTOCOL_VERSION,
+    });
+    try {
+      const occupiedReady = nextSocketEvent(occupied, 'office:ready');
+      await connectSocket(occupied);
+      await occupiedReady;
+      const saved = await owner.client.send('patch', layoutPath, {
+        placements,
+        expectedRevision: 0,
+      });
+      status(saved, 200);
+      expect(await readLayout()).toMatchObject({
+        placements,
+        revision: 1,
+        hasUnpublishedChanges: true,
+      });
+      expect(await bootstrap(member)).toEqual(original);
+      status(
+        await owner.client.send('patch', layoutPath, { placements, expectedRevision: 0 }),
+        409,
+      );
+      const publishWhileOccupied = await owner.client.send('post', `${layoutPath}/publish`, {
+        expectedRevision: 1,
+      });
+      status(publishWhileOccupied, 409);
+      expect(publishWhileOccupied.body.error.code).toBe('office_in_use');
+    } finally {
+      occupied.disconnect();
+    }
+    await vi.waitFor(() => {
+      expect(app.get(OfficeRuntimeService).hasOffice(office._id)).toBe(false);
+    });
+
+    const publishKey = randomUUID();
+    const published = await owner.client.send(
+      'post',
+      `${layoutPath}/publish`,
+      { expectedRevision: 1 },
+      publishKey,
+    );
+    status(published, 200);
+    const snapshot = workspaceLayoutSnapshotSchema.parse(published.body);
+    expect(snapshot).toMatchObject({ placements, revision: 2, hasUnpublishedChanges: false });
+    expect(await readLayout()).toEqual(snapshot);
+    const replay = await owner.client.send(
+      'post',
+      `${layoutPath}/publish`,
+      { expectedRevision: 1 },
+      publishKey,
+    );
+    status(replay, 200);
+    expect(replay.body).toEqual(snapshot);
+    expect(snapshot.publishedMapVersion).not.toBe(original.mapVersion);
+    expect((await tenancy.offices.findById(office._id).lean())?.publishedLayout).toEqual(
+      placements,
+    );
+    const publishedMember = officeSocket({
+      ticket: await issue(member, snapshot.publishedMapVersion),
+      protocolVersion: OFFICE_PROTOCOL_VERSION,
+    });
+    try {
+      const memberReady = nextSocketEvent(publishedMember, 'office:ready');
+      await connectSocket(publishedMember);
+      await memberReady;
+      const retryWhileOccupied = await owner.client.send(
+        'post',
+        `${layoutPath}/publish`,
+        { expectedRevision: 1 },
+        publishKey,
+      );
+      status(retryWhileOccupied, 200);
+      expect(retryWhileOccupied.body).toEqual(snapshot);
+    } finally {
+      publishedMember.disconnect();
+    }
+    await vi.waitFor(() => {
+      expect(app.get(OfficeRuntimeService).hasOffice(office._id)).toBe(false);
+    });
+    const managedCount = await owner.client.send('patch', `${officePath}/rooms`, {
+      roomCount: 8,
+      expectedRevision: 0,
+    });
+    status(managedCount, 409);
+    expect(managedCount.body.error.code).toBe('office_layout_managed');
+
+    const stale = officeSocket({
+      ticket: oldOwnerTicket,
+      protocolVersion: OFFICE_PROTOCOL_VERSION,
+    });
+    try {
+      const denied = nextSocketEvent<Error>(stale, 'connect_error');
+      stale.connect();
+      await expect(denied).resolves.toHaveProperty('message', 'stale_epoch');
+    } finally {
+      stale.disconnect();
+    }
+
+    const current = await bootstrap(owner);
+    expect(await bootstrap(member)).toEqual(current);
+    expect(current.layout).toEqual(placements);
+    expect(current.mapVersion).toBe(snapshot.publishedMapVersion);
+    expect(current.geometry?.zones.map(({ zoneId }) => zoneId)).toEqual([
+      'small',
+      'large',
+      'small-2',
+    ]);
+    const seatIds = current.geometry?.objects.flatMap(({ seats }) =>
+      seats.map(({ seatId }) => seatId),
+    );
+    expect(seatIds).toHaveLength(18);
+    const sockets = await Promise.all(
+      [owner, member].map(async (user) =>
+        officeSocket({
+          ticket: await issue(user, current.mapVersion),
+          protocolVersion: OFFICE_PROTOCOL_VERSION,
+        }),
+      ),
+    );
+    try {
+      let officeEpoch: string | undefined;
+      for (const socket of sockets) {
+        const readyEvent = nextSocketEvent(socket, 'office:ready');
+        const zonesEvent = nextSocketEvent(socket, 'meeting:zones');
+        await connectSocket(socket);
+        const ready = officeReadySchema.parse(await readyEvent);
+        expect(ready.mapVersion).toBe(current.mapVersion);
+        expect(ready.snapshot.seats.map(({ seatId }) => seatId)).toEqual(seatIds);
+        expect(ready.snapshot.officeEpoch).toBe(officeEpoch ?? ready.snapshot.officeEpoch);
+        officeEpoch = ready.snapshot.officeEpoch;
+        const zones = meetingZonesSchema.parse(await zonesEvent);
+        expect(zones.mapVersion).toBe(current.mapVersion);
+        expect(zones.zones.map(({ zoneId }) => zoneId)).toEqual(['small', 'large', 'small-2']);
+      }
+    } finally {
+      sockets.forEach((socket) => socket.disconnect());
+    }
+
+    await vi.waitFor(() => {
+      expect(app.get(OfficeRuntimeService).hasOffice(office._id)).toBe(false);
+    });
+    const revised = moveWorkspaceLayoutPlacement(placements, 'small-2', { tx: 30, ty: 3 });
+    status(
+      await owner.client.send('patch', layoutPath, { placements: revised, expectedRevision: 2 }),
+      200,
+    );
+    const newPublication = await owner.client.send('post', `${layoutPath}/publish`, {
+      expectedRevision: 3,
+    });
+    status(newPublication, 200);
+    const recentEpoch = app.get(OfficeEpochRegistry).current(office._id);
+    expect(
+      await owner.client.send('post', `${layoutPath}/publish`, { expectedRevision: 1 }, publishKey),
+    ).toMatchObject({ status: 200, body: snapshot });
+    expect(app.get(OfficeEpochRegistry).current(office._id)).toBe(recentEpoch);
+    expect((await bootstrap(member)).layout).toEqual(revised);
+  });
+
+  it('keeps generated room identities on a 20-to-25-to-5 change and isolates another workspace', async () => {
+    const owner = await account();
+    const independentlyOwned = await account();
+    const workspaceId = await workspace(owner, 20);
+    const separateWorkspaceId = await workspace(independentlyOwned, 5);
+    const officePath = async (id: string) => {
+      const office = await tenancy.offices.findOne({ workspaceId: id }).lean();
+      if (!office) throw new Error('Office missing');
+      return `/api/workspaces/${id}/offices/${office._id}`;
+    };
+    const path = await officePath(workspaceId);
+    const separatePath = await officePath(separateWorkspaceId);
+    const readLayout = async (actor: Awaited<ReturnType<typeof account>>, route: string) => {
+      const response = await actor.client.get(route);
+      status(response, 200);
+      const layout = officeBootstrapResponseSchema.parse(response.body);
+      if (!layout.geometry) throw new Error('Generated office geometry missing');
+      return { mapVersion: layout.mapVersion, zones: layout.geometry.zones };
+    };
+
+    const initial = await readLayout(owner, path);
+    const separate = await readLayout(independentlyOwned, separatePath);
+    expect(initial.zones).toHaveLength(20);
+    expect(separate.zones).toHaveLength(5);
+    for (const [roomCount, revision] of [
+      [25, 0],
+      [5, 1],
+    ] as const) {
+      const changed = await owner.client.send('patch', `${path}/rooms`, {
+        roomCount,
+        expectedRevision: revision,
+      });
+      status(changed, 200);
+      const settings = await owner.client.get(`/api/workspaces/${workspaceId}`);
+      status(settings, 200);
+      expect(officeWorkspaceDetailResponseSchema.parse(settings.body).workspace).toMatchObject({
+        roomCount,
+        revision: revision + 1,
+      });
+      const current = await readLayout(owner, path);
+      expect(current.zones).toHaveLength(roomCount);
+      const retainedCount = Math.min(20, roomCount);
+      expect(current.zones.slice(0, retainedCount)).toEqual(initial.zones.slice(0, retainedCount));
+      expect(current.mapVersion).not.toBe(initial.mapVersion);
+      expect(await readLayout(independentlyOwned, separatePath)).toEqual(separate);
+    }
+  });
+
+  it('keeps the legacy Vivo layout selected until the owner explicitly changes the count', async () => {
+    const owner = await account();
+    const workspaceId = await workspace(owner);
+    const office = await tenancy.offices.findOne({ workspaceId }).lean();
+    if (!office) throw new Error('Office missing');
+    const path = `/api/workspaces/${workspaceId}/offices/${office._id}`;
+    const legacyMap = trustedOfficeMap(office.mapVersion);
+    if (!legacyMap) throw new Error('Legacy map missing');
+    const legacyRooms = legacyMap.geometry.zones.filter((zone) => zone.kind === 'meeting');
+
+    const settings = await owner.client.get(`/api/workspaces/${workspaceId}`);
+    status(settings, 200);
+    expect(officeWorkspaceDetailResponseSchema.parse(settings.body).workspace).toMatchObject({
+      roomCount: legacyRooms.length,
+      revision: 0,
+    });
+    const before = await owner.client.get(path);
+    status(before, 200);
+    expect(officeBootstrapResponseSchema.parse(before.body)).toMatchObject({
+      mapVersion: vivoManifest.mapVersion,
+      manifest: { mapId: 'vivo' },
+    });
+
+    const roomCount = legacyRooms.length + 1;
+    status(
+      await owner.client.send('patch', `${path}/rooms`, { roomCount, expectedRevision: 0 }),
+      200,
+    );
+    const after = await owner.client.get(path);
+    status(after, 200);
+    const converted = officeBootstrapResponseSchema.parse(after.body);
+    expect(converted.mapVersion).not.toBe(vivoManifest.mapVersion);
+    expect(converted.manifest).toMatchObject({ mapId: 'workspace', roomCount });
+    expect(converted.geometry?.zones).toHaveLength(roomCount);
   });
 
   it('scopes office bootstrap to an active workspace member and an approved configured map', async () => {
@@ -5414,6 +5836,128 @@ describe('office socket admission', () => {
       );
       await expect(accessEnded).resolves.toMatchObject({ reason: 'authorization_ended' });
       await expect(disconnected).resolves.toBeTruthy();
+    } finally {
+      client.disconnect();
+    }
+  });
+
+  it('admits a retry after the transport closes during ticket consumption', async () => {
+    const owner = await account();
+    const workspaceId = await workspace(owner);
+    const first = await issueTicket(owner, workspaceId);
+    const abandoned = officeSocket({
+      ticket: first.ticket,
+      protocolVersion: OFFICE_PROTOCOL_VERSION,
+    });
+    const admission = app.get(OfficeAdmissionService);
+    const consume = admission.consumeSocketTicket.bind(admission);
+    let allowReserve = () => {};
+    let startConsumed = () => {};
+    const consumed = new Promise<void>((resolve) => {
+      startConsumed = resolve;
+    });
+    const paused = new Promise<void>((resolve) => {
+      allowReserve = resolve;
+    });
+    const delayed = vi
+      .spyOn(admission, 'consumeSocketTicket')
+      .mockImplementationOnce(async (...args) => {
+        const ticket = await consume(...args);
+        startConsumed();
+        await paused;
+        return ticket;
+      });
+    let retry: Socket | undefined;
+    try {
+      abandoned.connect();
+      await consumed;
+      abandoned.disconnect();
+      // Exercise the actual HTTP + Engine.IO retry while the first middleware is being abandoned.
+      const second = await issueTicket(owner, workspaceId);
+      allowReserve();
+      retry = officeSocket({ ticket: second.ticket, protocolVersion: OFFICE_PROTOCOL_VERSION });
+      const ready = nextSocketEvent(retry, 'office:ready');
+      await connectSocket(retry);
+      expect(officeReadySchema.parse(await ready).snapshot.participants).toHaveLength(1);
+    } finally {
+      allowReserve();
+      delayed.mockRestore();
+      abandoned.disconnect();
+      retry?.disconnect();
+    }
+  });
+
+  it('centers automatic walking at its authoritative waypoint and rejects unreachable jumps', async () => {
+    const owner = await account();
+    const workspaceId = await workspace(owner);
+    const { ticket } = await issueTicket(owner, workspaceId);
+    const client = officeSocket({ ticket, protocolVersion: OFFICE_PROTOCOL_VERSION });
+    try {
+      const readyEvent = nextSocketEvent(client, 'office:ready');
+      await connectSocket(client);
+      const ready = officeReadySchema.parse(await readyEvent);
+      const map = trustedOfficeMap(ready.mapVersion)!;
+      const start = pixelToTile(ready.snapshot.participants[0]!.position);
+      const target = { tx: start.tx - 1, ty: start.ty };
+      const wallApproach = { tx: target.tx, ty: target.ty - 1 };
+      const throughWall = { tx: wallApproach.tx, ty: wallApproach.ty - 1 };
+      expect(canStep(start, target, map.validated.bounds, map.validated.collision)).toBe(true);
+      expect(canStep(target, wallApproach, map.validated.bounds, map.validated.collision)).toBe(
+        true,
+      );
+      expect(
+        canStep(wallApproach, throughWall, map.validated.bounds, map.validated.collision),
+      ).toBe(false);
+      const expected = {
+        x: (target.tx + 0.5) * map.geometry.tileSize,
+        y: (target.ty + 0.5) * map.geometry.tileSize,
+      };
+      const input = (sequence: number, waypoint: typeof target) =>
+        new Promise<unknown>((resolve) =>
+          client.emit(
+            'world:input',
+            {
+              eventId: randomUUID(),
+              officeEpoch: ready.snapshot.officeEpoch,
+              payload: { sequence, dx: 0, dy: 0, waypoint },
+            },
+            resolve,
+          ),
+        );
+      expect(
+        officeCommandAckSchema.parse(await input(1, { tx: start.tx + 3, ty: start.ty })),
+      ).toMatchObject({ ok: false, error: { code: 'conflict' } });
+      expect(officeCommandAckSchema.parse(await input(2, target))).toMatchObject({ ok: true });
+      const position = () => {
+        const snapshot = app
+          .get(OfficeRuntimeService)
+          .resync(
+            ready.officeId,
+            ready.workspaceId,
+            owner.id,
+            client.id!,
+            ready.participationId,
+            ready.snapshot.officeEpoch,
+            0,
+          );
+        return typeof snapshot === 'string'
+          ? snapshot
+          : snapshot.snapshot.participants[0]?.position;
+      };
+      await expect.poll(position).toEqual(expected);
+      expect(officeCommandAckSchema.parse(await input(3, target))).toMatchObject({ ok: true });
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      expect(position()).toEqual(expected);
+      expect(officeCommandAckSchema.parse(await input(4, wallApproach))).toMatchObject({
+        ok: true,
+      });
+      const atWall = { x: expected.x, y: expected.y - map.geometry.tileSize };
+      await expect.poll(position).toEqual(atWall);
+      expect(officeCommandAckSchema.parse(await input(5, throughWall))).toMatchObject({
+        ok: false,
+        error: { code: 'conflict' },
+      });
+      expect(position()).toEqual(atWall);
     } finally {
       client.disconnect();
     }

@@ -17,7 +17,7 @@ export interface ProximityCandidate {
   readonly displayName: string;
   readonly availability: 'available' | 'busy' | 'away';
   readonly position: { readonly x: number; readonly y: number };
-  /** Meeting room boundary containing the participant, or null in shared office space. */
+  /** Enclosed room boundary containing the participant, or null in shared office space. */
   readonly roomId?: string | null;
 }
 
@@ -97,6 +97,13 @@ export class ProximityPairing {
   }
 
   reconcile(candidates: readonly ProximityCandidate[]): PrivateConversationNotice[] {
+    if (
+      this.optedIn.size === 0 &&
+      this.groups.size === 0 &&
+      this.blocked.size === 0 &&
+      this.suppressedPairs.size === 0
+    )
+      return [];
     const byId = new Map(candidates.map((candidate) => [candidate.participationId, candidate]));
     const notices: PrivateConversationNotice[] = [];
     for (const participationId of this.optedIn) {

@@ -1,0 +1,141 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="288" viewBox="0 0 512 288" shape-rendering="crispEdges">
+  <title>Central team studio with a glazed wall, two work islands, and a shared workbench</title>
+  <defs>
+    <pattern id="maple" width="96" height="40" patternUnits="userSpaceOnUse">
+      <path fill="#f1dec2" d="M0 0h96v40H0z"/>
+      <path fill="#e7cfae" d="M0 0h22v10H0zm61 0h35v10H61zM18 10h48v10H18zM0 20h38v10H0zm70 0h26v10H70zM27 30h47v10H27z"/>
+      <path fill="#f6e7cf" d="M22 0h39v10H22zM0 10h18v10H0zm66 0h30v10H66zM38 20h32v10H38zM0 30h27v10H0zm74 0h22v10H74z"/>
+      <path stroke="#c8a884" stroke-opacity=".48" fill="none" d="M0 0h96M0 10h96M0 20h96M0 30h96M22 0v10M61 0v10M18 10v10M66 10v10M38 20v10M70 20v10M27 30v10M74 30v10"/>
+      <path stroke="#fff4e0" stroke-opacity=".65" fill="none" d="M5 4h12m15 2h20m18-3h15M28 14h22m26 1h12M5 24h22m24 0h12M7 35h12m20-2h22m20 2h10"/>
+    </pattern>
+    <pattern id="rug" width="16" height="16" patternUnits="userSpaceOnUse">
+      <path fill="#91aca3" d="M0 0h16v16H0z"/>
+      <path fill="none" stroke="#aac1b1" d="M-4 8 4 0m-4 12L12 0m0 16 8-8M4 16 16 4m-8 4 4-4"/>
+      <path fill="#78978d" d="M3 7h2v2H3zm8 5h2v1h-2z"/>
+    </pattern>
+    <pattern id="bench-rug" width="12" height="8" patternUnits="userSpaceOnUse">
+      <path fill="#c08d72" d="M0 0h12v8H0z"/>
+      <path fill="#d2a28a" d="M0 1h12v1H0zm0 4h12v1H0z"/>
+      <path fill="#a67d69" d="M1 2h1v2H1zm8 4h1v2H9z"/>
+    </pattern>
+    <g id="glass">
+      <path fill="#4c6264" d="M0 0h72v23H0z"/>
+      <path fill="#7b9794" d="M2 1h68v19H2z"/>
+      <path fill="#a1c7bd" d="M4 4h18v14H4zm21 0h22v14H25zm25 0h18v14H50z"/>
+      <path fill="#759fa0" d="M4 4h18v3H4zm21 0h22v3H25zm25 0h18v3H50z"/>
+      <path fill="#cde4cc" opacity=".75" d="M8 7h2v11H8zm21 0h3v11h-3zm25 0h2v11h-2z"/>
+      <path fill="#e1d1b0" d="M0 21h72v3H0z"/>
+    </g>
+    <g id="pegboard">
+      <path fill="#786458" d="M0 0h53v21H0z"/>
+      <path fill="#e4cda7" d="M2 2h49v17H2z"/>
+      <path fill="#bc9978" d="M5 5h42v1H5zm0 4h42v1H5zm0 4h42v1H5z"/>
+      <path fill="#62867b" d="M7 4h8v10H7zm28 2h11v8H35z"/>
+      <path fill="#e6b87c" d="M19 6h9v10h-9z"/>
+      <path fill="#f5ddaf" d="M9 5h4v1H9zm12 2h5v1h-5zm16 0h7v1h-7z"/>
+    </g>
+    <g id="monitor">
+      <path fill="#394f55" d="M0 0h17v10H0zm7 10h3v3H7zm-3 3h9v2H4z"/>
+      <path fill="#88b4a8" d="M2 2h13v6H2z"/>
+      <path fill="#5d8d8b" d="M2 2h13v2H2z"/>
+      <path fill="#badaad" d="M4 4h5v1H4z"/>
+    </g>
+    <g id="notebook">
+      <path fill="#f6e1b9" d="M0 0h10v8H0z"/>
+      <path fill="#a98568" d="M1 1h1v6H1zm3 1h5v1H4zm0 2h4v1H4z"/>
+    </g>
+    <g id="plant">
+      <path fill="#644f42" opacity=".25" d="M0 13h16v8H0z"/>
+      <path fill="#8e6e59" d="M3 12h10v6h-1v2H4v-2H3z"/>
+      <path fill="#ad8971" d="M3 12h10v3H3z"/>
+      <path fill="#456e58" d="M6 1h4v3h3v2h2v6H2V7h2V4h2z"/>
+      <path fill="#77996a" d="M6 1h4v3h3v4h-4v4H6V8H3V6h3z"/>
+      <path fill="#a7b77b" d="M6 3h3v2H6zm4 4h3v2h-3z"/>
+    </g>
+    <g id="chair">
+      <path fill="#354a48" opacity=".26" d="M0 18h24v6H0z"/>
+      <path fill="#3d5152" d="M3 2h3V0h12v2h3v16h-3v3h-4v2h-4v-2H6v-3H3z"/>
+      <path fill="currentColor" d="M6 2h12v4H6zm-1 6h14v8H5zm3 9h8v2H8z"/>
+      <path fill="#d4c8a8" opacity=".65" d="M7 2h10v1H7zM4 9h2v5H4zm14 0h2v5h-2z"/>
+      <path fill="#394a4a" d="M7 14h10v1H7zm2 6h6v1H9z"/>
+    </g>
+    <g id="island">
+      <path fill="#5b6960" opacity=".25" d="M3 49h122v13H3z"/>
+      <path fill="#76594b" d="M0 8h128v45H0zm2 44h7v9H2zm117 0h7v9h-7z"/>
+      <path fill="#ca966b" d="M0 5h128v45H0z"/>
+      <path fill="#dfb381" d="M2 6h124v36H2z"/>
+      <path fill="#f5ca98" d="M2 6h124v3H2z"/>
+      <path fill="#a97458" d="M2 46h124v3H2z"/>
+      <path fill="#ad865f" d="M31 10h1v30h-1zm32 0h1v30h-1zm32 0h1v30h-1z"/>
+      <path fill="#eac696" d="M8 13h18v1H8zm30 2h14v1H38zm35 0h18v1H73zm30-2h16v1h-16z"/>
+      <use href="#monitor" x="8" y="16"/>
+      <use href="#monitor" x="40" y="16"/>
+      <use href="#monitor" x="72" y="16"/>
+      <use href="#monitor" x="104" y="16"/>
+      <use href="#notebook" x="6" y="32"/>
+      <use href="#notebook" x="53" y="32"/>
+      <use href="#notebook" x="70" y="32"/>
+      <use href="#notebook" x="117" y="32"/>
+      <path fill="#a46854" d="M23 34h4v5h-4zm18 0h4v5h-4zm46 0h4v5h-4zm21 0h4v5h-4z"/>
+    </g>
+  </defs>
+
+  <path fill="url(#maple)" d="M0 0h512v288H0z"/>
+  <!-- A glazed rear wall leaves the two central entry tiles entirely open. -->
+  <path fill="#81938a" d="M0 0h224v32H0zm288 0h224v32H288z"/>
+  <path fill="#9eafa0" d="M6 5h218v23H6zm282 0h218v23H288z"/>
+  <path fill="#c1caac" d="M0 0h224v5H0zm288 0h224v5H288z"/>
+  <path fill="#627b74" d="M0 27h224v5H0zm288 0h224v5H288z"/>
+  <use href="#glass" x="14" y="4"/>
+  <use href="#glass" x="91" y="4"/>
+  <use href="#pegboard" x="170" y="5"/>
+  <use href="#pegboard" x="289" y="5"/>
+  <use href="#glass" x="350" y="4"/>
+  <use href="#glass" x="427" y="4"/>
+  <path fill="#667b71" d="M0 0h6v288H0zm506 0h6v288h-6zM0 280h224v8H0zm288 0h224v8H288z"/>
+  <path fill="#a8b49c" d="M1 5h3v275H1zm507 0h3v275h-3zM6 280h218v3H6zm282 0h218v3H288z"/>
+  <path fill="#ecdbb8" d="M224 0h64v5h-64zm0 283h64v3h-64z"/>
+  <path fill="#b49473" d="M224 4h64v2h-64zm0 282h64v1h-64z"/>
+  <path fill="#576f66" d="M219 0h5v33h-5zm69 0h5v33h-5zM219 278h5v10h-5zm69 0h5v10h-5z"/>
+  <path fill="#b5c0a5" d="M220 3h3v27h-3zm69 0h3v27h-3zM220 279h3v5h-3zm69 0h3v5h-3z"/>
+  <!-- Flush tile inlay guides the route between work areas. -->
+  <path fill="#d2b991" d="M251 45h10v2h-10zm-4 4h18v2h-18zm4 4h10v2h-10zM251 264h10v2h-10zm-4 4h18v2h-18zm4 4h10v2h-10z"/>
+  <path fill="#748e82" d="M83 83h146v108H83zm200 0h146v108H283z"/>
+  <path fill="url(#rug)" d="M86 86h140v102H86zm200 0h140v102H286z"/>
+  <path fill="none" stroke="#d9d7b0" stroke-width="2" d="M90 90h132v94H90zm200 0h132v94H290z"/>
+  <path fill="#8c6f63" d="M152 190h208v69H152z"/>
+  <path fill="url(#bench-rug)" d="M155 193h202v63H155z"/>
+  <path fill="none" stroke="#ead0a7" stroke-width="2" d="M159 197h194v55H159z"/>
+
+  <!-- The islands occupy x96–224 and x288–416, y96–160. -->
+  <use href="#island" x="96" y="96"/>
+  <use href="#island" x="288" y="96"/>
+  <use href="#chair" x="100" y="164" color="#577f80"/>
+  <use href="#chair" x="132" y="164" color="#577f80"/>
+  <use href="#chair" x="164" y="164" color="#577f80"/>
+  <use href="#chair" x="196" y="164" color="#577f80"/>
+  <use href="#chair" x="292" y="164" color="#857890"/>
+  <use href="#chair" x="324" y="164" color="#857890"/>
+  <use href="#chair" x="356" y="164" color="#857890"/>
+  <use href="#chair" x="388" y="164" color="#857890"/>
+  <!-- Shared bench occupies x160–352, y192–224. The aisles route around both ends. -->
+  <path fill="#604f4a" opacity=".27" d="M161 215h190v9H161z"/>
+  <path fill="#785746" d="M160 197h192v20H160zm3 18h6v8h-6zm180 0h6v8h-6z"/>
+  <path fill="#cc9875" d="M161 194h190v20H161z"/>
+  <path fill="#deae82" d="M163 195h186v14H163z"/>
+  <path fill="#f0c79b" d="M163 195h186v3H163z"/>
+  <path fill="#af7d61" d="M163 210h186v3H163z"/>
+  <use href="#plant" x="164" y="194"/>
+  <use href="#plant" x="331" y="194"/>
+  <use href="#notebook" x="202" y="201"/>
+  <use href="#notebook" x="304" y="201"/>
+  <path fill="#ede3c8" d="M226 200h60v8h-60z"/>
+  <path fill="#789a8a" d="M229 201h17v1h-17zm0 3h11v1h-11zm20-3h13v4h-13zm17 0h16v1h-16zm0 3h9v1h-9z"/>
+  <use href="#chair" x="196" y="228" color="#a07159"/>
+  <use href="#chair" x="228" y="228" color="#a07159"/>
+  <use href="#chair" x="260" y="228" color="#a07159"/>
+  <use href="#chair" x="292" y="228" color="#a07159"/>
+  <!-- Wall pinstripe and inset aisle markers stay flush. -->
+  <path fill="none" stroke="#c6ad8b" opacity=".7" d="M13 41v230m486-230v230M17 43v224m478-224v224"/>
+  <path fill="#f6e8cc" d="M34 147h36v2H34zm408 0h36v2h-36zM34 153h36v2H34zm408 0h36v2h-36z"/>
+</svg>

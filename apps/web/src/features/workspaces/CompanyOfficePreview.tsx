@@ -223,7 +223,30 @@ export function CompanyOfficePreview({
   const [microphoneIntent, setMicrophoneIntent] = useState<string | null>(null);
   const remoteAudioContainer = useRef<HTMLDivElement>(null);
   const mediaContextKey = useRef<string | null>(null);
-  const [speakingIds, setSpeakingIds] = useState<string[]>([]);
+  const [voiceActivity, setVoiceActivity] = useState<{
+    contextKey: string | null;
+    ids: readonly string[];
+  }>({ contextKey: null, ids: [] });
+  const speakingIds = useMemo(() => {
+    if (
+      !activeVoiceContextKey ||
+      voiceActivity.contextKey !== activeVoiceContextKey ||
+      (proximityAudioStatus !== 'live' && proximityAudioStatus !== 'muted')
+    )
+      return [];
+    const members = new Set(
+      activeVoiceConversation?.participants.map((member) => member.participationId),
+    );
+    return voiceActivity.ids.filter(
+      (id) => members.has(id) && (id !== participationId || proximityAudioStatus === 'live'),
+    );
+  }, [
+    activeVoiceContextKey,
+    activeVoiceConversation,
+    participationId,
+    proximityAudioStatus,
+    voiceActivity,
+  ]);
   const microphoneMembershipKey = useRef(voiceMembershipKey);
   const audioParticipation = useRef(participationId);
   const proximityAudio = useRef<ProximityAudioSession | null>(null);
@@ -380,7 +403,18 @@ export function CompanyOfficePreview({
       },
       (track, identity) => audioPlayback.attach(track, identity, remoteAudioContainer.current),
       undefined,
-      setSpeakingIds,
+      (identities) => {
+        if (!active) return;
+        const contextKey = mediaContextKey.current;
+        const ids = [...identities].sort();
+        setVoiceActivity((previous) =>
+          previous.contextKey === contextKey &&
+          previous.ids.length === ids.length &&
+          previous.ids.every((id, index) => id === ids[index])
+            ? previous
+            : { contextKey, ids },
+        );
+      },
       (stage) => {
         setProximityAudioStage(stage);
         if (stage === 'capturing') setPermissionWaitLong(false);
@@ -880,7 +914,7 @@ export function CompanyOfficePreview({
   );
   const sceneParticipants: Participant[] = snapshot.participants.map((participant) => ({
     id: participant.participationId,
-    speaking: Boolean(activeVoiceContextKey) && speakingIds.includes(participant.participationId),
+    speaking: speakingIds.includes(participant.participationId),
     name: participant.displayName,
     color: '#f6c08f',
     avatar: sceneAvatarForAppearance(participant.appearance),
@@ -890,18 +924,46 @@ export function CompanyOfficePreview({
     ...(participant.seatId ? { seatId: participant.seatId } : {}),
     status: participant.availability,
   }));
+  const canNavigateOffice = mapId === 'vivo' || Boolean(bootstrap.layout);
   const selectedMemberIsLive = Boolean(selectedMember && selectedMember.availability !== 'away');
   const goToDisabledReason = !connected
     ? 'Join the office to use Go to.'
     : !selectedMemberIsLive
       ? 'Go to is available when this member is online.'
-      : mapId !== 'vivo'
-        ? 'Go to is available on Vivo.'
+      : !canNavigateOffice
+        ? 'Go to is unavailable on this floor plan.'
         : !self || self.availability === 'away'
           ? 'Change your status to online to use Go to.'
           : self.seatId
             ? 'Stand up before using Go to.'
             : '';
+  const navigateToSelection =
+    selectedMember && navigationTarget?.participantId === selectedMember.participationId
+      ? navigationTarget
+      : undefined;
+  function selectMapMember(id: string, trigger?: HTMLElement | SVGElement | null) {
+    if (id === ready.participationId) return;
+    if (!snapshot.participants.some((participant) => participant.participationId === id)) return;
+    selectionTrigger.current = trigger ?? null;
+    setSelectedOfflineMemberId(null);
+    setSelectedMemberId(id);
+    setMemberActionMessage('');
+  }
+  function recordNavigationResult(
+    id: string,
+    result: 'moving' | 'nearby' | 'stopped' | 'unavailable',
+  ) {
+    if (id !== selectedMemberId) return;
+    setMemberActionMessage(
+      result === 'moving'
+        ? `Moving toward ${selectedMember?.displayName ?? 'member'}…`
+        : result === 'nearby'
+          ? 'Destination reached.'
+          : result === 'stopped'
+            ? 'Movement stopped.'
+            : 'Go to is unavailable right now.',
+    );
+  }
   const noOverrides: Overrides = {};
   const connectionMessage = connected
     ? participantCount === 1
@@ -1330,7 +1392,7 @@ export function CompanyOfficePreview({
                     </p>
                   )}
               </div>
-              {mapId === 'commons' && (
+              {(mapId === 'commons' || bootstrap.layout) && (
                 <div role="group" aria-labelledby="office-seats-title">
                   <h3 id="office-seats-title">Seats</h3>
                   <div className="office-world-control-row">
@@ -1362,7 +1424,7 @@ export function CompanyOfficePreview({
                 </div>
               )}
               <p className="office-scene-help">
-                {mapId === 'vivo'
+                {canNavigateOffice
                   ? 'Use the arrow keys or WASD to move. Click a chair or press E to sit.'
                   : 'Use the arrow keys or WASD to move. Choose an available seat here.'}
               </p>
@@ -1537,7 +1599,7 @@ export function CompanyOfficePreview({
                       !self ||
                       Boolean(self.seatId) ||
                       self.availability === 'away' ||
-                      mapId !== 'vivo'
+                      !canNavigateOffice
                     }
                     onClick={() => {
                       const latest = client.getSnapshot().snapshot;
@@ -1640,35 +1702,9 @@ export function CompanyOfficePreview({
                     onMove={() => {}}
                     onMovementIntent={(dx, dy) => client.move(dx, dy)}
                     onPlace={() => {}}
-                    onSelect={(id, trigger) => {
-                      if (id === ready.participationId) return;
-                      const member = snapshot.participants.find(
-                        (person) => person.participationId === id,
-                      );
-                      if (!member) return;
-                      selectionTrigger.current = trigger ?? null;
-                      setSelectedOfflineMemberId(null);
-                      setSelectedMemberId(id);
-                      setMemberActionMessage('');
-                    }}
-                    navigationTarget={
-                      selectedMember &&
-                      navigationTarget?.participantId === selectedMember.participationId
-                        ? navigationTarget
-                        : undefined
-                    }
-                    onNavigationResult={(id, result) => {
-                      if (id !== selectedMemberId) return;
-                      setMemberActionMessage(
-                        result === 'moving'
-                          ? `Moving toward ${selectedMember?.displayName ?? 'member'}…`
-                          : result === 'nearby'
-                            ? 'Destination reached.'
-                            : result === 'stopped'
-                              ? 'Movement stopped.'
-                              : 'Go to is unavailable right now.',
-                      );
-                    }}
+                    onSelect={selectMapMember}
+                    navigationTarget={navigateToSelection}
+                    onNavigationResult={recordNavigationResult}
                     onSelectObject={() => {}}
                     onMoveObject={() => {}}
                     onRemove={() => {}}
@@ -1686,11 +1722,19 @@ export function CompanyOfficePreview({
                     <LiveCommonsScene
                       bootstrap={state.bootstrap}
                       snapshot={state.snapshot}
+                      speakingIds={speakingIds}
                       localParticipationId={state.ready.participationId}
-                      onMovement={(dx, dy) => client.move(dx, dy)}
+                      onMovement={(dx, dy, waypoint) => client.move(dx, dy, waypoint)}
                       conversationAreas={state.conversationAreas?.areas ?? []}
                       meetingZones={state.meetingZones?.zones ?? []}
                       currentMeetingZone={currentMeetingZone}
+                      navigationTarget={navigateToSelection}
+                      actions={{
+                        onSelect: selectMapMember,
+                        onNavigationResult: recordNavigationResult,
+                        onSit: (seatId) => void runOfficeAction(() => client.sit(seatId)),
+                        onStand: () => void runOfficeAction(() => client.stand()),
+                      }}
                     />
                   </Suspense>
                 ) : (

@@ -1,14 +1,18 @@
 import { hasReferenceArt } from './referenceArt';
 
-/** Which art draws the office. There is no choice in the interface: the local reference art when it is installed,
-    otherwise the project's own art. `?art=original` shows the own art (used for public screenshots). */
-export type ArtPack = 'reference' | 'original';
-const forced = (() => {
+/** The office renderer can preview the project's art, the local reference art, or the repo's office pack. */
+export type ArtPack = 'reference' | 'original' | 'repo-office';
+const requestedPack = (() => {
   try {
-    return new URLSearchParams(location.search).get('art') === 'original';
+    return new URLSearchParams(location.search).get('art');
   } catch {
-    return false;
+    return null;
   }
 })();
-const current: ArtPack = hasReferenceArt && !forced ? 'reference' : 'original';
+const current: ArtPack =
+  requestedPack === 'repo-office'
+    ? 'repo-office'
+    : hasReferenceArt && requestedPack !== 'original'
+      ? 'reference'
+      : 'original';
 export const artPack = () => current;

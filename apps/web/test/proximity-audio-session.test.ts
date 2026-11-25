@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
+import { RemoteParticipant, Room, RoomEvent, Track } from 'livekit-client';
 import {
   ProximityAudioSession,
+  createLiveKitProximityRoom,
   type ProximityAudioStatus,
   type ProximityRemoteAudioTrack,
   type ProximityRoom,
@@ -62,6 +64,40 @@ function createRoom() {
 }
 
 describe('session-bound proximity audio client', () => {
+  it('reports verified local and remote LiveKit speakers, including mute and departure', async () => {
+    const roomListener = vi.spyOn(Room.prototype, 'on');
+    try {
+      const adapter = await createLiveKitProximityRoom();
+      const speakers = vi.fn();
+      const unsubscribe = adapter.onActiveSpeakersChanged!(speakers);
+      const room = roomListener.mock.contexts.find(
+        (context): context is Room => context instanceof Room,
+      )!;
+      const local = room.localParticipant;
+      local.identity = 'local-person';
+      const localMic = vi.spyOn(local, 'isMicrophoneEnabled', 'get').mockReturnValue(true);
+      const remote = new RemoteParticipant(room.engine.client, 'PA_remote', 'remote-person');
+      vi.spyOn(remote, 'isMicrophoneEnabled', 'get').mockReturnValue(true);
+      room.remoteParticipants.set(remote.identity, remote);
+      room.activeSpeakers = [local, remote];
+
+      room.emit(RoomEvent.ActiveSpeakersChanged, room.activeSpeakers);
+      expect(speakers).toHaveBeenLastCalledWith(['local-person', 'remote-person']);
+      localMic.mockReturnValue(false);
+      room.emit(RoomEvent.TrackMuted, { source: Track.Source.Microphone } as never, local);
+      expect(speakers).toHaveBeenLastCalledWith(['remote-person']);
+      room.remoteParticipants.delete(remote.identity);
+      room.emit(RoomEvent.ParticipantDisconnected, remote);
+      expect(speakers).toHaveBeenLastCalledWith([]);
+
+      unsubscribe();
+      room.emit(RoomEvent.ActiveSpeakersChanged, []);
+      expect(speakers).toHaveBeenCalledTimes(3);
+    } finally {
+      roomListener.mockRestore();
+    }
+  });
+
   it('forwards current speakers and clears them on reconnect and stop, ignoring stale callbacks', async () => {
     const fake = createRoom();
     let emit: ((identities: string[]) => void) | undefined;

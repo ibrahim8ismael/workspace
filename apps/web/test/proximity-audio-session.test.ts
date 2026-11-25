@@ -160,8 +160,8 @@ describe('session-bound proximity audio client', () => {
     await waiting;
 
     const track = { readyState: 'live', stop: vi.fn() } as unknown as MediaStreamTrack;
-    await session.publishScreenShare(track);
-    expect(fake.room.publishScreenShare).toHaveBeenCalledWith(track);
+    await session.publishScreenShare(track, 'share-identifier');
+    expect(fake.room.publishScreenShare).toHaveBeenCalledWith(track, 'share-identifier');
     await session.unpublishScreenShare(track);
     expect(fake.room.unpublishScreenShare).toHaveBeenCalledWith(track);
     await session.stop();

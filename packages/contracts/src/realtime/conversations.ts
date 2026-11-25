@@ -185,6 +185,9 @@ const meetingScreenShareIdentitySchema = z.object({
   conversationId: idSchema,
   shareId: idSchema,
 });
+export const MEETING_SCREEN_SHARE_TRACK_NAME_PREFIX = 'gather-meeting-screen-share:';
+export const meetingScreenShareTrackName = (shareId: string) =>
+  `${MEETING_SCREEN_SHARE_TRACK_NAME_PREFIX}${shareId}`;
 export const meetingScreenShareStartEventSchema = officeCommandSchema(
   meetingScreenShareIdentitySchema.extend({ conversationVersion: stateVersionSchema }).strict(),
 );

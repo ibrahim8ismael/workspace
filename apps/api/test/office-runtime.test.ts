@@ -889,8 +889,7 @@ describe('authoritative meeting screen-share state', () => {
     expect(fixture.operate('confirm', winningPresenter, winningShare)).toBeNull();
     expect(fixture.operate('confirm', winningPresenter, winningShare)).toBeNull();
     const liveNotices = fixture.runtime.drainMeetingScreenShareNotices();
-    expect(liveNotices).toHaveLength(2);
-    expect(liveNotices[0]!.update.version).toBe(liveNotices[1]!.update.version);
+    expect(liveNotices).toHaveLength(1);
     expect(liveNotices[0]!.update.presentation).toMatchObject({
       shareId: winningShare,
       presenterParticipationId: fixture.reservations[winningPresenter]!.participationId,
@@ -989,6 +988,93 @@ describe('authoritative meeting screen-share state', () => {
     ).toBe(true);
     expect(fixture.operate('confirm', 0, shareId)).toBe('conflict');
     expect(fixture.operate('start', 0, shareId)).toBe('conflict');
+  });
+
+  it('releases a live presenter when the bounded confirmation lease is not renewed', () => {
+    const fixture = meetingFixture(1);
+    fixture.join(0);
+    fixture.runtime.drainMeetingScreenShareNotices();
+    const shareId = '30000000-0000-4000-8000-000000000022';
+    expect(fixture.operate('start', 0, shareId)).toBeNull();
+    expect(fixture.operate('confirm', 0, shareId)).toBeNull();
+    fixture.runtime.drainMeetingScreenShareNotices();
+
+    const now = performance.now();
+    fixture.runtime.tick(
+      fixture.actors[0]!.officeId,
+      now + OFFICE_LIMITS.meetingScreenShareLeaseMs - 1,
+    );
+    expect(
+      fixture.runtime.activeMeetingScreenShare(
+        fixture.runtime.conversationMediaPermits()[0]!.generation,
+      ),
+    ).toMatchObject({
+      shareId,
+      status: 'live',
+    });
+    fixture.runtime.tick(
+      fixture.actors[0]!.officeId,
+      now + OFFICE_LIMITS.meetingScreenShareLeaseMs + 1,
+    );
+    expect(
+      fixture.runtime.activeMeetingScreenShare(
+        fixture.runtime.conversationMediaPermits()[0]!.generation,
+      ),
+    ).toBeNull();
+    expect(fixture.runtime.drainMeetingScreenShareNotices()[0]!.update.presentation).toBeNull();
+  });
+
+  it('clears only the matching observed share and ignores stale media events', () => {
+    const fixture = meetingFixture(2);
+    fixture.join(0);
+    fixture.join(1);
+    const room = fixture.currentMeeting().conversationId;
+    const roomGeneration = fixture.runtime.conversationMediaPermits()[0]!.generation;
+    const presenter = fixture.reservations[0]!.participationId;
+    const firstShare = '30000000-0000-4000-8000-000000000020';
+    const nextShare = '30000000-0000-4000-8000-000000000021';
+
+    expect(fixture.operate('start', 0, firstShare)).toBeNull();
+    expect(fixture.operate('confirm', 0, firstShare)).toBeNull();
+    expect(fixture.runtime.activeMeetingScreenShare(roomGeneration)).toMatchObject({
+      shareId: firstShare,
+      presenterParticipationId: presenter,
+      status: 'live',
+    });
+
+    expect(
+      fixture.runtime.clearMeetingScreenShareFromMediaObservation(
+        roomGeneration,
+        presenter,
+        '30000000-0000-4000-8000-000000000099',
+      ),
+    ).toBe(false);
+    expect(
+      fixture.runtime.clearMeetingScreenShareFromMediaObservation(
+        roomGeneration,
+        fixture.reservations[1]!.participationId,
+        firstShare,
+      ),
+    ).toBe(false);
+    expect(
+      fixture.runtime.clearMeetingScreenShareFromMediaObservation(
+        roomGeneration,
+        presenter,
+        firstShare,
+      ),
+    ).toBe(true);
+    fixture.runtime.drainMeetingScreenShareNotices();
+
+    expect(fixture.operate('start', 0, nextShare)).toBeNull();
+    expect(
+      fixture.runtime.clearMeetingScreenShareFromMediaObservation(
+        roomGeneration,
+        presenter,
+        firstShare,
+      ),
+    ).toBe(false);
+    expect(fixture.runtime.activeMeetingScreenShare(roomGeneration)?.shareId).toBe(nextShare);
+    expect(fixture.runtime.activeMeetingScreenShare(room)).toBeNull();
   });
 
   it('clears presenter state when the presenter authorization is released', () => {

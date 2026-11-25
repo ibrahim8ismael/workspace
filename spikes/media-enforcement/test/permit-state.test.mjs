@@ -207,6 +207,42 @@ test('stable meeting room roster changes install in place and retire only after 
   );
 });
 
+test('an API restart snapshot retires its abandoned meeting room before new policy is acknowledged', async () => {
+  const { state } = fixture();
+  const oldPresenter = {
+    ...permit,
+    roomLifecycle: 'stable',
+    sources: ['microphone', 'screen_share'],
+  };
+  const initial = state.beginPull('before-api-restart');
+  assert.equal(
+    await state.installWithRetirement(
+      { ...initial, sequence: 1, permits: [oldPresenter] },
+      async () => assert.fail('the initial stable room has no retired generation'),
+      async () => true,
+    ),
+    true,
+  );
+  assert.equal(state.allows({ ...oldPresenter, source: 'screen_share' }), true);
+
+  let staleSharePublicationPresent = true;
+  const afterRestart = state.beginPull('after-api-restart');
+  assert.equal(
+    await state.installWithRetirement(
+      { ...afterRestart, sequence: 2, permits: [] },
+      async (generation) => {
+        assert.equal(generation, oldPresenter.generation);
+        assert.equal(state.allows({ ...oldPresenter, source: 'screen_share' }), false);
+        staleSharePublicationPresent = false;
+        return true;
+      },
+    ),
+    true,
+  );
+  assert.equal(staleSharePublicationPresent, false);
+  assert.equal(state.allows({ ...oldPresenter, source: 'screen_share' }), false);
+});
+
 test('stable roster reconciliation denies a removed identity while preserving survivors on failure', async () => {
   const { state } = fixture();
   const first = {

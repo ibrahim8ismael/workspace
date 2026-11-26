@@ -34,6 +34,8 @@ coverage
 **/*.env
 .gitkey
 **/.gitkey
+.gitkey~
+**/.gitkey~
 **/*.pem
 *.pem
 **/*.key

@@ -79,7 +79,7 @@ describe('office protocol contracts (fixtures do not approve a map or grant acce
       officeEpoch: other,
       payload: { conversationId: id, conversationVersion: 3, shareId: other },
     };
-    expect(OFFICE_PROTOCOL_VERSION).toBe(7);
+    expect(OFFICE_PROTOCOL_VERSION).toBe(8);
     expect(meetingScreenShareStartEventSchema.safeParse(start).success).toBe(true);
     expect(
       meetingScreenShareStartEventSchema.safeParse({
@@ -288,10 +288,20 @@ describe('office protocol contracts (fixtures do not approve a map or grant acce
 
   it('accepts bounded intent, never client coordinates, speeds or role changes', () => {
     expect(worldInputEventSchema.safeParse(command).success).toBe(true);
+    const waypoint = { tx: 12, ty: 4 };
+    expect(
+      worldInputEventSchema.safeParse({
+        ...command,
+        payload: { sequence: 1, dx: 0, dy: 0, waypoint },
+      }).success,
+    ).toBe(true);
     for (const payload of [
       { ...command.payload, x: 10 },
       { ...command.payload, speed: 1000 },
       { ...command.payload, dx: 2 },
+      { ...command.payload, waypoint },
+      { sequence: 1, dx: 0, dy: 0, waypoint: { ...waypoint, ty: -1 } },
+      { sequence: 1, dx: 0, dy: 0, waypoint: { ...waypoint, x: 12 } },
       { ...command.payload, sequence: -1 },
       { ...command.payload, sequence: 4294967296 },
       { ...command.payload, sequence: 1.5 },

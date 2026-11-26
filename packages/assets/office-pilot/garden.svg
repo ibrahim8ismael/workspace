@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="192" viewBox="0 0 256 192" shape-rendering="crispEdges">
+  <title>Courtyard garden with a clear stone walk, maple shade, and pollinator bed</title>
+  <defs>
+    <pattern id="lawn" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path fill="#a7bb92" d="M0 0h32v32H0z"/>
+      <path fill="#b2c39b" d="M1 5h5v1H1zm16-3h8v2h-8zm5 13h4v1h-4zm-14 5h4v2H8zm18 8h3v1h-3z"/>
+      <path fill="#91a983" d="M9 10h3v1h-3zm18 1h2v1h-2zm-11 14h5v1h-5zM2 29h4v1H2z"/>
+    </pattern>
+    <pattern id="stone" width="40" height="30" patternUnits="userSpaceOnUse">
+      <path fill="#e9dbb9" d="M0 0h40v30H0z"/>
+      <path fill="#e1cfaa" d="M0 0h20v15H0zm20 15h20v15H20z"/>
+      <path fill="#c7b899" opacity=".63" d="M0 0h40v1H0zm0 15h40v1H0zM20 0h1v30h-1z"/>
+      <path fill="#f6ebcf" d="M2 2h15v1H2zm20 15h15v1H22z"/>
+    </pattern>
+    <g id="flower">
+      <path fill="#496b57" d="M5 3h2v10H5zm-4 3h4v2H1zm6 2h4v2H7z"/>
+      <path fill="currentColor" d="M4 0h3v2h3v3H7v2H4V5H2V2h2z"/>
+      <path fill="#f1ce91" d="M5 2h2v2H5z"/>
+    </g>
+    <g id="fern">
+      <path fill="#517458" d="M8 1h2v14H8zm3 2h4v2h-4zm-8 1h4v2H3zm8 4h6v2h-6zM1 8h6v2H1zm3 4h5v2H4zm7 0h4v2h-4z"/>
+      <path fill="#93ac67" d="M8 1h1v10H8zm3 2h3v1h-3zm-8 1h4v1H3zm9 4h5v1h-5zM1 8h5v1H1z"/>
+    </g>
+    <g id="bed">
+      <path fill="#566b54" opacity=".5" d="M2 6h62v58H2z"/>
+      <path fill="#676852" d="M0 3h61v58H0z"/>
+      <path fill="#9a9b78" d="M2 1h57v56H2z"/>
+      <path fill="#c2b891" d="M2 1h57v4H2zm0 0h3v56H2zm54 0h3v56h-3z"/>
+      <path fill="#a79f79" d="M3 53h55v5H3z"/>
+      <path fill="#746752" d="M6 6h49v46H6z"/>
+      <path fill="#8b7960" d="M8 11h45v2H8zm4 14h38v2H12zm-4 17h45v2H8z"/>
+    </g>
+    <pattern id="trellis" width="32" height="22" patternUnits="userSpaceOnUse">
+      <path fill="#9b916f" d="M0 0h32v22H0z"/>
+      <path fill="#b1a484" d="M1 1h30v20H1z"/>
+      <path stroke="#d4c29b" stroke-width="2" fill="none" d="M0 5l16 12L32 5M0 17 16 5l16 12"/>
+      <path fill="#7d8365" d="M0 1h2v20H0zm30 0h2v22h-2z"/>
+    </pattern>
+  </defs>
+  <path fill="url(#lawn)" d="M0 0h256v192H0z"/>
+  <path fill="#6b8061" d="M0 0h256v31H0zM0 23h5v169H0zm251 0h5v169h-5zM0 187h96v5H0zm160 0h96v5h-96z"/>
+  <path fill="#8d9d77" d="M1 29h2v158H1zm252 0h2v158h-2zM2 187h94v2H2zm158 0h94v2h-94z"/>
+  <!-- The trellis is a solid rear boundary. -->
+  <path fill="url(#trellis)" d="M0 4h256v24H0z"/>
+  <path fill="#726e58" d="M0 0h256v5H0zm0 26h256v6H0z"/>
+  <path fill="#c6b38f" d="M0 1h256v2H0zm0 26h256v2H0z"/>
+  <path fill="#5e815b" d="M6 10h7V7h9v3h9v7h-5v5H12v-4H6zM174 7h11v3h9v5h10v8h-13v-3h-8v-4h-9zM227 9h6V6h13v3h10v14h-14v-4h-15z"/>
+  <path fill="#8eaa6c" d="M11 11h7v3h-7zm7-1h7v2h-7zm160-1h8v3h-8zm12 6h7v3h-7zm44-5h9v3h-9zm9 5h8v3h-8z"/>
+  <!-- Step-free stone route from the full two-tile southern entry. -->
+  <path fill="#7e9073" opacity=".65" d="M94 31h68v111h65v24h-65v26H94v-26H29v-24h65z"/>
+  <path fill="url(#stone)" d="M96 32h64v112h65v20h-65v28H96v-28H31v-20h65z"/>
+  <path fill="#f3e7c9" d="M96 32h2v112h-2zm62 0h2v112h-2zM31 144h65v2H31zm129 0h65v2h-65zM96 164h2v28h-2zm62 0h2v28h-2z"/>
+  <path fill="#adb499" d="M120 151h16v2h-16zm-2 4h20v2h-20z"/>
+  <!-- Raised beds, including treetops, stay within the blocked garden plots. -->
+  <use href="#bed" x="32" y="64"/>
+  <path fill="#5c5945" opacity=".56" d="M44 101h39v19H44z"/>
+  <path fill="#6c6046" d="M62 92h7v23h7v3H55v-4h7z"/>
+  <path fill="#a38661" d="M63 97h3v18h-3zm-3 18h10v2H60z"/>
+  <path fill="#446d55" d="M53 75h7v-6h13v4h8v6h6v13h-5v8h-8v5H57v-4h-8v-7h-6V81h10z"/>
+  <path fill="#709764" d="M54 76h8v-5h9v4h8v6h6v8h-6v6H65v5h-8v-5h-8v-7h-4v-6h9z"/>
+  <path fill="#99b36e" d="M56 78h9v-5h6v5h8v7h-7v5h-8v3H54v-5h-7v-5h9z"/>
+  <path fill="#bad08a" d="M57 80h8v3h-8zm8-4h6v3h-6zm-12 9h6v3h-6z"/>
+  <use href="#flower" x="35" y="106" color="#d8b886"/>
+  <use href="#flower" x="78" y="103" color="#d6a0a3"/>
+  <use href="#bed" x="160" y="64"/>
+  <!-- Blue ceramic rain basin surrounded by tall flowers. -->
+  <path fill="#58695d" opacity=".45" d="M174 84h35v33h-35z"/>
+  <path fill="#486369" d="M179 82h25v4h5v18h-5v6h-25v-5h-5V86h5z"/>
+  <path fill="#729c9b" d="M180 83h23v4h4v13h-4v5h-23v-5h-4V87h4z"/>
+  <path fill="#426e77" d="M182 87h19v3h3v8h-4v3h-18v-3h-4v-8h4z"/>
+  <path fill="#82b1b1" d="M180 92h8v1h-8zm9 4h12v1h-12zm3-7h8v1h-8z"/>
+  <path fill="#89a987" d="M184 91h4v4h-5v-3h1zm11 7h5v2h-5z"/>
+  <use href="#flower" x="163" y="69" color="#bd93ae"/>
+  <use href="#flower" x="204" y="71" color="#d3aa93"/>
+  <use href="#flower" x="210" y="95" color="#bd93ae"/>
+  <use href="#flower" x="167" y="101" color="#d6b47b"/>
+  <use href="#fern" x="177" y="107"/>
+  <use href="#fern" x="199" y="108"/>
+  <path fill="#ccba92" d="M96 188h64v4H96z"/>
+  <path fill="#efe1bb" d="M96 188h64v2H96z"/>
+</svg>

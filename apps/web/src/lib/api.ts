@@ -7,6 +7,9 @@ import {
   createWorkspaceSchema,
   renameWorkspaceSchema,
   updateWorkspaceRoomCountSchema,
+  workspaceLayoutSnapshotSchema,
+  saveWorkspaceLayoutSchema,
+  publishWorkspaceLayoutSchema,
   updateWorkspaceMemberRoleSchema,
   createInvitationSchema,
   csrfResponseSchema,
@@ -337,6 +340,43 @@ export class ApiClient {
       signal,
       'PATCH',
     );
+  }
+
+  workspaceLayout(workspaceId: string, officeId: string, signal?: AbortSignal) {
+    return this.get(
+      this.workspaceLayoutPath(workspaceId, officeId),
+      workspaceLayoutSnapshotSchema,
+      signal,
+    );
+  }
+
+  saveWorkspaceLayout(workspaceId: string, officeId: string, input: unknown, key: string) {
+    return this.mutate(
+      this.workspaceLayoutPath(workspaceId, officeId),
+      input,
+      saveWorkspaceLayoutSchema,
+      workspaceLayoutSnapshotSchema,
+      key,
+      undefined,
+      'PATCH',
+    );
+  }
+
+  publishWorkspaceLayout(workspaceId: string, officeId: string, input: unknown, key: string) {
+    return this.mutate(
+      `${this.workspaceLayoutPath(workspaceId, officeId)}/publish`,
+      input,
+      publishWorkspaceLayoutSchema,
+      workspaceLayoutSnapshotSchema,
+      key,
+    );
+  }
+
+  private workspaceLayoutPath(workspaceId: string, officeId: string) {
+    const workspace = idSchema.safeParse(workspaceId);
+    const office = idSchema.safeParse(officeId);
+    if (!workspace.success || !office.success) throw new ApiError('validation_failed', 400);
+    return `/workspaces/${encodeURIComponent(workspace.data)}/offices/${encodeURIComponent(office.data)}/layout`;
   }
 
   removeWorkspaceMember(workspaceId: string, userId: string, key: string, signal?: AbortSignal) {

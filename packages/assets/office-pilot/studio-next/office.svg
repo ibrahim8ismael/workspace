@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192" shape-rendering="crispEdges">
+  <defs>
+    <pattern id="oak" width="64" height="40" patternUnits="userSpaceOnUse">
+      <path fill="#dcb985" d="M0 0h64v40H0z"/>
+      <path fill="#e5c79a" d="M0 0h38v10H0zm18 10h38v10H18zM0 20h27v10H0zm35 10h29v10H35z"/>
+      <path fill="none" stroke="#cba674" d="M0 10h64M0 20h64M0 30h64M0 39h64M38 0v10M18 10v10m38-10v10M27 20v10m8 0v10"/>
+      <path fill="#edcfa4" d="M6 3h18v1H6zm27 11h14v1H33zM5 24h11v1H5zm38 11h17v1H43z"/>
+    </pattern>
+    <pattern id="weave" width="8" height="8" patternUnits="userSpaceOnUse">
+      <path fill="#9caa91" d="M0 0h8v8H0z"/>
+      <path fill="#aeb99f" d="M1 1h2v1H1zm4 4h2v1H5z"/>
+    </pattern>
+  </defs>
+  <path fill="url(#oak)" d="M0 0h192v192H0z"/>
+  <path fill="#946f57" opacity=".24" d="M6 29h180v8H6zM6 37h4v150H6z"/>
+  <path fill="#758672" d="M48 56h96v78H48z"/>
+  <path fill="url(#weave)" d="M51 59h90v72H51z"/>
+  <path fill="none" stroke="#c7cbac" d="M54 62h84v66H54z"/>
+  <path fill="#30434b" d="M0 0h192v29H0zM0 27h6v165H0zm186 0h6v165h-6zM6 186h58v6H6zm122 0h58v6h-58z"/>
+  <path fill="#576e73" d="M0 0h192v4H0zM6 187h58v2H6zm122 0h58v2h-58z"/>
+  <path fill="#1c333b" d="M40 6h112v19H40z"/>
+  <path fill="#7da6ae" d="M43 8h34v13H43zm36 0h34v13H79zm36 0h34v13h-34z"/>
+  <path fill="#afc9c7" d="M44 9h31v3H44zm36 0h31v3H80zm36 0h31v3h-31z"/>
+  <path fill="#ceb088" d="M64 188h64v4H64z"/>
+</svg>

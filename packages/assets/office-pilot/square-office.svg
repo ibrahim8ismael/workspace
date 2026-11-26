@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192">
+  <defs>
+    <pattern id="floor" width="64" height="32" patternUnits="userSpaceOnUse">
+      <rect width="64" height="32" fill="#ead9be"/>
+      <path d="M0 16h64M32 0v16M12 16v16" fill="none" stroke="#d8c4a7" opacity=".65"/>
+    </pattern>
+  </defs>
+  <path fill="url(#floor)" d="M0 0h192v192H0z"/>
+  <path fill="#354e50" d="M0 0h192v31H0z"/>
+  <path fill="#749da4" d="M51 6h90v17H51z"/>
+  <path fill="#a5c8c9" d="M55 7h40v12H55zm44 0h38v12H99z"/>
+  <path fill="#526466" d="M0 31h5v161H0zm187 0h5v161h-5zM5 187h59v5H5zm123 0h59v5h-59z"/>
+</svg>

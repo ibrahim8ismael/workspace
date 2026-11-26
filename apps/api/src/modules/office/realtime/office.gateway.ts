@@ -1,9 +1,10 @@
+import { invariant } from '../../../platform/http/errors.js';
 import { HttpException } from '@nestjs/common';
-import { Inject } from '@nestjs/common';
+import { Inject, Logger, type OnModuleDestroy } from '@nestjs/common';
 import { WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
 import type { OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit } from '@nestjs/websockets';
 import type { Namespace, Socket } from 'socket.io';
-import { performance } from 'node:perf_hooks';
+import { monitorEventLoopDelay, performance } from 'node:perf_hooks';
 import {
   OFFICE_LIMITS,
   apiErrorCodeSchema,
@@ -33,7 +34,8 @@ import {
   meetingScreenShareStopEventSchema,
   meetingScreenShareFirstFrameEventSchema,
 } from '@gather/contracts';
-import { OfficeAdmissionService } from '../office-admission.service.js';
+import { OfficeEpochRegistry } from '../office-epoch.registry.js';
+import { OfficeAdmissionService, type SocketPolicyTimings } from '../office-admission.service.js';
 import type { ConsumedOfficeTicket, OfficeReservation } from '../runtime/office-runtime.service.js';
 import { OfficeRuntimeService } from '../runtime/office-runtime.service.js';
 import { OfficeRoomEventPublisher } from '../office-room-event-publisher.js';
@@ -46,6 +48,7 @@ interface OfficeSocketData {
   officeLeaseTimer?: ReturnType<typeof setTimeout>;
   officeLeaseExpiryTimer?: ReturnType<typeof setTimeout>;
   officeLeaseDeadline?: number;
+  officeLeaseTimings?: SocketPolicyTimings;
   officeMovementAttemptTimestamps?: number[];
   officeCommandAttemptTimestamps?: number[];
   officeResyncAttemptTimestamps?: number[];
@@ -67,6 +70,7 @@ function safeSocketErrorCode(error: unknown) {
 export class OfficeGateway
   implements
     OnGatewayInit<Namespace>,
+    OnModuleDestroy,
     OnGatewayConnection<OfficeSocket>,
     OnGatewayDisconnect<OfficeSocket>
 {
@@ -76,10 +80,16 @@ export class OfficeGateway
     { lastWaveAt: number; attempts: number[]; eventIds: Map<string, number> }
   >();
 
+  private readonly logger = new Logger(OfficeGateway.name);
+  private readonly loopDelay = monitorEventLoopDelay({ resolution: 20 });
+  private loopSampleTimer?: ReturnType<typeof setInterval>;
+  private previousLoopDelayMs = 0;
+
   @WebSocketServer()
   private namespace!: Namespace;
 
   constructor(
+    @Inject(OfficeEpochRegistry) private readonly epochs: OfficeEpochRegistry,
     @Inject(OfficeAdmissionService) private readonly admission: OfficeAdmissionService,
     @Inject(OfficeRuntimeService) private readonly runtime: OfficeRuntimeService,
     @Inject(OfficeRoomEventPublisher) private readonly roomEvents: OfficeRoomEventPublisher,
@@ -90,9 +100,19 @@ export class OfficeGateway
   afterInit(namespace: Namespace) {
     this.namespace = namespace;
     this.roomEvents.bind(namespace);
+    this.loopDelay.enable();
+    this.loopSampleTimer = setInterval(() => {
+      this.previousLoopDelayMs = this.loopDelay.max / 1_000_000;
+      this.loopDelay.reset();
+    }, 5_000).unref();
     namespace.use((socket, next) => {
       void this.authenticateAndReserve(socket as OfficeSocket, next);
     });
+  }
+
+  onModuleDestroy() {
+    this.loopDelay.disable();
+    if (this.loopSampleTimer) clearInterval(this.loopSampleTimer);
   }
 
   async handleConnection(socket: OfficeSocket) {
@@ -111,12 +131,14 @@ export class OfficeGateway
       }
       const leaseDeadline = leaseRequestStarted + OFFICE_LIMITS.maxAuthorizationLeaseMs;
       if (performance.now() >= leaseDeadline) {
-        this.endAccess(socket, 'server_unavailable');
+        this.endUnavailable(socket, 'initial-policy-deadline', leaseRequestStarted);
         return;
       }
+      if (!socket.connected) return;
       await socket.join(reservation.roomId);
+      if (!socket.connected) return;
       if (performance.now() >= leaseDeadline) {
-        this.endAccess(socket, 'server_unavailable');
+        this.endUnavailable(socket, 'initial-room-join-deadline', leaseRequestStarted);
         return;
       }
       socket.emit('office:ready', officeReadySchema.parse(reservation.ready));
@@ -151,8 +173,15 @@ export class OfficeGateway
         auth.data.ticket,
         auth.data.protocolVersion,
       );
+      // Namespace disconnect is never emitted if the Engine.IO transport closes during middleware.
+      if (socket.conn.readyState !== 'open') return;
+      invariant(this.epochs.current(ticket.officeId) === ticket.officeEpoch, 409, 'stale_epoch');
       const reservation = this.runtime.reserve(ticket, socket.id);
       if (reservation.retiredSocketIds.length > 0) {
+        if (reservation.retiredReason === 'server_unavailable')
+          this.logger.warn(
+            'Office access ended because a reservation retired another office epoch',
+          );
         const accessEnded = officeAccessEndedSchema.parse({
           officeEpoch: reservation.retiredOfficeEpoch ?? ticket.officeEpoch,
           reason: reservation.retiredReason ?? 'server_unavailable',
@@ -178,6 +207,7 @@ export class OfficeGateway
     delete socket.data.officeLeaseTimer;
     delete socket.data.officeLeaseExpiryTimer;
     delete socket.data.officeLeaseDeadline;
+    delete socket.data.officeLeaseTimings;
     const ticket = socket.data.officeAdmission;
     const reservation = socket.data.officeReservation;
     if (!ticket || !reservation) return;
@@ -209,21 +239,43 @@ export class OfficeGateway
   private registerCleanup(socket: OfficeSocket) {
     if (socket.data.officeCleanupRegistered) return;
     socket.data.officeCleanupRegistered = true;
-    socket.once('disconnect', () => this.cleanup(socket));
+    const onTransportClose = () => this.cleanup(socket);
+    socket.conn.once('close', onTransportClose);
+    socket.once('disconnect', () => {
+      socket.conn.off('close', onTransportClose);
+      this.cleanup(socket);
+    });
   }
 
   private scheduleAuthorizationCheck(
     socket: OfficeSocket,
     ticket: ConsumedOfficeTicket,
     leaseDeadline: number,
+    lastRequestStarted?: number,
   ) {
     if (socket.data.officeLeaseTimer) clearTimeout(socket.data.officeLeaseTimer);
     if (socket.data.officeLeaseExpiryTimer) clearTimeout(socket.data.officeLeaseExpiryTimer);
     socket.data.officeLeaseDeadline = leaseDeadline;
+    const now = performance.now();
+    const policyInterval = OFFICE_LIMITS.socketPolicyCheckIntervalMs;
+    // Distribute fresh joins across the interval. A slow successful check must not
+    // spend its full duration and then wait another full interval before renewing.
+    const phase = Array.from(socket.id).reduce(
+      (hash, char) => (hash * 31 + char.charCodeAt(0)) % policyInterval,
+      0,
+    );
+    const delay =
+      lastRequestStarted === undefined
+        ? Math.max(100, phase)
+        : Math.max(500, lastRequestStarted + policyInterval - now);
     socket.data.officeLeaseExpiryTimer = setTimeout(
       () => {
         if (socket.connected && socket.data.officeLeaseDeadline === leaseDeadline) {
-          this.endAccess(socket, 'server_unavailable');
+          this.endUnavailable(
+            socket,
+            'authorization-lease-expired',
+            leaseDeadline - OFFICE_LIMITS.maxAuthorizationLeaseMs,
+          );
         }
       },
       Math.max(0, leaseDeadline - performance.now()),
@@ -232,10 +284,7 @@ export class OfficeGateway
       () => {
         void this.checkAuthorizationLease(socket, ticket, leaseDeadline);
       },
-      Math.min(
-        OFFICE_LIMITS.socketPolicyCheckIntervalMs,
-        Math.max(0, leaseDeadline - performance.now()),
-      ),
+      Math.min(delay, Math.max(0, leaseDeadline - now)),
     );
   }
 
@@ -247,11 +296,17 @@ export class OfficeGateway
     if (!socket.connected) return;
     const requestStarted = performance.now();
     if (requestStarted >= leaseDeadline) {
-      this.endAccess(socket, 'server_unavailable');
+      this.endUnavailable(
+        socket,
+        'authorization-renewal-started-late',
+        leaseDeadline - OFFICE_LIMITS.maxAuthorizationLeaseMs,
+      );
       return;
     }
+    const timings: SocketPolicyTimings = {};
+    socket.data.officeLeaseTimings = timings;
     try {
-      if (!(await this.admission.isSocketAuthorized(ticket))) {
+      if (!(await this.admission.isSocketAuthorized(ticket, true, timings))) {
         this.endAccess(socket, 'authorization_ended');
         return;
       }
@@ -261,30 +316,47 @@ export class OfficeGateway
         completedAt >= leaseDeadline ||
         completedAt >= requestStarted + OFFICE_LIMITS.maxAuthorizationLeaseMs
       ) {
-        this.endAccess(socket, 'server_unavailable');
+        this.endUnavailable(socket, 'authorization-renewal-completed-late', requestStarted);
         return;
       }
       this.scheduleAuthorizationCheck(
         socket,
         ticket,
         requestStarted + OFFICE_LIMITS.maxAuthorizationLeaseMs,
+        requestStarted,
       );
     } catch {
       if (!socket.connected) return;
       if (performance.now() >= leaseDeadline) {
-        this.endAccess(socket, 'server_unavailable');
+        this.endUnavailable(socket, 'authorization-renewal-query-error', requestStarted);
       } else {
-        this.scheduleAuthorizationCheck(socket, ticket, leaseDeadline);
+        this.scheduleAuthorizationCheck(socket, ticket, leaseDeadline, requestStarted);
       }
     }
+  }
+
+  private endUnavailable(socket: OfficeSocket, stage: string, started: number) {
+    const loopDelayMs = Math.round(
+      Math.max(this.previousLoopDelayMs, this.loopDelay.max / 1_000_000),
+    );
+    const elapsedMs = Math.round(performance.now() - started);
+    this.logger.warn(
+      `Office access ended: ${stage} elapsedMs=${elapsedMs} loopMaxMs=${loopDelayMs} policyRoundTripMs=${JSON.stringify(socket.data.officeLeaseTimings ?? {})}`,
+    );
+    this.endAccess(socket, 'server_unavailable');
   }
 
   private endAccess(socket: OfficeSocket, reason: 'authorization_ended' | 'server_unavailable') {
     const ticket = socket.data.officeAdmission;
     if (ticket) {
+      const accessReason =
+        reason === 'authorization_ended' &&
+        this.epochs.current(ticket.officeId) !== ticket.officeEpoch
+          ? 'server_unavailable'
+          : reason;
       socket.emit(
         'office:access-ended',
-        officeAccessEndedSchema.parse({ officeEpoch: ticket.officeEpoch, reason }),
+        officeAccessEndedSchema.parse({ officeEpoch: ticket.officeEpoch, reason: accessReason }),
       );
     }
     this.cleanup(socket);
@@ -1141,10 +1213,9 @@ export class OfficeGateway
     const timer = setInterval(() => {
       const update = this.runtime.tick(officeId);
       if (update) {
-        this.namespace.to(update.roomId).emit('world:delta', worldDeltaSchema.parse(update.delta));
+        this.namespace.to(update.roomId).emit('world:delta', update.delta);
       }
       this.publishConversationState(workspaceId, officeId);
-      this.publishMeetingInvitationNotices();
       if (!this.runtime.hasOffice(officeId)) {
         this.stopSimulation(officeId);
         this.roomEvents.forgetOffice(workspaceId, officeId);

@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="192" viewBox="0 0 256 192" shape-rendering="crispEdges">
+  <title>Team lounge with two upholstered booths and an open central aisle</title>
+  <defs>
+    <pattern id="oak" width="80" height="40" patternUnits="userSpaceOnUse">
+      <path fill="#f0dfc5" d="M0 0h80v40H0z"/>
+      <path fill="#e7d2b7" d="M0 0h29v10H0zM52 10h28v10H52zM0 20h44v10H0zM24 30h39v10H24z"/>
+      <path fill="#f4e5ce" d="M29 0h51v10H29zM0 10h23v10H0zM44 20h36v10H44zM0 30h24v10H0z"/>
+      <path stroke="#ccac89" stroke-opacity=".42" fill="none" d="M0 0h80M0 10h80M0 20h80M0 30h80M29 0v10M23 10v10M52 10v10M44 20v10M24 30v10M63 30v10"/>
+    </pattern>
+    <pattern id="rug" width="12" height="12" patternUnits="userSpaceOnUse">
+      <path fill="#b9b49b" d="M0 0h12v12H0z"/>
+      <path stroke="#e0d7b8" fill="none" d="m0 6 6-6 6 6-6 6z"/>
+      <path fill="#989a84" d="M5 5h2v2H5z"/>
+    </pattern>
+    <g id="window">
+      <path fill="#526264" d="M0 0h53v21H0z"/>
+      <path fill="#7e9291" d="M2 1h49v18H2z"/>
+      <path fill="#a4c8bf" d="M4 3h21v14H4zm24 0h21v14H28z"/>
+      <path fill="#759c9e" d="M4 3h21v3H4zm24 0h21v3H28z"/>
+      <path fill="#cce0cd" opacity=".7" d="M8 6h2v11H8zm25 0h3v11h-3z"/>
+      <path fill="#e3cdb0" d="M0 19h53v3H0z"/>
+    </g>
+    <g id="sofa">
+      <path fill="#62594b" opacity=".28" d="M0 11h35v47h-3v3H0z"/>
+      <path fill="#455951" d="M0 4h4V0h22v3h5v3h3v48h-3v3H4v-3H0z"/>
+      <path fill="#658581" d="M4 4h22v49H4z"/>
+      <path fill="#86a39a" d="M10 7h19v21H10zm0 23h19v21H10z"/>
+      <path fill="#9eb5a5" d="M11 8h17v2H11zm0 23h17v2H11z"/>
+      <path fill="#577874" d="M4 5h6v48H4zm25 2h4v44h-4z"/>
+      <path fill="#a2b3a2" d="M6 3h23v4H6zm0 48h23v4H6z"/>
+      <path fill="#d1ad78" d="M12 11h8v8h-8z"/>
+      <path fill="#e0bd85" d="M13 12h7v2h-7z"/>
+      <path fill="#d2b499" d="M14 39h10v7H14z"/>
+    </g>
+    <g id="table">
+      <path fill="#59453b" opacity=".28" d="M2 4h23v26H2z"/>
+      <path fill="#88634b" d="M3 0h17v2h4v22h-4v3H3v-3H0V2h3z"/>
+      <path fill="#c79b6e" d="M3 2h17v2h3v16h-3v3H3v-3H1V4h2z"/>
+      <path fill="#e1b486" d="M4 3h15v2H4z"/>
+      <path fill="#f6e7ca" d="M9 8h8v6H9z"/>
+      <path fill="#7a5361" d="M5 15h5v4H5z"/>
+    </g>
+  </defs>
+  <path fill="url(#oak)" d="M0 0h256v192H0z"/>
+  <path fill="#bb9e81" d="M0 0h256v32H0z"/>
+  <path fill="#d5b89b" d="M6 5h244v22H6z"/>
+  <path fill="#edcfaf" d="M0 0h256v5H0z"/>
+  <path fill="#987c65" d="M0 27h256v5H0zm0 0h6v165H0zm250 0h6v165h-6zM0 185h96v7H0zm160 0h96v7h-96z"/>
+  <path fill="#d6b790" d="M1 5h3v180H1zm251 0h3v180h-3zM6 185h90v3H6zm154 0h90v3h-90z"/>
+  <use href="#window" x="15" y="5"/>
+  <use href="#window" x="72" y="5"/>
+  <use href="#window" x="188" y="5"/>
+  <path fill="#776b61" d="M137 6h38v18h-38z"/>
+  <path fill="#eee0c2" d="M139 8h34v14h-34z"/>
+  <path fill="#a68773" d="M143 11h25v8h-25z"/>
+  <path stroke="#e1c79c" fill="none" d="m144 17 6-5 4 3 6-3 7 4"/>
+  <!-- Carpet, booth pads, and clear aisle. -->
+  <path fill="#998f78" d="M24 48h208v97H24z"/>
+  <path fill="url(#rug)" d="M27 51h202v91H27z"/>
+  <path fill="none" stroke="#e8dac0" stroke-width="2" d="M31 54h194v85H31z"/>
+  <path fill="#d1c7ac" d="M98 50h60v93H98z"/>
+  <path stroke="#eee2c7" stroke-width="2" fill="none" d="M102 52v89m52-89v89"/>
+  <path fill="#beb59d" d="M119 92h18v2h-18zm0 4h18v2h-18zm4 4h10v2h-10z"/>
+  <!-- Booth fixtures stay inside the two blocked 2×2 tile footprints. -->
+  <use href="#sofa" x="32" y="66"/>
+  <use href="#table" x="69" y="81"/>
+  <use href="#sofa" transform="translate(224 66) scale(-1 1)"/>
+  <use href="#table" x="162" y="81"/>
+  <path fill="#d0b799" d="M96 188h64v4H96z"/>
+  <path fill="#f1dbb5" d="M96 188h64v2H96z"/>
+  <path fill="#74675d" d="M92 183h4v9h-4zm68 0h4v9h-4z"/>
+</svg>

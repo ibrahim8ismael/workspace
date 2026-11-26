@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { idSchema, secretSchema } from './auth.js';
+import { idSchema, secretSchema, workspaceLayoutPresetSchema } from './auth.js';
 import { workspaceDtoSchema } from './responses.js';
 import {
   contentHashSchema,
@@ -23,6 +23,84 @@ const tileRectSchema = z
     height: z.number().int().min(1),
   })
   .strict();
+const workspaceLayoutTemplateSchema = z.enum([
+  'reception',
+  'small',
+  'large',
+  'desks',
+  'private-office',
+  'team-studio',
+  'lounge',
+  'garden',
+]);
+const layoutIdSchema = z
+  .string()
+  .min(1)
+  .max(80)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/);
+export const workspaceLayoutPlacementSchema = z
+  .object({
+    id: layoutIdSchema,
+    name: z.string().trim().min(1).max(60).optional(),
+    templateId: workspaceLayoutTemplateSchema,
+    origin: tilePointSchema,
+  })
+  .strict();
+const workspaceLayoutPlacementsSchema = z
+  .array(workspaceLayoutPlacementSchema)
+  .min(1)
+  .max(OFFICE_LIMITS.maxWorkspaceLayoutPlacements);
+const layoutRevisionSchema = z.number().int().nonnegative();
+export const saveWorkspaceLayoutSchema = z
+  .object({
+    placements: workspaceLayoutPlacementsSchema,
+    expectedRevision: layoutRevisionSchema,
+    preset: workspaceLayoutPresetSchema.optional(),
+    confirmReplacement: z.literal(true).optional(),
+  })
+  .strict();
+export const publishWorkspaceLayoutSchema = z
+  .object({
+    expectedRevision: layoutRevisionSchema,
+  })
+  .strict();
+export const workspaceLayoutSnapshotSchema = z
+  .object({
+    placements: workspaceLayoutPlacementsSchema,
+    revision: layoutRevisionSchema,
+    preset: workspaceLayoutPresetSchema.optional(),
+    publishedMapVersion: mapVersionSchema,
+    hasUnpublishedChanges: z.boolean(),
+  })
+  .strict();
+export type WorkspaceLayoutPlacementDto = z.infer<typeof workspaceLayoutPlacementSchema>;
+export type SaveWorkspaceLayoutInput = z.infer<typeof saveWorkspaceLayoutSchema>;
+export type PublishWorkspaceLayoutInput = z.infer<typeof publishWorkspaceLayoutSchema>;
+export type WorkspaceLayoutSnapshot = z.infer<typeof workspaceLayoutSnapshotSchema>;
+
+const workspaceObjectSchema = z
+  .object({
+    objectId: layoutIdSchema,
+    label: z.string().min(1).max(80),
+    blockedTiles: z.array(tilePointSchema).max(100),
+    seats: z
+      .array(
+        z
+          .object({
+            seatId: z
+              .string()
+              .min(1)
+              .max(80)
+              .regex(/^[A-Za-z0-9][A-Za-z0-9_-]*:[0-9]+$/),
+            tile: tilePointSchema,
+            exits: z.array(tilePointSchema).min(1).max(4),
+          })
+          .strict(),
+      )
+      .max(12),
+  })
+  .strict();
+
 export const workspaceGeometrySchema = z
   .object({
     mapId: z.literal('workspace'),
@@ -41,7 +119,8 @@ export const workspaceGeometrySchema = z
     blockedEdges: z
       .array(z.tuple([tilePointSchema, tilePointSchema]))
       .max(OFFICE_LIMITS.maxWorkspaceRooms * 28),
-    objects: z.array(z.never()).max(0),
+    blockedTiles: z.array(tilePointSchema).max(4096).optional(),
+    objects: z.array(workspaceObjectSchema).max(OFFICE_LIMITS.maxWorkspaceLayoutPlacements),
     zones: z
       .array(
         z
@@ -114,6 +193,7 @@ export const officeWorkspaceDetailResponseSchema = z
         officeId: idSchema,
         revision: z.number().int().min(0),
         roomCount: z.number().int().min(1).max(OFFICE_LIMITS.maxWorkspaceRooms),
+        usesMapEditor: z.boolean().optional(),
       })
       .strict(),
   })
@@ -127,6 +207,8 @@ export const officeBootstrapResponseSchema = z
     protocolVersion: protocolVersionSchema,
     manifest: mapManifestSchema,
     geometry: workspaceGeometrySchema.optional(),
+    layout: workspaceLayoutPlacementsSchema.optional(),
+    layoutPreset: workspaceLayoutPresetSchema.optional(),
   })
   .strict()
   .refine((value) => value.mapVersion === value.manifest.mapVersion, {
@@ -134,6 +216,12 @@ export const officeBootstrapResponseSchema = z
     message: 'Bootstrap/manifest version mismatch',
   })
   .superRefine((value, ctx) => {
+    if (value.layoutPreset && !value.layout)
+      ctx.addIssue({
+        code: 'custom',
+        path: ['layoutPreset'],
+        message: 'Layout preset requires placements',
+      });
     if (value.manifest.mapId === 'workspace') {
       if (!value.geometry) {
         ctx.addIssue({
@@ -152,7 +240,7 @@ export const officeBootstrapResponseSchema = z
         value.geometry.zones.length !== value.manifest.roomCount
       )
         ctx.addIssue({ code: 'custom', path: ['geometry'], message: 'Geometry/manifest mismatch' });
-    } else if (value.geometry) {
+    } else if (value.geometry || value.layout) {
       ctx.addIssue({ code: 'custom', path: ['geometry'], message: 'Static maps omit geometry' });
     }
   });

@@ -51,3 +51,21 @@
   outline: 3px solid #9a4d0a;
   outline-offset: 3px;
 }
+
+.workspace-camera-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-block: 4px;
+}
+
+.workspace-camera-toolbar button[aria-label^='Zoom'] {
+  min-width: 38px;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.live-commons-scene canvas {
+  touch-action: none;
+}

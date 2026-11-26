@@ -17,5 +17,6 @@ infra/deploy/worker.env
 playwright-report/
 test-results/
 .gitkey
+.gitkey~
 # Upstream local-only reference artwork is not distributable source material.
 apps/web/sprites/reference/

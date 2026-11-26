@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const OFFICE_PROTOCOL_VERSION = 7;
+export const OFFICE_PROTOCOL_VERSION = 8;
 export const MAP_FORMAT_VERSION = 1;
 export const MVP_MAP_ID = 'vivo';
 export const OFFICE_MAP_IDS = ['commons', 'vivo', 'workspace'] as const;

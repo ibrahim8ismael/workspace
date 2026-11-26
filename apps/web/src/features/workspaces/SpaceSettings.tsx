@@ -8,6 +8,7 @@ import { companyPath } from '../../routing/routes';
 import { PRODUCT_NAME } from '../../brand';
 import { messageForApi } from '../auth/messages';
 import { CompanyInvitationManager } from './CompanyInvitationManager';
+import { WorkspaceMapEditor } from './WorkspaceMapEditor';
 import { workspaceRoleLabel } from './workspace-role';
 import './space-settings.css';
 
@@ -51,6 +52,7 @@ export function SpaceSettings({
   const [membersLoading, setMembersLoading] = useState(true);
   const [membersError, setMembersError] = useState('');
   const [name, setName] = useState(workspace.name);
+  const [mapEditorOpen, setMapEditorOpen] = useState(false);
   const [roomCount, setRoomCount] = useState(workspace.roomCount);
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
@@ -134,6 +136,10 @@ export function SpaceSettings({
         caught.code === 'csrf_rejected')
     ) {
       onUnauthorizedRef.current('Your access to this space changed.');
+      return;
+    }
+    if (caught instanceof ApiError && caught.code === 'office_layout_managed') {
+      setError('This office uses a published layout. Add meeting rooms in the map editor.');
       return;
     }
     if (caught instanceof ApiError && (caught.status === 403 || caught.status === 404)) {
@@ -469,7 +475,7 @@ export function SpaceSettings({
             </div>
             <p>Choose how many rooms are available in the office.</p>
           </div>
-          {owner ? (
+          {owner && !workspace.usesMapEditor ? (
             <form className="dashboard-company-form" onSubmit={(event) => void saveRooms(event)}>
               <label className="dashboard-label">
                 Meeting room count
@@ -501,6 +507,23 @@ export function SpaceSettings({
               <span>Meeting rooms</span>
               <strong>{workspace.roomCount}</strong>
             </div>
+          )}
+          {owner && (
+            <button
+              type="button"
+              className="dashboard-secondary workspace-map-entry"
+              aria-expanded={mapEditorOpen}
+              onClick={() => setMapEditorOpen((open) => !open)}
+            >
+              {mapEditorOpen ? 'Close map editor' : 'Edit office map'}
+            </button>
+          )}
+          {owner && mapEditorOpen && (
+            <WorkspaceMapEditor
+              api={api}
+              workspace={workspace}
+              onPublished={() => setRefreshId((value) => value + 1)}
+            />
           )}
         </section>
 

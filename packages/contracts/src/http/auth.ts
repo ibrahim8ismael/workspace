@@ -46,6 +46,16 @@ export const workspaceRoleSchema = z.enum(['owner', 'admin', 'member']);
 export const workspaceMemberRoleSchema = z.enum(['admin', 'member']);
 export type WorkspaceRole = z.infer<typeof workspaceRoleSchema>;
 export type WorkspaceMemberRole = z.infer<typeof workspaceMemberRoleSchema>;
+export const workspaceLayoutPresetSchema = z.enum([
+  'repo-campus-hall',
+  'repo-campus',
+  'studio-expandable',
+  'studio-orthogonal',
+  'studio',
+  'startup',
+  'corporate',
+]);
+export type WorkspaceLayoutPreset = z.infer<typeof workspaceLayoutPresetSchema>;
 export const createWorkspaceSchema = z
   .object({
     name: z.string().trim().min(2).max(80),
@@ -55,8 +65,31 @@ export const createWorkspaceSchema = z
       .max(60)
       .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
     roomCount: z.number().int().min(1).max(100).optional(),
+    officeTemplate: z.union([z.literal('svg'), workspaceLayoutPresetSchema]).optional(),
+    privateOfficeCount: z.number().int().min(1).max(21).optional(),
   })
-  .strict();
+  .strict()
+  .refine(({ roomCount, officeTemplate }) => roomCount === undefined || !officeTemplate, {
+    path: ['roomCount'],
+    message: 'Office templates and generated room counts are separate options.',
+  })
+  .refine(
+    ({ privateOfficeCount, officeTemplate }) =>
+      privateOfficeCount === undefined ||
+      ((officeTemplate === 'studio' || officeTemplate === 'studio-orthogonal') &&
+        privateOfficeCount <= 8) ||
+      ((officeTemplate === 'repo-campus-hall' ||
+        officeTemplate === 'repo-campus' ||
+        officeTemplate === 'studio-expandable') &&
+        privateOfficeCount <= 16) ||
+      (officeTemplate === 'startup' && privateOfficeCount <= 13) ||
+      officeTemplate === 'corporate',
+    {
+      path: ['privateOfficeCount'],
+      message: 'Private office count must fit the selected floor plan.',
+    },
+  );
+export type CreateWorkspaceInput = z.infer<typeof createWorkspaceSchema>;
 export const renameWorkspaceSchema = z
   .object({ name: z.string().trim().min(2).max(80), expectedRevision: z.number().int().min(0) })
   .strict();

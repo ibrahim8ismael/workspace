@@ -43,7 +43,11 @@ interface OfficeScope {
 }
 
 function checkOffice(office: OfficeRecord, request: JoinTicketRequest) {
-  invariant(trustedOfficeMap(office.mapVersion), 409, 'office_not_ready');
+  invariant(
+    trustedOfficeMap(office.mapVersion, office.publishedLayout, office.publishedPreset),
+    409,
+    'office_not_ready',
+  );
   invariant(office.mapVersion === request.mapVersion, 409, 'map_version_mismatch');
   invariant(request.protocolVersion === OFFICE_PROTOCOL_VERSION, 409, 'protocol_mismatch');
 }
@@ -52,8 +56,14 @@ function grantId(member: MembershipRecord) {
   return member.membershipGrantId ?? member._id;
 }
 
+export type SocketPolicyTimings = Partial<
+  Record<'session' | 'user' | 'membership' | 'workspaceOffice', number>
+>;
+
 @Injectable()
 export class OfficeAdmissionService {
+  private readonly queuedScopeChecks = new Map<string, Promise<boolean>>();
+
   constructor(
     @Inject(TenancyModels) private readonly tenancyModels: TenancyModels,
     @Inject(TenancyService) private readonly tenancy: TenancyService,
@@ -399,7 +409,12 @@ export class OfficeAdmissionService {
         })
         .session(tx)
         .lean();
-      invariant(office && trustedOfficeMap(office.mapVersion), 409, 'office_not_ready');
+      invariant(
+        office &&
+          trustedOfficeMap(office.mapVersion, office.publishedLayout, office.publishedPreset),
+        409,
+        'office_not_ready',
+      );
       invariant(ticket.officeEpoch === this.epochs.current(ticket.officeId), 409, 'stale_epoch');
 
       const consumedAt = new Date();
@@ -420,6 +435,8 @@ export class OfficeAdmissionService {
         officeEpoch: ticket.officeEpoch,
         mapVersion: ticket.mapVersion,
         protocolVersion: ticket.protocolVersion,
+        ...(office.publishedLayout ? { publishedLayout: office.publishedLayout } : {}),
+        ...(office.publishedPreset && { publishedPreset: office.publishedPreset }),
         ...(ticket.takeoverParticipationId && ticket.takeoverOfficeEpoch
           ? {
               takeoverParticipationId: ticket.takeoverParticipationId,
@@ -450,41 +467,105 @@ export class OfficeAdmissionService {
     });
   }
 
-  async isSocketAuthorized(ticket: ConsumedOfficeTicketShape): Promise<boolean> {
+  async isSocketAuthorized(
+    ticket: ConsumedOfficeTicketShape,
+    batchScope = false,
+    timings?: SocketPolicyTimings,
+  ): Promise<boolean> {
     if (this.epochs.current(ticket.officeId) !== ticket.officeEpoch) return false;
     const now = new Date();
-    const [session, user, member, workspace, office] = await Promise.all([
-      this.identities.sessions
-        .findOne({
-          _id: ticket.sessionId,
-          userId: ticket.userId,
-          kind: 'authenticated',
-          revokedAt: null,
-          absoluteExpiresAt: { $gt: now },
-          idleExpiresAt: { $gt: now },
-        })
-        .read('primary')
-        .readConcern('linearizable')
-        .maxTimeMS(2000)
-        .lean(),
-      this.identities.users
-        .findOne({ _id: ticket.userId, status: 'active', verifiedAt: { $ne: null } })
-        .read('primary')
-        .readConcern('linearizable')
-        .maxTimeMS(2000)
-        .lean(),
-      this.tenancyModels.memberships
-        .findOne({
-          workspaceId: ticket.workspaceId,
-          userId: ticket.userId,
-          status: 'active',
-        })
-        .read('primary')
-        .readConcern('linearizable')
-        .maxTimeMS(2000)
-        .lean(),
+    async function measure<T>(key: keyof SocketPolicyTimings, query: PromiseLike<T>) {
+      const started = performance.now();
+      try {
+        return await query;
+      } finally {
+        if (timings) timings[key] = Math.round(performance.now() - started);
+      }
+    }
+    const [session, user, member, scopeAllowed] = await Promise.all([
+      measure(
+        'session',
+        this.identities.sessions
+          .findOne({
+            _id: ticket.sessionId,
+            userId: ticket.userId,
+            kind: 'authenticated',
+            revokedAt: null,
+            absoluteExpiresAt: { $gt: now },
+            idleExpiresAt: { $gt: now },
+          })
+          .select('authVersion')
+          .read('primary')
+          .readConcern('linearizable')
+          .maxTimeMS(2000)
+          .lean(),
+      ),
+      measure(
+        'user',
+        this.identities.users
+          .findOne({ _id: ticket.userId, status: 'active', verifiedAt: { $ne: null } })
+          .select('authVersion')
+          .read('primary')
+          .readConcern('linearizable')
+          .maxTimeMS(2000)
+          .lean(),
+      ),
+      measure(
+        'membership',
+        this.tenancyModels.memberships
+          .findOne({
+            workspaceId: ticket.workspaceId,
+            userId: ticket.userId,
+            status: 'active',
+          })
+          .select('membershipGrantId')
+          .read('primary')
+          .readConcern('linearizable')
+          .maxTimeMS(2000)
+          .lean(),
+      ),
+      measure(
+        'workspaceOffice',
+        batchScope ? this.batchSocketScopeCheck(ticket) : this.checkSocketScope(ticket),
+      ),
+    ]);
+    return Boolean(
+      session &&
+      user &&
+      user.authVersion === session.authVersion &&
+      member &&
+      grantId(member) === ticket.membershipGrantId &&
+      scopeAllowed &&
+      this.epochs.current(ticket.officeId) === ticket.officeEpoch,
+    );
+  }
+
+  private batchSocketScopeCheck(ticket: ConsumedOfficeTicketShape) {
+    const key = JSON.stringify([
+      ticket.workspaceId,
+      ticket.officeId,
+      ticket.officeEpoch,
+      ticket.mapVersion,
+    ]);
+    const queued = this.queuedScopeChecks.get(key);
+    if (queued) return queued;
+    // Group only requests that arrive before the shared reads begin. No completed
+    // authorization is reused and every caller keeps its original lease deadline.
+    const check = new Promise<boolean>((resolve, reject) => {
+      setTimeout(() => {
+        this.queuedScopeChecks.delete(key);
+        void this.checkSocketScope(ticket).then(resolve, reject);
+      }, 50);
+    });
+    this.queuedScopeChecks.set(key, check);
+    return check;
+  }
+
+  private async checkSocketScope(ticket: ConsumedOfficeTicketShape) {
+    const [workspace, office] = await Promise.all([
       this.tenancyModels.workspaces
         .findOne({ _id: ticket.workspaceId, status: 'active' })
+        .select('_id')
         .read('primary')
         .readConcern('linearizable')
         .maxTimeMS(2000)
@@ -495,21 +576,16 @@ export class OfficeAdmissionService {
           workspaceId: ticket.workspaceId,
           mapVersion: ticket.mapVersion,
         })
+        .select('mapVersion publishedLayout publishedPreset')
         .read('primary')
         .readConcern('linearizable')
         .maxTimeMS(2000)
         .lean(),
     ]);
     return Boolean(
-      session &&
-      user &&
-      user.authVersion === session.authVersion &&
-      member &&
-      grantId(member) === ticket.membershipGrantId &&
       workspace &&
       office &&
-      trustedOfficeMap(office.mapVersion) !== null &&
-      this.epochs.current(ticket.officeId) === ticket.officeEpoch,
+      trustedOfficeMap(office.mapVersion, office.publishedLayout, office.publishedPreset),
     );
   }
 }

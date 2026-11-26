@@ -10,6 +10,7 @@ import { REFERENCE_FOREGROUNDS, REFERENCE_OBJECTS } from './referenceArt';
 import { artPack } from './artPack';
 import { ASSET_SIZES } from './assetSizes';
 import { spritePaths } from './pixel';
+import { hasRepoOfficeForeground, repoOfficeSpriteBox, repoOfficeSpriteFor } from './repoOfficeArt';
 
 export type MapObjectData = {
   id: string;
@@ -161,15 +162,24 @@ function AssetImage({
   );
 }
 export function ObjectArt({ object }: { object: MapObjectData }) {
+  const repoOfficeSprite = artPack() === 'repo-office' ? repoOfficeSpriteFor(object.kind) : null;
   const reference =
     artPack() === 'reference'
       ? REFERENCE_OBJECTS[`${object.kind}/${object.color}/${object.facing}`]
       : undefined;
-  const found = reference ? null : objectAsset(object.kind, object.color, object.facing);
+  const found =
+    reference || repoOfficeSprite ? null : objectAsset(object.kind, object.color, object.facing);
   const asset = found?.url ?? null;
   const sprite =
-    reference ?? (asset ? null : furnitureSprite(object.kind, object.color, object.facing));
-  const art = sprite ? (
+    reference ??
+    (repoOfficeSprite || asset ? null : furnitureSprite(object.kind, object.color, object.facing));
+  const art = repoOfficeSprite ? (
+    <image
+      className="pixel-resource"
+      href={repoOfficeSprite.href}
+      {...repoOfficeSpriteBox(repoOfficeSprite, object)}
+    />
+  ) : sprite ? (
     <Pixel sprite={sprite} x={Math.round((object.w - sprite.w) / 2)} y={object.h - sprite.h} />
   ) : asset ? (
     <AssetImage object={object} href={asset} flip={found?.mirror} />
@@ -223,6 +233,27 @@ function asMapObjectForThumb(item: { kind: string; color: string; facing: string
 
 /** Part of a seat drawn above its occupant, or null when the object has none. */
 export function ObjectForeground({ object }: { object: MapObjectData }) {
+  if (artPack() === 'repo-office') {
+    const sprite = repoOfficeSpriteFor(object.kind);
+    if (!sprite?.foreground) return null;
+    const box = repoOfficeSpriteBox(sprite, object);
+    const id = `repo-office-fg-${object.id.replace(/[^a-z0-9_-]/gi, '-')}`;
+    return (
+      <g transform={`translate(${-object.originX} ${-object.originY})`}>
+        <defs>
+          <clipPath id={id}>
+            <rect
+              x={box.x}
+              y={box.y + box.height * 0.52}
+              width={box.width}
+              height={box.height * 0.48}
+            />
+          </clipPath>
+        </defs>
+        <image className="pixel-resource" href={sprite.href} {...box} clipPath={`url(#${id})`} />
+      </g>
+    );
+  }
   const key = `${object.kind}/${object.color}/${object.facing}`;
   if (artPack() === 'original') {
     // Only the silhouette of the reference's front part is used, as a mask over the project's own sprite.
@@ -255,5 +286,7 @@ export function ObjectForeground({ object }: { object: MapObjectData }) {
   );
 }
 export const hasForeground = (object: { kind: string; color: string; facing: string }) =>
-  `${object.kind}/${object.color}/${object.facing}` in REFERENCE_FOREGROUNDS &&
-  (artPack() === 'reference' || !!objectAssetUrl(object.kind, object.color, object.facing));
+  artPack() === 'repo-office'
+    ? hasRepoOfficeForeground(object.kind)
+    : `${object.kind}/${object.color}/${object.facing}` in REFERENCE_FOREGROUNDS &&
+      (artPack() === 'reference' || !!objectAssetUrl(object.kind, object.color, object.facing));

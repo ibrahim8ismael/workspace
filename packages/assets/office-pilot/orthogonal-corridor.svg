@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" shape-rendering="crispEdges">
+  <title>Warm stone corridor paving</title>
+  <defs>
+    <pattern id="paving" width="64" height="32" patternUnits="userSpaceOnUse">
+      <rect width="64" height="32" fill="#dfd6bf"/>
+      <path fill="#e7ddc7" d="M1 1h29v14H1zm17 16h46v14H18z"/>
+      <path fill="#d4c9ae" d="M0 15h64v1H0zm0 16h64v1H0zm30-31h1v15h-1zM17 16h1v15h-1z"/>
+      <path fill="#d9cdb3" d="M46 4h5v1h-5zM26 24h3v1h-3zM3 20h4v1H3z"/>
+    </pattern>
+  </defs>
+  <rect width="128" height="128" fill="url(#paving)"/>
+</svg>

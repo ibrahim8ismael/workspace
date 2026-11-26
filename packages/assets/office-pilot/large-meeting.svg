@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="384" height="256" viewBox="0 0 384 256">
+  <title>Large meeting room with eight chairs and a display</title>
+  <defs>
+    <pattern id="parquet" width="96" height="48" patternUnits="userSpaceOnUse">
+      <path fill="#efddc1" d="M0 0h96v48H0z"/>
+      <path fill="#ead5b7" d="M0 0h36v12H0zm68 0h28v12H68zM20 12h43v12H20zM0 24h48v12H0zm79 0h17v12H79zM26 36h43v12H26z"/>
+      <path fill="#f3e4cd" d="M36 0h32v12H36zM63 12h33v12H63zM48 24h31v12H48zM0 36h26v12H0zm69 0h27v12H69z"/>
+      <path fill="none" stroke="#bc956e" stroke-opacity=".29" stroke-width=".7" d="M0 0h96M0 12h96M0 24h96M0 36h96M36 0v12M68 0v12M20 12v12m43-12v12M48 24v12m31-12v12M26 36v12m43-12v12"/>
+      <path fill="none" stroke="#fff3dd" stroke-opacity=".72" d="M5 3h15m24 0h20m9 3h16M26 15h27m20 2h17M4 28h22m26 0h17M6 40h16m14-1h20m23 4h11"/>
+    </pattern>
+    <g id="window">
+      <path fill="#92775f" d="M0 2h42v30H0z"/>
+      <path fill="#768382" d="M1 0h40v30H1z"/>
+      <path fill="#52696e" d="M3 2h36v25H3z"/>
+      <path fill="#8fbbbc" d="M5 4h14v21H5zm16 0h16v21H21z"/>
+      <path fill="#729ca6" d="M5 4h14v3H5zm16 0h16v3H21z"/>
+      <path fill="#b8d7d2" d="M7 8h2v16H7zm17 0h3v16h-3zm5 4h1v8h-1z"/>
+      <path fill="#779ba1" d="M5 18h14v1H5zm16 0h16v1H21z"/>
+      <path fill="#e3d5b8" d="M0 28h42v3H0z"/>
+      <path fill="#c2a080" d="M1 31h40v2H1z"/>
+    </g>
+    <pattern id="rug" patternUnits="userSpaceOnUse" width="8" height="8">
+      <path fill="#f5e3c8" opacity=".13" d="M0 0h8v1H0zm0 4h8v1H0z"/>
+      <path fill="#344c48" opacity=".12" d="M0 2h2v1H0zm4 4h2v1H4z"/>
+    </pattern>
+    <g id="plant">
+      <path fill="#593f33" opacity=".22" d="M1 17h15v5H2v-2H1z"/>
+      <path fill="#896b59" d="M2 13h13v5h-2v2H4v-2H2z"/>
+      <path fill="#ba917a" d="M2 13h13v2H2z"/>
+      <path fill="#527656" d="M7 1h4v3h3v3h2v4h-3v2H5v-2H2V7h2V4h3z"/>
+      <path fill="#88a674" d="M7 1h4v3h2v4h-3v5H7V9H4V6h3z"/>
+      <path fill="#aac28b" d="M8 2h2v3H8zm3 3h2v2h-2zM5 7h2v2H5z"/>
+    </g>
+    <g id="chair">
+      <path fill="#69564c" opacity=".25" d="M3 21h18v4H3z"/>
+      <path fill="#4f5150" d="M3 3h3V1h12v2h3v17h-3v3h-4v-2h-4v2H6v-3H3z"/>
+      <path fill="currentColor" d="M6 3h12v12H6zm1 13h10v3H7z"/>
+      <path fill="#f3e1c8" opacity=".42" d="M6 3h12v2H6zm1 13h10v1H7z"/>
+      <path fill="#344748" opacity=".56" d="M6 13h12v2H6zm3 6h6v2H9z"/>
+      <path fill="#88918b" d="M3 10h3v6H3zm15 0h3v6h-3z"/>
+    </g>
+  </defs>
+
+  <rect x="0" y="0" width="384" height="256" fill="url(#parquet)"/>
+  <!-- Rear wall and low cutaway perimeter. -->
+  <rect x="0" y="0" width="384" height="32" fill="#caab8d"/>
+  <rect x="0" y="0" width="384" height="4" fill="#f5e1c3"/>
+  <rect x="0" y="4" width="384" height="2" fill="#dcb893"/>
+  <rect x="0" y="28" width="384" height="4" fill="#aa8568"/>
+  <rect x="0" y="250" width="160" height="6" fill="#9c8068"/>
+  <rect x="0" y="250" width="160" height="2" fill="#edd2ae"/>
+  <rect x="224" y="250" width="160" height="6" fill="#9c8068"/>
+  <rect x="224" y="250" width="160" height="2" fill="#edd2ae"/>
+  <rect x="0" y="0" width="4" height="256" fill="#9c8068"/>
+  <rect x="380" y="0" width="4" height="256" fill="#9c8068"/>
+  <rect x="4" y="34" width="1" height="216" fill="#f8e6ce"/>
+  <rect x="379" y="34" width="1" height="216" fill="#f8e6ce"/>
+  <rect x="160" y="251" width="64" height="5" fill="#bda286"/>
+  <rect x="160" y="252" width="64" height="2" fill="#f5ddbb"/>
+  <use href="#window" x="19" y="2"/>
+  <use href="#window" x="65" y="2"/>
+  <use href="#window" x="277" y="2"/>
+  <use href="#window" x="323" y="2"/>
+  <!-- Presentation display is mounted on the rear wall. -->
+  <rect x="124" y="7" width="136" height="23" fill="#a37f64"/>
+  <rect x="125" y="4" width="134" height="23" fill="#546663"/>
+  <rect x="129" y="7" width="126" height="16" fill="#dbe4d9"/>
+  <path fill="#abc0b5" d="M135 11h29v2h-29zm0 5h19v2h-19zm85-4h27v1h-27zm0 5h19v1h-19z"/>
+  <path fill="#95a69c" d="M181 17h4v4h-4zm6-4h4v8h-4zm6-3h4v11h-4zm6 5h4v6h-4z"/>
+  <rect x="76" y="42" width="232" height="164" fill="#8c6e67"/>
+  <rect x="79" y="45" width="226" height="158" fill="#b19083"/>
+  <rect x="80" y="46" width="224" height="156" fill="url(#rug)"/>
+  <rect x="83" y="50" width="218" height="2" fill="#e1c6a8"/>
+  <rect x="83" y="196" width="218" height="2" fill="#e1c6a8"/>
+  <use href="#chair" x="132" y="35" color="#a87566"/>
+  <use href="#chair" x="164" y="35" color="#a87566"/>
+  <use href="#chair" x="196" y="35" color="#a87566"/>
+  <use href="#chair" x="228" y="35" color="#a87566"/>
+  <g transform="rotate(180 144 176)"><use href="#chair" x="132" y="163" color="#a87566"/></g>
+  <g transform="rotate(180 176 176)"><use href="#chair" x="164" y="163" color="#a87566"/></g>
+  <g transform="rotate(180 208 176)"><use href="#chair" x="196" y="163" color="#a87566"/></g>
+  <g transform="rotate(180 240 176)"><use href="#chair" x="228" y="163" color="#a87566"/></g>
+  <!-- Table and all accessories are inside the blocked footprint. -->
+  <path fill="#61432e" d="M100 72h188v85h-181v-4h-7z" opacity=".25"/>
+  <path fill="#78543f" d="M101 70h182v3h3v76h-3v4h-8v5h-6v-5h-154v5h-6v-5h-8v-4h-3V73h3z"/>
+  <path fill="#9d684d" d="M102 66h180v3h4v78h-4v3h-180v-3h-4V69h4z"/>
+  <path fill="#b6815e" d="M102 66h180v3h4v73h-4v3h-180v-3h-4V69h4z"/>
+  <rect x="104" y="67" width="176" height="2" fill="#f4cfaa"/>
+  <rect x="109" y="76" width="166" height="1" fill="#d2a77a"/>
+  <rect x="109" y="78" width="166" height="63" fill="#be906d"/>
+  <rect x="111" y="80" width="162" height="58" fill="#c49771"/>
+  <path fill="#d9b695" d="M115 89h32v1h-32zm131 16h22v1h-22zm-55 21h35v1h-35z"/>
+  <rect x="169" y="102" width="46" height="17" fill="#8d6a53"/>
+  <rect x="173" y="104" width="38" height="10" fill="#766554"/>
+  <path fill="#dfc097" d="M178 108h5v2h-5zm23 0h5v2h-5z"/>
+  <use href="#plant" x="119" y="99"/>
+  <use href="#plant" x="249" y="99"/>
+  <rect x="153" y="84" width="15" height="11" fill="#f2e3c9"/>
+  <rect x="155" y="87" width="10" height="1" fill="#b5a086"/>
+  <rect x="155" y="90" width="7" height="1" fill="#b5a086"/>
+  <rect x="215" y="124" width="15" height="11" fill="#f2e3c9"/>
+  <rect x="217" y="127" width="10" height="1" fill="#b5a086"/>
+  <rect x="217" y="130" width="7" height="1" fill="#b5a086"/>
+</svg>

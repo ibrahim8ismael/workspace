@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { ArrowRight, Building2, LayoutGrid, Plus, Search, Users, X } from 'lucide-react';
-import type { AccountDto, WorkspaceDto } from '@gather/contracts';
+import type { AccountDto, WorkspaceDto, WorkspaceLayoutPreset } from '@gather/contracts';
+import {
+  DEFAULT_WORKSPACE_LAYOUT,
+  TILE_SIZE_PX,
+  WORKSPACE_LAYOUT_PRESETS,
+  generateWorkspaceLayoutPreset,
+  getWorkspaceLayoutProfile,
+} from '@gather/world';
+import { WorkspaceMapLayer } from '../../../commons-preview/WorkspaceMapLayer';
 import { ApiClient, ApiError } from '../../lib/api';
 import { SubmissionKey } from '../../lib/idempotency';
 import { messageForApi } from '../auth/messages';
@@ -71,8 +79,13 @@ export function WorkspaceHome({
   runMutation,
 }: Props) {
   const [companyName, setCompanyName] = useState('');
-  const [roomCount, setRoomCount] = useState(5);
   const [slug, setSlug] = useState('');
+  const [officeTemplate, setOfficeTemplate] = useState<WorkspaceLayoutPreset | 'svg'>(
+    'repo-campus-hall',
+  );
+  const [privateOfficeCount, setPrivateOfficeCount] = useState<number>(
+    WORKSPACE_LAYOUT_PRESETS['repo-campus-hall'].defaultPrivateOffices,
+  );
   const [inviteCode, setInviteCode] = useState(invitationToken);
   const [companyQuery, setCompanyQuery] = useState('');
   const [dialog, setDialog] = useState<'create' | 'join' | null>(invitationRoute ? 'join' : null);
@@ -132,9 +145,29 @@ export function WorkspaceHome({
     onUnauthorized();
   }
 
+  const preset = officeTemplate === 'svg' ? undefined : officeTemplate;
+  const pilotPreview =
+    dialog === 'create'
+      ? preset
+        ? generateWorkspaceLayoutPreset(
+            preset,
+            Math.min(
+              Math.max(Math.trunc(privateOfficeCount), 1),
+              WORKSPACE_LAYOUT_PRESETS[preset].maxPrivateOffices,
+            ),
+          )
+        : DEFAULT_WORKSPACE_LAYOUT
+      : [];
+  const previewSize = getWorkspaceLayoutProfile(preset, pilotPreview).size;
+
   async function createCompany(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const input = { name: companyName, slug, roomCount };
+    const input = {
+      name: companyName,
+      slug,
+      officeTemplate,
+      ...(officeTemplate !== 'svg' && { privateOfficeCount }),
+    };
     const key = createKey.current.forPayload(input);
     const current = lifecycle.current;
     const controller = new AbortController();
@@ -152,7 +185,8 @@ export function WorkspaceHome({
       setCreateUncertain(false);
       setCompanyName('');
       setSlug('');
-      setRoomCount(5);
+      setOfficeTemplate('repo-campus-hall');
+      setPrivateOfficeCount(WORKSPACE_LAYOUT_PRESETS['repo-campus-hall'].defaultPrivateOffices);
       closeDialog();
       onWorkspaces((rows) => [
         result.workspace,
@@ -482,19 +516,55 @@ export function WorkspaceHome({
                     </span>
                   </label>
                   <label className="dashboard-label">
-                    Meeting rooms
-                    <input
-                      type="number"
-                      min={1}
-                      max={100}
-                      step={1}
-                      required
-                      value={roomCount}
+                    Office floor plan
+                    <select
+                      value={officeTemplate}
                       disabled={mutating}
-                      onChange={(event) => setRoomCount(Number(event.target.value))}
-                    />
-                    <small>Choose 1–100 rooms. You can change this later in Space settings.</small>
+                      onChange={(event) => {
+                        const choice = event.target.value as WorkspaceLayoutPreset | 'svg';
+                        setOfficeTemplate(choice);
+                        if (choice !== 'svg')
+                          setPrivateOfficeCount(
+                            WORKSPACE_LAYOUT_PRESETS[choice].defaultPrivateOffices,
+                          );
+                        setCreateUncertain(false);
+                      }}
+                    >
+                      <option value="repo-campus-hall">Office Campus · open hall</option>
+                      <option value="startup">Startup · two wings</option>
+                      <option value="corporate">Corporate · three wings</option>
+                      <option value="svg">Compact · four modules</option>
+                    </select>
                   </label>
+                  {preset && (
+                    <label className="dashboard-label">
+                      Private offices
+                      <input
+                        type="number"
+                        min={1}
+                        max={WORKSPACE_LAYOUT_PRESETS[preset].maxPrivateOffices}
+                        value={privateOfficeCount || ''}
+                        required
+                        disabled={mutating}
+                        onChange={(event) => {
+                          setPrivateOfficeCount(Number(event.target.value) || 0);
+                          setCreateUncertain(false);
+                        }}
+                      />
+                    </label>
+                  )}
+                  <svg
+                    className="workspace-map-creation-preview"
+                    viewBox={`0 0 ${previewSize.width * TILE_SIZE_PX} ${previewSize.height * TILE_SIZE_PX}`}
+                    role="img"
+                    aria-label="Workspace floor plan preview"
+                  >
+                    <WorkspaceMapLayer
+                      placements={pilotPreview}
+                      preset={preset}
+                      showLabels={false}
+                    />
+                  </svg>
                   {error && !loadError && (
                     <p className="form-error" role="alert">
                       {error}

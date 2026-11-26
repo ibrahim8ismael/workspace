@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <title>Warm limestone corridor floor</title>
+  <defs>
+    <pattern id="limestone" width="128" height="128" patternUnits="userSpaceOnUse">
+      <path fill="#e8ddc7" d="M0 0h128v128H0z"/>
+      <path fill="#ede3cd" d="M0 0h64v32H0zm64 64h64v32H64zM32 32h64v32H32zM0 96h32v32H0zm96 0h32v32H96z"/>
+      <path fill="#e3d8c0" d="M0 32h32v32H0zm96 0h32v32H96zM0 64h64v32H0zm32 32h64v32H32z"/>
+      <path fill="none" stroke="#caba9e" stroke-opacity=".57" d="M0 0h128M0 32h128M0 64h128M0 96h128M0 0v32m64-32v32M32 32v32m64-32v32M0 64v32m64-32v32M32 96v32m64-32v32"/>
+      <path fill="none" stroke="#fff6df" stroke-opacity=".7" d="M0 2h128M0 34h128M0 66h128M0 98h128"/>
+      <path fill="none" stroke="#c9bda4" stroke-opacity=".42" d="M8 17h11m62 9h12M14 49h6m25 7h10m53-10h7M22 81h7m60 7h9M12 112h9m37 6h10m40-11h7"/>
+    </pattern>
+  </defs>
+
+  <rect x="0" y="0" width="128" height="128" fill="url(#limestone)"/>
+</svg>

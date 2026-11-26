@@ -6211,6 +6211,33 @@ describe('office socket admission', () => {
     }
   });
 
+  it('rejects standalone office protocol versions before issuing or consuming a ticket', async () => {
+    const owner = await account();
+    const workspaceId = await workspace(owner);
+    const { office, ticket } = await issueTicket(owner, workspaceId);
+    const path = `/api/workspaces/${workspaceId}/offices/${office._id}/join-ticket`;
+    for (const protocolVersion of [5, 7]) {
+      status(
+        await owner.client.send('post', path, { mapVersion: office.mapVersion, protocolVersion }),
+        400,
+      );
+      const stale = officeSocket({ ticket, protocolVersion });
+      try {
+        await expect(connectSocket(stale)).rejects.toMatchObject({ message: 'unauthorized' });
+      } finally {
+        stale.disconnect();
+      }
+    }
+    const current = officeSocket({ ticket, protocolVersion: OFFICE_PROTOCOL_VERSION });
+    try {
+      const ready = nextSocketEvent(current, 'office:ready');
+      await connectSocket(current);
+      expect(officeReadySchema.parse(await ready).protocolVersion).toBe(8);
+    } finally {
+      current.disconnect();
+    }
+  });
+
   it('closes oversized raw handshake packets at the transport boundary', async () => {
     const client = officeSocket({
       ticket: 'a'.repeat(43),
@@ -6305,6 +6332,29 @@ describe('office socket admission', () => {
     } finally {
       oldSocket.disconnect();
       newSocket?.disconnect();
+    }
+  });
+
+  it('reports a retired epoch consistently when renewal runs before replacement admission', async () => {
+    const owner = await account();
+    const workspaceId = await workspace(owner);
+    const { office, ticket } = await issueTicket(owner, workspaceId);
+    const client = officeSocket({ ticket, protocolVersion: OFFICE_PROTOCOL_VERSION });
+    try {
+      const ready = nextSocketEvent(client, 'office:ready');
+      await connectSocket(client);
+      const { snapshot } = officeReadySchema.parse(await ready);
+      const ended = nextSocketEvent(client, 'office:access-ended');
+      const disconnected = nextSocketEvent(client, 'disconnect');
+      app.get(OfficeEpochRegistry).rotate(office._id);
+      await expect(ended).resolves.toEqual({
+        officeEpoch: snapshot.officeEpoch,
+        reason: 'server_unavailable',
+      });
+      await disconnected;
+      expect(app.get(OfficeRuntimeService).hasOffice(office._id)).toBe(false);
+    } finally {
+      client.disconnect();
     }
   });
 

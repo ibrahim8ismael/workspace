@@ -349,9 +349,14 @@ export class OfficeGateway
   private endAccess(socket: OfficeSocket, reason: 'authorization_ended' | 'server_unavailable') {
     const ticket = socket.data.officeAdmission;
     if (ticket) {
+      const accessReason =
+        reason === 'authorization_ended' &&
+        this.epochs.current(ticket.officeId) !== ticket.officeEpoch
+          ? 'server_unavailable'
+          : reason;
       socket.emit(
         'office:access-ended',
-        officeAccessEndedSchema.parse({ officeEpoch: ticket.officeEpoch, reason }),
+        officeAccessEndedSchema.parse({ officeEpoch: ticket.officeEpoch, reason: accessReason }),
       );
     }
     this.cleanup(socket);

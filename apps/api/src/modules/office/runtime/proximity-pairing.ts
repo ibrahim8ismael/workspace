@@ -283,6 +283,7 @@ export class ProximityPairing {
         generation: group.generation,
         identity: member.participationId,
         room: group.generation,
+        roomLifecycle: 'rotating' as const,
         version: 1,
         sources: ['microphone'] as const,
       })),

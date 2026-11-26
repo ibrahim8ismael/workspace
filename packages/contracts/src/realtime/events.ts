@@ -21,6 +21,11 @@ import {
   meetingInviteEventSchema,
   meetingInvitationResponseEventSchema,
   meetingInvitationCancelEventSchema,
+  meetingScreenShareStartEventSchema,
+  meetingScreenShareConfirmEventSchema,
+  meetingScreenShareStopEventSchema,
+  meetingScreenShareFirstFrameEventSchema,
+  meetingScreenShareUpdateSchema,
   proximityOptInEventSchema,
 } from './conversations.js';
 
@@ -37,6 +42,10 @@ export const officeClientEventNameSchema = z.enum([
   'meeting:invite',
   'meeting:invitation:respond',
   'meeting:invitation:cancel',
+  'meeting:screen-share:start',
+  'meeting:screen-share:confirm',
+  'meeting:screen-share:stop',
+  'meeting:screen-share:first-frame',
 ]);
 export const officeClientEventSchemas = Object.freeze({
   'world:input': worldInputEventSchema,
@@ -51,6 +60,10 @@ export const officeClientEventSchemas = Object.freeze({
   'meeting:invite': meetingInviteEventSchema,
   'meeting:invitation:respond': meetingInvitationResponseEventSchema,
   'meeting:invitation:cancel': meetingInvitationCancelEventSchema,
+  'meeting:screen-share:start': meetingScreenShareStartEventSchema,
+  'meeting:screen-share:confirm': meetingScreenShareConfirmEventSchema,
+  'meeting:screen-share:stop': meetingScreenShareStopEventSchema,
+  'meeting:screen-share:first-frame': meetingScreenShareFirstFrameEventSchema,
 });
 export const officeServerEventSchemas = Object.freeze({
   'office:ready': officeReadySchema,
@@ -61,4 +74,5 @@ export const officeServerEventSchemas = Object.freeze({
   'conversation:areas': conversationAreasSchema,
   'meeting:zones': meetingZonesSchema,
   'meeting:invitation': meetingInvitationSchema,
+  'meeting:screen-share:update': meetingScreenShareUpdateSchema,
 });

@@ -29,12 +29,17 @@ import {
   meetingInviteEventSchema,
   meetingInvitationResponseEventSchema,
   meetingInvitationCancelEventSchema,
+  meetingScreenShareStartEventSchema,
+  meetingScreenShareConfirmEventSchema,
+  meetingScreenShareStopEventSchema,
+  meetingScreenShareFirstFrameEventSchema,
 } from '@gather/contracts';
 import { OfficeEpochRegistry } from '../office-epoch.registry.js';
 import { OfficeAdmissionService, type SocketPolicyTimings } from '../office-admission.service.js';
 import type { ConsumedOfficeTicket, OfficeReservation } from '../runtime/office-runtime.service.js';
 import { OfficeRuntimeService } from '../runtime/office-runtime.service.js';
 import { OfficeRoomEventPublisher } from '../office-room-event-publisher.js';
+import { MeetingScreenShareMetricsService } from '../meeting-screen-share-metrics.service.js';
 
 interface OfficeSocketData {
   officeAdmission?: ConsumedOfficeTicket;
@@ -88,6 +93,8 @@ export class OfficeGateway
     @Inject(OfficeAdmissionService) private readonly admission: OfficeAdmissionService,
     @Inject(OfficeRuntimeService) private readonly runtime: OfficeRuntimeService,
     @Inject(OfficeRoomEventPublisher) private readonly roomEvents: OfficeRoomEventPublisher,
+    @Inject(MeetingScreenShareMetricsService)
+    private readonly screenShareMetrics: MeetingScreenShareMetricsService,
   ) {}
 
   afterInit(namespace: Namespace) {
@@ -206,6 +213,9 @@ export class OfficeGateway
     if (!ticket || !reservation) return;
     delete socket.data.officeAdmission;
     delete socket.data.officeReservation;
+    const activePresentation = this.runtime.activeMeetingScreenShareForPresenter(
+      reservation.participationId,
+    );
     const released = this.runtime.release(
       ticket.officeId,
       ticket.workspaceId,
@@ -214,6 +224,7 @@ export class OfficeGateway
       reservation.participationId,
     );
     if (released) {
+      if (activePresentation) this.screenShareMetrics.unexpectedDisconnect();
       this.namespace
         .to(released.roomId)
         .emit('world:delta', worldDeltaSchema.parse(released.delta));
@@ -421,6 +432,12 @@ export class OfficeGateway
         return;
       }
       socket.emit('world:snapshot', worldSnapshotSchema.parse(result.snapshot));
+      this.roomEvents.publishMeetingScreenShareNotices(
+        this.runtime.meetingScreenShareState(ticket.officeId, reservation.participationId),
+      );
+      this.roomEvents.publishMeetingScreenShareNotices(
+        this.runtime.drainMeetingScreenShareNotices(),
+      );
       const areas = this.runtime.conversationAreas(ticket.officeId);
       const zones = this.runtime.meetingZones(ticket.officeId);
       if (areas && zones) this.roomEvents.sendOfficeMetadata(socket.id, areas, zones);
@@ -554,9 +571,129 @@ export class OfficeGateway
       }
       this.roomEvents.publishConversationNotices(result.notices);
       this.roomEvents.publishConversationNotices(this.runtime.reconcileProximity(ticket.officeId));
+      this.roomEvents.publishMeetingScreenShareNotices(
+        this.runtime.drainMeetingScreenShareNotices(),
+      );
       this.publishMeetingInvitationNotices();
       this.publishAreas(ticket.workspaceId, ticket.officeId);
       this.reply(acknowledge, parsed.data.eventId, null);
+    });
+    socket.on('meeting:screen-share:start', (raw: unknown, acknowledge?: unknown) => {
+      if (!this.allowOfficeCommand(socket)) {
+        this.reply(acknowledge, this.eventId(raw), 'rate_limited');
+        return;
+      }
+      const parsed = meetingScreenShareStartEventSchema.safeParse(raw);
+      if (!parsed.success) {
+        this.reply(acknowledge, this.eventId(raw), 'validation_failed');
+        return;
+      }
+      const ticket = socket.data.officeAdmission;
+      const reservation = socket.data.officeReservation;
+      if (!ticket || !reservation) return;
+      const error = this.runtime.startMeetingScreenShare(
+        ticket.officeId,
+        ticket.workspaceId,
+        ticket.userId,
+        socket.id,
+        reservation.participationId,
+        parsed.data.officeEpoch,
+        parsed.data.payload.conversationId,
+        parsed.data.payload.conversationVersion,
+        parsed.data.payload.shareId,
+      );
+      this.screenShareMetrics.startAttempt(
+        `${parsed.data.payload.conversationId}:${parsed.data.payload.shareId}`,
+        error,
+      );
+      this.publishConversationState(ticket.workspaceId, ticket.officeId);
+      this.reply(acknowledge, parsed.data.eventId, error);
+    });
+    socket.on('meeting:screen-share:confirm', (raw: unknown, acknowledge?: unknown) => {
+      if (!this.allowOfficeCommand(socket)) {
+        this.reply(acknowledge, this.eventId(raw), 'rate_limited');
+        return;
+      }
+      const parsed = meetingScreenShareConfirmEventSchema.safeParse(raw);
+      if (!parsed.success) {
+        this.reply(acknowledge, this.eventId(raw), 'validation_failed');
+        return;
+      }
+      const ticket = socket.data.officeAdmission;
+      const reservation = socket.data.officeReservation;
+      if (!ticket || !reservation) return;
+      const error = this.runtime.confirmMeetingScreenShare(
+        ticket.officeId,
+        ticket.workspaceId,
+        ticket.userId,
+        socket.id,
+        reservation.participationId,
+        parsed.data.officeEpoch,
+        parsed.data.payload.conversationId,
+        parsed.data.payload.shareId,
+      );
+      this.screenShareMetrics.startConfirmation(
+        `${parsed.data.payload.conversationId}:${parsed.data.payload.shareId}`,
+        error,
+      );
+      this.publishConversationState(ticket.workspaceId, ticket.officeId);
+      this.reply(acknowledge, parsed.data.eventId, error);
+    });
+    socket.on('meeting:screen-share:stop', (raw: unknown, acknowledge?: unknown) => {
+      if (!this.allowOfficeCommand(socket)) {
+        this.reply(acknowledge, this.eventId(raw), 'rate_limited');
+        return;
+      }
+      const parsed = meetingScreenShareStopEventSchema.safeParse(raw);
+      if (!parsed.success) {
+        this.reply(acknowledge, this.eventId(raw), 'validation_failed');
+        return;
+      }
+      const ticket = socket.data.officeAdmission;
+      const reservation = socket.data.officeReservation;
+      if (!ticket || !reservation) return;
+      const error = this.runtime.stopMeetingScreenShare(
+        ticket.officeId,
+        ticket.workspaceId,
+        ticket.userId,
+        socket.id,
+        reservation.participationId,
+        parsed.data.officeEpoch,
+        parsed.data.payload.conversationId,
+        parsed.data.payload.shareId,
+      );
+      if (!error)
+        this.screenShareMetrics.endShare(
+          `${parsed.data.payload.conversationId}:${parsed.data.payload.shareId}`,
+        );
+      this.publishConversationState(ticket.workspaceId, ticket.officeId);
+      this.reply(acknowledge, parsed.data.eventId, error);
+    });
+    socket.on('meeting:screen-share:first-frame', (raw: unknown, acknowledge?: unknown) => {
+      if (!this.allowOfficeCommand(socket)) {
+        this.reply(acknowledge, this.eventId(raw), 'rate_limited');
+        return;
+      }
+      const parsed = meetingScreenShareFirstFrameEventSchema.safeParse(raw);
+      if (!parsed.success) {
+        this.reply(acknowledge, this.eventId(raw), 'validation_failed');
+        return;
+      }
+      const ticket = socket.data.officeAdmission;
+      const reservation = socket.data.officeReservation;
+      if (!ticket || !reservation) return;
+      const accepted = this.runtime.recordMeetingScreenShareFirstFrame(
+        ticket.officeId,
+        ticket.workspaceId,
+        ticket.userId,
+        socket.id,
+        reservation.participationId,
+        parsed.data.officeEpoch,
+        parsed.data.payload.conversationId,
+        parsed.data.payload.shareId,
+      );
+      if (accepted) this.screenShareMetrics.firstFrame(parsed.data.payload.elapsedMs);
+      this.reply(acknowledge, parsed.data.eventId, accepted ? null : 'conflict');
     });
     socket.on('meeting:invite', (raw: unknown, acknowledge?: unknown) => {
       if (!this.allowOfficeCommand(socket)) {
@@ -600,6 +737,9 @@ export class OfficeGateway
       }
       this.roomEvents.publishConversationNotices(result.notices);
       this.roomEvents.publishConversationNotices(this.runtime.reconcileProximity(ticket.officeId));
+      this.roomEvents.publishMeetingScreenShareNotices(
+        this.runtime.drainMeetingScreenShareNotices(),
+      );
       this.publishMeetingInvitationNotices();
       this.publishAreas(ticket.workspaceId, ticket.officeId);
       this.reply(acknowledge, parsed.data.eventId, null);
@@ -660,6 +800,9 @@ export class OfficeGateway
             ?.emit('meeting:invitation', inviteNotice);
       }
       this.roomEvents.publishConversationNotices(this.runtime.reconcileProximity(ticket.officeId));
+      this.roomEvents.publishMeetingScreenShareNotices(
+        this.runtime.drainMeetingScreenShareNotices(),
+      );
       this.publishMeetingInvitationNotices();
       this.publishAreas(ticket.workspaceId, ticket.officeId);
       this.reply(acknowledge, parsed.data.eventId, null);
@@ -1015,6 +1158,7 @@ export class OfficeGateway
       | 'seat_exit_blocked'
       | 'room_full'
       | 'zone_unavailable'
+      | 'media_unavailable'
       | 'conflict'
       | 'participation_conflict'
       | null,
@@ -1091,6 +1235,7 @@ export class OfficeGateway
 
   private publishConversationState(workspaceId: string, officeId: string) {
     this.roomEvents.publishConversationNotices(this.runtime.reconcileProximity(officeId));
+    this.roomEvents.publishMeetingScreenShareNotices(this.runtime.drainMeetingScreenShareNotices());
     this.publishAreas(workspaceId, officeId);
     this.publishMeetingInvitationNotices();
   }

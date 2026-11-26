@@ -36,6 +36,20 @@ test('authenticated challenge-bound snapshot installs an exact permit', async ()
   );
   assert.equal(state.allows({ ...permit, source: 'microphone' }), true);
 });
+test('signed policy permits can declare a stable meeting room lifecycle', async () => {
+  const stablePermit = { ...permit, roomLifecycle: 'stable' };
+  const state = new PermitState('epoch', () => 0);
+  assert.equal(
+    await pullPolicy({
+      endpoint: 'http://fixture',
+      key,
+      state,
+      fetchImpl: transport((body) => ({ ...body, permits: [stablePermit] })),
+    }),
+    true,
+  );
+  assert.equal(state.allows({ ...stablePermit, source: 'microphone' }), true);
+});
 test('wrong signatures, substituted challenges and unknown signed fields fail closed', async () => {
   for (const fetchImpl of [
     transport((b) => b, 'bad'),

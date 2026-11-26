@@ -61,6 +61,12 @@ export const environmentSchema = z
     LIVEKIT_URL: optionalLiveKitUrl,
     LIVEKIT_API_KEY: optionalLiveKitCredential,
     LIVEKIT_API_SECRET: optionalLiveKitCredential,
+    SCREEN_SHARE_ENABLED: z
+      .preprocess(
+        (value) => (value === true ? 'true' : value === false ? 'false' : value),
+        z.enum(['true', 'false']).default('false'),
+      )
+      .transform((value) => value === 'true'),
     DB_AUTO_INDEX: z.enum(['true', 'false']).default('false'),
   })
   .superRefine((value, ctx) => {

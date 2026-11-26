@@ -17,10 +17,23 @@ const grant = {
 };
 
 function createRoom() {
+  let screenShareAllowed = false;
+  const permissionListeners = new Set<(allowed: boolean) => void>();
   const handlers = {
     subscribed: undefined as
       ((track: ProximityRemoteAudioTrack, identity: string) => void) | undefined,
     unsubscribed: undefined as ((track: ProximityRemoteAudioTrack) => void) | undefined,
+    screenSubscribed: undefined as
+      | ((
+          track: import('../src/features/office/proximity-audio-session').ProximityRemoteScreenTrack,
+          identity: string,
+        ) => void)
+      | undefined,
+    screenUnsubscribed: undefined as
+      | ((
+          track: import('../src/features/office/proximity-audio-session').ProximityRemoteScreenTrack,
+        ) => void)
+      | undefined,
     disconnected: undefined as (() => void) | undefined,
     reconnecting: undefined as (() => void) | undefined,
     reconnected: undefined as (() => void) | undefined,
@@ -29,6 +42,13 @@ function createRoom() {
     connect: vi.fn(async () => undefined),
     disconnect: vi.fn(async () => undefined),
     setMicrophoneEnabled: vi.fn(async () => undefined),
+    canPublishScreenShare: vi.fn(() => screenShareAllowed),
+    onScreenSharePermissionChanged: vi.fn((listener) => {
+      permissionListeners.add(listener);
+      return () => permissionListeners.delete(listener);
+    }),
+    publishScreenShare: vi.fn(async () => undefined),
+    unpublishScreenShare: vi.fn(async () => undefined),
     onTrackSubscribed: vi.fn((handler) => {
       handlers.subscribed = handler;
       return () => {
@@ -39,6 +59,18 @@ function createRoom() {
       handlers.unsubscribed = handler;
       return () => {
         handlers.unsubscribed = undefined;
+      };
+    }),
+    onScreenShareTrackSubscribed: vi.fn((handler) => {
+      handlers.screenSubscribed = handler;
+      return () => {
+        handlers.screenSubscribed = undefined;
+      };
+    }),
+    onScreenShareTrackUnsubscribed: vi.fn((handler) => {
+      handlers.screenUnsubscribed = handler;
+      return () => {
+        handlers.screenUnsubscribed = undefined;
       };
     }),
     onDisconnected: vi.fn((handler) => {
@@ -60,10 +92,104 @@ function createRoom() {
       };
     }),
   };
-  return { room, handlers };
+  return {
+    room,
+    handlers,
+    setScreenShareAllowed(allowed: boolean) {
+      screenShareAllowed = allowed;
+      for (const listener of permissionListeners) listener(allowed);
+    },
+  };
 }
 
 describe('session-bound proximity audio client', () => {
+  it('exposes remote meeting screen shares and detaches them on unsubscribe and room release', async () => {
+    const fake = createRoom();
+    const session = new ProximityAudioSession(
+      () => undefined,
+      () => vi.fn(),
+      async () => fake.room,
+    );
+    const changed = vi.fn();
+    session.subscribeRemoteScreenShares(changed);
+    await session.start(
+      async () => grant,
+      () => true,
+      2,
+      grant.generation,
+    );
+    const track = {
+      attach: vi.fn(),
+      detach: vi.fn(() => []),
+    } as unknown as import('../src/features/office/proximity-audio-session').ProximityRemoteScreenTrack;
+
+    fake.handlers.screenSubscribed?.(track, 'presenter-participation');
+    expect(session.getRemoteScreenShares()).toEqual([
+      { track, identity: 'presenter-participation' },
+    ]);
+    expect(changed).toHaveBeenCalledOnce();
+
+    fake.handlers.screenUnsubscribed?.(track);
+    expect(track.detach).toHaveBeenCalledOnce();
+    expect(session.getRemoteScreenShares()).toEqual([]);
+    expect(changed).toHaveBeenCalledTimes(2);
+
+    fake.handlers.screenSubscribed?.(track, 'presenter-participation');
+    await session.stop();
+    expect(track.detach).toHaveBeenCalledTimes(2);
+    expect(session.getRemoteScreenShares()).toEqual([]);
+    expect(fake.handlers.screenSubscribed).toBeUndefined();
+    expect(changed).toHaveBeenCalledTimes(4);
+  });
+
+  it('waits for server-installed screen permission and publishes only on the connected room', async () => {
+    const fake = createRoom();
+    const session = new ProximityAudioSession(
+      () => undefined,
+      () => vi.fn(),
+      async () => fake.room,
+    );
+    await session.start(
+      async () => grant,
+      () => true,
+      2,
+      grant.generation,
+    );
+    const controller = new AbortController();
+    const waiting = session.waitForScreenSharePermission(controller.signal);
+    expect(fake.room.onScreenSharePermissionChanged).toHaveBeenCalledOnce();
+    fake.setScreenShareAllowed(true);
+    await waiting;
+
+    const track = { readyState: 'live', stop: vi.fn() } as unknown as MediaStreamTrack;
+    await session.publishScreenShare(track, 'share-identifier');
+    expect(fake.room.publishScreenShare).toHaveBeenCalledWith(track, 'share-identifier');
+    await session.unpublishScreenShare(track);
+    expect(fake.room.unpublishScreenShare).toHaveBeenCalledWith(track);
+    await session.stop();
+  });
+
+  it('aborts the screen permission wait when the room changes or the start is cancelled', async () => {
+    const fake = createRoom();
+    const session = new ProximityAudioSession(
+      () => undefined,
+      () => vi.fn(),
+      async () => fake.room,
+    );
+    await session.start(
+      async () => grant,
+      () => true,
+      2,
+      grant.generation,
+    );
+    const controller = new AbortController();
+    const waiting = session.waitForScreenSharePermission(controller.signal);
+    controller.abort(new Error('share_cancelled'));
+    await expect(waiting).rejects.toThrow('share_cancelled');
+    expect(fake.room.publishScreenShare).not.toHaveBeenCalled();
+    await session.stop();
+  });
+
   it('reports verified local and remote LiveKit speakers, including mute and departure', async () => {
     const roomListener = vi.spyOn(Room.prototype, 'on');
     try {

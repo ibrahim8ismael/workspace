@@ -17,6 +17,7 @@ import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import type { Readable, Writable } from 'node:stream';
 import { promisify } from 'node:util';
+import { chromium } from '@playwright/test';
 import { decryptMail, type MailPayload } from '@gather/delivery';
 import commonsManifest from '@gather/assets/manifests/commons-map.json' with { type: 'json' };
 import vivoManifest from '@gather/assets/manifests/vivo-map.json' with { type: 'json' };
@@ -44,6 +45,8 @@ import {
   officeCommandAckSchema,
   officeWaveSchema,
   meetingInvitationSchema,
+  meetingScreenShareTrackName,
+  meetingScreenShareUpdateSchema,
   meetingZonesSchema,
   worldDeltaSchema,
   worldSnapshotSchema,
@@ -99,7 +102,43 @@ import { clientIp, validProxyIpList } from '../dist/platform/http/client-ip.js';
 import { io } from 'socket.io-client';
 import type { Socket } from 'socket.io-client';
 import type { AddressInfo } from 'node:net';
-import { AccessToken, RoomServiceClient, TokenVerifier } from 'livekit-server-sdk';
+import { AccessToken, RoomServiceClient, TokenVerifier, TrackSource } from 'livekit-server-sdk';
+
+declare const location: { readonly origin: string };
+declare const document: {
+  querySelector(selector: string): {
+    srcObject: { getVideoTracks(): Array<{ readyState: string }> } | null;
+    videoWidth: number;
+  } | null;
+  fullscreenElement: unknown;
+};
+declare const window: {
+  postMessage(message: unknown, targetOrigin: string): void;
+  __meetingScreenFixture: {
+    status: string;
+    permissions: string[];
+    screenPublishAttempts: number;
+    screenPublishResult: string;
+    screenPublishError: string;
+    remoteScreenOwners: string[];
+    remoteAudioOwners: string[];
+    remoteAudioSamples: number;
+    localMicrophonePublished: boolean;
+    screenPublished: boolean;
+  };
+  __meetingScreenPublishingFixture: {
+    status: string;
+    identity: string;
+    captureRequests: Array<{ audio?: boolean }>;
+    cancelNextCapture: boolean;
+    shareState: string;
+    screenPublished: boolean;
+    localMicrophonePublished: boolean;
+    remoteAudioSamples: number;
+    screenPublishAttempts: number;
+    shareId: string;
+  };
+};
 
 const origin = 'https://api.gather.test';
 const password = 'a quartz river beneath the lantern';
@@ -115,6 +154,7 @@ const runMediaPermissionDenied = process.env['CP08_MEDIA_PERMISSION_DENIED'] ===
 const runMediaTurnOnly = process.env['CP08_MEDIA_TURN_ONLY'] === '1';
 const runMediaWeakNetwork = process.env['CP08_MEDIA_WEAK_NETWORK'] === '1';
 const runMediaCrossCompany = process.env['CP08_MEDIA_CROSS_COMPANY'] === '1';
+const runMeetingReadiness = process.env['CP08_MEETING_READINESS'] === '1';
 const configuredMediaEnd = process.env['CP08_MEDIA_END'] ?? 'leave';
 const mediaEndScenario = runLiveMediaFixture
   ? ['opt-out', 'away', 'session-revoke', 'membership-revoke'].includes(configuredMediaEnd)
@@ -214,13 +254,17 @@ async function startViteMediaFixture() {
 }
 
 async function startLiveKitFixture() {
-  const context = process.env['CP07_DOCKER_CONTEXT'] ?? 'orbstack';
+  const context = process.env['CP07_DOCKER_CONTEXT'];
   const docker = async (...args: string[]) => {
     try {
-      const result = await execFileAsync('docker', ['--context', context, ...args], {
-        timeout: 30000,
-        maxBuffer: 65536,
-      });
+      const result = await execFileAsync(
+        'docker',
+        [...(context ? ['--context', context] : []), ...args],
+        {
+          timeout: 30000,
+          maxBuffer: 65536,
+        },
+      );
       return result.stdout.trim();
     } catch {
       throw new Error(`LiveKit fixture Docker operation failed: ${args[0]}`);
@@ -390,6 +434,7 @@ function startApplicationMediaClient(config: {
   fixtureUrl: string;
   denyMicrophoneIndex?: 0 | 1;
   forceRelay?: boolean;
+  deferPeerReadiness?: boolean;
   grants: Array<{
     serverUrl: string;
     token: string;
@@ -473,7 +518,7 @@ async function stopApplicationMediaClient(client: ApplicationMediaClient) {
 }
 
 function status(response: HttpResponse, expected: number) {
-  expect(response.status, response.body?.error?.code).toBe(expected);
+  expect(response.status, JSON.stringify(response.body)).toBe(expected);
   if (response.status >= 400) apiErrorResponseSchema.parse(response.body);
 }
 
@@ -750,19 +795,31 @@ async function mailCode(
   if (!record?.payload) throw new Error('Expected an encrypted pending mail record');
   return decryptMail(record._id, record.payload, encryption).token;
 }
-async function account(email = `person-${randomUUID()}@example.com`) {
+async function account(email = `person-${randomUUID()}@example.com`, forwardedFor?: string) {
   const client = new Client();
   await client.bootstrap();
   status(
-    await client.send('post', '/api/auth/register', {
-      email,
-      password,
-      displayName: 'Test Person',
-    }),
+    await client.send(
+      'post',
+      '/api/auth/register',
+      {
+        email,
+        password,
+        displayName: 'Test Person',
+      },
+      randomUUID(),
+      forwardedFor,
+    ),
     202,
   );
   const token = await mailCode(email, 'verify-email');
-  const verified = await client.send('post', '/api/auth/verify-email', { email, token });
+  const verified = await client.send(
+    'post',
+    '/api/auth/verify-email',
+    { email, token },
+    randomUUID(),
+    forwardedFor,
+  );
   status(verified, 200);
   return { client, email, id: String(verified.body.account.id) };
 }
@@ -817,6 +874,7 @@ beforeAll(async () => {
   }
   process.env['LIVEKIT_API_KEY'] = livekitApiKey;
   process.env['LIVEKIT_API_SECRET'] = livekitApiSecret;
+  process.env['SCREEN_SHARE_ENABLED'] = 'true';
   process.env['MONGOMS_DOWNLOAD_DIR'] = resolve(process.cwd(), '../../.cache/mongodb-binaries');
   mongo = await MongoMemoryReplSet.create({
     binary: { version: '8.2.6' },
@@ -4137,6 +4195,35 @@ describe('office socket admission', () => {
           createHmac('sha256', mediaMachineKey).update(signedPull.text).digest('hex'),
         );
 
+        const unsignedMetrics = await request(app.getHttpServer())
+          .post('/api/media/internal/metrics/meeting-screen-share')
+          .set('Content-Type', 'application/json')
+          .send('{}');
+        status(unsignedMetrics, 401);
+        const metricsBody = '{}';
+        const signedMetrics = await request(app.getHttpServer())
+          .post('/api/media/internal/metrics/meeting-screen-share')
+          .set(
+            'X-CP07-Signature',
+            createHmac('sha256', mediaMachineKey).update(metricsBody).digest('hex'),
+          )
+          .set('Content-Type', 'application/json')
+          .send(metricsBody);
+        status(signedMetrics, 200);
+        expect(signedMetrics.body).toMatchObject({
+          screenSharingEnabled: true,
+          starts: {
+            attempts: expect.any(Number),
+            succeeded: expect.any(Number),
+            failed: expect.any(Number),
+          },
+          shares: { active: expect.any(Number), starting: expect.any(Number) },
+          viewerTimeToFirstFrameMs: { samples: expect.any(Number) },
+          apiProcess: { rssBytes: expect.any(Number), heapUsedBytes: expect.any(Number) },
+          livekit: { available: expect.any(Boolean) },
+        });
+        expect(JSON.stringify(signedMetrics.body)).not.toContain(firstReady.participationId);
+
         status(
           await first.client.send(
             'post',
@@ -6981,7 +7068,7 @@ describe('meeting invitation socket flow', () => {
         await new Promise((resolve) => setTimeout(resolve, 120));
         const challenge = { epoch: 'a'.repeat(64), nonce: randomBytes(32).toString('hex') };
         const snapshot = mediaPolicySnapshotSchema.parse(
-          JSON.parse(policy.issueSnapshot(challenge).body),
+          JSON.parse((await policy.issueSnapshot(challenge)).body),
         );
         policy.acknowledgeInstallation({ ...challenge, sequence: snapshot.sequence });
         return snapshot;
@@ -7074,6 +7161,2225 @@ describe('meeting invitation socket flow', () => {
       for (const socket of sockets) socket.disconnect();
     }
   });
+});
+
+describe('meeting screen-share socket flow', () => {
+  it('allows only current meeting members to start and broadcasts one authoritative presenter state', async () => {
+    const owner = await account();
+    const member = await account();
+    const observer = await account();
+    const workspaceId = await workspace(owner);
+    await join(owner, workspaceId, member);
+    await join(owner, workspaceId, observer);
+    const users = [owner, member, observer];
+    const tickets = await Promise.all(users.map((user) => issueTicket(user, workspaceId)));
+    const sockets = tickets.map(({ ticket }) =>
+      officeSocket({ ticket, protocolVersion: OFFICE_PROTOCOL_VERSION }),
+    );
+    const ready: ReturnType<typeof officeReadySchema.parse>[] = [];
+    const shareUpdates: ReturnType<typeof meetingScreenShareUpdateSchema.parse>[][] = [[], [], []];
+    sockets.forEach((socket, index) =>
+      socket.on('meeting:screen-share:update', (raw: unknown) => {
+        const parsed = meetingScreenShareUpdateSchema.safeParse(raw);
+        if (parsed.success) shareUpdates[index]!.push(parsed.data);
+      }),
+    );
+    try {
+      for (const socket of sockets) {
+        const readyEvent = nextSocketEvent<unknown>(socket, 'office:ready');
+        await connectSocket(socket);
+        ready.push(officeReadySchema.parse(await readyEvent));
+      }
+      expect(ready.every((session) => session.features.screenSharing)).toBe(true);
+      const firstReady = ready[0]!;
+      const runtime = app.get(OfficeRuntimeService);
+      const room = VIVO_GEOMETRY.zones.find((zone) => zone.kind === 'meeting')!;
+      const office = (
+        runtime as unknown as {
+          offices: Map<
+            string,
+            { participants: Map<string, { publicState: WorldSnapshot['participants'][number] }> }
+          >;
+        }
+      ).offices.get(firstReady.officeId)!;
+      const inside = {
+        x: (room.bounds.tx + 0.5) * VIVO_GEOMETRY.tileSize,
+        y: (room.bounds.ty + 0.5) * VIVO_GEOMETRY.tileSize,
+      };
+      for (const session of ready)
+        office.participants.get(session.participationId)!.publicState.position = inside;
+
+      const command = async (index: number, event: string, payload: object) =>
+        officeCommandAckSchema.parse(
+          await new Promise<unknown>((resolve) =>
+            sockets[index]!.emit(
+              event,
+              { eventId: randomUUID(), officeEpoch: firstReady.snapshot.officeEpoch, payload },
+              resolve,
+            ),
+          ),
+        );
+      expect(await command(0, 'meeting:join', { zoneId: room.zoneId })).toMatchObject({ ok: true });
+      expect(await command(1, 'meeting:join', { zoneId: room.zoneId })).toMatchObject({ ok: true });
+      const meeting = () =>
+        runtime
+          .meetingZones(firstReady.officeId)!
+          .zones.find((zoneState) => zoneState.zoneId === room.zoneId)!.meeting!;
+      const outsiderShareId = randomUUID();
+      expect(
+        await command(2, 'meeting:screen-share:start', {
+          conversationId: meeting().conversationId,
+          conversationVersion: meeting().version,
+          shareId: outsiderShareId,
+        }),
+      ).toMatchObject({ ok: false, error: { code: 'unauthorized' } });
+
+      const shareIds = [randomUUID(), randomUUID()];
+      const starts = await Promise.all(
+        [0, 1].map((index) =>
+          command(index, 'meeting:screen-share:start', {
+            conversationId: meeting().conversationId,
+            conversationVersion: meeting().version,
+            shareId: shareIds[index]!,
+          }),
+        ),
+      );
+      expect(starts.filter((result) => result.ok)).toHaveLength(1);
+      expect(
+        starts.filter((result) => !result.ok && result.error.code === 'conflict'),
+      ).toHaveLength(1);
+      const presenterIndex = starts[0]!.ok ? 0 : 1;
+      const viewerIndex = presenterIndex === 0 ? 1 : 0;
+      const shareId = shareIds[presenterIndex]!;
+      await vi.waitFor(() => {
+        for (const index of [0, 1])
+          expect(
+            shareUpdates[index]!.some((update) => update.presentation?.shareId === shareId),
+          ).toBe(true);
+      });
+
+      const mediaPolicy = app.get(MediaPolicyService);
+      const policyChallenge = {
+        // The application service survives test cases, so reuse the active guard epoch instead
+        // of simulating a restart that is correctly rejected for five seconds.
+        epoch: 'a'.repeat(64),
+        nonce: randomBytes(32).toString('hex'),
+      };
+      const startingPolicy = mediaPolicySnapshotSchema.parse(
+        JSON.parse((await mediaPolicy.issueSnapshot(policyChallenge)).body),
+      );
+      const presenterPermit = startingPolicy.permits.find(
+        (permit) => permit.identity === ready[presenterIndex]!.participationId,
+      )!;
+      const viewerPermit = startingPolicy.permits.find(
+        (permit) => permit.identity === ready[viewerIndex]!.participationId,
+      )!;
+      expect(presenterPermit.sources).toEqual(['microphone', 'screen_share']);
+      expect(viewerPermit.sources).toEqual(['microphone']);
+      mediaPolicy.acknowledgeInstallation({
+        ...policyChallenge,
+        sequence: startingPolicy.sequence,
+      });
+      expect(
+        mediaPolicy.hasInstalledPermit(
+          presenterPermit.generation,
+          presenterPermit.identity,
+          'screen_share',
+          presenterPermit.version,
+        ),
+      ).toBe(true);
+      expect(
+        mediaPolicy.hasInstalledPermit(
+          viewerPermit.generation,
+          viewerPermit.identity,
+          'screen_share',
+          viewerPermit.version,
+        ),
+      ).toBe(false);
+      const presenterTokenResponse = await users[presenterIndex]!.client.send(
+        'post',
+        `/api/conversations/${meeting().conversationId}/media-token`,
+        {
+          participationId: ready[presenterIndex]!.participationId,
+          conversationVersion: meeting().version,
+        },
+      );
+      status(presenterTokenResponse, 200);
+      const presenterToken = mediaTokenResponseSchema.parse(presenterTokenResponse.body);
+      const presenterClaims = await new TokenVerifier(livekitApiKey, livekitApiSecret).verify(
+        presenterToken.token,
+        0,
+      );
+      expect(presenterClaims.video?.canPublishSources).toEqual(['microphone', 'screen_share']);
+      const viewerTokenResponse = await users[viewerIndex]!.client.send(
+        'post',
+        `/api/conversations/${meeting().conversationId}/media-token`,
+        {
+          participationId: ready[viewerIndex]!.participationId,
+          conversationVersion: meeting().version,
+        },
+      );
+      status(viewerTokenResponse, 200);
+      const viewerToken = mediaTokenResponseSchema.parse(viewerTokenResponse.body);
+      const viewerClaims = await new TokenVerifier(livekitApiKey, livekitApiSecret).verify(
+        viewerToken.token,
+        0,
+      );
+      expect(viewerClaims.video?.canPublishSources).toEqual(['microphone']);
+
+      expect(
+        await command(presenterIndex, 'meeting:screen-share:confirm', {
+          conversationId: meeting().conversationId,
+          shareId,
+        }),
+      ).toMatchObject({ ok: true });
+      await vi.waitFor(() => {
+        expect(shareUpdates[viewerIndex]!.at(-1)?.presentation).toMatchObject({
+          shareId,
+          status: 'live',
+        });
+      });
+      expect(
+        await command(viewerIndex, 'meeting:screen-share:stop', {
+          conversationId: meeting().conversationId,
+          shareId,
+        }),
+      ).toMatchObject({ ok: false, error: { code: 'conflict' } });
+
+      const admittedState = nextSocketEvent<unknown>(sockets[2]!, 'meeting:screen-share:update');
+      expect(await command(2, 'meeting:join', { zoneId: room.zoneId })).toMatchObject({ ok: true });
+      expect(meetingScreenShareUpdateSchema.parse(await admittedState).presentation).toMatchObject({
+        shareId,
+        status: 'live',
+      });
+      const frameReport = {
+        conversationId: meeting().conversationId,
+        shareId,
+        elapsedMs: 183,
+      };
+      expect(
+        await command(viewerIndex, 'meeting:screen-share:first-frame', frameReport),
+      ).toMatchObject({ ok: true });
+      expect(
+        await command(viewerIndex, 'meeting:screen-share:first-frame', frameReport),
+      ).toMatchObject({ ok: false, error: { code: 'conflict' } });
+
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+      const webhookEndedStates = [0, 1, 2].map((index) =>
+        nextSocketEvent<unknown>(sockets[index]!, 'meeting:screen-share:update'),
+      );
+      const endedEvent = {
+        id: randomUUID(),
+        event: 'track_unpublished',
+        createdAt: String(Math.floor(Date.now() / 1000)),
+        room: { name: presenterPermit.generation },
+        participant: { identity: ready[presenterIndex]!.participationId },
+        track: {
+          name: meetingScreenShareTrackName(shareId),
+          source: TrackSource.SCREEN_SHARE,
+        },
+      };
+      const endedEventBody = JSON.stringify(endedEvent);
+      status(
+        await postLiveKitWebhook(endedEventBody, await liveKitWebhookAuthorization(endedEventBody)),
+        204,
+      );
+      for (const event of await Promise.all(webhookEndedStates))
+        expect(meetingScreenShareUpdateSchema.parse(event).presentation).toBeNull();
+      expect(runtime.activeMeetingScreenShare(presenterPermit.generation)).toBeNull();
+
+      const nextShareId = randomUUID();
+      const nextShareStarted = [0, 1, 2].map((index) =>
+        nextSocketEvent<unknown>(sockets[index]!, 'meeting:screen-share:update'),
+      );
+      expect(
+        await command(presenterIndex, 'meeting:screen-share:start', {
+          conversationId: meeting().conversationId,
+          conversationVersion: meeting().version,
+          shareId: nextShareId,
+        }),
+      ).toMatchObject({ ok: true });
+      await Promise.all(nextShareStarted);
+      expect(
+        await command(presenterIndex, 'meeting:screen-share:confirm', {
+          conversationId: meeting().conversationId,
+          shareId: nextShareId,
+        }),
+      ).toMatchObject({ ok: true });
+
+      const lateEventBody = JSON.stringify({
+        ...endedEvent,
+        id: randomUUID(),
+        createdAt: String(Math.floor(Date.now() / 1000) + 1),
+      });
+      status(
+        await postLiveKitWebhook(lateEventBody, await liveKitWebhookAuthorization(lateEventBody)),
+        204,
+      );
+      expect(runtime.activeMeetingScreenShare(presenterPermit.generation)?.shareId).toBe(
+        nextShareId,
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      const stalePolicyChallenge = {
+        epoch: 'a'.repeat(64),
+        nonce: randomBytes(32).toString('hex'),
+      };
+      const stalePolicy = mediaPolicySnapshotSchema.parse(
+        JSON.parse((await mediaPolicy.issueSnapshot(stalePolicyChallenge)).body),
+      );
+      expect(
+        stalePolicy.permits.some(
+          (permit) =>
+            permit.identity === ready[presenterIndex]!.participationId &&
+            permit.sources.includes('screen_share'),
+        ),
+      ).toBe(true);
+      const activeMeeting = meeting();
+      const survivorIndices = [0, 1, 2].filter((index) => index !== presenterIndex);
+      const clearedStates = survivorIndices.map((index) =>
+        nextSocketEvent<unknown>(sockets[index]!, 'meeting:screen-share:update'),
+      );
+      expect(
+        await command(presenterIndex, 'meeting:leave', {
+          conversationId: activeMeeting.conversationId,
+          conversationVersion: activeMeeting.version,
+        }),
+      ).toMatchObject({ ok: true });
+      const cleared = await Promise.all(clearedStates);
+      for (const event of cleared)
+        expect(meetingScreenShareUpdateSchema.parse(event).presentation).toBeNull();
+      expect(() =>
+        mediaPolicy.acknowledgeInstallation({
+          ...stalePolicyChallenge,
+          sequence: stalePolicy.sequence,
+        }),
+      ).toThrow();
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      const revokedPolicyChallenge = {
+        epoch: 'a'.repeat(64),
+        nonce: randomBytes(32).toString('hex'),
+      };
+      const revokedPolicy = mediaPolicySnapshotSchema.parse(
+        JSON.parse((await mediaPolicy.issueSnapshot(revokedPolicyChallenge)).body),
+      );
+      mediaPolicy.acknowledgeInstallation({
+        ...revokedPolicyChallenge,
+        sequence: revokedPolicy.sequence,
+      });
+      expect(
+        mediaPolicy.hasInstalledPermit(
+          presenterPermit.generation,
+          presenterPermit.identity,
+          'screen_share',
+          presenterPermit.version,
+        ),
+      ).toBe(false);
+      expect(
+        mediaPolicy.hasInstalledPermit(
+          viewerPermit.generation,
+          viewerPermit.identity,
+          'microphone',
+          viewerPermit.version,
+        ),
+      ).toBe(true);
+      const postRevocationTokenResponse = await users[viewerIndex]!.client.send(
+        'post',
+        `/api/conversations/${meeting().conversationId}/media-token`,
+        {
+          participationId: ready[viewerIndex]!.participationId,
+          conversationVersion: meeting().version,
+        },
+      );
+      status(postRevocationTokenResponse, 200);
+      const postRevocationClaims = await new TokenVerifier(livekitApiKey, livekitApiSecret).verify(
+        mediaTokenResponseSchema.parse(postRevocationTokenResponse.body).token,
+        0,
+      );
+      expect(postRevocationClaims.video?.canPublishSources).toEqual(['microphone']);
+    } finally {
+      for (const socket of sockets) socket.disconnect();
+    }
+  });
+});
+
+describe('fixed meeting media room continuity', () => {
+  it.skipIf(!runLiveMediaFixture)(
+    'keeps stable LiveKit room audio through roster changes and revokes uncooperative members',
+    async () => {
+      const users: Awaited<ReturnType<typeof account>>[] = [];
+      for (let index = 0; index < 3; index += 1) users.push(await account());
+      const workspaceId = await workspace(users[0]!);
+      for (const member of users.slice(1)) await join(users[0]!, workspaceId, member);
+      const tickets = await Promise.all(users.map((user) => issueTicket(user, workspaceId)));
+      const sockets = tickets.map(({ ticket }) =>
+        officeSocket({ ticket, protocolVersion: OFFICE_PROTOCOL_VERSION }),
+      );
+      const updateQueues = sockets.map((socket) => socketEventQueue(socket, 'conversation:update'));
+      const mediaClients: ApplicationMediaClient[] = [];
+      let livekit: Awaited<ReturnType<typeof startLiveKitFixture>> | undefined;
+      let fixture: Awaited<ReturnType<typeof startViteMediaFixture>> | undefined;
+      let guard: ApplicationGuard | undefined;
+      let retirementDirectory: string | undefined;
+
+      const waitForUpdate = (
+        index: number,
+        predicate: (update: ReturnType<typeof conversationUpdateSchema.parse>) => boolean,
+      ) =>
+        updateQueues[index]!((raw) => {
+          const parsed = conversationUpdateSchema.safeParse(raw);
+          return parsed.success && predicate(parsed.data);
+        }).then((raw) => conversationUpdateSchema.parse(raw));
+
+      const command = async (index: number, event: string, payload: object) =>
+        officeCommandAckSchema.parse(
+          await new Promise<unknown>((resolve) =>
+            sockets[index]!.emit(
+              event,
+              { eventId: randomUUID(), officeEpoch: ready[0]!.snapshot.officeEpoch, payload },
+              resolve,
+            ),
+          ),
+        );
+
+      const waitForInstalledPermits = async (generation: string, count: number, label: string) => {
+        const policy = app.get(MediaPolicyService) as unknown as {
+          installed?: { permits: Array<{ generation: string }> };
+        };
+        await vi.waitFor(
+          () => {
+            const installedCount =
+              policy.installed?.permits.filter((permit) => permit.generation === generation)
+                .length ?? 0;
+            expect(installedCount, label).toBe(count);
+          },
+          { timeout: 15000, interval: 50 },
+        );
+      };
+
+      const ready: ReturnType<typeof officeReadySchema.parse>[] = [];
+      try {
+        for (const socket of sockets) {
+          const notice = nextSocketEvent<unknown>(socket, 'office:ready');
+          await connectSocket(socket);
+          ready.push(officeReadySchema.parse(await notice));
+        }
+
+        const runtime = app.get(OfficeRuntimeService);
+        const officeId = ready[0]!.officeId;
+        const room = VIVO_GEOMETRY.zones.find((zone) => zone.kind === 'meeting')!;
+        const map = trustedOfficeMap(vivoManifest.mapVersion)!;
+        const roomTiles = Array.from(
+          { length: room.bounds.width * room.bounds.height },
+          (_, index) => ({
+            tx: room.bounds.tx + (index % room.bounds.width),
+            ty: room.bounds.ty + Math.floor(index / room.bounds.width),
+          }),
+        ).filter(
+          (tile) =>
+            map.validated.isReachable(tile) &&
+            !map.seats.some((seat) => seat.tile.tx === tile.tx && seat.tile.ty === tile.ty),
+        );
+        if (roomTiles.length < 3)
+          throw new Error('Expected three reachable tiles in a meeting room');
+        const office = (
+          runtime as unknown as {
+            offices: Map<
+              string,
+              {
+                participants: Map<string, { publicState: { position: { x: number; y: number } } }>;
+              }
+            >;
+          }
+        ).offices.get(officeId)!;
+        ready.forEach((member, index) => {
+          const tile = roomTiles[index]!;
+          office.participants.get(member.participationId)!.publicState.position = {
+            x: tile.tx * 32 + 16,
+            y: tile.ty * 32 + 16,
+          };
+        });
+
+        const initialJoiningEvents = [0, 1].map((index) =>
+          waitForUpdate(
+            index,
+            (update) => update.state === 'joining' && update.participants.length === 2,
+          ),
+        );
+        expect(await command(0, 'meeting:join', { zoneId: room.zoneId })).toMatchObject({
+          ok: true,
+        });
+        expect(await command(1, 'meeting:join', { zoneId: room.zoneId })).toMatchObject({
+          ok: true,
+        });
+        const initialJoining = await Promise.all(initialJoiningEvents);
+        expect(initialJoining[0]).toEqual(initialJoining[1]);
+
+        livekit = await startLiveKitFixture();
+        fixture = await startViteMediaFixture();
+        if (!liveMediaGuardPort) throw new Error('real media guard port is unavailable');
+        retirementDirectory = await mkdtemp(resolve(tmpdir(), 'gather-cp08-meeting-guard-'));
+        const apiAddress = app.getHttpServer().address() as AddressInfo;
+        guard = startApplicationGuard({
+          apiBaseUrl: 'http://127.0.0.1:' + apiAddress.port,
+          epoch: randomBytes(32).toString('hex'),
+          host: '127.0.0.1',
+          port: liveMediaGuardPort,
+          retirementDirectory,
+          sfuUpstream: 'http://127.0.0.1:' + livekit.signalingPort,
+          origin: fixture.origin,
+        });
+        await waitForInstalledPermits(
+          initialJoining[0]!.generation,
+          2,
+          'two meeting participant permits are installed',
+        );
+
+        const initialActiveEvents = [0, 1].map((index) =>
+          waitForUpdate(
+            index,
+            (update) =>
+              update.state === 'active' &&
+              update.conversationId === initialJoining[0]!.conversationId &&
+              update.participants.length === 2,
+          ),
+        );
+        const initialActive = (await Promise.all(initialActiveEvents))[0]!;
+        expect(initialActive.generation).toBe(initialJoining[0]!.generation);
+
+        const issueGrant = async (index: number, conversation: typeof initialActive) => {
+          const response = await users[index]!.client.send(
+            'post',
+            '/api/conversations/' + conversation.conversationId + '/media-token',
+            {
+              participationId: ready[index]!.participationId,
+              conversationVersion: conversation.version,
+            },
+          );
+          status(response, 200);
+          const grant = mediaTokenResponseSchema.parse(response.body);
+          const claims = await new TokenVerifier(livekitApiKey, livekitApiSecret).verify(
+            grant.token,
+            0,
+          );
+          expect(claims.sub).toBe(ready[index]!.participationId);
+          expect(JSON.parse(String(claims.metadata))).toMatchObject({
+            gatherMediaVersion: expect.any(Number),
+          });
+          expect(claims.video).toMatchObject({
+            room: conversation.generation,
+            roomJoin: true,
+            canPublish: true,
+            canPublishSources: ['microphone'],
+            canSubscribe: true,
+          });
+          return { ...grant, identity: ready[index]!.participationId };
+        };
+        const mediaVersionFor = async (grant: Awaited<ReturnType<typeof issueGrant>>) => {
+          const claims = await new TokenVerifier(livekitApiKey, livekitApiSecret).verify(
+            grant.token,
+            0,
+          );
+          return (JSON.parse(String(claims.metadata)) as { gatherMediaVersion: number })
+            .gatherMediaVersion;
+        };
+
+        const startClient = async (index: number, conversation: typeof initialActive) => {
+          const client = startApplicationMediaClient({
+            fixtureUrl: fixture!.url,
+            grants: [await issueGrant(index, conversation)],
+          });
+          mediaClients.push(client);
+          await waitForApplicationMediaMessage(
+            client,
+            (message) => message.kind === 'connected',
+            'the meeting member to connect to LiveKit',
+          );
+          return client;
+        };
+
+        const expectAudioAdvancing = async (client: ApplicationMediaClient) => {
+          const priorCount = client.messages.filter(
+            (message) => message.kind === 'audio-advancing',
+          ).length;
+          client.send({ kind: 'expect-audio-advancing' });
+          await vi.waitFor(
+            () => {
+              const reports = client.messages.filter(
+                (message) => message.kind === 'audio-advancing',
+              );
+              if (reports.length <= priorCount)
+                throw new Error('waiting for decoded meeting audio');
+              const deltas = reports[priorCount]!['decodedAudioSampleDeltas'] as number[];
+              expect(deltas.length).toBe(1);
+              expect(deltas[0]).toBeGreaterThan(0);
+            },
+            { timeout: 10000, interval: 50 },
+          );
+        };
+
+        const firstClient = await startClient(0, initialActive);
+        const secondClient = await startClient(1, initialActive);
+        await Promise.all([expectAudioAdvancing(firstClient), expectAudioAdvancing(secondClient)]);
+
+        const thirdJoiningEvent = waitForUpdate(
+          2,
+          (update) => update.state === 'joining' && update.participants.length === 3,
+        );
+        expect(await command(2, 'meeting:join', { zoneId: room.zoneId })).toMatchObject({
+          ok: true,
+        });
+        const thirdJoining = await thirdJoiningEvent;
+        expect(thirdJoining).toMatchObject({
+          conversationId: initialActive.conversationId,
+          generation: initialActive.generation,
+          mediaReady: false,
+        });
+        await waitForInstalledPermits(
+          initialActive.generation,
+          3,
+          'all three meeting participant permits are installed',
+        );
+        const thirdActiveEvents = [0, 1, 2].map((index) =>
+          waitForUpdate(
+            index,
+            (update) =>
+              update.state === 'active' &&
+              update.conversationId === initialActive.conversationId &&
+              update.version > thirdJoining.version,
+          ),
+        );
+        const thirdActive = (await Promise.all(thirdActiveEvents))[0]!;
+        expect(thirdActive.generation).toBe(initialActive.generation);
+        const thirdClient = await startClient(2, thirdActive);
+        const staleThirdGrant = await issueGrant(2, thirdActive);
+        const staleThirdVersion = await mediaVersionFor(staleThirdGrant);
+        await Promise.all([
+          expectAudioAdvancing(firstClient),
+          expectAudioAdvancing(secondClient),
+          expectAudioAdvancing(thirdClient),
+        ]);
+
+        const roomService = new RoomServiceClient(
+          'http://127.0.0.1:' + livekit.signalingPort,
+          livekitApiKey,
+          livekitApiSecret,
+        );
+        await vi.waitFor(
+          async () => {
+            const participants = await roomService.listParticipants(initialActive.generation);
+            expect(participants.map(({ identity }) => identity).sort()).toEqual(
+              ready.map(({ participationId }) => participationId).sort(),
+            );
+          },
+          { timeout: 5000, interval: 50 },
+        );
+
+        const remainingActiveEvent = waitForUpdate(
+          0,
+          (update) =>
+            update.state === 'active' &&
+            update.conversationId === thirdActive.conversationId &&
+            update.participants.length === 2 &&
+            update.version > thirdActive.version,
+        );
+        const thirdEndedEvent = waitForUpdate(
+          2,
+          (update) =>
+            update.state === 'ended' && update.conversationId === thirdActive.conversationId,
+        );
+        const revocationStartedAt = Date.now();
+        thirdClient.send({ kind: 'expect-server-cutoff', startedAt: revocationStartedAt });
+        expect(
+          await command(2, 'meeting:leave', {
+            conversationId: thirdActive.conversationId,
+            conversationVersion: thirdActive.version,
+          }),
+        ).toMatchObject({ ok: true });
+        await waitForInstalledPermits(
+          initialActive.generation,
+          2,
+          'the departed participant permit is revoked',
+        );
+        const remainingActive = await remainingActiveEvent;
+        const thirdEnded = await thirdEndedEvent;
+        expect(remainingActive.generation).toBe(initialActive.generation);
+        expect(thirdEnded.generation).toBe(initialActive.generation);
+        const cutoff = await waitForApplicationMediaMessage(
+          thirdClient,
+          (message) => message.kind === 'server-cutoff',
+          'the uncooperative departed meeting participant to lose LiveKit media',
+        );
+        expect(cutoff.stable).toBe(true);
+        expect(cutoff.cutoffMs).toEqual(expect.any(Number));
+        const stableRosterTrace = guard!.messages
+          .filter(({ kind }) => kind?.startsWith('stable_roster_'))
+          .map(({ kind, participants, durationMs }) => ({ kind, participants, durationMs }));
+        expect(
+          cutoff.cutoffMs as number,
+          `stable roster trace: ${JSON.stringify(stableRosterTrace)}`,
+        ).toBeLessThanOrEqual(2000);
+        const staleReplayUrl = new URL(`http://127.0.0.1:${liveMediaGuardPort}/rtc/v1/validate`);
+        staleReplayUrl.searchParams.set('access_token', staleThirdGrant.token);
+        staleReplayUrl.searchParams.set(
+          'join_request',
+          Buffer.from(JSON.stringify({ protocol: 12 })).toString('base64url'),
+        );
+        expect((await fetch(staleReplayUrl, { headers: { Origin: fixture!.origin } })).status).toBe(
+          403,
+        );
+        status(
+          await users[2]!.client.send(
+            'post',
+            `/api/conversations/${thirdActive.conversationId}/media-token`,
+            {
+              participationId: ready[2]!.participationId,
+              conversationVersion: thirdActive.version,
+            },
+          ),
+          409,
+        );
+        await vi.waitFor(
+          async () => {
+            const participants = await roomService.listParticipants(initialActive.generation);
+            expect(participants.map(({ identity }) => identity).sort()).toEqual(
+              ready
+                .slice(0, 2)
+                .map(({ participationId }) => participationId)
+                .sort(),
+            );
+          },
+          { timeout: 5000, interval: 50 },
+        );
+        await Promise.all([expectAudioAdvancing(firstClient), expectAudioAdvancing(secondClient)]);
+        console.info(
+          'stable meeting media revocation verification: ' +
+            JSON.stringify({
+              revokedParticipant: ready[2]!.participationId,
+              survivorsStayedConnected: true,
+              survivorAudioContinued: true,
+              staleTokenRejected: true,
+              credentialRefreshRejected: true,
+              cutoffMs: cutoff.cutoffMs,
+              cutoffDeadlineMs: 2000,
+              roomGenerationPreserved: initialActive.generation,
+            }),
+        );
+
+        const thirdRejoiningEvent = waitForUpdate(
+          2,
+          (update) =>
+            update.state === 'joining' &&
+            update.conversationId === initialActive.conversationId &&
+            update.participants.length === 3 &&
+            update.version > remainingActive.version,
+        );
+        expect(await command(2, 'meeting:join', { zoneId: room.zoneId })).toMatchObject({
+          ok: true,
+        });
+        const thirdRejoining = await thirdRejoiningEvent;
+        expect(thirdRejoining.generation).toBe(initialActive.generation);
+        await waitForInstalledPermits(
+          initialActive.generation,
+          3,
+          'the re-entering participant permit is installed',
+        );
+        const reentryActiveEvents = [0, 1, 2].map((index) =>
+          waitForUpdate(
+            index,
+            (update) =>
+              update.state === 'active' &&
+              update.conversationId === initialActive.conversationId &&
+              update.version > thirdRejoining.version,
+          ),
+        );
+        const reentryActive = (await Promise.all(reentryActiveEvents))[0]!;
+        expect(reentryActive.generation).toBe(initialActive.generation);
+        const rejoinedClient = await startClient(2, reentryActive);
+        const rejoinedGrant = await issueGrant(2, reentryActive);
+        const rejoinedVersion = await mediaVersionFor(rejoinedGrant);
+        expect(rejoinedVersion).not.toBe(staleThirdVersion);
+        expect((await fetch(staleReplayUrl, { headers: { Origin: fixture!.origin } })).status).toBe(
+          403,
+        );
+        console.info(
+          'stable meeting stale credential verification: ' +
+            JSON.stringify({
+              oldAttendanceVersion: staleThirdVersion,
+              reentryAttendanceVersion: rejoinedVersion,
+              oldTokenRejectedAfterReentry: true,
+            }),
+        );
+        await Promise.all([
+          expectAudioAdvancing(firstClient),
+          expectAudioAdvancing(secondClient),
+          expectAudioAdvancing(rejoinedClient),
+        ]);
+
+        const accessEnded = nextSocketEvent<Record<string, unknown>>(
+          sockets[2]!,
+          'office:access-ended',
+        );
+        const membershipRevocationStartedAt = Date.now();
+        rejoinedClient.send({
+          kind: 'expect-server-cutoff',
+          startedAt: membershipRevocationStartedAt,
+        });
+        status(
+          await users[0]!.client.send(
+            'delete',
+            `/api/workspaces/${workspaceId}/members/${users[2]!.id}`,
+          ),
+          200,
+        );
+        await expect(accessEnded).resolves.toMatchObject({ reason: 'authorization_ended' });
+        await waitForInstalledPermits(
+          initialActive.generation,
+          2,
+          'workspace membership revocation removes the meeting permit',
+        );
+        const membershipCutoff = await waitForApplicationMediaMessage(
+          rejoinedClient,
+          (message) => message.kind === 'server-cutoff',
+          'the uncooperative member to lose media after workspace authorization ends',
+        );
+        expect(membershipCutoff.stable).toBe(true);
+        expect(membershipCutoff.cutoffMs as number).toBeLessThanOrEqual(2000);
+        expect((await fetch(staleReplayUrl, { headers: { Origin: fixture!.origin } })).status).toBe(
+          403,
+        );
+        status(
+          await users[2]!.client.send(
+            'post',
+            `/api/conversations/${reentryActive.conversationId}/media-token`,
+            {
+              participationId: ready[2]!.participationId,
+              conversationVersion: reentryActive.version,
+            },
+          ),
+          409,
+        );
+        await Promise.all([expectAudioAdvancing(firstClient), expectAudioAdvancing(secondClient)]);
+        console.info(
+          'stable meeting membership revocation verification: ' +
+            JSON.stringify({
+              authorizationEnded: true,
+              staleTokenRejected: true,
+              credentialRefreshRejected: true,
+              cutoffMs: membershipCutoff.cutoffMs,
+              cutoffDeadlineMs: 2000,
+              survivorsStayedConnected: true,
+              survivorAudioContinued: true,
+              roomGenerationPreserved: initialActive.generation,
+            }),
+        );
+
+        console.info(
+          'stable meeting media verification: ' +
+            JSON.stringify({
+              members: 3,
+              oneRoomGeneration: initialActive.generation,
+              liveAudioAfterJoin: true,
+              liveAudioAfterDeparture: true,
+              liveAudioAfterReentry: true,
+              thirdMemberReentered: true,
+            }),
+        );
+      } finally {
+        await Promise.all(mediaClients.map(stopApplicationMediaClient));
+        if (guard) await stopApplicationGuard(guard);
+        if (fixture) await fixture.stop();
+        if (livekit) await livekit.stop();
+        if (retirementDirectory) await rm(retirementDirectory, { recursive: true, force: true });
+        for (const socket of sockets) socket.disconnect();
+      }
+    },
+    180000,
+  );
+
+  it.skipIf(!runLiveMediaFixture)(
+    'captures from the Share Screen action and publishes through the existing meeting connection',
+    async () => {
+      const users: Awaited<ReturnType<typeof account>>[] = [await account(), await account()];
+      const workspaceId = await workspace(users[0]!);
+      await join(users[0]!, workspaceId, users[1]!);
+      const tickets = await Promise.all(users.map((user) => issueTicket(user, workspaceId)));
+      const sockets = tickets.map(({ ticket }) =>
+        officeSocket({ ticket, protocolVersion: OFFICE_PROTOCOL_VERSION }),
+      );
+      const updateQueues = sockets.map((socket) => socketEventQueue(socket, 'conversation:update'));
+      const ready: ReturnType<typeof officeReadySchema.parse>[] = [];
+      let livekit: Awaited<ReturnType<typeof startLiveKitFixture>> | undefined;
+      let fixture: Awaited<ReturnType<typeof startViteMediaFixture>> | undefined;
+      let guard: ApplicationGuard | undefined;
+      let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
+      let retirementDirectory: string | undefined;
+      const pages: import('@playwright/test').Page[] = [];
+      const browserErrors: string[] = [];
+
+      const waitForUpdate = (
+        index: number,
+        predicate: (update: ReturnType<typeof conversationUpdateSchema.parse>) => boolean,
+      ) =>
+        updateQueues[index]!((raw) => {
+          const parsed = conversationUpdateSchema.safeParse(raw);
+          return parsed.success && predicate(parsed.data);
+        }).then((raw) => conversationUpdateSchema.parse(raw));
+
+      const command = async (index: number, event: string, payload: object) =>
+        officeCommandAckSchema.parse(
+          await new Promise<unknown>((resolve) =>
+            sockets[index]!.emit(
+              event,
+              { eventId: randomUUID(), officeEpoch: ready[0]!.snapshot.officeEpoch, payload },
+              resolve,
+            ),
+          ),
+        );
+
+      try {
+        for (const socket of sockets) {
+          const notice = nextSocketEvent<unknown>(socket, 'office:ready');
+          await connectSocket(socket);
+          ready.push(officeReadySchema.parse(await notice));
+        }
+
+        const runtime = app.get(OfficeRuntimeService);
+        const room = VIVO_GEOMETRY.zones.find((zone) => zone.kind === 'meeting')!;
+        const map = trustedOfficeMap(vivoManifest.mapVersion)!;
+        const roomTiles = Array.from(
+          { length: room.bounds.width * room.bounds.height },
+          (_, index) => ({
+            tx: room.bounds.tx + (index % room.bounds.width),
+            ty: room.bounds.ty + Math.floor(index / room.bounds.width),
+          }),
+        ).filter(
+          (tile) =>
+            map.validated.isReachable(tile) &&
+            !map.seats.some((seat) => seat.tile.tx === tile.tx && seat.tile.ty === tile.ty),
+        );
+        if (roomTiles.length < 2) throw new Error('Expected two free reachable meeting tiles');
+        const office = (
+          runtime as unknown as {
+            offices: Map<
+              string,
+              { participants: Map<string, { publicState: { position: { x: number; y: number } } }> }
+            >;
+          }
+        ).offices.get(ready[0]!.officeId)!;
+        ready.forEach((member, index) => {
+          const tile = roomTiles[index]!;
+          office.participants.get(member.participationId)!.publicState.position = {
+            x: tile.tx * 32 + 16,
+            y: tile.ty * 32 + 16,
+          };
+        });
+        const joiningEvents = [0, 1].map((index) =>
+          waitForUpdate(
+            index,
+            (update) => update.state === 'joining' && update.participants.length === 2,
+          ),
+        );
+        expect(await command(0, 'meeting:join', { zoneId: room.zoneId })).toMatchObject({
+          ok: true,
+        });
+        expect(await command(1, 'meeting:join', { zoneId: room.zoneId })).toMatchObject({
+          ok: true,
+        });
+        const joining = await Promise.all(joiningEvents);
+        expect(joining[0]!.generation).toBe(joining[1]!.generation);
+        const generation = joining[0]!.generation;
+
+        livekit = await startLiveKitFixture();
+        fixture = await startViteMediaFixture();
+        if (!liveMediaGuardPort) throw new Error('real media guard port is unavailable');
+        retirementDirectory = await mkdtemp(resolve(tmpdir(), 'gather-cp09-screen-publish-'));
+        const apiAddress = app.getHttpServer().address() as AddressInfo;
+        guard = startApplicationGuard({
+          apiBaseUrl: 'http://127.0.0.1:' + apiAddress.port,
+          epoch: randomBytes(32).toString('hex'),
+          host: '127.0.0.1',
+          port: liveMediaGuardPort,
+          retirementDirectory,
+          sfuUpstream: 'http://127.0.0.1:' + livekit.signalingPort,
+          origin: fixture.origin,
+        });
+
+        const mediaPolicy = app.get(MediaPolicyService) as unknown as {
+          installed?: {
+            permits: Array<{
+              generation: string;
+              identity: string;
+              version: number;
+              sources: string[];
+            }>;
+          };
+        };
+        await vi.waitFor(
+          () => {
+            const permits = mediaPolicy.installed?.permits.filter(
+              (permit) => permit.generation === generation,
+            );
+            expect(permits).toHaveLength(2);
+            for (const member of ready)
+              expect(
+                permits?.find((permit) => permit.identity === member.participationId)?.sources,
+              ).toEqual(['microphone']);
+          },
+          { timeout: 15000, interval: 50 },
+        );
+
+        const activeEvents = [0, 1].map((index) =>
+          waitForUpdate(
+            index,
+            (update) =>
+              update.state === 'active' && update.conversationId === joining[0]!.conversationId,
+          ),
+        );
+        const active = (await Promise.all(activeEvents))[0]!;
+
+        const mediaGrants = await Promise.all(
+          users.map(async (user, index) => {
+            const response = await user.client.send(
+              'post',
+              `/api/conversations/${active.conversationId}/media-token`,
+              {
+                participationId: ready[index]!.participationId,
+                conversationVersion: active.version,
+              },
+            );
+            status(response, 200);
+            return mediaTokenResponseSchema.parse(response.body);
+          }),
+        );
+        const roomService = new RoomServiceClient(
+          'http://127.0.0.1:' + livekit.signalingPort,
+          livekitApiKey,
+          livekitApiSecret,
+        );
+        browser = await chromium.launch({
+          headless: true,
+          args: [
+            '--use-fake-device-for-media-stream',
+            '--use-fake-ui-for-media-stream',
+            '--autoplay-policy=no-user-gesture-required',
+          ],
+        });
+
+        const presenterPage = await browser.newPage();
+        const viewerPage = await browser.newPage();
+        pages.push(presenterPage, viewerPage);
+        pages.forEach((page, index) => {
+          page.on('pageerror', (error) => browserErrors.push(`page ${index}: ${error.message}`));
+          page.on('requestfailed', (request) =>
+            browserErrors.push(
+              `page ${index} request ${request.url()}: ${request.failure()?.errorText}`,
+            ),
+          );
+          page.on('console', (message) => {
+            if (message.type() === 'error') browserErrors.push(`page ${index}: ${message.text()}`);
+          });
+        });
+        const commandMeetingShare = async (
+          event: 'start' | 'confirm' | 'stop',
+          shareId: string,
+        ) => {
+          const eventName = `meeting:screen-share:${event}`;
+          const payload =
+            event === 'start'
+              ? {
+                  conversationId: active.conversationId,
+                  conversationVersion: active.version,
+                  shareId,
+                }
+              : { conversationId: active.conversationId, shareId };
+          const ack = await command(0, eventName, payload);
+          if (!ack.ok) throw new Error(ack.error.code);
+        };
+        await presenterPage.exposeFunction('__reserveMeetingScreenShare', (shareId: string) =>
+          commandMeetingShare('start', shareId),
+        );
+        await presenterPage.exposeFunction('__confirmMeetingScreenShare', (shareId: string) =>
+          commandMeetingShare('confirm', shareId),
+        );
+        await presenterPage.exposeFunction('__releaseMeetingScreenShare', (shareId: string) =>
+          commandMeetingShare('stop', shareId),
+        );
+
+        await presenterPage.goto(
+          new URL('/test/screen-share-publishing-fixture.html', fixture.url).toString(),
+        );
+        await viewerPage.goto(
+          new URL('/test/screen-share-media-fixture.html', fixture.url).toString(),
+        );
+        await presenterPage.evaluate(
+          (value) => window.postMessage({ ...value, kind: 'start' }, location.origin),
+          {
+            grant: mediaGrants[0],
+            publishMicrophone: true,
+            identity: ready[0]!.participationId,
+          },
+        );
+        await viewerPage.evaluate(
+          (value) => window.postMessage({ ...value, kind: 'start' }, location.origin),
+          {
+            grant: { serverUrl: mediaGrants[1]!.serverUrl, token: mediaGrants[1]!.token },
+            publishMicrophone: true,
+          },
+        );
+        try {
+          await Promise.all([
+            presenterPage.waitForFunction(
+              () =>
+                ['connected', 'error'].includes(
+                  window.__meetingScreenPublishingFixture?.status ?? '',
+                ),
+              null,
+              { timeout: 25000 },
+            ),
+            viewerPage.waitForFunction(
+              () => ['connected', 'error'].includes(window.__meetingScreenFixture.status),
+              null,
+              { timeout: 25000 },
+            ),
+          ]);
+        } catch (error) {
+          const presenterBody = await presenterPage
+            .locator('body')
+            .innerText()
+            .catch(() => '');
+          throw new Error(
+            `screen-share fixture did not initialize: ${JSON.stringify({ browserErrors, presenterUrl: presenterPage.url(), presenterBody })}`,
+            { cause: error },
+          );
+        }
+        expect(
+          await presenterPage.evaluate(() => ({ ...window.__meetingScreenPublishingFixture })),
+        ).toMatchObject({ status: 'connected', identity: ready[0]!.participationId });
+        expect(
+          await viewerPage.evaluate(() => ({ ...window.__meetingScreenFixture })),
+        ).toMatchObject({ status: 'connected', identity: ready[1]!.participationId });
+        expect(
+          await presenterPage.evaluate(
+            () => window.__meetingScreenPublishingFixture.captureRequests,
+          ),
+        ).toEqual([]);
+
+        const beforeShare = await roomService.listParticipants(active.generation);
+        expect(beforeShare.map((participant) => participant.identity).sort()).toEqual(
+          ready.map((member) => member.participationId).sort(),
+        );
+        await presenterPage.waitForFunction(
+          () => window.__meetingScreenPublishingFixture.remoteAudioSamples > 0,
+          null,
+          { timeout: 10000 },
+        );
+        const audioSamplesBeforeCancelledCapture = await presenterPage.evaluate(
+          () => window.__meetingScreenPublishingFixture.remoteAudioSamples,
+        );
+        await presenterPage.evaluate(() => {
+          window.__meetingScreenPublishingFixture.cancelNextCapture = true;
+        });
+        await presenterPage.getByRole('button', { name: 'Share screen' }).click();
+        await presenterPage.waitForFunction(
+          () => window.__meetingScreenPublishingFixture.shareState === 'error',
+          null,
+          { timeout: 10000 },
+        );
+        const cancelledShareState = await presenterPage.evaluate(() => ({
+          ...window.__meetingScreenPublishingFixture,
+        }));
+        expect(cancelledShareState.captureRequests).toHaveLength(1);
+        expect(cancelledShareState.captureRequests[0]?.audio).toBe(false);
+        expect(cancelledShareState.shareId).toBe('');
+        expect(cancelledShareState.screenPublishAttempts).toBe(0);
+        expect(cancelledShareState.status).toBe('connected');
+        expect(
+          runtime
+            .meetingScreenShareState(ready[0]!.officeId, ready[0]!.participationId)
+            .map(({ update }) => update.presentation),
+        ).toEqual([null]);
+        expect(
+          runtime
+            .proximityMediaPermits()
+            .filter((permit) => permit.generation === generation)
+            .map((permit) => permit.sources),
+        ).toEqual([['microphone'], ['microphone']]);
+        await presenterPage.waitForFunction(
+          (samples) => window.__meetingScreenPublishingFixture.remoteAudioSamples > samples,
+          audioSamplesBeforeCancelledCapture,
+          { timeout: 10000 },
+        );
+
+        await presenterPage.getByRole('button', { name: 'Share screen' }).click();
+        await presenterPage.waitForFunction(
+          () => window.__meetingScreenPublishingFixture.shareState === 'live',
+          null,
+          { timeout: 30000 },
+        );
+        await viewerPage.waitForFunction(
+          (identity) => window.__meetingScreenFixture.remoteScreenOwners.includes(identity),
+          ready[0]!.participationId,
+          { timeout: 10000 },
+        );
+        const activeShareState = await presenterPage.evaluate(() => ({
+          ...window.__meetingScreenPublishingFixture,
+        }));
+        expect(activeShareState.captureRequests).toHaveLength(2);
+        expect(activeShareState.captureRequests.every(({ audio }) => audio === false)).toBe(true);
+        expect(activeShareState.screenPublished).toBe(true);
+        expect(activeShareState.localMicrophonePublished).toBe(true);
+        expect(browserErrors).toEqual([]);
+
+        const duringShare = await roomService.listParticipants(active.generation);
+        const presenterDuringShare = duringShare.find(
+          (participant) => participant.identity === ready[0]!.participationId,
+        );
+        expect(presenterDuringShare?.tracks.map(({ source }) => source).sort()).toEqual(
+          [TrackSource.MICROPHONE, TrackSource.SCREEN_SHARE].sort(),
+        );
+        expect(
+          presenterDuringShare?.tracks.find((track) => track.source === TrackSource.SCREEN_SHARE)
+            ?.name,
+        ).toBe(meetingScreenShareTrackName(activeShareState.shareId));
+        expect(duringShare.map((participant) => participant.identity).sort()).toEqual(
+          beforeShare.map((participant) => participant.identity).sort(),
+        );
+        const samplesBeforeShare = await presenterPage.evaluate(
+          () => window.__meetingScreenPublishingFixture.remoteAudioSamples,
+        );
+        await presenterPage.waitForFunction(
+          (samples) => window.__meetingScreenPublishingFixture.remoteAudioSamples > samples,
+          samplesBeforeShare,
+          { timeout: 10000 },
+        );
+
+        await presenterPage.getByRole('button', { name: 'Stop sharing', exact: true }).click();
+        await presenterPage.waitForFunction(
+          () => window.__meetingScreenPublishingFixture.shareState === 'idle',
+          null,
+          { timeout: 10000 },
+        );
+        await viewerPage.waitForFunction(
+          (identity) => !window.__meetingScreenFixture.remoteScreenOwners.includes(identity),
+          ready[0]!.participationId,
+          { timeout: 10000 },
+        );
+        await vi.waitFor(
+          async () => {
+            const participants = await roomService.listParticipants(active.generation);
+            const presenter = participants.find(
+              (participant) => participant.identity === ready[0]!.participationId,
+            );
+            expect(presenter?.tracks.map(({ source }) => source)).toEqual([TrackSource.MICROPHONE]);
+          },
+          { timeout: 10000, interval: 50 },
+        );
+
+        await presenterPage.getByRole('button', { name: 'Share screen' }).click();
+        await presenterPage.waitForFunction(
+          () => window.__meetingScreenPublishingFixture.shareState === 'live',
+          null,
+          { timeout: 30000 },
+        );
+        await presenterPage.getByRole('button', { name: 'Native Stop Sharing' }).click();
+        await presenterPage.waitForFunction(
+          () => window.__meetingScreenPublishingFixture.shareState === 'idle',
+          null,
+          { timeout: 10000 },
+        );
+        await viewerPage.waitForFunction(
+          (identity) => !window.__meetingScreenFixture.remoteScreenOwners.includes(identity),
+          ready[0]!.participationId,
+          { timeout: 10000 },
+        );
+        let afterNativeStop: Awaited<ReturnType<typeof roomService.listParticipants>> = [];
+        await vi.waitFor(
+          async () => {
+            afterNativeStop = await roomService.listParticipants(active.generation);
+            const presenter = afterNativeStop.find(
+              (participant) => participant.identity === ready[0]!.participationId,
+            );
+            expect(presenter?.tracks.map(({ source }) => source)).toEqual([TrackSource.MICROPHONE]);
+          },
+          { timeout: 10000, interval: 50 },
+        );
+        expect(afterNativeStop.map((participant) => participant.identity).sort()).toEqual(
+          beforeShare.map((participant) => participant.identity).sort(),
+        );
+        expect(
+          await presenterPage.evaluate(() => window.__meetingScreenPublishingFixture.status),
+        ).toBe('connected');
+        expect(
+          await presenterPage.evaluate(
+            () => window.__meetingScreenPublishingFixture.localMicrophonePublished,
+          ),
+        ).toBe(true);
+        expect(browserErrors).toEqual([]);
+      } finally {
+        for (const page of pages) await page.close().catch(() => undefined);
+        if (browser) await browser.close();
+        if (guard) await stopApplicationGuard(guard);
+        if (fixture) await fixture.stop();
+        if (livekit) await livekit.stop();
+        if (retirementDirectory) await rm(retirementDirectory, { recursive: true, force: true });
+        for (const socket of sockets) socket.disconnect();
+      }
+    },
+    180000,
+  );
+});
+
+describe('meeting media release readiness load profile', () => {
+  it.skipIf(!runLiveMediaFixture || !runMeetingReadiness)(
+    'keeps a 20-member meeting usable beside an isolated simultaneous huddle',
+    async () => {
+      const users: Awaited<ReturnType<typeof account>>[] = [];
+      for (let offset = 0; offset < 22; offset += 3) {
+        const batchSize = Math.min(3, 22 - offset);
+        users.push(
+          ...(await Promise.all(
+            Array.from({ length: batchSize }, (_, index) =>
+              account(undefined, `198.51.100.${offset + index + 1}`),
+            ),
+          )),
+        );
+      }
+      const primaryWorkspaceId = await workspace(users[0]!);
+      await Promise.all(
+        users.slice(1, 20).map((member) => join(users[0]!, primaryWorkspaceId, member)),
+      );
+      const secondaryWorkspaceId = await workspace(users[20]!);
+      await join(users[20]!, secondaryWorkspaceId, users[21]!);
+      const tickets = await Promise.all([
+        ...users.slice(0, 20).map((user) => issueTicket(user, primaryWorkspaceId)),
+        ...users.slice(20).map((user) => issueTicket(user, secondaryWorkspaceId)),
+      ]);
+      const sockets = tickets.map(({ ticket }) =>
+        officeSocket({ ticket, protocolVersion: OFFICE_PROTOCOL_VERSION }),
+      );
+      const mediaClients: ApplicationMediaClient[] = [];
+      const ready: ReturnType<typeof officeReadySchema.parse>[] = [];
+      let livekit: Awaited<ReturnType<typeof startLiveKitFixture>> | undefined;
+      let fixture: Awaited<ReturnType<typeof startViteMediaFixture>> | undefined;
+      let guard: ApplicationGuard | undefined;
+      let retirementDirectory: string | undefined;
+      const updateQueues = sockets.map((socket) => socketEventQueue(socket, 'conversation:update'));
+
+      const waitForUpdate = (
+        index: number,
+        predicate: (update: ReturnType<typeof conversationUpdateSchema.parse>) => boolean,
+      ) =>
+        updateQueues[index]!((raw) => {
+          const parsed = conversationUpdateSchema.safeParse(raw);
+          return parsed.success && predicate(parsed.data);
+        }).then((raw) => conversationUpdateSchema.parse(raw));
+      const command = async (index: number, event: string, payload: object) =>
+        officeCommandAckSchema.parse(
+          await new Promise<unknown>((resolve) =>
+            sockets[index]!.emit(
+              event,
+              { eventId: randomUUID(), officeEpoch: ready[index]!.snapshot.officeEpoch, payload },
+              resolve,
+            ),
+          ),
+        );
+
+      try {
+        const readyNotices = sockets.map((socket) =>
+          nextSocketEvent<unknown>(socket, 'office:ready'),
+        );
+        await Promise.all(sockets.map((socket) => connectSocket(socket)));
+        ready.push(
+          ...(await Promise.all(readyNotices)).map((notice) => officeReadySchema.parse(notice)),
+        );
+        expect(ready).toHaveLength(22);
+        expect(ready.every(({ features }) => features.screenSharing)).toBe(true);
+
+        const zones = VIVO_GEOMETRY.zones.filter((zone) => zone.kind === 'meeting');
+        const primaryZone = zones[0]!;
+        const secondaryZone = zones[1]!;
+        const runtime = app.get(OfficeRuntimeService);
+        const map = trustedOfficeMap(vivoManifest.mapVersion)!;
+        const freeTilesFor = (zone: (typeof zones)[number]) =>
+          Array.from({ length: zone.bounds.width * zone.bounds.height }, (_, index) => ({
+            tx: zone.bounds.tx + (index % zone.bounds.width),
+            ty: zone.bounds.ty + Math.floor(index / zone.bounds.width),
+          })).filter(
+            (tile) =>
+              map.validated.isReachable(tile) &&
+              !map.seats.some((seat) => seat.tile.tx === tile.tx && seat.tile.ty === tile.ty),
+          );
+        const primaryTiles = freeTilesFor(primaryZone);
+        const secondaryTiles = freeTilesFor(secondaryZone);
+        expect(primaryTiles.length).toBeGreaterThanOrEqual(20);
+        expect(secondaryTiles.length).toBeGreaterThanOrEqual(2);
+        const offices = (
+          runtime as unknown as {
+            offices: Map<
+              string,
+              { participants: Map<string, { publicState: { position: { x: number; y: number } } }> }
+            >;
+          }
+        ).offices;
+        const primaryOffice = offices.get(ready[0]!.officeId)!;
+        const secondaryOffice = offices.get(ready[20]!.officeId)!;
+        for (let index = 0; index < 20; index += 1) {
+          const tile = primaryTiles[index]!;
+          primaryOffice.participants.get(ready[index]!.participationId)!.publicState.position = {
+            x: tile.tx * 32 + 16,
+            y: tile.ty * 32 + 16,
+          };
+        }
+        for (let index = 20; index < 22; index += 1) {
+          const tile = secondaryTiles[index - 20]!;
+          secondaryOffice.participants.get(ready[index]!.participationId)!.publicState.position = {
+            x: tile.tx * 32 + 16,
+            y: tile.ty * 32 + 16,
+          };
+        }
+
+        const groups = [
+          { indices: Array.from({ length: 20 }, (_, index) => index), zoneId: primaryZone.zoneId },
+          { indices: [20, 21], zoneId: secondaryZone.zoneId },
+        ];
+        const joiningWaiters = groups.flatMap(({ indices, zoneId }) =>
+          indices.map((index) =>
+            waitForUpdate(
+              index,
+              (update) =>
+                update.kind === 'meeting' &&
+                update.zoneId === zoneId &&
+                update.state === 'joining' &&
+                update.participants.length === indices.length,
+            ),
+          ),
+        );
+        const joinAcks = await Promise.all(
+          groups.flatMap(({ indices, zoneId }) =>
+            indices.map((index) => command(index, 'meeting:join', { zoneId })),
+          ),
+        );
+        expect(joinAcks.every(({ ok }) => ok)).toBe(true);
+        const joining = await Promise.all(joiningWaiters);
+        let joiningOffset = 0;
+        const joiningByGroup = groups.map(({ indices }) => {
+          const groupNotices = joining.slice(joiningOffset, joiningOffset + indices.length);
+          joiningOffset += indices.length;
+          expect(new Set(groupNotices.map((update) => update.generation)).size).toBe(1);
+          return groupNotices[0]!;
+        });
+        expect(joiningByGroup[0]!.generation).not.toBe(joiningByGroup[1]!.generation);
+
+        livekit = await startLiveKitFixture();
+        if (runMediaWeakNetwork) await livekit.applyWeakNetwork();
+        fixture = await startViteMediaFixture();
+        if (!liveMediaGuardPort) throw new Error('real media guard port is unavailable');
+        retirementDirectory = await mkdtemp(resolve(tmpdir(), 'gather-cp09-meeting-readiness-'));
+        const apiAddress = app.getHttpServer().address() as AddressInfo;
+        guard = startApplicationGuard({
+          apiBaseUrl: `http://127.0.0.1:${apiAddress.port}`,
+          epoch: randomBytes(32).toString('hex'),
+          host: '127.0.0.1',
+          port: liveMediaGuardPort,
+          retirementDirectory,
+          sfuUpstream: `http://127.0.0.1:${livekit.signalingPort}`,
+          origin: fixture.origin,
+        });
+
+        const activeWaiters = groups.flatMap(({ indices }, groupIndex) => {
+          const generation = joiningByGroup[groupIndex]!.generation;
+          return indices.map((index) =>
+            waitForUpdate(
+              index,
+              (update) =>
+                update.state === 'active' &&
+                update.generation === generation &&
+                update.participants.length === indices.length,
+            ),
+          );
+        });
+        const policy = app.get(MediaPolicyService) as unknown as {
+          installed?: { permits: Array<{ generation: string }> };
+        };
+        for (const update of joiningByGroup)
+          await vi.waitFor(
+            () =>
+              expect(
+                policy.installed?.permits.filter(
+                  (permit) => permit.generation === update.generation,
+                ),
+              ).toHaveLength(update.participants.length),
+            { timeout: 30000, interval: 50 },
+          );
+        const active = await Promise.all(activeWaiters);
+        let activeOffset = 0;
+        const activeByGroup = groups.map(({ indices }) => {
+          const groupNotices = active.slice(activeOffset, activeOffset + indices.length);
+          activeOffset += indices.length;
+          expect(new Set(groupNotices.map((update) => update.generation)).size).toBe(1);
+          return groupNotices[0]!;
+        });
+
+        const issueGrant = async (index: number, conversation: (typeof active)[number]) => {
+          const response = await users[index]!.client.send(
+            'post',
+            `/api/conversations/${conversation.conversationId}/media-token`,
+            {
+              participationId: ready[index]!.participationId,
+              conversationVersion: conversation.version,
+            },
+          );
+          status(response, 200);
+          const grant = mediaTokenResponseSchema.parse(response.body);
+          return {
+            ...grant,
+            conversationVersion: conversation.version,
+            generation: conversation.generation,
+            identity: ready[index]!.participationId,
+          };
+        };
+        const grants = await Promise.all(
+          groups.flatMap(({ indices }, groupIndex) =>
+            indices.map(async (index) => ({
+              index,
+              grant: await issueGrant(index, activeByGroup[groupIndex]!),
+            })),
+          ),
+        );
+        const loadStartedAt = performance.now();
+        const loadCpuStartedAt = process.cpuUsage();
+        const batchDescriptors: Array<{ indices: number[]; client: ApplicationMediaClient }> = [];
+        for (const group of groups)
+          for (let offset = 0; offset < group.indices.length; offset += 5) {
+            const indices = group.indices.slice(offset, offset + 5);
+            const client = startApplicationMediaClient({
+              fixtureUrl: fixture.url,
+              deferPeerReadiness: true,
+              grants: indices.map((index) => grants.find((entry) => entry.index === index)!.grant),
+            });
+            mediaClients.push(client);
+            batchDescriptors.push({ indices, client });
+          }
+        await Promise.all(
+          mediaClients.map((client) =>
+            waitForApplicationMediaMessage(
+              client,
+              (message) => message.kind === 'connected',
+              'a media participant to connect',
+            ),
+          ),
+        );
+        const identitiesByGroup = groups.map(({ indices }) =>
+          indices.map((index) => ready[index]!.participationId),
+        );
+        for (const { indices, client } of batchDescriptors) {
+          const groupIndex = indices[0]! < 20 ? 0 : 1;
+          client.send({ kind: 'expect-room-peers', peerIdentities: identitiesByGroup[groupIndex] });
+        }
+        const peerReady = await Promise.all(
+          mediaClients.map((client) =>
+            waitForApplicationMediaMessage(
+              client,
+              (message) => message.kind === 'room-peer-set-ready',
+              'every room peer and active decoded audio',
+            ),
+          ),
+        );
+        const roomService = new RoomServiceClient(
+          `http://127.0.0.1:${livekit.signalingPort}`,
+          livekitApiKey,
+          livekitApiSecret,
+        );
+        for (const [groupIndex, identities] of identitiesByGroup.entries()) {
+          const conversation = activeByGroup[groupIndex]!;
+          await vi.waitFor(
+            async () => {
+              const participants = await roomService.listParticipants(conversation.generation);
+              expect(participants.map(({ identity }) => identity).sort()).toEqual(
+                [...identities].sort(),
+              );
+            },
+            { timeout: 30000, interval: 100 },
+          );
+        }
+
+        const loadDurationMs = Math.round(performance.now() - loadStartedAt);
+        const cpuUsage = process.cpuUsage(loadCpuStartedAt);
+        const memory = process.memoryUsage();
+        console.info(
+          'meeting release-readiness profile: ' +
+            JSON.stringify({
+              primaryMeetingParticipants: identitiesByGroup[0]!.length,
+              simultaneousHuddleParticipants: identitiesByGroup[1]!.length,
+              networkProfile: runMediaWeakNetwork ? '120ms ±40ms, 3% loss' : 'loopback baseline',
+              loadDurationMs,
+              remotePeerAudioReports: peerReady.length,
+              apiProcess: {
+                rssBytes: memory.rss,
+                heapUsedBytes: memory.heapUsed,
+                cpuUserMicros: cpuUsage.user,
+                cpuSystemMicros: cpuUsage.system,
+              },
+              livekitRooms: 2,
+              livekitParticipants: 22,
+            }),
+        );
+      } finally {
+        await Promise.all(mediaClients.map(stopApplicationMediaClient));
+        if (guard) await stopApplicationGuard(guard);
+        if (fixture) await fixture.stop();
+        if (livekit) await livekit.stop();
+        if (retirementDirectory) await rm(retirementDirectory, { recursive: true, force: true });
+        for (const socket of sockets) socket.disconnect();
+      }
+    },
+    600000,
+  );
+});
+
+describe('meeting screen-share media policy enforcement', () => {
+  it.skipIf(!runLiveMediaFixture)(
+    'enforces presenter-only screen video publication and renders the live share for current and late meeting members',
+    async () => {
+      const users: Awaited<ReturnType<typeof account>>[] = [
+        await account(),
+        await account(),
+        await account(),
+      ];
+      const workspaceId = await workspace(users[0]!);
+      await join(users[0]!, workspaceId, users[1]!);
+      await join(users[0]!, workspaceId, users[2]!);
+      const tickets = await Promise.all(users.map((user) => issueTicket(user, workspaceId)));
+      const sockets = tickets.map(({ ticket }) =>
+        officeSocket({ ticket, protocolVersion: OFFICE_PROTOCOL_VERSION }),
+      );
+      const updateQueues = sockets.map((socket) => socketEventQueue(socket, 'conversation:update'));
+      const screenUpdateQueues = sockets.map((socket) =>
+        socketEventQueue(socket, 'meeting:screen-share:update'),
+      );
+      const ready: ReturnType<typeof officeReadySchema.parse>[] = [];
+      let livekit: Awaited<ReturnType<typeof startLiveKitFixture>> | undefined;
+      let fixture: Awaited<ReturnType<typeof startViteMediaFixture>> | undefined;
+      let guard: ApplicationGuard | undefined;
+      let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
+      let retirementDirectory: string | undefined;
+      const pages: import('@playwright/test').Page[] = [];
+      const browserErrors: string[] = [];
+
+      const waitForUpdate = (
+        index: number,
+        predicate: (update: ReturnType<typeof conversationUpdateSchema.parse>) => boolean,
+      ) =>
+        updateQueues[index]!((raw) => {
+          const parsed = conversationUpdateSchema.safeParse(raw);
+          return parsed.success && predicate(parsed.data);
+        }).then((raw) => conversationUpdateSchema.parse(raw));
+
+      const command = async (index: number, event: string, payload: object) =>
+        officeCommandAckSchema.parse(
+          await new Promise<unknown>((resolve) =>
+            sockets[index]!.emit(
+              event,
+              { eventId: randomUUID(), officeEpoch: ready[0]!.snapshot.officeEpoch, payload },
+              resolve,
+            ),
+          ),
+        );
+
+      try {
+        for (const socket of sockets) {
+          const notice = nextSocketEvent<unknown>(socket, 'office:ready');
+          await connectSocket(socket);
+          ready.push(officeReadySchema.parse(await notice));
+        }
+
+        const runtime = app.get(OfficeRuntimeService);
+        const room = VIVO_GEOMETRY.zones.find((zone) => zone.kind === 'meeting')!;
+        const map = trustedOfficeMap(vivoManifest.mapVersion)!;
+        const roomTiles = Array.from(
+          { length: room.bounds.width * room.bounds.height },
+          (_, index) => ({
+            tx: room.bounds.tx + (index % room.bounds.width),
+            ty: room.bounds.ty + Math.floor(index / room.bounds.width),
+          }),
+        ).filter(
+          (tile) =>
+            map.validated.isReachable(tile) &&
+            !map.seats.some((seat) => seat.tile.tx === tile.tx && seat.tile.ty === tile.ty),
+        );
+        if (roomTiles.length < 3) throw new Error('Expected three free reachable meeting tiles');
+        const office = (
+          runtime as unknown as {
+            offices: Map<
+              string,
+              { participants: Map<string, { publicState: { position: { x: number; y: number } } }> }
+            >;
+          }
+        ).offices.get(ready[0]!.officeId)!;
+        ready.slice(0, 2).forEach((member, index) => {
+          const tile = roomTiles[index]!;
+          office.participants.get(member.participationId)!.publicState.position = {
+            x: tile.tx * 32 + 16,
+            y: tile.ty * 32 + 16,
+          };
+        });
+
+        const joiningEvents = [0, 1].map((index) =>
+          waitForUpdate(
+            index,
+            (update) => update.state === 'joining' && update.participants.length === 2,
+          ),
+        );
+        expect(await command(0, 'meeting:join', { zoneId: room.zoneId })).toMatchObject({
+          ok: true,
+        });
+        expect(await command(1, 'meeting:join', { zoneId: room.zoneId })).toMatchObject({
+          ok: true,
+        });
+        const joining = await Promise.all(joiningEvents);
+        expect(joining[0]!.generation).toBe(joining[1]!.generation);
+        expect(joining[0]!.mediaReady).toBe(false);
+
+        livekit = await startLiveKitFixture();
+        fixture = await startViteMediaFixture();
+        if (!liveMediaGuardPort) throw new Error('real media guard port is unavailable');
+        retirementDirectory = await mkdtemp(resolve(tmpdir(), 'gather-cp09-screen-policy-'));
+        const apiAddress = app.getHttpServer().address() as AddressInfo;
+        guard = startApplicationGuard({
+          apiBaseUrl: 'http://127.0.0.1:' + apiAddress.port,
+          epoch: randomBytes(32).toString('hex'),
+          host: '127.0.0.1',
+          port: liveMediaGuardPort,
+          retirementDirectory,
+          sfuUpstream: 'http://127.0.0.1:' + livekit.signalingPort,
+          origin: fixture.origin,
+        });
+
+        const policy = app.get(MediaPolicyService) as unknown as {
+          installed?: {
+            permits: Array<{
+              generation: string;
+              identity: string;
+              version: number;
+              sources: string[];
+            }>;
+          };
+        };
+        const installedPermit = (identity: string) =>
+          policy.installed?.permits.find(
+            (permit) =>
+              permit.generation === joining[0]!.generation && permit.identity === identity,
+          );
+        await vi.waitFor(
+          () => {
+            expect(
+              policy.installed?.permits.filter(
+                (permit) => permit.generation === joining[0]!.generation,
+              ),
+            ).toHaveLength(2);
+            for (const member of ready.slice(0, 2))
+              expect(installedPermit(member.participationId)?.sources).toEqual(['microphone']);
+          },
+          { timeout: 15000, interval: 50 },
+        );
+        const activeEvents = [0, 1].map((index) =>
+          waitForUpdate(
+            index,
+            (update) =>
+              update.state === 'active' && update.conversationId === joining[0]!.conversationId,
+          ),
+        );
+        const active = (await Promise.all(activeEvents))[0]!;
+
+        const issueGrant = async (index: number, conversationVersion = active.version) => {
+          const response = await users[index]!.client.send(
+            'post',
+            `/api/conversations/${active.conversationId}/media-token`,
+            {
+              participationId: ready[index]!.participationId,
+              conversationVersion,
+            },
+          );
+          status(response, 200);
+          const grant = mediaTokenResponseSchema.parse(response.body);
+          const claims = await new TokenVerifier(livekitApiKey, livekitApiSecret).verify(
+            grant.token,
+            0,
+          );
+          expect(claims.video?.canPublishSources).toEqual(['microphone']);
+          return grant;
+        };
+        const grants = await Promise.all([issueGrant(0), issueGrant(1)]);
+        const roomService = new RoomServiceClient(
+          'http://127.0.0.1:' + livekit.signalingPort,
+          livekitApiKey,
+          livekitApiSecret,
+        );
+
+        browser = await chromium.launch({
+          headless: true,
+          args: [
+            '--use-fake-device-for-media-stream',
+            '--use-fake-ui-for-media-stream',
+            '--autoplay-policy=no-user-gesture-required',
+          ],
+        });
+        const screenFixtureUrl = new URL(
+          '/test/screen-share-media-fixture.html',
+          fixture.url,
+        ).toString();
+        for (const [index, grant] of grants.entries()) {
+          const page = await browser.newPage();
+          pages.push(page);
+          page.on('pageerror', (error) => browserErrors.push(`page ${index}: ${error.message}`));
+          page.on('console', (message) => {
+            if (message.type() === 'error') browserErrors.push(`page ${index}: ${message.text()}`);
+          });
+          await page.goto(screenFixtureUrl);
+          await page.evaluate(
+            (value) => window.postMessage({ ...value, kind: 'start' }, location.origin),
+            {
+              grant: { serverUrl: grant.serverUrl, token: grant.token },
+              publishMicrophone: index !== 0,
+            },
+          );
+          await page.waitForFunction(
+            () => ['connected', 'error'].includes(window.__meetingScreenFixture.status),
+            null,
+            { timeout: 25000 },
+          );
+          expect(
+            await page.evaluate(() => window.__meetingScreenFixture),
+            `meeting media client ${index} failed to connect`,
+          ).toMatchObject({ status: 'connected' });
+        }
+
+        const expectAudioAdvancing = async (audioPages = pages) => {
+          const prior = await Promise.all(
+            audioPages.map((page) =>
+              page.evaluate(() => window.__meetingScreenFixture.remoteAudioSamples),
+            ),
+          );
+          try {
+            await Promise.all(
+              audioPages.map((page, index) =>
+                page.waitForFunction(
+                  (samples) => window.__meetingScreenFixture.remoteAudioSamples > samples,
+                  prior[index]!,
+                  { timeout: 10000 },
+                ),
+              ),
+            );
+          } catch (error) {
+            const observations = await Promise.all(
+              audioPages.map((page) => page.evaluate(() => ({ ...window.__meetingScreenFixture }))),
+            );
+            const participants = await roomService.listParticipants(active.generation);
+            const mediaState = participants.map((participant) => ({
+              identity: participant.identity,
+              permission: participant.permission,
+              sources: participant.tracks.map(({ source }) => source),
+            }));
+            throw new Error(
+              `meeting audio did not continue: ${JSON.stringify({ observations, mediaState })}`,
+              {
+                cause: error,
+              },
+            );
+          }
+        };
+        await expectAudioAdvancing([pages[0]!]);
+
+        const attemptScreen = async (
+          page: import('@playwright/test').Page,
+          bypassClientPermissions: boolean,
+        ) => {
+          const prior = await page.evaluate(
+            () => window.__meetingScreenFixture.screenPublishAttempts,
+          );
+          await page.evaluate(
+            (bypass) =>
+              window.postMessage(
+                { kind: 'publish-screen', bypassClientPermissions: bypass },
+                location.origin,
+              ),
+            bypassClientPermissions,
+          );
+          await page.waitForFunction(
+            (attempt) => window.__meetingScreenFixture.screenPublishAttempts > attempt,
+            prior,
+            { timeout: 10000 },
+          );
+          return page.evaluate(() => ({
+            result: window.__meetingScreenFixture.screenPublishResult,
+            error: window.__meetingScreenFixture.screenPublishError,
+          }));
+        };
+
+        const expectServerRejectedScreen = async (
+          page: import('@playwright/test').Page,
+          identity: string,
+          audioPages = pages,
+        ) => {
+          const attempt = await attemptScreen(page, true);
+          expect(['attempted', 'rejected']).toContain(attempt.result);
+          for (let observation = 0; observation < 5; observation += 1) {
+            const participants = await roomService.listParticipants(active.generation);
+            const participant = participants.find((value) => value.identity === identity);
+            expect(participant, `LiveKit removed meeting participant ${identity}`).toBeDefined();
+            expect(participant!.tracks.map(({ source }) => source)).toEqual([
+              TrackSource.MICROPHONE,
+            ]);
+            await new Promise((resolve) => setTimeout(resolve, 200));
+          }
+          await expectAudioAdvancing(audioPages);
+        };
+
+        const shareId = randomUUID();
+        expect(
+          await command(0, 'meeting:screen-share:start', {
+            conversationId: active.conversationId,
+            conversationVersion: active.version,
+            shareId,
+          }),
+        ).toMatchObject({ ok: true });
+        await vi.waitFor(
+          () =>
+            expect(installedPermit(ready[0]!.participationId)?.sources).toContain('screen_share'),
+          { timeout: 15000, interval: 50 },
+        );
+        await pages[0]!.waitForFunction(
+          () => window.__meetingScreenFixture.permissions.includes('screen_share'),
+          null,
+          { timeout: 10000 },
+        );
+        await attemptScreen(pages[0]!, false);
+        await pages[0]!.waitForFunction(() => window.__meetingScreenFixture.screenPublished, null, {
+          timeout: 10000,
+        });
+        await pages[1]!.waitForFunction(
+          (identity) => window.__meetingScreenFixture.remoteScreenOwners.includes(identity),
+          ready[0]!.participationId,
+          { timeout: 10000 },
+        );
+        const presenterAfterPublish = (await roomService.listParticipants(active.generation)).find(
+          ({ identity }) => identity === ready[0]!.participationId,
+        );
+        expect(presenterAfterPublish?.tracks.map(({ source }) => source)).toEqual([
+          TrackSource.SCREEN_SHARE,
+        ]);
+        expect(presenterAfterPublish?.permission).toMatchObject({
+          canSubscribe: true,
+          canPublish: true,
+          canPublishSources: [TrackSource.MICROPHONE, TrackSource.SCREEN_SHARE],
+        });
+        expect(
+          await pages[0]!.evaluate(() => window.__meetingScreenFixture.localMicrophonePublished),
+        ).toBe(false);
+        await expectAudioAdvancing([pages[0]!]);
+        await expectServerRejectedScreen(pages[1]!, ready[1]!.participationId, [pages[0]!]);
+        expect(
+          await pages[1]!.evaluate(() => window.__meetingScreenFixture.remoteScreenOwners),
+        ).toContain(ready[0]!.participationId);
+
+        expect(
+          await command(0, 'meeting:screen-share:confirm', {
+            conversationId: active.conversationId,
+            shareId,
+          }),
+        ).toMatchObject({ ok: true });
+        const liveShareStates = await Promise.all(
+          [0, 1].map((index) =>
+            screenUpdateQueues[index]!((raw) => {
+              const parsed = meetingScreenShareUpdateSchema.safeParse(raw);
+              return (
+                parsed.success &&
+                parsed.data.conversationId === active.conversationId &&
+                parsed.data.presentation?.shareId === shareId &&
+                parsed.data.presentation.status === 'live'
+              );
+            }).then((raw) => meetingScreenShareUpdateSchema.parse(raw)),
+          ),
+        );
+        const presenterName =
+          active.participants.find(
+            (participant) => participant.participationId === ready[0]!.participationId,
+          )?.displayName ?? 'Meeting presenter';
+        await pages[1]!.evaluate(
+          ({ presentation, presenterName }) =>
+            window.postMessage(
+              { kind: 'viewer-state', presentation, presenterName },
+              location.origin,
+            ),
+          { presentation: liveShareStates[1]!.presentation, presenterName },
+        );
+        await pages[1]!.waitForFunction(() => {
+          const video = document.querySelector('.meeting-screen-share-video');
+          if (!video?.srcObject) return false;
+          return (
+            video.srcObject.getVideoTracks().some((track) => track.readyState === 'live') &&
+            video.videoWidth > 0
+          );
+        });
+        expect(await pages[1]!.locator('.meeting-screen-share-heading').innerText()).toContain(
+          presenterName,
+        );
+        await pages[1]!.getByRole('button', { name: 'View fullscreen' }).click();
+        await pages[1]!.waitForFunction(() => document.fullscreenElement !== null);
+        await pages[1]!.getByRole('button', { name: 'Exit fullscreen' }).click();
+        await pages[1]!.waitForFunction(() => document.fullscreenElement === null);
+
+        const lateMeeting = waitForUpdate(
+          2,
+          (update) =>
+            update.conversationId === active.conversationId &&
+            update.kind === 'meeting' &&
+            update.state === 'active' &&
+            update.mediaReady &&
+            update.participants.length === 3,
+        );
+        const lateShareState = screenUpdateQueues[2]!((raw) => {
+          const parsed = meetingScreenShareUpdateSchema.safeParse(raw);
+          return (
+            parsed.success &&
+            parsed.data.conversationId === active.conversationId &&
+            parsed.data.presentation?.shareId === shareId &&
+            parsed.data.presentation.status === 'live'
+          );
+        }).then((raw) => meetingScreenShareUpdateSchema.parse(raw));
+        const lateTile = roomTiles[2]!;
+        office.participants.get(ready[2]!.participationId)!.publicState.position = {
+          x: lateTile.tx * 32 + 16,
+          y: lateTile.ty * 32 + 16,
+        };
+        expect(await command(2, 'meeting:join', { zoneId: room.zoneId })).toMatchObject({
+          ok: true,
+        });
+        const [lateConversation, latePresentation] = await Promise.all([
+          lateMeeting,
+          lateShareState,
+        ]);
+        expect(latePresentation.presentation).toMatchObject({
+          shareId,
+          presenterParticipationId: ready[0]!.participationId,
+          status: 'live',
+        });
+        await vi.waitFor(
+          () => expect(installedPermit(ready[2]!.participationId)?.sources).toEqual(['microphone']),
+          { timeout: 15000, interval: 50 },
+        );
+        const lateGrantResponse = await users[2]!.client.send(
+          'post',
+          `/api/conversations/${active.conversationId}/media-token`,
+          {
+            participationId: ready[2]!.participationId,
+            conversationVersion: lateConversation.version,
+          },
+        );
+        status(lateGrantResponse, 200);
+        const lateGrant = mediaTokenResponseSchema.parse(lateGrantResponse.body);
+        const lateClaims = await new TokenVerifier(livekitApiKey, livekitApiSecret).verify(
+          lateGrant.token,
+          0,
+        );
+        expect(lateClaims.video?.canPublishSources).toEqual(['microphone']);
+        const latePage = await browser.newPage();
+        pages.push(latePage);
+        latePage.on('pageerror', (error) => browserErrors.push(`page 2: ${error.message}`));
+        latePage.on('console', (message) => {
+          if (message.type() === 'error') browserErrors.push(`page 2: ${message.text()}`);
+        });
+        await latePage.goto(screenFixtureUrl);
+        await latePage.evaluate(
+          (value) => window.postMessage({ ...value, kind: 'start' }, location.origin),
+          {
+            grant: { serverUrl: lateGrant.serverUrl, token: lateGrant.token },
+            publishMicrophone: false,
+          },
+        );
+        await latePage.waitForFunction(
+          () => ['connected', 'error'].includes(window.__meetingScreenFixture.status),
+          null,
+          { timeout: 25000 },
+        );
+        expect(await latePage.evaluate(() => window.__meetingScreenFixture.status)).toBe(
+          'connected',
+        );
+        await latePage.evaluate(
+          ({ presentation, presenterName }) =>
+            window.postMessage(
+              { kind: 'viewer-state', presentation, presenterName },
+              location.origin,
+            ),
+          { presentation: latePresentation.presentation, presenterName },
+        );
+        await latePage.waitForFunction(
+          (identity) => window.__meetingScreenFixture.remoteScreenOwners.includes(identity),
+          ready[0]!.participationId,
+          { timeout: 15000 },
+        );
+        await latePage.waitForFunction(() => {
+          const video = document.querySelector('.meeting-screen-share-video');
+          if (!video?.srcObject) return false;
+          return (
+            video.srcObject.getVideoTracks().some((track) => track.readyState === 'live') &&
+            video.videoWidth > 0
+          );
+        });
+        await expectAudioAdvancing([latePage]);
+
+        const screenGrantResponse = await users[0]!.client.send(
+          'post',
+          `/api/conversations/${active.conversationId}/media-token`,
+          {
+            participationId: ready[0]!.participationId,
+            conversationVersion: lateConversation.version,
+          },
+        );
+        status(screenGrantResponse, 200);
+        const screenGrant = mediaTokenResponseSchema.parse(screenGrantResponse.body);
+        const screenClaims = await new TokenVerifier(livekitApiKey, livekitApiSecret).verify(
+          screenGrant.token,
+          0,
+        );
+        expect(screenClaims.video?.canPublishSources).toEqual(['microphone', 'screen_share']);
+
+        const stoppedShareStates = Promise.all(
+          [1, 2].map((index) =>
+            screenUpdateQueues[index]!((raw) => {
+              const parsed = meetingScreenShareUpdateSchema.safeParse(raw);
+              return (
+                parsed.success &&
+                parsed.data.conversationId === active.conversationId &&
+                parsed.data.presentation === null
+              );
+            }).then((raw) => meetingScreenShareUpdateSchema.parse(raw)),
+          ),
+        );
+        expect(
+          await command(0, 'meeting:screen-share:stop', {
+            conversationId: active.conversationId,
+            shareId,
+          }),
+        ).toMatchObject({ ok: true });
+        const stoppedUpdates = await stoppedShareStates;
+        await vi.waitFor(
+          () => expect(installedPermit(ready[0]!.participationId)?.sources).toEqual(['microphone']),
+          { timeout: 15000, interval: 50 },
+        );
+        await pages[0]!.waitForFunction(
+          () => !window.__meetingScreenFixture.permissions.includes('screen_share'),
+          null,
+          { timeout: 10000 },
+        );
+        await pages[1]!.waitForFunction(
+          (identity) => !window.__meetingScreenFixture.remoteScreenOwners.includes(identity),
+          ready[0]!.participationId,
+          { timeout: 10000 },
+        );
+        for (const [index, page] of [pages[1]!, pages[2]!].entries()) {
+          await page.evaluate(
+            ({ presenterName }) =>
+              window.postMessage(
+                { kind: 'viewer-state', presentation: null, presenterName },
+                location.origin,
+              ),
+            { presenterName },
+          );
+          await page.waitForFunction(
+            () => !document.querySelector('.meeting-screen-share-viewer'),
+            null,
+            { timeout: 5000 },
+          );
+          expect(stoppedUpdates[index]!.presentation).toBeNull();
+        }
+        await expectAudioAdvancing([pages[0]!]);
+        await vi.waitFor(
+          async () => {
+            const participants = await roomService.listParticipants(active.generation);
+            const presenter = participants.find(
+              ({ identity }) => identity === ready[0]!.participationId,
+            );
+            expect(presenter?.tracks.map(({ source }) => source)).toEqual([]);
+            expect(presenter?.permission?.canSubscribe).toBe(true);
+          },
+          { timeout: 10000, interval: 50 },
+        );
+
+        const validationUrl = new URL(`http://127.0.0.1:${liveMediaGuardPort}/rtc/v1/validate`);
+        validationUrl.searchParams.set('access_token', screenGrant.token);
+        validationUrl.searchParams.set(
+          'join_request',
+          Buffer.from(JSON.stringify({ protocol: 12 })).toString('base64url'),
+        );
+        expect((await fetch(validationUrl, { headers: { Origin: fixture.origin } })).status).toBe(
+          403,
+        );
+        const revokedGrantResponse = await users[0]!.client.send(
+          'post',
+          `/api/conversations/${active.conversationId}/media-token`,
+          {
+            participationId: ready[0]!.participationId,
+            conversationVersion: lateConversation.version,
+          },
+        );
+        status(revokedGrantResponse, 200);
+        expect(mediaTokenResponseSchema.parse(revokedGrantResponse.body).token).not.toBe(
+          screenGrant.token,
+        );
+        const revokedClaims = await new TokenVerifier(livekitApiKey, livekitApiSecret).verify(
+          mediaTokenResponseSchema.parse(revokedGrantResponse.body).token,
+          0,
+        );
+        expect(revokedClaims.video?.canPublishSources).toEqual(['microphone']);
+
+        expect(
+          await Promise.all(
+            pages.map((page) =>
+              page.evaluate(() => ({
+                status: window.__meetingScreenFixture.status,
+                permissions: window.__meetingScreenFixture.permissions,
+                screenPublished: window.__meetingScreenFixture.screenPublished,
+                localMicrophonePublished: window.__meetingScreenFixture.localMicrophonePublished,
+                remoteScreens: window.__meetingScreenFixture.remoteScreenOwners,
+              })),
+            ),
+          ),
+        ).toMatchObject([
+          {
+            status: 'connected',
+            permissions: ['microphone'],
+            screenPublished: false,
+            localMicrophonePublished: false,
+            remoteScreens: [],
+          },
+          {
+            status: 'connected',
+            permissions: ['microphone'],
+            localMicrophonePublished: true,
+            remoteScreens: [],
+          },
+          {
+            status: 'connected',
+            permissions: ['microphone'],
+            screenPublished: false,
+            localMicrophonePublished: false,
+            remoteScreens: [],
+          },
+        ]);
+      } finally {
+        for (const page of pages) await page.close().catch(() => undefined);
+        if (browser) await browser.close();
+        if (guard) await stopApplicationGuard(guard);
+        if (fixture) await fixture.stop();
+        if (livekit) await livekit.stop();
+        if (retirementDirectory) await rm(retirementDirectory, { recursive: true, force: true });
+        for (const socket of sockets) socket.disconnect();
+      }
+    },
+    180000,
+  );
 });
 
 describe('authoritative room audio isolation', () => {

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { OFFICE_LIMITS, OFFICE_PROTOCOL_VERSION } from '@gather/contracts';
+import type { WorldSnapshot } from '@gather/contracts';
 import { COMMONS_GEOMETRY, VIVO_GEOMETRY, pixelToTile } from '@gather/world';
 import commonsManifest from '@gather/assets/manifests/commons-map.json' with { type: 'json' };
 import vivoManifest from '@gather/assets/manifests/vivo-map.json' with { type: 'json' };
@@ -20,6 +21,66 @@ function ticket(userNumber: number, mapVersion = commonsManifest.mapVersion): Co
     mapVersion,
     protocolVersion: OFFICE_PROTOCOL_VERSION,
   };
+}
+
+function meetingFixture(count = 3, screenSharingEnabled = true) {
+  const runtime = new OfficeRuntimeService(screenSharingEnabled);
+  const actors = Array.from({ length: count }, (_, index) => ticket(index + 1));
+  const reservations = actors.map((actor, index) =>
+    runtime.reserve(actor, `screen-share-socket-${index + 1}`),
+  );
+  const office = (
+    runtime as unknown as {
+      offices: Map<
+        string,
+        { participants: Map<string, { publicState: WorldSnapshot['participants'][number] }> }
+      >;
+    }
+  ).offices.get(actors[0]!.officeId)!;
+  const room = COMMONS_GEOMETRY.zones.find((zone) => zone.kind === 'meeting')!;
+  const position = {
+    x: (room.bounds.tx + 0.5) * COMMONS_GEOMETRY.tileSize,
+    y: (room.bounds.ty + 0.5) * COMMONS_GEOMETRY.tileSize,
+  };
+  for (const reservation of reservations)
+    office.participants.get(reservation.participationId)!.publicState.position = position;
+  const join = (index: number) =>
+    runtime.joinMeetingZone(
+      actors[index]!.officeId,
+      actors[index]!.workspaceId,
+      actors[index]!.userId,
+      `screen-share-socket-${index + 1}`,
+      reservations[index]!.participationId,
+      actors[index]!.officeEpoch,
+      room.zoneId,
+    );
+  const currentMeeting = () =>
+    runtime.meetingZones(actors[0]!.officeId)!.zones.find((zone) => zone.zoneId === room.zoneId)!
+      .meeting!;
+  const operate = (
+    operation: 'start' | 'confirm' | 'stop',
+    index: number,
+    shareId: string,
+    conversationVersion = currentMeeting().version,
+    socketId = `screen-share-socket-${index + 1}`,
+  ) => {
+    const actor = actors[index]!;
+    const participationId = reservations[index]!.participationId;
+    const common = [
+      actor.officeId,
+      actor.workspaceId,
+      actor.userId,
+      socketId,
+      participationId,
+      actor.officeEpoch,
+      currentMeeting().conversationId,
+    ] as const;
+    if (operation === 'start')
+      return runtime.startMeetingScreenShare(...common, conversationVersion, shareId);
+    if (operation === 'confirm') return runtime.confirmMeetingScreenShare(...common, shareId);
+    return runtime.stopMeetingScreenShare(...common, shareId);
+  };
+  return { runtime, actors, reservations, room, join, currentMeeting, operate };
 }
 
 describe('office runtime reservations', () => {
@@ -777,5 +838,419 @@ describe('office runtime reservations', () => {
         oldReservation.participationId,
       ),
     ).toBeNull();
+  });
+});
+
+describe('authoritative meeting screen-share state', () => {
+  it('denies reservations and publish permits while screen sharing is disabled', () => {
+    const fixture = meetingFixture(1, false);
+    fixture.join(0);
+    fixture.runtime.drainMeetingScreenShareNotices();
+    const actor = fixture.actors[0]!;
+    const participationId = fixture.reservations[0]!.participationId;
+    const conversation = fixture.currentMeeting();
+    const shareId = '30000000-0000-4000-8000-000000000099';
+
+    expect(
+      fixture.runtime.startMeetingScreenShare(
+        actor.officeId,
+        actor.workspaceId,
+        actor.userId,
+        'screen-share-socket-1',
+        participationId,
+        actor.officeEpoch,
+        conversation.conversationId,
+        conversation.version,
+        shareId,
+      ),
+    ).toBe('media_unavailable');
+    expect(
+      fixture.runtime.confirmMeetingScreenShare(
+        actor.officeId,
+        actor.workspaceId,
+        actor.userId,
+        'screen-share-socket-1',
+        participationId,
+        actor.officeEpoch,
+        conversation.conversationId,
+        shareId,
+      ),
+    ).toBe('media_unavailable');
+    const permits = fixture.runtime.conversationMediaPermits();
+    expect(fixture.runtime.activeMeetingScreenShare(permits[0]!.generation)).toBeNull();
+    expect(permits).toMatchObject([{ identity: participationId, sources: ['microphone'] }]);
+  });
+
+  it('records a first frame only once for an admitted viewer of the current live share', () => {
+    const fixture = meetingFixture(2);
+    fixture.join(0);
+    fixture.join(1);
+    fixture.runtime.drainMeetingScreenShareNotices();
+    const conversation = fixture.currentMeeting();
+    const shareId = '30000000-0000-4000-8000-000000000098';
+    expect(fixture.operate('start', 0, shareId)).toBeNull();
+    expect(fixture.operate('confirm', 0, shareId)).toBeNull();
+
+    const viewer = fixture.actors[1]!;
+    const viewerParticipationId = fixture.reservations[1]!.participationId;
+    const recordFrame = (participationId: string, socketId: string, id = shareId) =>
+      fixture.runtime.recordMeetingScreenShareFirstFrame(
+        viewer.officeId,
+        viewer.workspaceId,
+        viewer.userId,
+        socketId,
+        participationId,
+        viewer.officeEpoch,
+        conversation.conversationId,
+        id,
+      );
+
+    expect(recordFrame(viewerParticipationId, 'screen-share-socket-2')).toBe(true);
+    expect(recordFrame(viewerParticipationId, 'screen-share-socket-2')).toBe(false);
+    expect(recordFrame(fixture.reservations[0]!.participationId, 'screen-share-socket-1')).toBe(
+      false,
+    );
+    expect(recordFrame(viewerParticipationId, 'screen-share-socket-2', 'stale-share')).toBe(false);
+  });
+
+  it('serializes competing presenters and makes start, confirm, and stop retries idempotent', async () => {
+    const fixture = meetingFixture();
+    fixture.join(0);
+    fixture.join(1);
+    fixture.runtime.drainMeetingScreenShareNotices();
+    const firstShare = '30000000-0000-4000-8000-000000000001';
+    const secondShare = '30000000-0000-4000-8000-000000000002';
+    const starts = await Promise.all([
+      Promise.resolve().then(() => fixture.operate('start', 0, firstShare)),
+      Promise.resolve().then(() => fixture.operate('start', 1, secondShare)),
+    ]);
+    expect(starts.filter((result) => result === null)).toHaveLength(1);
+    expect(starts.filter((result) => result === 'conflict')).toHaveLength(1);
+    const startingNotice = fixture.runtime.drainMeetingScreenShareNotices();
+    expect(startingNotice).toHaveLength(1);
+    expect(startingNotice[0]!.socketIds.sort()).toEqual([
+      'screen-share-socket-1',
+      'screen-share-socket-2',
+    ]);
+    const winningShare = startingNotice[0]!.update.presentation!.shareId;
+    const winningPresenter = winningShare === firstShare ? 0 : 1;
+    const meetingMemberIds = fixture.reservations
+      .slice(0, 2)
+      .map(({ participationId }) => participationId);
+    const grantedPermits = fixture.runtime
+      .conversationMediaPermits()
+      .filter((permit) => meetingMemberIds.includes(permit.identity));
+    expect(
+      grantedPermits.find(
+        (permit) => permit.identity === fixture.reservations[winningPresenter]!.participationId,
+      )?.sources,
+    ).toEqual(['microphone', 'screen_share']);
+    expect(
+      grantedPermits
+        .filter(
+          (permit) => permit.identity !== fixture.reservations[winningPresenter]!.participationId,
+        )
+        .every((permit) => permit.sources.length === 1 && permit.sources[0] === 'microphone'),
+    ).toBe(true);
+
+    expect(fixture.operate('start', winningPresenter, winningShare)).toBeNull();
+    const retriedStart = fixture.runtime.drainMeetingScreenShareNotices();
+    expect(retriedStart).toHaveLength(1);
+    expect(retriedStart[0]!.update.version).toBe(startingNotice[0]!.update.version);
+    expect(fixture.operate('confirm', winningPresenter, winningShare)).toBeNull();
+    expect(fixture.operate('confirm', winningPresenter, winningShare)).toBeNull();
+    const liveNotices = fixture.runtime.drainMeetingScreenShareNotices();
+    expect(liveNotices).toHaveLength(1);
+    expect(liveNotices[0]!.update.presentation).toMatchObject({
+      shareId: winningShare,
+      presenterParticipationId: fixture.reservations[winningPresenter]!.participationId,
+      status: 'live',
+    });
+
+    expect(fixture.operate('stop', winningPresenter, winningShare)).toBeNull();
+    expect(fixture.operate('stop', winningPresenter, winningShare)).toBeNull();
+    const stoppedNotices = fixture.runtime.drainMeetingScreenShareNotices();
+    expect(stoppedNotices).toHaveLength(2);
+    expect(stoppedNotices[0]!.update.version).toBe(stoppedNotices[1]!.update.version);
+    expect(stoppedNotices[0]!.update.presentation).toBeNull();
+    expect(
+      fixture.runtime
+        .conversationMediaPermits()
+        .filter(
+          (permit) => permit.identity === fixture.reservations[winningPresenter]!.participationId,
+        )
+        .every((permit) => permit.sources.length === 1 && permit.sources[0] === 'microphone'),
+    ).toBe(true);
+    expect(fixture.operate('start', winningPresenter, secondShare)).toBeNull();
+    fixture.runtime.drainMeetingScreenShareNotices();
+    expect(fixture.operate('stop', winningPresenter, winningShare)).toBe('conflict');
+    expect(
+      fixture.runtime.meetingScreenShareState(
+        fixture.actors[0]!.officeId,
+        fixture.reservations[winningPresenter]!.participationId,
+      )[0]!.update.presentation?.shareId,
+    ).toBe(secondShare);
+  });
+
+  it('rejects nonmembers and nonpresenters and clears an owner share on departure', () => {
+    const fixture = meetingFixture(3);
+    fixture.join(0);
+    fixture.join(1);
+    const meeting = fixture.currentMeeting();
+    fixture.runtime.drainMeetingScreenShareNotices();
+    const shareId = '30000000-0000-4000-8000-000000000003';
+    expect(fixture.operate('start', 0, shareId)).toBeNull();
+    fixture.runtime.drainMeetingScreenShareNotices();
+    expect(fixture.operate('stop', 1, shareId)).toBe('conflict');
+    expect(fixture.operate('start', 2, '30000000-0000-4000-8000-000000000004')).toBe(
+      'unauthorized',
+    );
+
+    const result = fixture.runtime.leaveProximityConversation(
+      fixture.actors[0]!.officeId,
+      fixture.actors[0]!.workspaceId,
+      fixture.actors[0]!.userId,
+      'screen-share-socket-1',
+      fixture.reservations[0]!.participationId,
+      fixture.actors[0]!.officeEpoch,
+      meeting.conversationId,
+      meeting.version,
+    );
+    expect(typeof result).toBe('object');
+    const ended = fixture.runtime.drainMeetingScreenShareNotices();
+    expect(ended).toHaveLength(1);
+    expect(ended[0]!.socketIds).toEqual(['screen-share-socket-2']);
+    expect(ended[0]!.update.presentation).toBeNull();
+  });
+
+  it('expires abandoned starts and rejects their late confirm and replay', () => {
+    const fixture = meetingFixture(1);
+    fixture.join(0);
+    fixture.runtime.drainMeetingScreenShareNotices();
+    const actor = fixture.actors[0]!;
+    const participationId = fixture.reservations[0]!.participationId;
+    const conversation = fixture.currentMeeting();
+    const shareId = '30000000-0000-4000-8000-000000000005';
+    const now = performance.now();
+    expect(
+      fixture.runtime.startMeetingScreenShare(
+        actor.officeId,
+        actor.workspaceId,
+        actor.userId,
+        'screen-share-socket-1',
+        participationId,
+        actor.officeEpoch,
+        conversation.conversationId,
+        conversation.version,
+        shareId,
+        now,
+        Date.now(),
+      ),
+    ).toBeNull();
+    fixture.runtime.drainMeetingScreenShareNotices();
+    fixture.runtime.tick(actor.officeId, now + OFFICE_LIMITS.meetingScreenShareStartTimeoutMs + 1);
+    const expired = fixture.runtime.drainMeetingScreenShareNotices();
+    expect(expired).toHaveLength(1);
+    expect(expired[0]!.update.presentation).toBeNull();
+    expect(
+      fixture.runtime
+        .conversationMediaPermits()
+        .every((permit) => permit.sources.length === 1 && permit.sources[0] === 'microphone'),
+    ).toBe(true);
+    expect(fixture.operate('confirm', 0, shareId)).toBe('conflict');
+    expect(fixture.operate('start', 0, shareId)).toBe('conflict');
+  });
+
+  it('releases a live presenter when the bounded confirmation lease is not renewed', () => {
+    const fixture = meetingFixture(1);
+    fixture.join(0);
+    fixture.runtime.drainMeetingScreenShareNotices();
+    const shareId = '30000000-0000-4000-8000-000000000022';
+    expect(fixture.operate('start', 0, shareId)).toBeNull();
+    expect(fixture.operate('confirm', 0, shareId)).toBeNull();
+    fixture.runtime.drainMeetingScreenShareNotices();
+
+    const now = performance.now();
+    fixture.runtime.tick(
+      fixture.actors[0]!.officeId,
+      now + OFFICE_LIMITS.meetingScreenShareLeaseMs - 1,
+    );
+    expect(
+      fixture.runtime.activeMeetingScreenShare(
+        fixture.runtime.conversationMediaPermits()[0]!.generation,
+      ),
+    ).toMatchObject({
+      shareId,
+      status: 'live',
+    });
+    fixture.runtime.tick(
+      fixture.actors[0]!.officeId,
+      now + OFFICE_LIMITS.meetingScreenShareLeaseMs + 1,
+    );
+    expect(
+      fixture.runtime.activeMeetingScreenShare(
+        fixture.runtime.conversationMediaPermits()[0]!.generation,
+      ),
+    ).toBeNull();
+    expect(fixture.runtime.drainMeetingScreenShareNotices()[0]!.update.presentation).toBeNull();
+  });
+
+  it('clears only the matching observed share and ignores stale media events', () => {
+    const fixture = meetingFixture(2);
+    fixture.join(0);
+    fixture.join(1);
+    const room = fixture.currentMeeting().conversationId;
+    const roomGeneration = fixture.runtime.conversationMediaPermits()[0]!.generation;
+    const presenter = fixture.reservations[0]!.participationId;
+    const firstShare = '30000000-0000-4000-8000-000000000020';
+    const nextShare = '30000000-0000-4000-8000-000000000021';
+
+    expect(fixture.operate('start', 0, firstShare)).toBeNull();
+    expect(fixture.operate('confirm', 0, firstShare)).toBeNull();
+    expect(fixture.runtime.activeMeetingScreenShare(roomGeneration)).toMatchObject({
+      shareId: firstShare,
+      presenterParticipationId: presenter,
+      status: 'live',
+    });
+
+    expect(
+      fixture.runtime.clearMeetingScreenShareFromMediaObservation(
+        roomGeneration,
+        presenter,
+        '30000000-0000-4000-8000-000000000099',
+      ),
+    ).toBe(false);
+    expect(
+      fixture.runtime.clearMeetingScreenShareFromMediaObservation(
+        roomGeneration,
+        fixture.reservations[1]!.participationId,
+        firstShare,
+      ),
+    ).toBe(false);
+    expect(
+      fixture.runtime.clearMeetingScreenShareFromMediaObservation(
+        roomGeneration,
+        presenter,
+        firstShare,
+      ),
+    ).toBe(true);
+    fixture.runtime.drainMeetingScreenShareNotices();
+
+    expect(fixture.operate('start', 0, nextShare)).toBeNull();
+    expect(
+      fixture.runtime.clearMeetingScreenShareFromMediaObservation(
+        roomGeneration,
+        presenter,
+        firstShare,
+      ),
+    ).toBe(false);
+    expect(fixture.runtime.activeMeetingScreenShare(roomGeneration)?.shareId).toBe(nextShare);
+    expect(fixture.runtime.activeMeetingScreenShare(room)).toBeNull();
+  });
+
+  it('clears presenter state when the presenter authorization is released', () => {
+    const fixture = meetingFixture(2);
+    fixture.join(0);
+    fixture.join(1);
+    const shareId = '30000000-0000-4000-8000-000000000008';
+    expect(fixture.operate('start', 0, shareId)).toBeNull();
+    fixture.runtime.drainMeetingScreenShareNotices();
+    fixture.runtime.release(
+      fixture.actors[0]!.officeId,
+      fixture.actors[0]!.workspaceId,
+      fixture.actors[0]!.userId,
+      'screen-share-socket-1',
+      fixture.reservations[0]!.participationId,
+    );
+    const updates = fixture.runtime.drainMeetingScreenShareNotices();
+    expect(updates).toHaveLength(1);
+    expect(updates[0]!.socketIds).toEqual(['screen-share-socket-2']);
+    expect(updates[0]!.update.presentation).toBeNull();
+  });
+
+  it('sends current presentation state to newly admitted and reconnected viewers without changing proximity', () => {
+    const fixture = meetingFixture(5);
+    fixture.join(0);
+    fixture.join(1);
+    const officeId = fixture.actors[0]!.officeId;
+    const office = (
+      fixture.runtime as unknown as {
+        offices: Map<
+          string,
+          { participants: Map<string, { publicState: WorldSnapshot['participants'][number] }> }
+        >;
+      }
+    ).offices.get(officeId)!;
+    const proximityIds = [
+      fixture.reservations[3]!.participationId,
+      fixture.reservations[4]!.participationId,
+    ];
+    for (const id of proximityIds)
+      office.participants.get(id)!.publicState.position = COMMONS_GEOMETRY.spawn;
+    for (const index of [3, 4]) {
+      const actor = fixture.actors[index]!;
+      fixture.runtime.setProximityOptIn(
+        actor.officeId,
+        actor.workspaceId,
+        actor.userId,
+        `screen-share-socket-${index + 1}`,
+        fixture.reservations[index]!.participationId,
+        actor.officeEpoch,
+        true,
+      );
+    }
+    const permitsBeforeShare = fixture.runtime
+      .proximityMediaPermits()
+      .filter((permit) => proximityIds.includes(permit.identity));
+    expect(permitsBeforeShare).toHaveLength(2);
+    const shareId = '30000000-0000-4000-8000-000000000006';
+    expect(fixture.operate('start', 0, shareId)).toBeNull();
+    fixture.runtime.drainMeetingScreenShareNotices();
+    expect(
+      fixture.runtime
+        .proximityMediaPermits()
+        .filter((permit) => proximityIds.includes(permit.identity)),
+    ).toEqual(permitsBeforeShare);
+
+    const viewer = fixture.actors[2]!;
+    const oldViewer = fixture.reservations[2]!;
+    const roomPosition = {
+      x: (fixture.room.bounds.tx + 0.5) * COMMONS_GEOMETRY.tileSize,
+      y: (fixture.room.bounds.ty + 0.5) * COMMONS_GEOMETRY.tileSize,
+    };
+    office.participants.get(oldViewer.participationId)!.publicState.position = roomPosition;
+    fixture.join(2);
+    const admitted = fixture.runtime.drainMeetingScreenShareNotices();
+    expect(admitted).toHaveLength(1);
+    expect(admitted[0]!.socketIds).toEqual(['screen-share-socket-3']);
+    expect(admitted[0]!.update.presentation?.shareId).toBe(shareId);
+
+    fixture.runtime.release(
+      viewer.officeId,
+      viewer.workspaceId,
+      viewer.userId,
+      'screen-share-socket-3',
+      oldViewer.participationId,
+    );
+    fixture.runtime.drainMeetingScreenShareNotices();
+    const reconnect = fixture.runtime.reserve(viewer, 'screen-share-reconnected');
+    office.participants.get(reconnect.participationId)!.publicState.position = roomPosition;
+    fixture.runtime.joinMeetingZone(
+      viewer.officeId,
+      viewer.workspaceId,
+      viewer.userId,
+      'screen-share-reconnected',
+      reconnect.participationId,
+      viewer.officeEpoch,
+      fixture.room.zoneId,
+    );
+    const restored = fixture.runtime.drainMeetingScreenShareNotices();
+    expect(restored).toHaveLength(1);
+    expect(restored[0]!.socketIds).toEqual(['screen-share-reconnected']);
+    expect(restored[0]!.update.presentation?.shareId).toBe(shareId);
+    expect(
+      fixture.runtime.meetingScreenShareState(viewer.officeId, reconnect.participationId)[0]!.update
+        .presentation?.shareId,
+    ).toBe(shareId);
   });
 });

@@ -1,4 +1,5 @@
 import type { MediaTokenResponse } from '@gather/contracts';
+import { meetingScreenShareTrackName } from '@gather/contracts';
 
 export type ProximityAudioStatus =
   'off' | 'connecting' | 'live' | 'muted' | 'reconnecting' | 'error';
@@ -9,16 +10,34 @@ export type ProximityRemoteAudioTrack = {
   detach(element?: HTMLMediaElement): HTMLMediaElement[];
 };
 
+export type ProximityRemoteScreenTrack = {
+  attach(element?: HTMLVideoElement): HTMLMediaElement;
+  detach(element?: HTMLVideoElement): HTMLMediaElement[];
+};
+
+export type ProximityRemoteScreenShare = {
+  track: ProximityRemoteScreenTrack;
+  identity: string;
+};
+
 export interface ProximityRoom {
   prepareMicrophone?(): Promise<void>;
   connect(serverUrl: string, token: string): Promise<void>;
   disconnect(): Promise<void>;
   setMicrophoneEnabled(enabled: boolean): Promise<void>;
+  canPublishScreenShare(): boolean;
+  onScreenSharePermissionChanged(listener: (allowed: boolean) => void): () => void;
+  publishScreenShare(track: MediaStreamTrack, shareId: string): Promise<void>;
+  unpublishScreenShare(track: MediaStreamTrack): Promise<void>;
   onActiveSpeakersChanged?(listener: (identities: string[]) => void): () => void;
   onTrackSubscribed(
     listener: (track: ProximityRemoteAudioTrack, identity: string) => void,
   ): () => void;
   onTrackUnsubscribed(listener: (track: ProximityRemoteAudioTrack) => void): () => void;
+  onScreenShareTrackSubscribed(
+    listener: (track: ProximityRemoteScreenTrack, identity: string) => void,
+  ): () => void;
+  onScreenShareTrackUnsubscribed(listener: (track: ProximityRemoteScreenTrack) => void): () => void;
   onDisconnected(listener: () => void): () => void;
   onReconnecting(listener: () => void): () => void;
   onReconnected(listener: () => void): () => void;
@@ -88,6 +107,39 @@ export async function createLiveKitProximityRoom(
         await room.localParticipant.setMicrophoneEnabled(enabled);
       }
     },
+    canPublishScreenShare: () =>
+      room.localParticipant.permissions?.canPublishSources?.some(
+        (source) => Track.sourceFromProto(source) === Track.Source.ScreenShare,
+      ) ?? false,
+    onScreenSharePermissionChanged: (listener) => {
+      const handler = (_previous: unknown, participant: import('livekit-client').Participant) => {
+        if (participant === room.localParticipant)
+          listener(
+            room.localParticipant.permissions?.canPublishSources?.some(
+              (source) => Track.sourceFromProto(source) === Track.Source.ScreenShare,
+            ) ?? false,
+          );
+      };
+      room.on(RoomEvent.ParticipantPermissionsChanged, handler);
+      return () => room.off(RoomEvent.ParticipantPermissionsChanged, handler);
+    },
+    publishScreenShare: async (track, shareId) => {
+      if (
+        !room.localParticipant.permissions?.canPublishSources?.some(
+          (source) => Track.sourceFromProto(source) === Track.Source.ScreenShare,
+        )
+      )
+        throw new Error('screen_share_permission_missing');
+      await room.localParticipant.publishTrack(track, {
+        source: Track.Source.ScreenShare,
+        name: meetingScreenShareTrackName(shareId),
+      });
+    },
+    unpublishScreenShare: async (track) => {
+      const publication = room.localParticipant.getTrackPublication(Track.Source.ScreenShare);
+      if (!publication?.track || publication.track.mediaStreamTrack !== track) return;
+      await room.localParticipant.unpublishTrack(publication.track, false);
+    },
     onActiveSpeakersChanged: (listener) => {
       const handler = (speakers: import('livekit-client').Participant[]) =>
         listener(
@@ -132,6 +184,26 @@ export async function createLiveKitProximityRoom(
       room.on(RoomEvent.TrackUnsubscribed, handler);
       return () => room.off(RoomEvent.TrackUnsubscribed, handler);
     },
+    onScreenShareTrackSubscribed: (listener) => {
+      const handler = (
+        track: import('livekit-client').RemoteTrack,
+        _publication: unknown,
+        participant: { identity: string },
+      ) => {
+        if (track.kind === Track.Kind.Video && track.source === Track.Source.ScreenShare)
+          listener(track, participant.identity);
+      };
+      room.on(RoomEvent.TrackSubscribed, handler);
+      return () => room.off(RoomEvent.TrackSubscribed, handler);
+    },
+    onScreenShareTrackUnsubscribed: (listener) => {
+      const handler = (track: import('livekit-client').RemoteTrack) => {
+        if (track.kind === Track.Kind.Video && track.source === Track.Source.ScreenShare)
+          listener(track);
+      };
+      room.on(RoomEvent.TrackUnsubscribed, handler);
+      return () => room.off(RoomEvent.TrackUnsubscribed, handler);
+    },
     onDisconnected: (listener) => {
       const handler = (reason?: unknown) => {
         onDisconnectReason?.(reason);
@@ -160,7 +232,10 @@ export class ProximityAudioSession {
   private microphoneDesired = false;
   private listeners: Array<() => void> = [];
   private remoteTracks = new Map<ProximityRemoteAudioTrack, () => void>();
+  private remoteScreenTracks = new Map<ProximityRemoteScreenTrack, string>();
+  private readonly remoteScreenShareListeners = new Set<() => void>();
   private status: ProximityAudioStatus = 'off';
+  private screenShare: { room: ProximityRoom; track: MediaStreamTrack } | null = null;
 
   constructor(
     private readonly onState: StateListener,
@@ -266,6 +341,75 @@ export class ProximityAudioSession {
     await this.setMicrophoneEnabled(!this.microphoneDesired);
   }
 
+  isScreenSharePermitted() {
+    return this.room?.canPublishScreenShare() ?? false;
+  }
+
+  getRemoteScreenShares(): ProximityRemoteScreenShare[] {
+    return [...this.remoteScreenTracks].map(([track, identity]) => ({ track, identity }));
+  }
+
+  subscribeRemoteScreenShares(listener: () => void) {
+    this.remoteScreenShareListeners.add(listener);
+    return () => {
+      this.remoteScreenShareListeners.delete(listener);
+    };
+  }
+
+  async waitForScreenSharePermission(signal: AbortSignal) {
+    const room = this.room;
+    if (!room || !['live', 'muted', 'reconnecting'].includes(this.status))
+      throw new Error('media_disconnected');
+    if (room.canPublishScreenShare()) return;
+    await new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const finish = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        unsubscribePermission();
+        unsubscribeDisconnect();
+        signal.removeEventListener('abort', onAbort);
+        if (error) reject(error);
+        else resolve();
+      };
+      const onAbort = () => {
+        const reason = signal.reason;
+        finish(reason instanceof Error ? reason : new Error('share_cancelled'));
+      };
+      const unsubscribePermission = room.onScreenSharePermissionChanged((allowed) => {
+        if (allowed) finish();
+      });
+      const unsubscribeDisconnect = room.onDisconnected(() =>
+        finish(new Error('media_disconnected')),
+      );
+      signal.addEventListener('abort', onAbort, { once: true });
+      if (signal.aborted) onAbort();
+      else if (room.canPublishScreenShare()) finish();
+    });
+    if (this.room !== room || !room.canPublishScreenShare())
+      throw new Error('screen_share_permission_missing');
+  }
+
+  async publishScreenShare(track: MediaStreamTrack, shareId: string) {
+    const room = this.room;
+    if (!room || !['live', 'muted'].includes(this.status)) throw new Error('media_disconnected');
+    if (this.screenShare) throw new Error('screen_share_already_published');
+    if (!room.canPublishScreenShare()) throw new Error('screen_share_permission_missing');
+    await room.publishScreenShare(track, shareId);
+    if (this.room !== room || !room.canPublishScreenShare()) {
+      await room.unpublishScreenShare(track).catch(() => undefined);
+      throw new Error('screen_share_permission_missing');
+    }
+    this.screenShare = { room, track };
+  }
+
+  async unpublishScreenShare(track: MediaStreamTrack) {
+    const active = this.screenShare;
+    if (!active || active.track !== track) return;
+    this.screenShare = null;
+    await active.room.unpublishScreenShare(track).catch(() => undefined);
+  }
+
   clearMicrophoneIntent() {
     this.microphoneDesired = false;
     this.microphoneEnabled = false;
@@ -328,6 +472,13 @@ export class ProximityAudioSession {
         this.remoteTracks.set(track, this.bindRemoteTrack(track, identity));
       }),
       room.onTrackUnsubscribed((track) => this.detachRemoteTrack(track)),
+      room.onScreenShareTrackSubscribed((track, identity) => {
+        if (this.room !== room || attempt !== this.generation || this.remoteScreenTracks.has(track))
+          return;
+        this.remoteScreenTracks.set(track, identity);
+        this.notifyRemoteScreenShares();
+      }),
+      room.onScreenShareTrackUnsubscribed((track) => this.detachRemoteScreenTrack(track)),
       room.onDisconnected(() => {
         if (this.room !== room || attempt !== this.generation) return;
         void this.releaseRoom(room).finally(() => {
@@ -351,6 +502,13 @@ export class ProximityAudioSession {
     this.onSpeakers([]);
     for (const unsubscribe of this.listeners.splice(0)) unsubscribe();
     for (const track of this.remoteTracks.keys()) this.detachRemoteTrack(track);
+    for (const track of [...this.remoteScreenTracks.keys()]) this.detachRemoteScreenTrack(track);
+    const screenShare = this.screenShare?.room === room ? this.screenShare : null;
+    if (screenShare) {
+      this.screenShare = null;
+      await room.unpublishScreenShare(screenShare.track).catch(() => undefined);
+      if (screenShare.track.readyState !== 'ended') screenShare.track.stop();
+    }
     this.microphoneEnabled = false;
     // Disconnect now: never wait for a mute RPC before cutting remote reception.
     const disconnected = room.disconnect().catch(() => undefined);
@@ -363,6 +521,16 @@ export class ProximityAudioSession {
     if (!detach) return;
     this.remoteTracks.delete(track);
     detach();
+  }
+
+  private detachRemoteScreenTrack(track: ProximityRemoteScreenTrack) {
+    if (!this.remoteScreenTracks.delete(track)) return;
+    track.detach();
+    this.notifyRemoteScreenShares();
+  }
+
+  private notifyRemoteScreenShares() {
+    for (const listener of this.remoteScreenShareListeners) listener();
   }
 
   private setState(status: ProximityAudioStatus, error?: string) {

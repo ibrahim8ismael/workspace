@@ -4,6 +4,8 @@ import { performance } from 'node:perf_hooks';
 import {
   OFFICE_LIMITS,
   conversationUpdateSchema,
+  meetingScreenSharePresentationSchema,
+  meetingScreenShareUpdateSchema,
   meetingInvitationSchema,
   meetingZonesSchema,
   officeReadySchema,
@@ -11,6 +13,8 @@ import {
   worldSnapshotSchema,
 } from '@gather/contracts';
 import type {
+  MeetingScreenSharePresentation,
+  MeetingScreenShareUpdate,
   WorkspaceLayoutPlacementDto,
   WorkspaceLayoutPreset,
   WorldDelta,
@@ -72,9 +76,27 @@ interface MeetingGroupState {
   conversationId: string;
   generation: string;
   version: number;
-  members: { participationId: string; socketId: string; displayName: string }[];
+  members: {
+    participationId: string;
+    socketId: string;
+    displayName: string;
+    mediaVersion: number;
+  }[];
   pendingMemberIds: Set<string>;
   active: boolean;
+  presentationVersion: number;
+  presentation:
+    | (MeetingScreenSharePresentation & {
+        deadlineMonotonic: number;
+        livekitParticipantSid?: string;
+        firstFrameParticipationIds: Set<string>;
+      })
+    | null;
+  usedShareIds: Map<string, { presenterParticipationId: string; usedAt: number }>;
+}
+interface MeetingScreenShareNotice {
+  readonly socketIds: string[];
+  readonly update: MeetingScreenShareUpdate;
 }
 interface MeetingInvitationNotice {
   readonly socketId: string;
@@ -97,6 +119,7 @@ interface OfficeRuntime {
   readonly dirtyParticipants: Set<string>;
   readonly meetingInvitations: Map<string, MeetingInvitationState>;
   readonly meetingNotices: PrivateConversationNotice[];
+  readonly meetingScreenShareNotices: MeetingScreenShareNotice[];
   readonly meetingGroups: Map<string, MeetingGroupState>;
   readonly meetingInvitationNotices: MeetingInvitationNotice[];
 }
@@ -206,6 +229,9 @@ export class OfficeRuntimeService {
   private readonly offices = new Map<string, OfficeRuntime>();
   private readonly takeoverReferences = new Map<string, StoredTakeoverReference>();
   private readonly reconfiguringOffices = new Set<string>();
+  private mediaAuthorizationVersion = 0;
+
+  constructor(private readonly screenSharingEnabled = false) {}
 
   async withOfficeReconfiguration<T>(officeId: string, action: () => Promise<T>): Promise<T> {
     invariant(!this.reconfiguringOffices.has(officeId), 409, 'office_in_use');
@@ -345,6 +371,7 @@ export class OfficeRuntimeService {
             dirtyParticipants: new Set(),
             meetingInvitations: new Map(),
             meetingNotices: [],
+            meetingScreenShareNotices: [],
             meetingGroups: new Map(),
             meetingInvitationNotices: [],
           };
@@ -430,6 +457,7 @@ export class OfficeRuntimeService {
       officeId: ticket.officeId,
       mapVersion: ticket.mapVersion,
       protocolVersion: ticket.protocolVersion,
+      features: { screenSharing: this.screenSharingEnabled },
       snapshot,
     });
     const joined = worldDeltaSchema.parse({
@@ -739,6 +767,9 @@ export class OfficeRuntimeService {
       members: [],
       pendingMemberIds: new Set<string>(),
       active: false,
+      presentationVersion: 0,
+      presentation: null,
+      usedShareIds: new Map<string, { presenterParticipationId: string; usedAt: number }>(),
     };
     if (group.members.length >= OFFICE_LIMITS.maxMeetingParticipants) return 'room_full' as const;
     office.meetingGroups.set(zoneId, group);
@@ -1073,6 +1104,296 @@ export class OfficeRuntimeService {
     return [...meetingNotices, ...office.proximity.reconcile(this.proximityCandidates(office))];
   }
 
+  startMeetingScreenShare(
+    officeId: string,
+    workspaceId: string,
+    userId: string,
+    socketId: string,
+    participationId: string,
+    officeEpoch: string,
+    conversationId: string,
+    conversationVersion: number,
+    shareId: string,
+    nowMonotonic = performance.now(),
+    startedAt = Date.now(),
+  ): 'stale_epoch' | 'unauthorized' | 'stale_version' | 'conflict' | 'media_unavailable' | null {
+    const office = this.offices.get(officeId);
+    if (!office || office.workspaceId !== workspaceId || office.officeEpoch !== officeEpoch)
+      return 'stale_epoch';
+    const participant = office.participants.get(participationId);
+    if (!participant || participant.userId !== userId || participant.socketId !== socketId)
+      return 'unauthorized';
+    this.reconcileMeetingState(office, nowMonotonic);
+    const group = [...office.meetingGroups.values()].find(
+      (candidate) => candidate.conversationId === conversationId,
+    );
+    if (!group?.members.some((member) => member.participationId === participationId))
+      return 'unauthorized';
+    if (!this.screenSharingEnabled) return 'media_unavailable';
+    if (group.presentation) {
+      if (
+        group.presentation.shareId !== shareId ||
+        group.presentation.presenterParticipationId !== participationId
+      )
+        return 'conflict';
+      this.queueMeetingScreenShareNotice(office, group);
+      return null;
+    }
+    if (group.version !== conversationVersion) return 'stale_version';
+    this.pruneMeetingScreenShareIds(group, nowMonotonic);
+    if (group.usedShareIds.has(shareId)) return 'conflict';
+    group.usedShareIds.set(shareId, {
+      presenterParticipationId: participationId,
+      usedAt: nowMonotonic,
+    });
+    group.presentation = {
+      shareId,
+      presenterParticipationId: participationId,
+      status: 'starting',
+      startedAt,
+      deadlineMonotonic: nowMonotonic + OFFICE_LIMITS.meetingScreenShareStartTimeoutMs,
+      firstFrameParticipationIds: new Set(),
+    };
+    group.presentationVersion += 1;
+    this.queueMeetingScreenShareNotice(office, group);
+    return null;
+  }
+
+  confirmMeetingScreenShare(
+    officeId: string,
+    workspaceId: string,
+    userId: string,
+    socketId: string,
+    participationId: string,
+    officeEpoch: string,
+    conversationId: string,
+    shareId: string,
+    nowMonotonic = performance.now(),
+  ): 'stale_epoch' | 'unauthorized' | 'conflict' | 'media_unavailable' | null {
+    const office = this.offices.get(officeId);
+    if (!office || office.workspaceId !== workspaceId || office.officeEpoch !== officeEpoch)
+      return 'stale_epoch';
+    const participant = office.participants.get(participationId);
+    if (!participant || participant.userId !== userId || participant.socketId !== socketId)
+      return 'unauthorized';
+    this.reconcileMeetingState(office, nowMonotonic);
+    const group = [...office.meetingGroups.values()].find(
+      (candidate) => candidate.conversationId === conversationId,
+    );
+    if (!group?.members.some((member) => member.participationId === participationId))
+      return 'unauthorized';
+    if (!this.screenSharingEnabled) return 'media_unavailable';
+    const presentation = group.presentation;
+    if (
+      !presentation ||
+      presentation.shareId !== shareId ||
+      presentation.presenterParticipationId !== participationId
+    )
+      return 'conflict';
+    if (presentation.status === 'live') {
+      group.presentation = {
+        ...presentation,
+        deadlineMonotonic: nowMonotonic + OFFICE_LIMITS.meetingScreenShareLeaseMs,
+      };
+      return null;
+    }
+    group.presentation = {
+      ...presentation,
+      status: 'live',
+      deadlineMonotonic: nowMonotonic + OFFICE_LIMITS.meetingScreenShareLeaseMs,
+    };
+    group.presentationVersion += 1;
+    this.queueMeetingScreenShareNotice(office, group);
+    return null;
+  }
+
+  stopMeetingScreenShare(
+    officeId: string,
+    workspaceId: string,
+    userId: string,
+    socketId: string,
+    participationId: string,
+    officeEpoch: string,
+    conversationId: string,
+    shareId: string,
+    nowMonotonic = performance.now(),
+  ): 'stale_epoch' | 'unauthorized' | 'conflict' | null {
+    const office = this.offices.get(officeId);
+    if (!office || office.workspaceId !== workspaceId || office.officeEpoch !== officeEpoch)
+      return 'stale_epoch';
+    const participant = office.participants.get(participationId);
+    if (!participant || participant.userId !== userId || participant.socketId !== socketId)
+      return 'unauthorized';
+    this.reconcileMeetingState(office, nowMonotonic);
+    const group = [...office.meetingGroups.values()].find(
+      (candidate) => candidate.conversationId === conversationId,
+    );
+    if (!group?.members.some((member) => member.participationId === participationId))
+      return 'unauthorized';
+    const presentation = group.presentation;
+    if (!presentation) {
+      if (group.usedShareIds.get(shareId)?.presenterParticipationId !== participationId)
+        return 'conflict';
+      this.queueMeetingScreenShareNotice(office, group);
+      return null;
+    }
+    if (
+      presentation.shareId !== shareId ||
+      presentation.presenterParticipationId !== participationId
+    )
+      return 'conflict';
+    this.clearMeetingScreenShare(office, group);
+    return null;
+  }
+
+  drainMeetingScreenShareNotices() {
+    return [...this.offices.values()].flatMap((office) =>
+      office.meetingScreenShareNotices.splice(0),
+    );
+  }
+
+  meetingScreenShareState(officeId: string, participationId: string) {
+    const office = this.offices.get(officeId);
+    if (!office) return [];
+    this.reconcileMeetingState(office, performance.now());
+    return [...office.meetingGroups.values()].flatMap((group) =>
+      group.members.some((member) => member.participationId === participationId)
+        ? [
+            this.meetingScreenShareNotice(office, group, [
+              group.members.find((member) => member.participationId === participationId)!.socketId,
+            ]),
+          ]
+        : [],
+    );
+  }
+
+  activeMeetingScreenShare(room: string) {
+    for (const office of this.offices.values()) {
+      const group = [...office.meetingGroups.values()].find(
+        (candidate) => candidate.generation === room,
+      );
+      if (group?.presentation)
+        return {
+          room: group.generation,
+          conversationId: group.conversationId,
+          shareId: group.presentation.shareId,
+          presenterParticipationId: group.presentation.presenterParticipationId,
+          status: group.presentation.status,
+          startedAt: group.presentation.startedAt,
+          ...(group.presentation.livekitParticipantSid
+            ? { livekitParticipantSid: group.presentation.livekitParticipantSid }
+            : {}),
+        } as const;
+    }
+    return null;
+  }
+
+  activeMeetingScreenShareForPresenter(participationId: string) {
+    for (const office of this.offices.values()) {
+      for (const group of office.meetingGroups.values()) {
+        if (group.presentation?.presenterParticipationId === participationId)
+          return {
+            room: group.generation,
+            conversationId: group.conversationId,
+            shareId: group.presentation.shareId,
+          } as const;
+      }
+    }
+    return null;
+  }
+
+  meetingScreenShareMetricCounts() {
+    let active = 0;
+    let starting = 0;
+    for (const office of this.offices.values())
+      for (const group of office.meetingGroups.values()) {
+        if (group.presentation?.status === 'live') active += 1;
+        else if (group.presentation?.status === 'starting') starting += 1;
+      }
+    return { active, starting };
+  }
+
+  recordMeetingScreenShareFirstFrame(
+    officeId: string,
+    workspaceId: string,
+    userId: string,
+    socketId: string,
+    participationId: string,
+    officeEpoch: string,
+    conversationId: string,
+    shareId: string,
+  ) {
+    const office = this.offices.get(officeId);
+    if (
+      !this.screenSharingEnabled ||
+      !office ||
+      office.workspaceId !== workspaceId ||
+      office.officeEpoch !== officeEpoch
+    )
+      return false;
+    const participant = office.participants.get(participationId);
+    if (!participant || participant.userId !== userId || participant.socketId !== socketId)
+      return false;
+    const group = [...office.meetingGroups.values()].find(
+      (candidate) => candidate.conversationId === conversationId,
+    );
+    const presentation = group?.presentation;
+    if (
+      !group?.members.some((member) => member.participationId === participationId) ||
+      !presentation ||
+      presentation.status !== 'live' ||
+      presentation.shareId !== shareId ||
+      presentation.presenterParticipationId === participationId
+    )
+      return false;
+    if (presentation.firstFrameParticipationIds.has(participationId)) return false;
+    presentation.firstFrameParticipationIds.add(participationId);
+    return true;
+  }
+
+  observeMeetingScreenSharePublication(
+    room: string,
+    presenterParticipationId: string,
+    shareId: string,
+    livekitParticipantSid: string,
+  ) {
+    for (const office of this.offices.values()) {
+      const group = [...office.meetingGroups.values()].find(
+        (candidate) => candidate.generation === room,
+      );
+      if (
+        !group?.presentation ||
+        group.presentation.presenterParticipationId !== presenterParticipationId ||
+        group.presentation.shareId !== shareId
+      )
+        continue;
+      group.presentation = { ...group.presentation, livekitParticipantSid };
+      return true;
+    }
+    return false;
+  }
+
+  clearMeetingScreenShareFromMediaObservation(
+    room: string,
+    presenterParticipationId: string,
+    shareId: string,
+  ) {
+    for (const office of this.offices.values()) {
+      const group = [...office.meetingGroups.values()].find(
+        (candidate) => candidate.generation === room,
+      );
+      if (
+        !group?.presentation ||
+        group.presentation.presenterParticipationId !== presenterParticipationId ||
+        group.presentation.shareId !== shareId
+      )
+        continue;
+      this.clearMeetingScreenShare(office, group);
+      return true;
+    }
+    return false;
+  }
+
   conversationAreas(officeId: string) {
     return this.offices.get(officeId)?.proximity.currentAreas() ?? null;
   }
@@ -1087,8 +1408,13 @@ export class OfficeRuntimeService {
             generation: group.generation,
             identity: member.participationId,
             room: group.generation,
-            version: 1,
-            sources: ['microphone'] as const,
+            roomLifecycle: 'stable' as const,
+            version: member.mediaVersion,
+            sources:
+              this.screenSharingEnabled &&
+              group.presentation?.presenterParticipationId === member.participationId
+                ? (['microphone', 'screen_share'] as const)
+                : (['microphone'] as const),
           })),
         ),
       ];
@@ -1160,7 +1486,10 @@ export class OfficeRuntimeService {
           group.active &&
           group.members.some((member) => member.participationId === participationId),
       );
-      if (!participant || (!conversation && !meeting)) continue;
+      const meetingMember = meeting?.members.find(
+        (member) => member.participationId === participationId,
+      );
+      if (!participant || (!conversation && !meetingMember)) continue;
       return {
         participationId,
         userId: participant.userId,
@@ -1175,6 +1504,7 @@ export class OfficeRuntimeService {
         conversationVersion: conversation?.conversationVersion ?? meeting!.version,
         generation: conversation?.generation ?? meeting!.generation,
         room: conversation?.room ?? meeting!.generation,
+        mediaVersion: meetingMember?.mediaVersion ?? 1,
       };
     }
     return null;
@@ -1444,7 +1774,7 @@ export class OfficeRuntimeService {
     office.lastSimulationAt = now;
     const seconds = elapsedMs / 1000;
     const pixels = OFFICE_LIMITS.movementSpeedPixelsPerSecond * seconds;
-    this.reconcileMeetingState(office, performance.now());
+    this.reconcileMeetingState(office, now);
     for (const [participationId, participant] of office.participants) {
       const previous = participant.publicState.position;
       const nextSequence = Math.max(
@@ -1713,6 +2043,8 @@ export class OfficeRuntimeService {
       const retained = group.members.filter((member) => member.participationId !== participationId);
       group.members = retained;
       group.pendingMemberIds.delete(participationId);
+      if (group.presentation?.presenterParticipationId === participationId)
+        this.clearMeetingScreenShare(office, group);
       group.version += 1;
       office.meetingNotices.push(
         this.meetingNotice(
@@ -1733,15 +2065,17 @@ export class OfficeRuntimeService {
   private addMeetingMember(
     office: OfficeRuntime,
     group: MeetingGroupState,
-    member: MeetingGroupState['members'][number],
+    member: Omit<MeetingGroupState['members'][number], 'mediaVersion'>,
   ) {
-    group.members = [...group.members, member].sort((left, right) =>
+    invariant(Number.isSafeInteger(this.mediaAuthorizationVersion + 1), 503, 'media_unavailable');
+    const authorizedMember = { ...member, mediaVersion: ++this.mediaAuthorizationVersion };
+    group.members = [...group.members, authorizedMember].sort((left, right) =>
       left.participationId.localeCompare(right.participationId),
     );
-    group.pendingMemberIds.add(member.participationId);
+    group.pendingMemberIds.add(authorizedMember.participationId);
     group.version += 1;
     const recipients = group.active
-      ? [member.socketId]
+      ? [authorizedMember.socketId]
       : group.members.map((current) => current.socketId);
     office.meetingNotices.push(
       this.meetingNotice(
@@ -1754,6 +2088,55 @@ export class OfficeRuntimeService {
         recipients,
       ),
     );
+    this.queueMeetingScreenShareNotice(office, group, [authorizedMember.socketId]);
+  }
+
+  private queueMeetingScreenShareNotice(
+    office: OfficeRuntime,
+    group: MeetingGroupState,
+    socketIds = group.members.map((member) => member.socketId),
+  ) {
+    if (!socketIds.length) return;
+    office.meetingScreenShareNotices.push(this.meetingScreenShareNotice(office, group, socketIds));
+  }
+
+  private meetingScreenShareNotice(
+    office: OfficeRuntime,
+    group: MeetingGroupState,
+    socketIds: string[],
+  ): MeetingScreenShareNotice {
+    const presentation = group.presentation
+      ? meetingScreenSharePresentationSchema.parse({
+          shareId: group.presentation.shareId,
+          presenterParticipationId: group.presentation.presenterParticipationId,
+          status: group.presentation.status,
+          startedAt: group.presentation.startedAt,
+        })
+      : null;
+    return {
+      socketIds,
+      update: meetingScreenShareUpdateSchema.parse({
+        officeEpoch: office.officeEpoch,
+        conversationId: group.conversationId,
+        zoneId: group.zoneId,
+        version: group.presentationVersion,
+        presentation,
+      }),
+    };
+  }
+
+  private clearMeetingScreenShare(office: OfficeRuntime, group: MeetingGroupState) {
+    if (!group.presentation) return;
+    group.presentation = null;
+    group.presentationVersion += 1;
+    this.queueMeetingScreenShareNotice(office, group);
+  }
+
+  private pruneMeetingScreenShareIds(group: MeetingGroupState, now: number) {
+    for (const [shareId, { usedAt }] of group.usedShareIds)
+      if (now - usedAt > OFFICE_LIMITS.replayWindowMs) group.usedShareIds.delete(shareId);
+    while (group.usedShareIds.size >= OFFICE_LIMITS.replayCacheEntries)
+      group.usedShareIds.delete(group.usedShareIds.keys().next().value!);
   }
 
   private meetingRosterNotices(office: OfficeRuntime, group: MeetingGroupState) {
@@ -1797,6 +2180,8 @@ export class OfficeRuntimeService {
 
   private reconcileMeetingState(office: OfficeRuntime, now: number) {
     for (const [zoneId, group] of [...office.meetingGroups]) {
+      if (group.presentation && group.presentation.deadlineMonotonic <= now)
+        this.clearMeetingScreenShare(office, group);
       for (const member of [...group.members]) {
         const participant = office.participants.get(member.participationId);
         if (

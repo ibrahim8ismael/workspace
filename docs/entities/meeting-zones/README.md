@@ -33,15 +33,17 @@ Represent fixed meeting areas with explicit server-authorized group admission an
 - Occupancy reflects authoritative server positions. It does not grant meeting membership or media; `admittedMembers` reflects the separate meeting runtime roster.
 - An explicit `meeting:join` requires an active live office participation, current availability, no conflicting conversation, physical presence inside the half-open zone rectangle and capacity below twenty. Invitation arrivals reserve capacity before travel begins.
 - Walking into a room does not join or enable the microphone. Walking out or losing eligibility immediately removes the member.
-- Each membership change rotates the LiveKit generation. Detailed conversation updates are delivered privately through `conversation:update`; the office-wide room projection includes admitted participation IDs. The token and policy permit remain microphone-only.
-- The web UI shows the current room, explicit Join/Leave actions, authoritative roster, capacity, invitation responses and mic controls. Camera and screen sharing are not part of this contract.
+- Membership changes increment the authoritative conversation version. The meeting keeps its stable LiveKit room identity while media policy removes departed participants; detailed roster updates are private through `conversation:update` and the office-wide room projection includes admitted participation IDs. Every admitted member can publish a microphone; only the current presenter can publish screen video.
+- The web UI shows the current room, explicit Join/Leave actions, authoritative roster, capacity, invitation responses and mic controls. Presenter ownership is server-authoritative; its media permit is installed and revoked with the share lifecycle.
+- `meeting:screen-share:start`, `meeting:screen-share:confirm`, and `meeting:screen-share:stop` use office protocol version 7. Private `meeting:screen-share:update` events carry versioned state only to admitted participants. Newly admitted viewers and authorized state resyncs receive the current state.
+- A `starting` reservation expires after 30 seconds unless confirmed. A live share renews a 30-second server lease through the existing `confirm` command; presenter disconnect, failed refresh, or browser track end releases ownership within that lease. Meeting departure or loss of office authorization clears the departing presenter's state and informs remaining participants. Screen video uses a LiveKit track name containing the server-issued share ID. Only a signed matching unpublish event can clear that exact share; late events cannot clear a newer share, and publication events never grant ownership. Stop, expiry, departure or lost authorization removes the screen source while preserving microphone and subscription permissions. Old screen-capable credentials cannot restore the permission on reconnect. An API restart produces a fresh runtime policy; the guard retires the prior meeting generation and confirms its SFU room empty before acknowledging replacement policy.
 
 ## Interface outline
 
 - `meeting:join { zoneId }`, `meeting:leave { conversationId, conversationVersion }`, and the scoped invitation/accept/decline/cancel events.
 - The server emits private authoritative roster and media readiness updates. Meeting geometry is read-only display state.
 
-`meeting:zones` protocol v4 sends room ownership, map version, bounds, capacity, explicit-admission policy, occupancy, admitted roster, live conversation ID/version/state when present, and bounded entrance geometry. It carries no generation or credential.
+`meeting:zones` protocol v4 sends room ownership, map version, bounds, capacity, explicit-admission policy, occupancy, admitted roster, live conversation ID/version/state when present, and bounded entrance geometry. It carries no generation, presentation state, or credential.
 
 ## Verification status
 

@@ -17,7 +17,12 @@ import {
   meetingInvitationSchema,
   meetingJoinEventSchema,
   meetingLeaveEventSchema,
+  meetingScreenShareStartEventSchema,
+  meetingScreenShareConfirmEventSchema,
+  meetingScreenShareStopEventSchema,
+  meetingScreenShareFirstFrameEventSchema,
   meetingZonesSchema,
+  meetingScreenShareUpdateSchema,
   presenceUpdateEventSchema,
   proximityOptInEventSchema,
   seatSitEventSchema,
@@ -31,6 +36,7 @@ import {
   type ConversationUpdate,
   type ConversationAreas,
   type MeetingZones,
+  type MeetingScreenShareUpdate,
   type MeetingInvitation,
   type WorldSnapshot,
 } from '@gather/contracts';
@@ -52,6 +58,7 @@ export type OfficeClientState = {
   conversationUpdates: ConversationUpdate[];
   conversationAreas: ConversationAreas | null;
   meetingZones: MeetingZones | null;
+  meetingScreenShareUpdates: MeetingScreenShareUpdate[];
   waves: OfficeWave[];
   meetingInvitations: MeetingInvitation[];
 };
@@ -93,6 +100,22 @@ export function acceptsConversationAreas(
   );
 }
 
+export function acceptsMeetingScreenShareUpdate(
+  previous:
+    Pick<MeetingScreenShareUpdate, 'officeEpoch' | 'conversationId' | 'version'> | undefined,
+  update: MeetingScreenShareUpdate,
+  officeEpoch: string | null,
+) {
+  if (!officeEpoch || update.officeEpoch !== officeEpoch) return false;
+  if (!previous) return true;
+  if (
+    previous.officeEpoch !== update.officeEpoch ||
+    previous.conversationId !== update.conversationId
+  )
+    return false;
+  return update.version > previous.version;
+}
+
 const EMPTY_STATE: OfficeClientState = {
   status: 'idle',
   bootstrap: null,
@@ -104,6 +127,7 @@ const EMPTY_STATE: OfficeClientState = {
   conversationUpdates: [],
   conversationAreas: null,
   meetingZones: null,
+  meetingScreenShareUpdates: [],
   waves: [],
   meetingInvitations: [],
 };
@@ -158,6 +182,7 @@ export class OfficeClient {
       conversationUpdates: [],
       conversationAreas: null,
       meetingZones: null,
+      meetingScreenShareUpdates: [],
       waves: [],
       meetingInvitations: [],
     });
@@ -296,6 +321,55 @@ export class OfficeClient {
             ),
             update,
           ].slice(-5),
+          meetingScreenShareUpdates:
+            update.kind !== 'meeting' ||
+            update.state === 'ended' ||
+            !update.participants.some(
+              (participant) => participant.participationId === this.state.ready?.participationId,
+            )
+              ? this.state.meetingScreenShareUpdates.filter(
+                  (candidate) => candidate.conversationId !== update.conversationId,
+                )
+              : this.state.meetingScreenShareUpdates,
+        });
+      });
+      socket.on('meeting:screen-share:update', (raw: unknown) => {
+        if (!this.isCurrent(generation) || this.socket !== socket) return;
+        const parsed = meetingScreenShareUpdateSchema.safeParse(raw);
+        if (!parsed.success) return;
+        const update = parsed.data;
+        const ready = this.state.ready;
+        if (
+          this.state.status !== 'connected' ||
+          !socket.connected ||
+          !ready ||
+          update.officeEpoch !== ready.snapshot.officeEpoch
+        )
+          return;
+        const meeting = this.state.conversationUpdates.find(
+          (candidate) =>
+            candidate.kind === 'meeting' && candidate.conversationId === update.conversationId,
+        );
+        if (
+          !meeting ||
+          meeting.zoneId !== update.zoneId ||
+          meeting.state === 'ended' ||
+          !meeting.participants.some(
+            (participant) => participant.participationId === ready.participationId,
+          )
+        )
+          return;
+        const previous = this.state.meetingScreenShareUpdates.find(
+          (candidate) => candidate.conversationId === update.conversationId,
+        );
+        if (!acceptsMeetingScreenShareUpdate(previous, update, ready.snapshot.officeEpoch)) return;
+        this.update({
+          meetingScreenShareUpdates: [
+            ...this.state.meetingScreenShareUpdates.filter(
+              (candidate) => candidate.conversationId !== update.conversationId,
+            ),
+            update,
+          ].slice(-5),
         });
       });
       socket.on('conversation:areas', (raw: unknown) => {
@@ -349,6 +423,7 @@ export class OfficeClient {
         this.update({
           status: 'ended',
           snapshot: null,
+          meetingScreenShareUpdates: [],
           message:
             ended.data.reason === 'taken_over'
               ? 'This office session was replaced by another tab.'
@@ -366,6 +441,7 @@ export class OfficeClient {
           this.update({
             status: 'disconnected',
             meetingInvitations: [],
+            meetingScreenShareUpdates: [],
             message: 'Office connection closed.',
           });
       });
@@ -463,6 +539,40 @@ export class OfficeClient {
     });
   }
 
+  startMeetingScreenShare(conversationId: string, conversationVersion: number, shareId: string) {
+    return this.sendCommand('meeting:screen-share:start', meetingScreenShareStartEventSchema, {
+      conversationId,
+      conversationVersion,
+      shareId,
+    });
+  }
+
+  confirmMeetingScreenShare(conversationId: string, shareId: string) {
+    return this.sendCommand('meeting:screen-share:confirm', meetingScreenShareConfirmEventSchema, {
+      conversationId,
+      shareId,
+    });
+  }
+
+  stopMeetingScreenShare(conversationId: string, shareId: string) {
+    return this.sendCommand('meeting:screen-share:stop', meetingScreenShareStopEventSchema, {
+      conversationId,
+      shareId,
+    });
+  }
+
+  reportMeetingScreenShareFirstFrame(conversationId: string, shareId: string, elapsedMs: number) {
+    return this.sendCommand(
+      'meeting:screen-share:first-frame',
+      meetingScreenShareFirstFrameEventSchema,
+      {
+        conversationId,
+        shareId,
+        elapsedMs,
+      },
+    );
+  }
+
   inviteToMeeting(targetParticipationId: string, zoneId: string) {
     return this.sendCommand('meeting:invite', meetingInviteEventSchema, {
       targetParticipationId,
@@ -553,7 +663,7 @@ export class OfficeClient {
   private fail(message: string) {
     this.closed = true;
     this.socket?.disconnect();
-    this.update({ status: 'error', snapshot: null, message });
+    this.update({ status: 'error', snapshot: null, meetingScreenShareUpdates: [], message });
   }
 }
 

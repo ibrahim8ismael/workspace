@@ -9,6 +9,7 @@ import { PermitState } from './permit-state.mjs';
 import { pullPolicy } from './policy-pull.mjs';
 import { RetirementStore } from './retirement-store.mjs';
 import { retireSfuGeneration as retireRoomGeneration } from './sfu-generation-retirement.mjs';
+import { reconcileSfuStableRoster } from './sfu-stable-roster-reconciliation.mjs';
 import { RoomServiceClient } from '../../apps/api/node_modules/livekit-server-sdk/dist/RoomServiceClient.js';
 const { CP07_KEY, CP07_SECRET, CP07_ORIGIN, CP07_RETIREMENTS } = process.env;
 if (!CP07_KEY || !CP07_SECRET || !CP07_ORIGIN || !CP07_RETIREMENTS)
@@ -48,6 +49,20 @@ async function retireSfuGeneration(generation) {
   );
   return result.retired;
 }
+async function reconcileStableSfuRoom(generation, permits) {
+  if (!roomService) return false;
+  const result = await reconcileSfuStableRoster({ roomService, generation, permits });
+  process.stdout.write(
+    JSON.stringify({
+      kind: result.reconciled ? 'stable_roster_reconciled' : 'stable_roster_pending',
+      generation,
+      participants: result.removed,
+      permissionsUpdated: result.permissionsUpdated,
+      durationMs: result.durationMs,
+    }) + '\n',
+  );
+  return result.reconciled;
+}
 const pull = async () => {
   if (!policyEnabled || pulling) return;
   pulling = true;
@@ -67,7 +82,8 @@ const pull = async () => {
       onVerified: ({ nonce, sequence }) =>
         process.stdout.write(JSON.stringify({ kind: 'expect', nonce, version: sequence }) + '\n'),
       installPolicy: applicationPolicy
-        ? (snapshot) => permits.installWithRetirement(snapshot, retireSfuGeneration)
+        ? (snapshot) =>
+            permits.installWithRetirement(snapshot, retireSfuGeneration, reconcileStableSfuRoom)
         : undefined,
       onInstalled: ({ nonce, sequence }) => {
         if (process.env.CP07_LEASE_PATH) {

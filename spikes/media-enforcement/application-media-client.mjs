@@ -25,14 +25,16 @@ export async function startApplicationMediaClient({
   grants,
   denyMicrophoneIndex,
   forceRelay = false,
+  deferPeerReadiness = false,
 }) {
   if (
     typeof fixtureUrl !== 'string' ||
     !fixtureUrl.startsWith('http://127.0.0.1:') ||
     !Array.isArray(grants) ||
-    grants.length < 2 ||
+    grants.length < 1 ||
     grants.length > 6 ||
     typeof forceRelay !== 'boolean' ||
+    typeof deferPeerReadiness !== 'boolean' ||
     (denyMicrophoneIndex !== undefined &&
       (!Number.isInteger(denyMicrophoneIndex) ||
         denyMicrophoneIndex < 0 ||
@@ -104,49 +106,12 @@ export async function startApplicationMediaClient({
     );
     try {
       await Promise.all(
-        pages.map((page) =>
-          page.waitForFunction(
-            () => ['muted', 'error'].includes(window.__mediaFixture.status),
-            null,
-            { timeout: 25000 },
-          ),
-        ),
-      );
-    } catch (error) {
-      const observations = await Promise.all(pages.map(readObservations));
-      throw new Error(
-        `application media clients did not reach live/error: ${JSON.stringify({
-          observations: observations.map(withoutRefreshedToken),
-          browserErrors: browserErrors.map(safeDiagnostic),
-        })}`,
-        { cause: error },
-      );
-    }
-    const beforeMicrophoneIntent = await Promise.all(pages.map(readObservations));
-    if (beforeMicrophoneIntent.some(({ status }) => status !== 'muted'))
-      throw new Error(
-        `application grant did not establish a muted listener before microphone intent: ${JSON.stringify(
-          {
-            observations: beforeMicrophoneIntent.map(withoutRefreshedToken),
-            browserErrors: browserErrors.map(safeDiagnostic),
-          },
-        )}`,
-      );
-    // The test clients simulate an explicit user microphone action after admission.
-    await Promise.all(
-      pages.map((page) =>
-        page.evaluate(() => window.postMessage({ kind: 'toggle-microphone' }, location.origin)),
-      ),
-    );
-    try {
-      await Promise.all(
         pages.map((page, index) =>
           page.waitForFunction(
             ({ denied }) =>
               denied
-                ? window.__mediaFixture.status === 'muted' &&
-                  window.__mediaFixture.error.includes('Microphone access was denied')
-                : window.__mediaFixture.status === 'live',
+                ? ['muted', 'error'].includes(window.__mediaFixture.status)
+                : ['live', 'error'].includes(window.__mediaFixture.status),
             { denied: index === denyMicrophoneIndex },
             { timeout: 25000 },
           ),
@@ -155,7 +120,7 @@ export async function startApplicationMediaClient({
     } catch (error) {
       const observations = await Promise.all(pages.map(readObservations));
       throw new Error(
-        `application microphone intent did not resolve: ${JSON.stringify({
+        `application media clients did not reach live/error: ${JSON.stringify({
           observations: observations.map(withoutRefreshedToken),
           browserErrors: browserErrors.map(safeDiagnostic),
         })}`,
@@ -178,7 +143,7 @@ export async function startApplicationMediaClient({
       throw new Error(
         `application grant failed to join LiveKit: ${JSON.stringify({ initial: initial.map(withoutRefreshedToken), browserErrors })}`,
       );
-    if (denyMicrophoneIndex === undefined) {
+    if (denyMicrophoneIndex === undefined && grants.length > 1 && !deferPeerReadiness) {
       try {
         await Promise.all(
           pages.map((page, index) =>
@@ -585,6 +550,83 @@ export async function runApplicationMediaCutoffCli() {
           );
         process.stdout.write(
           JSON.stringify({ kind: 'audio-advancing', decodedAudioSampleDeltas }) + '\n',
+        );
+        continue;
+      }
+      if (command.kind === 'expect-room-peers') {
+        const peerIdentities = command.peerIdentities;
+        if (
+          !Array.isArray(peerIdentities) ||
+          peerIdentities.length < 1 ||
+          peerIdentities.length > 20 ||
+          peerIdentities.some((identity) => typeof identity !== 'string' || identity.length > 128)
+        )
+          throw new Error('invalid room peer expectation');
+        try {
+          await Promise.all(
+            client.pages.map((page, index) =>
+              page.waitForFunction(
+                ({ identities, ownIdentity }) => {
+                  const expected = identities.filter((identity) => identity !== ownIdentity);
+                  const fixture = window.__mediaFixture;
+                  return (
+                    fixture.status === 'live' &&
+                    fixture.remoteIdentities.length === expected.length &&
+                    fixture.remoteTrackIdentities.length === expected.length &&
+                    expected.every(
+                      (identity) =>
+                        fixture.remoteIdentities.includes(identity) &&
+                        fixture.remoteTrackIdentities.includes(identity),
+                    ) &&
+                    fixture.activeAudioSamples >= 10
+                  );
+                },
+                { identities: peerIdentities, ownIdentity: client.grants[index].identity },
+                { timeout: 45000 },
+              ),
+            ),
+          );
+        } catch (error) {
+          const observations = await Promise.all(client.pages.map(readObservations));
+          throw new Error(
+            `meeting room peer/audio set was incomplete: ${JSON.stringify({
+              expectedRoomSize: peerIdentities.length,
+              pages: observations.map((observation, index) => {
+                const expected = peerIdentities.filter(
+                  (identity) => identity !== client.grants[index].identity,
+                );
+                return {
+                  status: observation.status,
+                  expectedRemotePeers: expected.length,
+                  receivedRemotePeers: observation.remoteIdentities.length,
+                  receivedRemoteAudioTracks: observation.remoteTrackIdentities.length,
+                  missingRemotePeers: expected.filter(
+                    (identity) => !observation.remoteIdentities.includes(identity),
+                  ).length,
+                  missingRemoteAudioTracks: expected.filter(
+                    (identity) => !observation.remoteTrackIdentities.includes(identity),
+                  ).length,
+                  activeAudioSamples: observation.activeAudioSamples,
+                  decodedAudioSamples: observation.decodedAudioSamples,
+                  iceStates: observation.iceStates,
+                  statusHistory: observation.statusHistory,
+                };
+              }),
+              browserErrors: client.browserErrors(),
+            })}`,
+            { cause: error },
+          );
+        }
+        const observations = await Promise.all(client.pages.map(readObservations));
+        process.stdout.write(
+          JSON.stringify({
+            kind: 'room-peer-set-ready',
+            pages: observations.length,
+            remoteTrackCounts: observations.map(
+              ({ remoteTrackIdentities }) => remoteTrackIdentities.length,
+            ),
+            activeAudioSamples: observations.map(({ activeAudioSamples }) => activeAudioSamples),
+          }) + '\n',
         );
         continue;
       }

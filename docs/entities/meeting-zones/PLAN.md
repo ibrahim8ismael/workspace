@@ -10,6 +10,10 @@ Status: implementation and gated actual media acceptance complete in this checko
 - [x] Prevent proximity pairing from forming or expanding across room domains; retire the old generation and retain eligible same-domain survivors after a boundary crossing.
 - [x] Revalidate room/proximity membership when media permits and token participation are read so a stale generation stops authorizing new media.
 - [x] Cache room entrance geometry per trusted map, including bounds, blocked tiles and collision edges. Occupancy status is descriptive and does not lock exits.
+- [x] Keep one ephemeral, server-authoritative screen-share reservation per explicit meeting, with authenticated start/confirm/stop commands, replay-safe share IDs, private versioned updates, join/resync snapshots, and bounded expiry for abandoned starts.
+- [x] Clear presenter ownership on meeting departure or office authorization loss without changing proximity conversations or microphone-only permits.
+- [x] Grant the current presenter microphone plus screen-video publication, retain microphone-only publication for other admitted users, and reconcile effective LiveKit source permissions in the stable meeting room.
+- [x] Preserve the full LiveKit participant permission object when changing publication sources so presenter grant/revoke does not remove audio subscription rights. Revoke active screen tracks and deny stale screen credentials after stop.
 
 ## Verification recorded
 
@@ -17,6 +21,7 @@ Status: implementation and gated actual media acceptance complete in this checko
 - Full API suite: 131 tests passed, with two opt-in actual-media cases skipped by the default run. The room-specific actual-media case was executed separately and passed.
 - World suite: 31 passed; web suite: 80 passed; media enforcement spike: 33 passed; asset and legacy-shared checks: 5 passed each.
 - `pnpm check` passed, including formatting, lint, typechecking, generated map checks and production builds. The mounted-office Chromium UI E2E also passed.
+- `pnpm test:media-screen-share-policy` passed against the pinned LiveKit server and Chromium: presenter screen video was received on the existing connection; a non-presenter and the revoked presenter were denied screen publication; screen revoke removed the SFU track, retained microphone/subscription permission, rejected the old credential, and audio continued.
 
 ## Remaining acceptance criteria
 
